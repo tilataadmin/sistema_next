@@ -10,13 +10,13 @@ Creado: Septiembre 2025
 // CONFIGURACIÓN DE SUPABASE
 // ==========================================
 
-// Función para obtener variables de entorno
+// Función para obtener variables de entorno (versión navegador)
 function getEnvVar(name, fallback = null) {
-    // En el navegador, las variables de entorno de Vercel no están disponibles directamente
-    // Por lo que usamos un objeto de configuración que se reemplaza en build time
+    // En el navegador, usar directamente los valores fallback
+    // Las variables de entorno de Vercel se inyectan en build time
     const env = {
-        SUPABASE_URL: process?.env?.SUPABASE_URL || 'https://spjzvpcsgbewxupjvmfm.supabase.co',
-        SUPABASE_ANON_KEY: process?.env?.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwanp2cGNzZ2Jld3h1cGp2bWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMDk4MDEsImV4cCI6MjA3MjU4NTgwMX0.6n_rvGalz_IT2vQ1Q4fPGS0D-ijYBUmdkL3PmbyNRck'
+        SUPABASE_URL: 'https://spjzvpcsgbewxupjvmfm.supabase.co',
+        SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwanp2cGNzZ2Jld3h1cGp2bWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMDk4MDEsImV4cCI6MjA3MjU4NTgwMX0.6n_rvGalz_IT2vQ1Q4fPGS0D-ijYBUmdkL3PmbyNRck'
     };
     
     return env[name] || fallback;
