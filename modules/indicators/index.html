@@ -314,14 +314,120 @@
     <script src="../../assets/js/config.js"></script>
     
     <script>
+
+        // ==========================================
+// VERIFICACIÓN DE PERMISOS
+// ==========================================
+
+let currentUser = null;
+let userRoles = [];
+let userPermissions = [];
+
+async function initializeModulePermissions() {
+    try {
+        // Obtener datos de sesión
+        const session = getSession();
+        if (!session) {
+            window.location.href = '../../login.html';
+            return;
+        }
+        
+        currentUser = session.user;
+        
+        // Cargar roles y permisos actualizados
+        await loadUserRolesAndPermissions(currentUser.user_id);
+        
+        // Aplicar restricciones de permisos
+        applyPermissionRestrictions();
+        
+    } catch (error) {
+        console.error('Error inicializando permisos:', error);
+    }
+}
+
+function getSession() {
+    const session = localStorage.getItem('nextSystemSession') || 
+                   sessionStorage.getItem('nextSystemSession');
+    return session ? JSON.parse(session) : null;
+}
+
+async function loadUserRolesAndPermissions(userId) {
+    try {
+        // Cargar roles
+        const userRolesData = await supabaseRequest(
+            `/user_roles?select=*,roles(*)&user_id=eq.${userId}`
+        );
+        userRoles = userRolesData ? userRolesData.map(ur => ur.roles) : [];
+        
+        // Cargar permisos
+        if (userRoles.some(role => role.is_super_admin)) {
+            const allPermissions = await supabaseRequest('/permissions?select=*&permission_status=eq.active');
+            userPermissions = allPermissions || [];
+        } else {
+            const roleIds = userRoles.map(role => role.role_id);
+            if (roleIds.length > 0) {
+                const rolePermissionsData = await supabaseRequest(
+                    `/role_permissions?select=permission_id,permissions(*)&role_id=in.(${roleIds.join(',')})`
+                );
+                userPermissions = rolePermissionsData ? 
+                    rolePermissionsData.map(rp => rp.permissions) : [];
+            }
+        }
+        
+        console.log('Permisos cargados:', userPermissions.length);
+    } catch (error) {
+        console.error('Error cargando permisos:', error);
+    }
+}
+
+function hasPermission(permissionName) {
+    // Super admin tiene todos los permisos
+    if (userRoles.some(role => role.is_super_admin)) {
+        return true;
+    }
+    
+    // Verificar permiso específico
+    return userPermissions.some(p => p.permission_name === permissionName);
+}
+
+function applyPermissionRestrictions() {
+    // Mapeo de elementos a permisos requeridos
+    const permissionMap = {
+        'a[href="years.html"]': 'indicators.years.read',
+        'a[href="segments.html"]': 'indicators.segments.read', 
+        'a[href="variables.html"]': 'indicators.variables.read',
+        'a[href="data-entry.html"]': 'indicators.data.write'
+    };
+    
+    Object.entries(permissionMap).forEach(([selector, permission]) => {
+        const element = document.querySelector(selector);
+        if (element && !hasPermission(permission)) {
+            // Deshabilitar elemento
+            element.classList.add('unavailable');
+            element.style.pointerEvents = 'none';
+            element.href = '#';
+            
+            // Cambiar badge a "Sin acceso"
+            const badge = element.querySelector('.status-badge');
+            if (badge) {
+                badge.className = 'status-badge bg-danger text-white';
+                badge.textContent = 'Sin acceso';
+            }
+        }
+    });
+}
+
+        
+        
         // ==========================================
         // CARGAR ESTADÍSTICAS DEL MÓDULO
         // ==========================================
         
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('📊 Módulo de Indicadores - Cargado');
-            loadModuleStats();
-        });
+    console.log('📊 Módulo de Indicadores - Cargado');
+    initializeModulePermissions();
+    loadModuleStats();
+});
         
         async function loadModuleStats() {
             try {
