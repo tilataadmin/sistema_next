@@ -194,6 +194,7 @@
         
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Módulo de Seguridad - Diseño Minimalista Cargado');
+            initializeSecurityPermissions(); 
             loadModuleStats();
         });
         
@@ -238,6 +239,106 @@
                 });
             }
         }
+
+
+        // ==========================================
+// VERIFICACIÓN DE PERMISOS DE SEGURIDAD
+// ==========================================
+
+let currentUser = null;
+let userRoles = [];
+let userPermissions = [];
+
+async function initializeSecurityPermissions() {
+    try {
+        const session = getSession();
+        if (!session) {
+            window.location.href = '../../login.html';
+            return;
+        }
+        
+        currentUser = session.user;
+        await loadUserRolesAndPermissions(currentUser.user_id);
+        applySecurityPermissionRestrictions();
+        
+    } catch (error) {
+        console.error('Error inicializando permisos:', error);
+    }
+}
+
+function getSession() {
+    const session = localStorage.getItem('nextSystemSession') || 
+                   sessionStorage.getItem('nextSystemSession');
+    return session ? JSON.parse(session) : null;
+}
+
+async function loadUserRolesAndPermissions(userId) {
+    try {
+        const userRolesData = await supabaseRequest(`/user_roles?select=role_id&user_id=eq.${userId}`);
+        
+        if (!userRolesData || userRolesData.length === 0) {
+            userRoles = [];
+            userPermissions = [];
+            return;
+        }
+        
+        const roleIds = userRolesData.map(ur => ur.role_id);
+        const rolesQuery = `/roles?role_id=in.(${roleIds.join(',')})&select=*`;
+        const rolesData = await supabaseRequest(rolesQuery);
+        userRoles = rolesData || [];
+        
+        const isSuperAdmin = userRoles.some(role => role.is_super_admin === true);
+        
+        if (isSuperAdmin) {
+            const allPermissions = await supabaseRequest('/permissions?select=*&permission_status=eq.active');
+            userPermissions = allPermissions || [];
+        } else {
+            const rolePermissionsQuery = `/role_permissions?role_id=in.(${roleIds.join(',')})&select=permission_id,permissions(*)`;
+            const rolePermissionsData = await supabaseRequest(rolePermissionsQuery);
+            userPermissions = rolePermissionsData ? 
+                rolePermissionsData.map(rp => rp.permissions).filter(p => p !== null) : [];
+        }
+        
+    } catch (error) {
+        console.error('Error cargando permisos:', error);
+        userRoles = [];
+        userPermissions = [];
+    }
+}
+
+function hasSecurityPermission(permissionName) {
+    if (userRoles.some(role => role.is_super_admin === true)) {
+        return true;
+    }
+    return userPermissions.some(p => p.permission_name === permissionName);
+}
+
+function applySecurityPermissionRestrictions() {
+    const permissionMap = {
+        'a[href="users.html"]': 'Gestión de usuarios',
+        'a[href="roles.html"]': 'Gestión de roles',
+        'a[href="permissions.html"]': 'Gestión de permisos',
+        'a[href="user-roles.html"]': 'Asignar roles',
+        'a[href="role-permissions.html"]': 'Configurar permisos'
+    };
+    
+    Object.entries(permissionMap).forEach(([selector, permission]) => {
+        const element = document.querySelector(selector);
+        if (element && !hasSecurityPermission(permission)) {
+            element.style.pointerEvents = 'none';
+            element.style.opacity = '0.5';
+            element.href = '#';
+            
+            const button = element.querySelector('.btn');
+            if (button) {
+                button.textContent = 'Sin acceso';
+                button.className = 'btn btn-secondary';
+            }
+        }
+    });
+}
+
+
         
         // Recargar estadísticas cada 30 segundos
         setInterval(loadModuleStats, 30000);
