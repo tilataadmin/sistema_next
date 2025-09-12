@@ -197,10 +197,11 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="courseDirector" class="form-label">Email del Director (Opcional)</label>
-                        <input type="email" class="form-control" id="courseDirector" 
-                               placeholder="director@colegio.com">
-                        <small class="form-text">Email del trabajador responsable del curso</small>
+                        <label for="courseDirector" class="form-label">Director del Curso (Opcional)</label>
+                        <select class="form-select" id="courseDirector">
+                            <option value="">Sin director asignado</option>
+                        </select>
+                        <small class="form-text">Selecciona el trabajador que será director del curso</small>
                     </div>
                     
                     <!-- Botones -->
@@ -224,6 +225,7 @@
         // Variables globales
         let allCourses = [];
         let allGrades = [];
+        let allWorkers = [];
         let filteredCourses = [];
         let isEditMode = false;
         let currentCourseId = null;
@@ -240,7 +242,7 @@
         
         function initializePage() {
             console.log('🔧 Inicializando página');
-            Promise.all([loadCourses(), loadGrades()]).then(() => {
+            Promise.all([loadCourses(), loadGrades(), loadWorkers()]).then(() => {
                 loadStats();
             });
             setupEventListeners();
@@ -313,6 +315,34 @@
             });
         }
         
+        async function loadWorkers() {
+            try {
+                const workers = await supabaseRequest('/workers?select=*&worker_status=eq.active&order=worker_first_name.asc');
+                allWorkers = workers || [];
+                populateWorkerSelect();
+                console.log(`✅ ${allWorkers.length} trabajadores cargados`);
+            } catch (error) {
+                console.error('Error cargando trabajadores:', error);
+                allWorkers = [];
+            }
+        }
+        
+        function populateWorkerSelect() {
+            const select = document.getElementById('courseDirector');
+            select.innerHTML = '<option value="">Sin director asignado</option>';
+            
+            allWorkers.forEach(worker => {
+                const option = document.createElement('option');
+                option.value = worker.email; // El value será el email
+                // El texto será el nombre completo
+                const fullName = `${worker.worker_first_name} ${worker.worker_last_name_1}` + 
+                                (worker.worker_last_name_2 ? ` ${worker.worker_last_name_2}` : '');
+                option.textContent = fullName;
+                option.setAttribute('data-worker-id', worker.worker_id);
+                select.appendChild(option);
+            });
+        }
+        
         function renderCoursesGrid() {
             const container = document.getElementById('coursesContainer');
             
@@ -343,6 +373,12 @@
                 const grade = allGrades.find(g => g.grade_id === course.grade_id);
                 const gradeName = grade ? grade.grade_name : 'Grado no encontrado';
                 
+                // Buscar el nombre del director por email
+                const director = allWorkers.find(w => w.email === course.course_director_email);
+                const directorName = director ? 
+                    `${director.worker_first_name} ${director.worker_last_name_1}${director.worker_last_name_2 ? ` ${director.worker_last_name_2}` : ''}` : 
+                    null;
+                
                 gridHtml += `
                     <div class="col-md-6 col-lg-4 mb-3">
                         <div class="card course-card h-100">
@@ -362,10 +398,11 @@
                                     <span class="badge bg-light text-dark">${course.course_order}</span>
                                 </div>
                                 
-                                ${course.course_director_email ? `
+                                ${directorName ? `
                                     <div class="mb-3">
                                         <small class="text-muted">Director:</small><br>
-                                        <small>${course.course_director_email}</small>
+                                        <strong>${directorName}</strong>
+                                        <br><small class="text-muted">${course.course_director_email}</small>
                                     </div>
                                 ` : ''}
                                 
@@ -533,9 +570,22 @@
             const searchTerm = document.getElementById('searchCourses').value.toLowerCase();
             
             filteredCourses = allCourses.filter(course => {
-                return !searchTerm || 
-                    course.course_name.toLowerCase().includes(searchTerm) ||
-                    (course.course_director_email && course.course_director_email.toLowerCase().includes(searchTerm));
+                if (!searchTerm) return true;
+                
+                // Buscar en nombre del curso
+                if (course.course_name.toLowerCase().includes(searchTerm)) return true;
+                
+                // Buscar en email del director
+                if (course.course_director_email && course.course_director_email.toLowerCase().includes(searchTerm)) return true;
+                
+                // Buscar en nombre del director
+                const director = allWorkers.find(w => w.email === course.course_director_email);
+                if (director) {
+                    const fullName = `${director.worker_first_name} ${director.worker_last_name_1} ${director.worker_last_name_2 || ''}`.toLowerCase();
+                    if (fullName.includes(searchTerm)) return true;
+                }
+                
+                return false;
             });
             
             renderCoursesGrid();
