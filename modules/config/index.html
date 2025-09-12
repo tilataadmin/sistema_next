@@ -11,6 +11,15 @@
     
     <!-- Nuestros estilos principales -->
     <link href="../../assets/css/main.css" rel="stylesheet">
+    .unavailable {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.module-card.unavailable:hover {
+    transform: none;
+    box-shadow: none;
+}
 </head>
 <body>
     <!-- Header -->
@@ -188,17 +197,134 @@
 
     <!-- Scripts -->
     <script src="../../assets/js/config.js"></script>
+
+
+    <script>
+// ==========================================
+// VERIFICACIÓN DE PERMISOS
+// ==========================================
+
+let currentUser = null;
+let userRoles = [];
+let userPermissions = [];
+
+async function initializeModulePermissions() {
+    try {
+        // Obtener datos de sesión
+        const session = getSession();
+        if (!session) {
+            window.location.href = '../../login.html';
+            return;
+        }
+        
+        currentUser = session.user;
+        
+        // Cargar roles y permisos actualizados
+        await loadUserRolesAndPermissions(currentUser.user_id);
+        
+        // Aplicar restricciones de permisos
+        applyPermissionRestrictions();
+        
+    } catch (error) {
+        console.error('Error inicializando permisos:', error);
+    }
+}
+
+function getSession() {
+    const session = localStorage.getItem('nextSystemSession') || 
+                   sessionStorage.getItem('nextSystemSession');
+    return session ? JSON.parse(session) : null;
+}
+
+async function loadUserRolesAndPermissions(userId) {
+    try {
+        // Cargar roles
+        const userRolesData = await supabaseRequest(
+            `/user_roles?select=*,roles(*)&user_id=eq.${userId}`
+        );
+        userRoles = userRolesData ? userRolesData.map(ur => ur.roles) : [];
+        
+        // Cargar permisos
+        if (userRoles.some(role => role.is_super_admin)) {
+            const allPermissions = await supabaseRequest('/permissions?select=*&permission_status=eq.active');
+            userPermissions = allPermissions || [];
+        } else {
+            const roleIds = userRoles.map(role => role.role_id);
+            if (roleIds.length > 0) {
+                const rolePermissionsData = await supabaseRequest(
+                    `/role_permissions?select=permission_id,permissions(*)&role_id=in.(${roleIds.join(',')})`
+                );
+                userPermissions = rolePermissionsData ? 
+                    rolePermissionsData.map(rp => rp.permissions) : [];
+            }
+        }
+        
+        console.log('Permisos cargados:', userPermissions.length);
+    } catch (error) {
+        console.error('Error cargando permisos:', error);
+    }
+}
+
+function hasPermission(permissionName) {
+    // Super admin tiene todos los permisos
+    if (userRoles.some(role => role.is_super_admin)) {
+        return true;
+    }
+    
+    // Verificar permiso específico
+    return userPermissions.some(p => p.permission_name === permissionName);
+}
+
+function applyPermissionRestrictions() {
+    // Mapeo de elementos a permisos requeridos para el módulo de configuración
+    const permissionMap = {
+        'a[href="config.html"]': 'Configuración general',
+        'a[href="years.html"]': 'Años académicos',
+        'a[href="sections.html"]': 'Gestionar secciones',
+        'a[href="grades.html"]': 'Gestionar grados',
+        'a[href="courses.html"]': 'Gestionar cursos',
+        'a[href="academic-areas.html"]': 'Gestionar áreas académicas',
+        'a[href="programs.html"]': 'Gestionar programas'
+    };
+    
+    Object.entries(permissionMap).forEach(([selector, permission]) => {
+        const element = document.querySelector(selector);
+        if (element && !hasPermission(permission)) {
+            // Deshabilitar elemento
+            element.classList.add('unavailable');
+            element.style.pointerEvents = 'none';
+            element.href = '#';
+            
+            // Cambiar texto del botón
+            const button = element.querySelector('.btn');
+            if (button) {
+                button.className = 'btn btn-secondary';
+                button.innerHTML = 'Sin acceso <i class="bi bi-lock ms-1"></i>';
+            }
+        }
+    });
+}
+
+// ==========================================
+// INICIALIZACIÓN
+// ==========================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📋 Módulo Configuración General - Cargando...');
+    initializeModulePermissions();
+    loadModuleStats();
+});
     
     <script>
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
         
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('📋 Módulo Configuración General - Cargando...');
-            loadModuleStats();
-        });
-        
+       document.addEventListener('DOMContentLoaded', function() {
+    console.log('📋 Módulo Configuración General - Cargando...');
+    initializeModulePermissions();
+    loadModuleStats();
+});        
         // ==========================================
         // CARGAR ESTADÍSTICAS DEL MÓDULO
         // ==========================================
