@@ -1,8 +1,8 @@
 /*
 ====================================
-SISTEMA NEXT - CONFIGURACIÓN GLOBAL
+SCHOOLNET - CONFIGURACIÓN GLOBAL
 Variables de entorno y configuración
-Creado: Septiembre 2025
+Actualizado: Septiembre 2025
 ====================================
 */
 
@@ -53,13 +53,26 @@ function getHeaders(options = {}) {
 }
 
 // ==========================================
-// CONFIGURACIÓN DE LA APLICACIÓN
+// CONFIGURACIÓN DE LA APLICACIÓN - ACTUALIZADA
 // ==========================================
 
 const APP_CONFIG = {
-    name: 'Sistema NEXT',
+    // Información básica del sistema - ACTUALIZADA
+    name: 'SchoolNet',
+    fullName: 'Sistema de Gestión Educativa SchoolNet',
     version: '1.0.0',
+    description: 'Plataforma integral para la gestión de instituciones educativas',
+    
+    // Información de la institución - NUEVO
+    institution: {
+        name: 'Colegio Tilata',
+        domain: 'colegiotilata.edu.co',
+        logo: '/assets/images/logo.png' // Para cuando tengas logo
+    },
+    
     environment: getEnvVar('NODE_ENV', 'development'),
+    
+    // Módulos actualizados con más detalle
     modules: [
         {
             id: 'security',
@@ -70,11 +83,27 @@ const APP_CONFIG = {
             status: 'active'
         },
         {
+            id: 'config',
+            name: 'Configuración',
+            description: 'Configuración general del sistema',
+            icon: 'bi-gear',
+            path: '/modules/config/',
+            status: 'active'
+        },
+        {
             id: 'indicators',
             name: 'Indicadores',
             description: 'Dashboard y métricas del sistema',
             icon: 'bi-graph-up',
             path: '/modules/indicators/',
+            status: 'active'
+        },
+        {
+            id: 'budget',
+            name: 'Presupuesto',
+            description: 'Gestión presupuestal y financiera',
+            icon: 'bi-calculator',
+            path: '/modules/budget/',
             status: 'planned'
         }
     ],
@@ -84,7 +113,29 @@ const APP_CONFIG = {
         theme: 'minimal',
         language: 'es',
         dateFormat: 'DD/MM/YYYY',
-        timeFormat: '24h'
+        timeFormat: '24h',
+        
+        // Textos dinámicos para títulos y headers - NUEVO
+        titles: {
+            login: 'Iniciar Sesión',
+            dashboard: 'Panel de Control',
+            createUser: 'Crear Usuario',
+            userManagement: 'Gestión de Usuarios',
+            roleManagement: 'Gestión de Roles',
+            permissionManagement: 'Gestión de Permisos',
+            roleAssignment: 'Asignar Roles',
+            permissionAssignment: 'Configurar Permisos'
+        },
+        
+        // Mensajes del sistema - NUEVO
+        messages: {
+            welcome: '¡Bienvenido al sistema!',
+            accessDenied: 'Acceso denegado',
+            loading: 'Cargando...',
+            noData: 'No hay datos disponibles',
+            error: 'Ha ocurrido un error',
+            success: 'Operación exitosa'
+        }
     },
     
     // Configuración de notificaciones
@@ -96,7 +147,7 @@ const APP_CONFIG = {
 };
 
 // ==========================================
-// FUNCIONES DE UTILIDAD
+// FUNCIONES DE UTILIDAD EXISTENTES
 // ==========================================
 
 // Función para hacer requests a Supabase
@@ -226,14 +277,104 @@ function validateForm(formId, rules = {}) {
 }
 
 // ==========================================
-// INICIALIZACIÓN
+// FUNCIONES NUEVAS PARA BRANDING AUTOMÁTICO
 // ==========================================
 
-// Log de inicialización
-console.log('🚀 Sistema NEXT inicializado');
+// Función para actualizar títulos de página automáticamente
+function updatePageTitle(pageKey, moduleName = '') {
+    const baseTitle = APP_CONFIG.ui.titles[pageKey] || 'Página';
+    const fullTitle = moduleName ? 
+        `${baseTitle} - ${moduleName} - ${APP_CONFIG.name}` : 
+        `${baseTitle} - ${APP_CONFIG.name}`;
+    
+    document.title = fullTitle;
+}
+
+// Función para actualizar headers automáticamente
+function updatePageHeader(headerSelector = '.header h4', pageKey = null) {
+    const headerElement = document.querySelector(headerSelector);
+    if (headerElement && !pageKey) {
+        // Solo cambiar "Sistema NEXT" por "SchoolNet" si no se especifica pageKey
+        headerElement.textContent = headerElement.textContent.replace(/Sistema NEXT/g, APP_CONFIG.name);
+    } else if (headerElement && pageKey) {
+        headerElement.textContent = APP_CONFIG.name;
+    }
+}
+
+// Función para actualizar footers automáticamente
+function updatePageFooter(footerSelector = '.system-footer p') {
+    const footerElement = document.querySelector(footerSelector);
+    if (footerElement) {
+        const currentText = footerElement.textContent;
+        const newText = currentText
+            .replace(/Sistema NEXT/g, APP_CONFIG.name)
+            .replace(/NEXT/g, APP_CONFIG.name);
+        footerElement.textContent = newText;
+    }
+}
+
+// Función para aplicar branding automáticamente
+function applyBrandingAutomatically() {
+    // Buscar y reemplazar todos los "Sistema NEXT" en el DOM
+    const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+    
+    const textNodes = [];
+    let node;
+    
+    while (node = walker.nextNode()) {
+        if (node.textContent.includes('Sistema NEXT') || 
+            node.textContent.includes('NEXT - ') ||
+            node.textContent.includes('NEXT v')) {
+            textNodes.push(node);
+        }
+    }
+    
+    textNodes.forEach(textNode => {
+        textNode.textContent = textNode.textContent
+            .replace(/Sistema NEXT/g, APP_CONFIG.name)
+            .replace(/Sistema de Gestión Empresarial NEXT/g, APP_CONFIG.fullName)
+            .replace(/NEXT - /g, `${APP_CONFIG.name} - `)
+            .replace(/ - Sistema NEXT/g, ` - ${APP_CONFIG.name}`)
+            .replace(/NEXT v/g, `${APP_CONFIG.name} v`);
+    });
+    
+    if (textNodes.length > 0) {
+        console.log(`✅ Branding aplicado automáticamente: ${textNodes.length} textos actualizados`);
+    }
+}
+
+// Función para inicializar la página automáticamente
+function initializePage(pageKey = null, moduleName = '') {
+    // Actualizar título
+    if (pageKey) {
+        updatePageTitle(pageKey, moduleName);
+    }
+    
+    // Aplicar branding automáticamente cuando el DOM esté listo
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyBrandingAutomatically);
+    } else {
+        applyBrandingAutomatically();
+    }
+}
+
+// ==========================================
+// INICIALIZACIÓN - ACTUALIZADA
+// ==========================================
+
+// Log de inicialización - ACTUALIZADO
+console.log(`🏫 ${APP_CONFIG.name} inicializado`);
 console.log(`📊 Entorno: ${APP_CONFIG.environment}`);
 console.log(`🔗 Supabase URL: ${SUPABASE_CONFIG.url}`);
 console.log(`🎨 Tema: ${APP_CONFIG.ui.theme}`);
+
+// Auto-inicializar branding - NUEVO
+initializePage();
 
 // Verificar conectividad con Supabase al cargar
 document.addEventListener('DOMContentLoaded', async function() {
@@ -248,7 +389,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 });
 
 // ==========================================
-// EXPORTAR CONFIGURACIÓN GLOBAL
+// EXPORTAR CONFIGURACIÓN GLOBAL - ACTUALIZADA
 // ==========================================
 
 // Hacer disponibles las configuraciones globalmente
@@ -260,3 +401,10 @@ window.showMessage = showMessage;
 window.closeAlert = closeAlert;
 window.formatDate = formatDate;
 window.validateForm = validateForm;
+
+// Nuevas funciones disponibles globalmente
+window.updatePageTitle = updatePageTitle;
+window.updatePageHeader = updatePageHeader;
+window.updatePageFooter = updatePageFooter;
+window.initializePage = initializePage;
+window.applyBrandingAutomatically = applyBrandingAutomatically;
