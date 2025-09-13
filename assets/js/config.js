@@ -1,55 +1,87 @@
 /*
 ====================================
-SCHOOLNET - CONFIGURACIÓN GLOBAL
-Variables de entorno y configuración
+SCHOOLNET - CONFIGURACIÓN MULTI-AMBIENTE
+Variables de entorno para desarrollo y producción
 Actualizado: Septiembre 2025
 ====================================
 */
 
 // ==========================================
-// CONFIGURACIÓN DE SUPABASE
+// DETECCIÓN AUTOMÁTICA DE AMBIENTE
 // ==========================================
 
-// Función para obtener variables de entorno (versión navegador)
-function getEnvVar(name, fallback = null) {
-    // En el navegador, usar directamente los valores fallback
-    // Las variables de entorno de Vercel se inyectan en build time
-    const env = {
-        SUPABASE_URL: 'https://spjzvpcsgbewxupjvmfm.supabase.co',
-        SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwanp2cGNzZ2Jld3h1cGp2bWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMDk4MDEsImV4cCI6MjA3MjU4NTgwMX0.6n_rvGalz_IT2vQ1Q4fPGS0D-ijYBUmdkL3PmbyNRck'
-    };
+function detectEnvironment() {
+    const hostname = window.location.hostname;
     
-    return env[name] || fallback;
+    if (hostname.includes('vercel.app') || hostname.includes('localhost')) {
+        return 'development';
+    } else if (hostname.includes('colegiotilata.edu.co')) {
+        return 'production';
+    }
+    
+    // Fallback a desarrollo
+    return 'development';
 }
 
-// Configuración de Supabase
+// ==========================================
+// CONFIGURACIONES POR AMBIENTE
+// ==========================================
+
+const ENVIRONMENT_CONFIGS = {
+    development: {
+        name: 'Desarrollo',
+        supabase: {
+            url: 'https://spjzvpcsgbewxupjvmfm.supabase.co',
+            anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwanp2cGNzZ2Jld3h1cGp2bWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMDk4MDEsImV4cCI6MjA3MjU4NTgwMX0.6n_rvGalz_IT2vQ1Q4fPGS0D-ijYBUmdkL3PmbyNRck'
+        },
+        features: {
+            debugMode: true,
+            rlsEnabled: false,
+            testData: true,
+            logging: 'verbose'
+        }
+    },
+    production: {
+        name: 'Producción',
+        supabase: {
+            url: 'https://mrtuerkncqodhakuwjob.supabase.co',
+            anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ydHVlcmtuY3FvZGhha3V3am9iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NjYyNjUsImV4cCI6MjA3MzM0MjI2NX0.BVTBqvTDMpzWSo5jDaiRRYP_oUMf2o3tl5yNwEfBYVk'
+        },
+        features: {
+            debugMode: false,
+            rlsEnabled: true,
+            testData: false,
+            logging: 'minimal'
+        }
+    }
+};
+
+// Detectar ambiente actual
+const CURRENT_ENVIRONMENT = detectEnvironment();
+const ENV_CONFIG = ENVIRONMENT_CONFIGS[CURRENT_ENVIRONMENT];
+
+// Log del ambiente detectado
+console.log(`🌍 Ambiente detectado: ${CURRENT_ENVIRONMENT.toUpperCase()} (${ENV_CONFIG.name})`);
+console.log(`🔧 Debug Mode: ${ENV_CONFIG.features.debugMode}`);
+console.log(`🔒 RLS Enabled: ${ENV_CONFIG.features.rlsEnabled}`);
+
+// ==========================================
+// CONFIGURACIÓN DE SUPABASE UNIFICADA
+// ==========================================
+
 const SUPABASE_CONFIG = {
-    url: getEnvVar('SUPABASE_URL'),
-    anonKey: getEnvVar('SUPABASE_ANON_KEY'),
+    url: ENV_CONFIG.supabase.url,
+    anonKey: ENV_CONFIG.supabase.anonKey,
     get apiUrl() {
         return `${this.url}/rest/v1`;
-    }
+    },
+    environment: CURRENT_ENVIRONMENT
 };
 
 // Validar configuración
 if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) {
-    console.error('❌ Error: Variables de entorno de Supabase no configuradas');
-    throw new Error('Configuración de Supabase incompleta');
-}
-
-// ==========================================
-// HEADERS PARA API REQUESTS
-// ==========================================
-
-function getHeaders(options = {}) {
-    const defaultHeaders = {
-        'apikey': SUPABASE_CONFIG.anonKey,
-        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-    };
-    
-    return { ...defaultHeaders, ...options };
+    console.error(`❌ Error: Variables de entorno de Supabase no configuradas para ${CURRENT_ENVIRONMENT}`);
+    throw new Error(`Configuración de Supabase incompleta para ${CURRENT_ENVIRONMENT}`);
 }
 
 // ==========================================
@@ -57,22 +89,29 @@ function getHeaders(options = {}) {
 // ==========================================
 
 const APP_CONFIG = {
-    // Información básica del sistema - ACTUALIZADA
+    // Información básica del sistema
     name: 'SchoolNet',
     fullName: 'Sistema de Gestión Educativa SchoolNet',
     version: '1.0.0',
     description: 'Plataforma integral para la gestión de instituciones educativas',
     
-    // Información de la institución - NUEVO
+    // Información de la institución
     institution: {
         name: 'Colegio Tilata',
         domain: 'colegiotilata.edu.co',
-        logo: '/assets/images/logo.png' // Para cuando tengas logo
+        logo: '/assets/images/logo.png'
     },
     
-    environment: getEnvVar('NODE_ENV', 'development'),
+    // Configuración por ambiente
+    environment: CURRENT_ENVIRONMENT,
+    features: ENV_CONFIG.features,
     
-    // Módulos actualizados con más detalle
+    // URLs por ambiente
+    baseUrl: CURRENT_ENVIRONMENT === 'production' 
+        ? 'https://schoolnet.colegiotilata.edu.co' 
+        : 'https://sistema-next.vercel.app',
+    
+    // Módulos del sistema
     modules: [
         {
             id: 'security',
@@ -88,6 +127,14 @@ const APP_CONFIG = {
             description: 'Configuración general del sistema',
             icon: 'bi-gear',
             path: '/modules/config/',
+            status: 'active'
+        },
+        {
+            id: 'hr',
+            name: 'Talento Humano',
+            description: 'Gestión organizacional y personal',
+            icon: 'bi-people',
+            path: '/modules/hr/',
             status: 'active'
         },
         {
@@ -115,7 +162,7 @@ const APP_CONFIG = {
         dateFormat: 'DD/MM/YYYY',
         timeFormat: '24h',
         
-        // Textos dinámicos para títulos y headers - NUEVO
+        // Textos dinámicos para títulos y headers
         titles: {
             login: 'Iniciar Sesión',
             dashboard: 'Panel de Control',
@@ -127,7 +174,7 @@ const APP_CONFIG = {
             permissionAssignment: 'Configurar Permisos'
         },
         
-        // Mensajes del sistema - NUEVO
+        // Mensajes del sistema
         messages: {
             welcome: '¡Bienvenido al sistema!',
             accessDenied: 'Acceso denegado',
@@ -147,10 +194,30 @@ const APP_CONFIG = {
 };
 
 // ==========================================
-// FUNCIONES DE UTILIDAD EXISTENTES
+// HEADERS PARA API REQUESTS
 // ==========================================
 
-// Función para hacer requests a Supabase
+function getHeaders(options = {}) {
+    const defaultHeaders = {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    };
+    
+    // Agregar headers específicos de ambiente
+    if (ENV_CONFIG.features.debugMode) {
+        defaultHeaders['X-Debug-Mode'] = 'true';
+    }
+    
+    return { ...defaultHeaders, ...options };
+}
+
+// ==========================================
+// FUNCIONES DE UTILIDAD ACTUALIZADAS
+// ==========================================
+
+// Función para hacer requests a Supabase con logging condicional
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_CONFIG.apiUrl}${endpoint}`;
     const config = {
@@ -159,33 +226,44 @@ async function supabaseRequest(endpoint, options = {}) {
     };
     
     try {
-        console.log(`📡 API Request: ${options.method || 'GET'} ${endpoint}`);
+        if (ENV_CONFIG.features.logging === 'verbose') {
+            console.log(`📡 [${CURRENT_ENVIRONMENT.toUpperCase()}] API Request: ${options.method || 'GET'} ${endpoint}`);
+        }
         
         const response = await fetch(url, config);
         
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ API Error: ${response.status} - ${errorText}`);
+            console.error(`❌ [${CURRENT_ENVIRONMENT.toUpperCase()}] API Error: ${response.status} - ${errorText}`);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
         const data = await response.json();
-        console.log(`✅ API Response: ${data.length || 'OK'}`);
+        
+        if (ENV_CONFIG.features.logging === 'verbose') {
+            console.log(`✅ [${CURRENT_ENVIRONMENT.toUpperCase()}] API Response: ${data.length || 'OK'}`);
+        }
         
         return data;
         
     } catch (error) {
-        console.error('❌ Request failed:', error);
+        console.error(`❌ [${CURRENT_ENVIRONMENT.toUpperCase()}] Request failed:`, error);
         throw error;
     }
 }
 
-// Función para mostrar mensajes
+// Función para mostrar mensajes con indicador de ambiente
 function showMessage(message, type = 'info', containerId = 'alertContainer') {
     const container = document.getElementById(containerId);
     if (!container) {
         console.warn(`⚠️ Container ${containerId} no encontrado para mostrar mensaje`);
         return;
+    }
+    
+    // Agregar indicador de ambiente en desarrollo
+    let environmentBadge = '';
+    if (CURRENT_ENVIRONMENT === 'development' && ENV_CONFIG.features.debugMode) {
+        environmentBadge = '<span class="badge bg-warning text-dark me-2">DEV</span>';
     }
     
     const alertId = 'alert_' + Date.now();
@@ -199,7 +277,7 @@ function showMessage(message, type = 'info', containerId = 'alertContainer') {
     const alertHtml = `
         <div class="alert alert-${type} alert-dismissible fade show" role="alert" id="${alertId}">
             <i class="bi bi-${icons[type] || 'info-circle'} me-2"></i>
-            ${message}
+            ${environmentBadge}${message}
             <button type="button" class="btn-close" onclick="closeAlert('${alertId}')"></button>
         </div>
     `;
@@ -212,7 +290,7 @@ function showMessage(message, type = 'info', containerId = 'alertContainer') {
     }
 }
 
-// Función para cerrar alertas
+// Resto de funciones existentes (sin cambios)
 function closeAlert(alertId) {
     const alert = document.getElementById(alertId);
     if (alert) {
@@ -225,7 +303,6 @@ function closeAlert(alertId) {
     }
 }
 
-// Función para formatear fechas
 function formatDate(date, format = APP_CONFIG.ui.dateFormat) {
     if (!date) return '-';
     
@@ -246,7 +323,6 @@ function formatDate(date, format = APP_CONFIG.ui.dateFormat) {
     }
 }
 
-// Función para validar formularios
 function validateForm(formId, rules = {}) {
     const form = document.getElementById(formId);
     if (!form) return false;
@@ -276,32 +352,26 @@ function validateForm(formId, rules = {}) {
     return isValid;
 }
 
-// ==========================================
-// FUNCIONES NUEVAS PARA BRANDING AUTOMÁTICO
-// ==========================================
-
-// Función para actualizar títulos de página automáticamente
+// Funciones de branding (sin cambios)
 function updatePageTitle(pageKey, moduleName = '') {
     const baseTitle = APP_CONFIG.ui.titles[pageKey] || 'Página';
+    const environmentSuffix = CURRENT_ENVIRONMENT === 'development' ? ' [DEV]' : '';
     const fullTitle = moduleName ? 
-        `${baseTitle} - ${moduleName} - ${APP_CONFIG.name}` : 
-        `${baseTitle} - ${APP_CONFIG.name}`;
+        `${baseTitle} - ${moduleName} - ${APP_CONFIG.name}${environmentSuffix}` : 
+        `${baseTitle} - ${APP_CONFIG.name}${environmentSuffix}`;
     
     document.title = fullTitle;
 }
 
-// Función para actualizar headers automáticamente
 function updatePageHeader(headerSelector = '.header h4', pageKey = null) {
     const headerElement = document.querySelector(headerSelector);
     if (headerElement && !pageKey) {
-        // Solo cambiar "Sistema NEXT" por "SchoolNet" si no se especifica pageKey
         headerElement.textContent = headerElement.textContent.replace(/Sistema NEXT/g, APP_CONFIG.name);
     } else if (headerElement && pageKey) {
         headerElement.textContent = APP_CONFIG.name;
     }
 }
 
-// Función para actualizar footers automáticamente
 function updatePageFooter(footerSelector = '.system-footer p') {
     const footerElement = document.querySelector(footerSelector);
     if (footerElement) {
@@ -313,7 +383,6 @@ function updatePageFooter(footerSelector = '.system-footer p') {
     }
 }
 
-// Función para aplicar branding automáticamente
 function applyBrandingAutomatically() {
     // Buscar y reemplazar todos los "Sistema NEXT" en el DOM
     const walker = document.createTreeWalker(
@@ -343,12 +412,11 @@ function applyBrandingAutomatically() {
             .replace(/NEXT v/g, `${APP_CONFIG.name} v`);
     });
     
-    if (textNodes.length > 0) {
+    if (textNodes.length > 0 && ENV_CONFIG.features.logging === 'verbose') {
         console.log(`✅ Branding aplicado automáticamente: ${textNodes.length} textos actualizados`);
     }
 }
 
-// Función para inicializar la página automáticamente
 function initializePage(pageKey = null, moduleName = '') {
     // Actualizar título
     if (pageKey) {
@@ -364,16 +432,15 @@ function initializePage(pageKey = null, moduleName = '') {
 }
 
 // ==========================================
-// INICIALIZACIÓN - ACTUALIZADA
+// INICIALIZACIÓN MULTI-AMBIENTE
 // ==========================================
 
-// Log de inicialización - ACTUALIZADO
-console.log(`🏫 ${APP_CONFIG.name} inicializado`);
-console.log(`📊 Entorno: ${APP_CONFIG.environment}`);
+// Log de inicialización actualizado
+console.log(`🏫 ${APP_CONFIG.name} inicializado en ambiente: ${CURRENT_ENVIRONMENT.toUpperCase()}`);
 console.log(`🔗 Supabase URL: ${SUPABASE_CONFIG.url}`);
-console.log(`🎨 Tema: ${APP_CONFIG.ui.theme}`);
+console.log(`🎨 Features habilitadas:`, ENV_CONFIG.features);
 
-// Auto-inicializar branding - NUEVO
+// Auto-inicializar branding
 initializePage();
 
 // Verificar conectividad con Supabase al cargar
@@ -381,28 +448,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
         // Test de conectividad simple
         await supabaseRequest('/users?select=user_id&limit=1');
-        console.log('✅ Conexión con Supabase establecida');
+        console.log(`✅ Conexión con Supabase ${CURRENT_ENVIRONMENT} establecida`);
     } catch (error) {
-        console.error('❌ Error de conexión con Supabase:', error);
-        showMessage('Error de conexión con la base de datos. Verifica tu configuración.', 'danger');
+        console.error(`❌ Error de conexión con Supabase ${CURRENT_ENVIRONMENT}:`, error);
+        showMessage(`Error de conexión con la base de datos ${CURRENT_ENVIRONMENT}. Verifica tu configuración.`, 'danger');
     }
 });
 
 // ==========================================
-// EXPORTAR CONFIGURACIÓN GLOBAL - ACTUALIZADA
+// EXPORTAR CONFIGURACIÓN GLOBAL
 // ==========================================
 
 // Hacer disponibles las configuraciones globalmente
 window.SUPABASE_CONFIG = SUPABASE_CONFIG;
 window.APP_CONFIG = APP_CONFIG;
+window.CURRENT_ENVIRONMENT = CURRENT_ENVIRONMENT;
+window.ENV_CONFIG = ENV_CONFIG;
 window.supabaseRequest = supabaseRequest;
 window.getHeaders = getHeaders;
 window.showMessage = showMessage;
 window.closeAlert = closeAlert;
 window.formatDate = formatDate;
 window.validateForm = validateForm;
-
-// Nuevas funciones disponibles globalmente
 window.updatePageTitle = updatePageTitle;
 window.updatePageHeader = updatePageHeader;
 window.updatePageFooter = updatePageFooter;
