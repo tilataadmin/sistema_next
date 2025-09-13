@@ -632,7 +632,7 @@
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
-    
+
     <script>
         // ==========================================
         // VARIABLES GLOBALES
@@ -1204,6 +1204,75 @@
             badge.className = count > 0 ? 'badge bg-success ms-1' : 'badge bg-warning ms-1 d-none';
         }
 
+        async function saveWorkerRoles(workerId) {
+            try {
+                // Eliminar todas las asignaciones actuales (solo si estamos editando)
+                if (currentEditingWorkerId) {
+                    await supabaseRequest(`/worker_job_roles?worker_id=eq.${workerId}`, {
+                        method: 'DELETE'
+                    });
+                }
+
+                // Crear nuevas asignaciones
+                if (tempAssignedRoles.length > 0) {
+                    const roleAssignments = tempAssignedRoles.map(role => ({
+                        worker_id: workerId,
+                        job_role_id: role.job_role_id,
+                        assigned_date: role.assigned_date || new Date().toISOString().split('T')[0],
+                        is_primary_role: role.is_primary_role,
+                        assignment_status: 'active',
+                        notes: role.notes || null
+                    }));
+
+                    await supabaseRequest('/worker_job_roles', {
+                        method: 'POST',
+                        body: JSON.stringify(roleAssignments)
+                    });
+                }
+
+            } catch (error) {
+                console.error('❌ Error guardando roles:', error);
+                throw new Error('Error al guardar los roles del trabajador');
+            }
+        }
+
+        async function loadWorkerRoles(workerId) {
+            try {
+                const workerRoles = await supabaseRequest(`
+                    /worker_job_roles?select=*,job_roles(role_name)
+                    &worker_id=eq.${workerId}
+                    &assignment_status=eq.active
+                    &order=is_primary_role.desc,job_roles(role_name).asc
+                `);
+                
+                tempAssignedRoles = (workerRoles || []).map(wr => ({
+                    job_role_id: wr.job_role_id,
+                    role_name: wr.job_roles?.role_name || 'Rol desconocido',
+                    is_primary_role: wr.is_primary_role,
+                    assigned_date: wr.assigned_date,
+                    assignment_status: wr.assignment_status,
+                    notes: wr.notes || '',
+                    _isExisting: true // Marcar como existente
+                }));
+                
+            } catch (error) {
+                console.error('❌ Error cargando roles del trabajador:', error);
+                tempAssignedRoles = [];
+            }
+        }
+
+        async function manageWorkerRoles(workerId) {
+            // Esta función podría abrir un modal específico para gestión rápida de roles
+            // Por ahora, abre el modal de edición en la pestaña de roles
+            await editWorker(workerId);
+            
+            // Cambiar a la pestaña de roles
+            setTimeout(() => {
+                const rolesTab = new bootstrap.Tab(document.querySelector('#roles-tab'));
+                rolesTab.show();
+            }, 100);
+        }
+
         // ==========================================
         // FUNCIONES DE NAVEGACIÓN DE PESTAÑAS
         // ==========================================
@@ -1267,7 +1336,8 @@
             };
             
             const orgSummary = document.getElementById('organizationalSummary');
-            const orgPath = [orgData.division, orgData.costCenter, orgData.area, orgData.subarea].filter(x => x && x !== 'Seleccionar...' && !x.includes('Primero')).join(' → ');
+            const orgPath = [orgData.division, orgData.costCenter, orgData.area, orgData.subarea]
+                .filter(x => x && x !== 'Seleccionar...' && !x.includes('Primero')).join(' → ');
             
             if (orgPath) {
                 orgSummary.innerHTML = `
@@ -1400,31 +1470,6 @@
             }
         }
 
-        async function loadWorkerRoles(workerId) {
-            try {
-                const workerRoles = await supabaseRequest(`
-                    /worker_job_roles?select=*,job_roles(role_name)
-                    &worker_id=eq.${workerId}
-                    &assignment_status=eq.active
-                    &order=is_primary_role.desc,job_roles(role_name).asc
-                `);
-                
-                tempAssignedRoles = (workerRoles || []).map(wr => ({
-                    job_role_id: wr.job_role_id,
-                    role_name: wr.job_roles?.role_name || 'Rol desconocido',
-                    is_primary_role: wr.is_primary_role,
-                    assigned_date: wr.assigned_date,
-                    assignment_status: wr.assignment_status,
-                    notes: wr.notes || '',
-                    _isExisting: true // Marcar como existente
-                }));
-                
-            } catch (error) {
-                console.error('❌ Error cargando roles del trabajador:', error);
-                tempAssignedRoles = [];
-            }
-        }
-
         function resetCascadingDropdowns() {
             document.getElementById('organizationalCostCenterId').innerHTML = '<option value="">Primero selecciona una división...</option>';
             document.getElementById('organizationalCostCenterId').disabled = true;
@@ -1551,54 +1596,6 @@
             } finally {
                 showLoading(false);
             }
-        }
-
-        async function saveWorkerRoles(workerId) {
-            try {
-                // Eliminar todas las asignaciones actuales (solo las que no son nuevas)
-                if (currentEditingWorkerId) {
-                    await supabaseRequest(`/worker_job_roles?worker_id=eq.${workerId}`, {
-                        method: 'DELETE'
-                    });
-                }
-
-                // Crear nuevas asignaciones
-                if (tempAssignedRoles.length > 0) {
-                    const roleAssignments = tempAssignedRoles.map(role => ({
-                        worker_id: workerId,
-                        job_role_id: role.job_role_id,
-                        assigned_date: role.assigned_date || new Date().toISOString().split('T')[0],
-                        is_primary_role: role.is_primary_role,
-                        assignment_status: 'active',
-                        notes: role.notes || null
-                    }));
-
-                    await supabaseRequest('/worker_job_roles', {
-                        method: 'POST',
-                        body: JSON.stringify(roleAssignments)
-                    });
-                }
-
-            } catch (error) {
-                console.error('❌ Error guardando roles:', error);
-                throw new Error('Error al guardar los roles del trabajador');
-            }
-        }
-
-        // ==========================================
-        // FUNCIONES DE GESTIÓN RÁPIDA DE ROLES
-        // ==========================================
-
-        async function manageWorkerRoles(workerId) {
-            // Esta función podría abrir un modal específico para gestión rápida de roles
-            // Por ahora, abre el modal de edición en la pestaña de roles
-            await editWorker(workerId);
-            
-            // Cambiar a la pestaña de roles
-            setTimeout(() => {
-                const rolesTab = new bootstrap.Tab(document.querySelector('#roles-tab'));
-                rolesTab.show();
-            }, 100);
         }
 
         // ==========================================
