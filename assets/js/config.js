@@ -218,36 +218,36 @@ function getHeaders(options = {}) {
 // ==========================================
 
 // Función para hacer requests a Supabase con logging condicional
+// Función mejorada para hacer requests a Supabase
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_CONFIG.apiUrl}${endpoint}`;
+    
+    // Establecer usuario en sesión si existe
+    await setCurrentUserInSession();
+    
     const config = {
         headers: getHeaders(options.headers),
         ...options
     };
     
     try {
-        if (ENV_CONFIG.features.logging === 'verbose') {
-            console.log(`📡 [${CURRENT_ENVIRONMENT.toUpperCase()}] API Request: ${options.method || 'GET'} ${endpoint}`);
-        }
+        console.log(`📡 API Request: ${options.method || 'GET'} ${endpoint}`);
         
         const response = await fetch(url, config);
         
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ [${CURRENT_ENVIRONMENT.toUpperCase()}] API Error: ${response.status} - ${errorText}`);
+            console.error(`❌ API Error: ${response.status} - ${errorText}`);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
         const data = await response.json();
-        
-        if (ENV_CONFIG.features.logging === 'verbose') {
-            console.log(`✅ [${CURRENT_ENVIRONMENT.toUpperCase()}] API Response: ${data.length || 'OK'}`);
-        }
+        console.log(`✅ API Response: ${data.length || 'OK'}`);
         
         return data;
         
     } catch (error) {
-        console.error(`❌ [${CURRENT_ENVIRONMENT.toUpperCase()}] Request failed:`, error);
+        console.error('❌ Request failed:', error);
         throw error;
     }
 }
@@ -454,6 +454,33 @@ document.addEventListener('DOMContentLoaded', async function() {
         showMessage(`Error de conexión con la base de datos ${CURRENT_ENVIRONMENT}. Verifica tu configuración.`, 'danger');
     }
 });
+
+// Función para establecer usuario en sesión de PostgreSQL
+async function setCurrentUserInSession() {
+    const session = getStoredSession();
+    if (session && session.user && session.user.user_id) {
+        try {
+            await fetch(`${SUPABASE_CONFIG.apiUrl}/rpc/set_current_user`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ user_uuid: session.user.user_id })
+            });
+        } catch (error) {
+            // Silencioso - no interrumpir el flujo si falla
+        }
+    }
+}
+
+// Función auxiliar para obtener sesión almacenada
+function getStoredSession() {
+    try {
+        const sessionData = localStorage.getItem('schoolnetSession') || sessionStorage.getItem('schoolnetSession');
+        return sessionData ? JSON.parse(sessionData) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
 
 // ==========================================
 // EXPORTAR CONFIGURACIÓN GLOBAL
