@@ -481,6 +481,31 @@ function getStoredSession() {
     }
 }
 
+// Función para establecer usuario en sesión de PostgreSQL
+async function setCurrentUserInSession() {
+    const session = getStoredSession();
+    if (session && session.user && session.user.user_id) {
+        try {
+            await fetch(`${SUPABASE_CONFIG.apiUrl}/rpc/set_current_user`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ user_uuid: session.user.user_id })
+            });
+        } catch (error) {
+            // Silencioso - no interrumpir el flujo si falla
+        }
+    }
+}
+
+// Función auxiliar para obtener sesión almacenada
+function getStoredSession() {
+    try {
+        const sessionData = localStorage.getItem('nextSystemSession') || sessionStorage.getItem('nextSystemSession');
+        return sessionData ? JSON.parse(sessionData) : null;
+    } catch (error) {
+        return null;
+    }
+}
 
 // ==========================================
 // EXPORTAR CONFIGURACIÓN GLOBAL
