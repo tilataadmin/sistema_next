@@ -9,9 +9,6 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" rel="stylesheet">
     
-    <!-- Configuración global -->
-    <script src="assets/js/config.js"></script>
-    
     <style>
         :root {
             --primary-color: #2563eb;
@@ -380,8 +377,8 @@
         </div>
     </div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Scripts -->
+    <script src="assets/js/config.js"></script>
     
     <script>
         // ==========================================
@@ -413,13 +410,12 @@
         
         async function checkExistingAuth() {
             try {
-                const userData = localStorage.getItem('userData');
-                if (userData) {
-                    const user = JSON.parse(userData);
-                    console.log('✅ Usuario ya autenticado:', user.user_name);
+                const sessionData = getStoredSession();
+                if (sessionData && sessionData.user) {
+                    console.log('✅ Usuario ya autenticado:', sessionData.user.user_name);
                     
                     // Verificar que el usuario sigue siendo válido
-                    const isValid = await validateExistingUser(user);
+                    const isValid = await validateExistingUser(sessionData.user);
                     if (isValid) {
                         showMessage('Redirigiendo al dashboard...', 'success');
                         setTimeout(() => {
@@ -427,16 +423,45 @@
                         }, 1000);
                     } else {
                         // Limpiar datos inválidos
-                        localStorage.removeItem('userData');
-                        localStorage.removeItem('userPermissions');
+                        clearStoredSession();
                     }
                 }
             } catch (error) {
                 console.warn('⚠️ Error verificando autenticación existente:', error);
-                // Limpiar cualquier dato corrupto
-                localStorage.removeItem('userData');
-                localStorage.removeItem('userPermissions');
+                clearStoredSession();
             }
+        }
+        
+        function getStoredSession() {
+            try {
+                const session = localStorage.getItem('nextSystemSession') || 
+                               sessionStorage.getItem('nextSystemSession');
+                
+                if (!session) return null;
+                
+                const sessionData = JSON.parse(session);
+                
+                // Verificar si la sesión no ha expirado (24 horas)
+                const now = new Date().getTime();
+                if (sessionData.timestamp && (now - sessionData.timestamp) > 24 * 60 * 60 * 1000) {
+                    clearStoredSession();
+                    return null;
+                }
+                
+                return sessionData;
+                
+            } catch (error) {
+                console.error('Error verificando sesión:', error);
+                return null;
+            }
+        }
+        
+        function clearStoredSession() {
+            localStorage.removeItem('nextSystemSession');
+            sessionStorage.removeItem('nextSystemSession');
+            // También limpiar claves antiguas por compatibilidad
+            localStorage.removeItem('userData');
+            localStorage.removeItem('userPermissions');
         }
         
         async function validateExistingUser(user) {
@@ -559,23 +584,37 @@
                 });
                 
                 // Obtener roles y permisos del usuario
-                const userPermissions = await getUserPermissions(user.user_id);
+                const { userRoles, userPermissions } = await getUserPermissions(user.user_id);
                 
-                // Guardar datos en localStorage
-                const userData = {
-                    user_id: user.user_id,
-                    user_name: user.user_name,
-                    user_display_name: user.user_display_name || user.user_name,
-                    user_mail: user.user_mail,
-                    auth_provider: authProvider,
-                    login_time: new Date().toISOString(),
-                    remember_me: rememberMe
+                // Crear objeto de sesión compatible con dashboard
+                const sessionData = {
+                    user: {
+                        user_id: user.user_id,
+                        user_name: user.user_name,
+                        user_display_name: user.user_display_name || user.user_name,
+                        user_mail: user.user_mail,
+                        auth_provider: authProvider,
+                        last_login: user.last_login
+                    },
+                    roles: userRoles,
+                    permissions: userPermissions,
+                    timestamp: new Date().getTime()
                 };
                 
-                localStorage.setItem('userData', JSON.stringify(userData));
-                localStorage.setItem('userPermissions', JSON.stringify(userPermissions));
+                // Guardar sesión según preferencia del usuario
+                const storageMethod = rememberMe ? localStorage : sessionStorage;
+                storageMethod.setItem('nextSystemSession', JSON.stringify(sessionData));
                 
-                console.log('✅ Login exitoso:', userData);
+                // Limpiar posibles datos antiguos
+                if (rememberMe) {
+                    sessionStorage.removeItem('nextSystemSession');
+                } else {
+                    localStorage.removeItem('nextSystemSession');
+                }
+                
+                console.log('✅ Login exitoso:', sessionData.user);
+                console.log('👤 Roles cargados:', userRoles.length);
+                console.log('🔐 Permisos cargados:', userPermissions.length);
                 
                 showMessage('¡Bienvenido! Redirigiendo al dashboard...', 'success');
                 
@@ -598,56 +637,59 @@
         
         async function getUserPermissions(userId) {
             try {
-                // Obtener roles del usuario
-                const rolesQuery = `/user_roles?select=role_id,roles(role_name,is_super_admin,role_permissions(permissions(permission_name,permission_module)))&user_id=eq.${userId}`;
-                const rolesResponse = await supabaseRequest(rolesQuery);
+                console.log('🔍 Cargando roles para usuario:', userId);
                 
-                const permissions = {
-                    roles: [],
-                    permissions: [],
-                    is_super_admin: false,
-                    modules: []
-                };
+                // PASO 1: Cargar IDs de roles del usuario
+                const userRolesData = await supabaseRequest(`/user_roles?select=role_id&user_id=eq.${userId}`);
+                console.log('📋 IDs de roles encontrados:', userRolesData);
                 
-                if (rolesResponse && rolesResponse.length > 0) {
-                    for (const userRole of rolesResponse) {
-                        const role = userRole.roles;
-                        if (role) {
-                            permissions.roles.push(role.role_name);
-                            
-                            // Verificar super admin
-                            if (role.is_super_admin) {
-                                permissions.is_super_admin = true;
-                            }
-                            
-                            // Agregar permisos específicos
-                            if (role.role_permissions) {
-                                for (const rolePermission of role.role_permissions) {
-                                    if (rolePermission.permissions) {
-                                        const perm = rolePermission.permissions;
-                                        permissions.permissions.push(perm.permission_name);
-                                        
-                                        if (!permissions.modules.includes(perm.permission_module)) {
-                                            permissions.modules.push(perm.permission_module);
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                let userRoles = [];
+                let userPermissions = [];
+                
+                if (!userRolesData || userRolesData.length === 0) {
+                    console.warn('⚠️ Usuario sin roles asignados');
+                    return { userRoles, userPermissions };
+                }
+                
+                // PASO 2: Cargar información completa de los roles
+                const roleIds = userRolesData.map(ur => ur.role_id);
+                const rolesQuery = `/roles?role_id=in.(${roleIds.join(',')})&select=*`;
+                const rolesData = await supabaseRequest(rolesQuery);
+                console.log('🏷️ Roles completos cargados:', rolesData);
+                
+                userRoles = rolesData || [];
+                
+                // PASO 3: Verificar si es super admin
+                const isSuperAdmin = userRoles.some(role => role.is_super_admin === true);
+                console.log('👑 ¿Es Super Admin?:', isSuperAdmin);
+                
+                if (isSuperAdmin) {
+                    // Super admin: cargar TODOS los permisos del sistema
+                    console.log('🌟 Cargando todos los permisos para Super Admin');
+                    const allPermissions = await supabaseRequest('/permissions?select=*&permission_status=eq.active');
+                    userPermissions = allPermissions || [];
+                    console.log('🔐 Permisos de Super Admin:', userPermissions.length);
+                } else {
+                    // Usuario normal: cargar solo permisos asignados a sus roles
+                    console.log('👤 Cargando permisos específicos del usuario');
+                    
+                    if (roleIds.length > 0) {
+                        const rolePermissionsQuery = `/role_permissions?role_id=in.(${roleIds.join(',')})&select=permission_id,permissions(*)`;
+                        const rolePermissionsData = await supabaseRequest(rolePermissionsQuery);
+                        
+                        userPermissions = rolePermissionsData ? 
+                            rolePermissionsData.map(rp => rp.permissions).filter(p => p !== null) : [];
+                        console.log('🔑 Permisos específicos:', userPermissions.length);
                     }
                 }
                 
-                console.log('👤 Permisos obtenidos:', permissions);
-                return permissions;
+                console.log(`✅ Usuario tiene ${userRoles.length} roles y ${userPermissions.length} permisos`);
+                
+                return { userRoles, userPermissions };
                 
             } catch (error) {
-                console.warn('⚠️ Error obteniendo permisos:', error);
-                return {
-                    roles: [],
-                    permissions: [],
-                    is_super_admin: false,
-                    modules: []
-                };
+                console.error('❌ Error cargando roles y permisos:', error);
+                return { userRoles: [], userPermissions: [] };
             }
         }
         
@@ -659,8 +701,6 @@
             if (isLoading) return;
             
             showMessage('Funcionalidad de Google en desarrollo...', 'info');
-            
-            // TODO: Implementar autenticación con Google
             console.log('🔄 Google Auth - En desarrollo');
         }
         
@@ -668,8 +708,6 @@
             if (isLoading) return;
             
             showMessage('Funcionalidad de Microsoft en desarrollo...', 'info');
-            
-            // TODO: Implementar autenticación con Microsoft
             console.log('🔄 Microsoft Auth - En desarrollo');
         }
         
@@ -789,8 +827,7 @@
             };
             
             window.clearAuth = function() {
-                localStorage.removeItem('userData');
-                localStorage.removeItem('userPermissions');
+                clearStoredSession();
                 console.log('🗑️ Datos de autenticación limpiados');
             };
             
