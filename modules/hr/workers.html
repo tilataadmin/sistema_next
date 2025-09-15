@@ -765,19 +765,20 @@
     }
 }
 
+
         async function loadWorkersRoles() {
     try {
-        console.log('📡 Cargando roles de todos los trabajadores...');
+        console.log('📡 Cargando roles de trabajadores...');
         
-        // Cargar todas las asignaciones de roles activas (consulta simple)
+        // PASO 1: Consulta simple sin JOIN
         const workerRoles = await supabaseRequest(
-            '/worker_job_roles?select=*&assignment_status=eq.active'
+            '/worker_job_roles?select=worker_id,job_role_id,is_primary_role,assigned_date&assignment_status=eq.active'
         );
         
-        // Cargar información de todos los roles (consulta simple)
-        const jobRolesData = await supabaseRequest('/job_roles?select=*');
+        // PASO 2: Consulta simple de roles
+        const jobRolesData = await supabaseRequest('/job_roles?select=role_id,role_name');
         
-        // Crear mapa de roles para búsqueda rápida
+        // PASO 3: Crear mapa de roles
         const rolesMap = {};
         if (jobRolesData) {
             jobRolesData.forEach(role => {
@@ -785,7 +786,7 @@
             });
         }
         
-        // Agrupar roles por trabajador
+        // PASO 4: Agrupar por trabajador
         const rolesByWorker = {};
         if (workerRoles) {
             workerRoles.forEach(wr => {
@@ -802,10 +803,9 @@
             });
         }
         
-        // Asignar roles a cada trabajador
+        // PASO 5: Asignar a trabajadores
         allWorkers.forEach(worker => {
             const workerRolesList = rolesByWorker[worker.worker_id] || [];
-            // Ordenar: roles principales primero, luego por nombre
             workerRolesList.sort((a, b) => {
                 if (a.is_primary_role && !b.is_primary_role) return -1;
                 if (!a.is_primary_role && b.is_primary_role) return 1;
@@ -814,33 +814,32 @@
             worker.roles = workerRolesList;
         });
         
-        console.log('✅ Roles de trabajadores cargados exitosamente');
-        
     } catch (error) {
         console.error('❌ Error cargando roles de trabajadores:', error);
-        // Continuar sin roles si falla
         allWorkers.forEach(worker => {
             worker.roles = [];
         });
     }
 }
+
+        
         async function loadWorkerRoles(workerId) {
     try {
         console.log('📡 Cargando roles del trabajador:', workerId);
         
-        // Consulta simple sin JOINs complejos
+        // PASO 1: Consulta simple sin JOIN
         const workerRoles = await supabaseRequest(
-            `/worker_job_roles?select=*&worker_id=eq.${workerId}&assignment_status=eq.active`
+            `/worker_job_roles?select=job_role_id,is_primary_role,assigned_date,notes&worker_id=eq.${workerId}&assignment_status=eq.active`
         );
         
         if (workerRoles && workerRoles.length > 0) {
-            // Obtener información de roles por separado
-            const roleIds = [...new Set(workerRoles.map(wr => wr.job_role_id))];
+            // PASO 2: Obtener nombres de roles por separado
+            const roleIds = workerRoles.map(wr => wr.job_role_id);
             const jobRolesData = await supabaseRequest(
-                `/job_roles?select=*&role_id=in.(${roleIds.join(',')})`
+                `/job_roles?select=role_id,role_name&role_id=in.(${roleIds.join(',')})`
             );
             
-            // Crear mapa de roles
+            // PASO 3: Crear mapa de roles
             const rolesMap = {};
             if (jobRolesData) {
                 jobRolesData.forEach(role => {
@@ -848,18 +847,18 @@
                 });
             }
             
-            // Mapear roles con información completa
+            // PASO 4: Combinar datos en JavaScript
             tempAssignedRoles = workerRoles.map(wr => ({
                 job_role_id: wr.job_role_id,
                 role_name: rolesMap[wr.job_role_id] || 'Rol desconocido',
                 is_primary_role: wr.is_primary_role,
                 assigned_date: wr.assigned_date,
-                assignment_status: wr.assignment_status,
+                assignment_status: 'active',
                 notes: wr.notes || '',
                 _isExisting: true
             }));
             
-            // Ordenar: principales primero
+            // PASO 5: Ordenar
             tempAssignedRoles.sort((a, b) => {
                 if (a.is_primary_role && !b.is_primary_role) return -1;
                 if (!a.is_primary_role && b.is_primary_role) return 1;
@@ -870,12 +869,11 @@
             tempAssignedRoles = [];
         }
         
-        console.log(`✅ ${tempAssignedRoles.length} roles cargados para el trabajador`);
+        console.log(`✅ ${tempAssignedRoles.length} roles cargados`);
         
     } catch (error) {
         console.error('❌ Error cargando roles del trabajador:', error);
         tempAssignedRoles = [];
-        // No mostrar error para no interrumpir el flujo
     }
 }
 
