@@ -517,6 +517,7 @@ function getStoredSession() {
 // ==========================================
 
 // Mapeo de URLs a permisos requeridos
+// Mapeo de URLs a permisos requeridos
 const URL_PERMISSIONS = {
     // Módulo Seguridad
     '/modules/security/users.html': 'Gestión de usuarios',
@@ -535,7 +536,7 @@ const URL_PERMISSIONS = {
     '/modules/config/programs.html': 'Gestionar programas',
     
     // Módulo Indicadores
-    '/modules/indicators/variables.html': 'Variables.',
+    '/modules/indicators/variables.html': 'Variables',
     '/modules/indicators/segments.html': 'Segmentaciones',
     '/modules/indicators/data-entry.html': 'Captura de datos',
     '/modules/indicators/variable-assignments.html': 'Asignar variables a usuarios',
@@ -548,9 +549,36 @@ const URL_PERMISSIONS = {
     '/modules/hr/subareas.html': 'Subáreas',
     '/modules/hr/job-roles.html': 'Roles y cargos',
     '/modules/hr/workers.html': 'Gestionar trabajadores',
-    '/modules/hr/payroll-review.html': 'Revisión de nómina'
-};
+    '/modules/hr/payroll-review.html': 'Revisión de nómina',
 
+    // Módulo Presupuesto - Administración
+    '/modules/budget/chart-of-accounts.html': 'Gestionar PUC',
+    '/modules/budget/upload-combo.html': 'Subir el combo',
+    '/modules/budget/tax-types.html': 'Gestionar IVA asociado',
+    '/modules/budget/budget-categories.html': 'Gestionar rubros',
+    '/modules/budget/budget-items.html': 'Gestionar subítems',
+    '/modules/budget/suppliers.html': 'Gestionar proveedores',
+    '/modules/budget/initialize-budget-year.html': 'Inicializar año presupuestal',
+    '/modules/budget/initialize-budget-general.html': 'Inicializar año presupuestal - Generales',
+    '/modules/budget/budget-authorization.html': 'Autorización de presupuesto',
+    '/modules/budget/associate-invoices.html': 'Asociar facturas',
+    '/modules/budget/report-design.html': 'Diseño de informes',
+    '/modules/budget/assignments-report.html': 'Informe de asignaciones',
+    '/modules/budget/accounting-crosscheck.html': 'Cruce contable',
+
+    // Módulo Presupuesto - Usuarios
+    '/modules/budget/budget-request.html': 'Petición de presupuesto',
+    '/modules/budget/assign-requesters.html': 'Designar solicitantes',
+    '/modules/budget/execution-request.html': 'Solicitud de ejecución',
+    '/modules/budget/closure-request.html': 'Solicitud de cierre',
+    '/modules/budget/request-resolution.html': 'Resolución de solicitudes',
+    '/modules/budget/close-overruns.html': 'Cerrar requerimientos sobreejecutados',
+    '/modules/budget/budget-transfer.html': 'Iniciar traslado presupuestal',
+    '/modules/budget/close-transfer.html': 'Cerrar traslado presupuestal',
+    '/modules/budget/category-detail.html': 'Vista detallada por rubro',
+    '/modules/budget/budget-overview.html': 'Vista particular del presupuesto',
+    '/modules/budget/budget-queries.html': 'Consultas de presupuesto'
+};
 
 // Función principal de validación
 // Función principal de validación
