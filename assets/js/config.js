@@ -508,6 +508,178 @@ function getStoredSession() {
 }
 
 // ==========================================
+// SISTEMA DE VALIDACIÓN DE PERMISOS POR URL
+// ==========================================
+
+// Mapeo de URLs a permisos requeridos
+const URL_PERMISSIONS = {
+    // Módulo Seguridad
+    '/modules/security/users.html': 'security_users_write',
+    '/modules/security/roles.html': 'security_roles_write', 
+    '/modules/security/permissions.html': 'security_permissions_write',
+    '/modules/security/user-roles.html': 'security_user_roles_write',
+    '/modules/security/role-permissions.html': 'security_role_permissions_write',
+    
+    // Módulo Configuración
+    '/modules/config/config.html': 'config_general_write',
+    '/modules/config/academic-years.html': 'config_years_write',
+    '/modules/config/sections.html': 'config_sections_write',
+    '/modules/config/grades.html': 'config_grades_write',
+    '/modules/config/courses.html': 'config_courses_write',
+    '/modules/config/academic-areas.html': 'config_academic_areas_write',
+    '/modules/config/programs.html': 'config_programs_write',
+    
+    // Módulo Indicadores
+    '/modules/indicators/variables.html': 'indicators_variables_write',
+    '/modules/indicators/segments.html': 'indicators_segments_write',
+    '/modules/indicators/data-entry.html': 'indicators_data_entry_write',
+    '/modules/indicators/variable-assignments.html': 'indicators_variable_assignments_write',
+    '/modules/indicators/indicators.html': 'indicators_indicators_write',
+    
+    // Módulo Talento Humano
+    '/modules/hr/divisions.html': 'hr_divisions_write',
+    '/modules/hr/cost-centers.html': 'hr_cost_centers_write',
+    '/modules/hr/organizational-areas.html': 'hr_organizational_areas_write',
+    '/modules/hr/subareas.html': 'hr_subareas_write',
+    '/modules/hr/job-roles.html': 'hr_job_roles_write',
+    '/modules/hr/workers.html': 'hr_workers_write'
+};
+
+// Función principal de validación
+async function validatePageAccess(requiredPermission = null) {
+    try {
+        console.log('🔐 Validando acceso a página...');
+        
+        // 1. Verificar sesión activa
+        const session = getStoredSession();
+        if (!session || !session.user) {
+            console.log('❌ No hay sesión activa');
+            redirectToLogin();
+            return false;
+        }
+        
+        // 2. Auto-detectar permiso requerido si no se especifica
+        if (!requiredPermission) {
+            requiredPermission = detectRequiredPermission();
+        }
+        
+        // 3. Si no se requiere permiso específico, permitir acceso
+        if (!requiredPermission) {
+            console.log('✅ Página sin restricciones de permisos');
+            return true;
+        }
+        
+        // 4. Super admin siempre tiene acceso
+        if (session.user.is_super_admin) {
+            console.log('✅ Super admin - acceso permitido');
+            return true;
+        }
+        
+        // 5. Verificar permiso específico
+        const hasPermission = await checkUserPermission(session.user.user_id, requiredPermission);
+        
+        if (hasPermission) {
+            console.log(`✅ Usuario tiene permiso: ${requiredPermission}`);
+            return true;
+        } else {
+            console.log(`❌ Usuario NO tiene permiso: ${requiredPermission}`);
+            showAccessDenied(requiredPermission);
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error validando acceso:', error);
+        showAccessDenied('Error de validación');
+        return false;
+    }
+}
+
+// Auto-detectar permiso basado en URL actual
+function detectRequiredPermission() {
+    const currentPath = window.location.pathname;
+    const permission = URL_PERMISSIONS[currentPath];
+    
+    if (permission) {
+        console.log(`🔍 Permiso requerido detectado: ${permission}`);
+    } else {
+        console.log(`🔍 No se detectó permiso específico para: ${currentPath}`);
+    }
+    
+    return permission;
+}
+
+// Verificar si usuario tiene permiso específico
+async function checkUserPermission(userId, permissionName) {
+    try {
+        const query = `/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`;
+        const userData = await supabaseRequest(query);
+        
+        if (!userData || userData.length === 0) {
+            return false;
+        }
+        
+        // Extraer todos los permisos del usuario
+        const userPermissions = [];
+        userData[0].user_roles?.forEach(userRole => {
+            userRole.roles?.role_permissions?.forEach(rolePermission => {
+                const permName = rolePermission.permissions?.permission_name;
+                if (permName) {
+                    userPermissions.push(permName);
+                }
+            });
+        });
+        
+        return userPermissions.includes(permissionName);
+        
+    } catch (error) {
+        console.error('❌ Error verificando permisos:', error);
+        return false;
+    }
+}
+
+// Mostrar página de acceso denegado
+function showAccessDenied(requiredPermission) {
+    document.body.innerHTML = `
+        <div class="container mt-5">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-shield-exclamation me-2"></i>
+                                Acceso Denegado
+                            </h5>
+                        </div>
+                        <div class="card-body text-center">
+                            <i class="bi bi-lock-fill text-danger" style="font-size: 3rem;"></i>
+                            <h6 class="mt-3">No tienes permisos para acceder a esta página</h6>
+                            <p class="text-muted">Permiso requerido: <code>${requiredPermission}</code></p>
+                            <p class="text-muted">Contacta al administrador del sistema si necesitas acceso.</p>
+                            <div class="mt-4">
+                                <a href="/dashboard.html" class="btn btn-primary me-2">
+                                    <i class="bi bi-house me-1"></i>Ir al Dashboard
+                                </a>
+                                <button onclick="history.back()" class="btn btn-outline-secondary">
+                                    <i class="bi bi-arrow-left me-1"></i>Volver
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Redireccionar a login
+function redirectToLogin() {
+    window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+}
+
+// Hacer función disponible globalmente
+window.validatePageAccess = validatePageAccess;
+
+// ==========================================
 // EXPORTAR CONFIGURACIÓN GLOBAL
 // ==========================================
 
