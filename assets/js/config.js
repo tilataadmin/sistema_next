@@ -512,38 +512,45 @@ function getStoredSession() {
 // ==========================================
 
 // Mapeo de URLs a permisos requeridos
+// ==========================================
+// SISTEMA DE VALIDACIÓN DE PERMISOS POR URL
+// ==========================================
+
+// Mapeo de URLs a permisos requeridos
 const URL_PERMISSIONS = {
     // Módulo Seguridad
-    '/modules/security/users.html': 'security_users_write',
-    '/modules/security/roles.html': 'security_roles_write', 
-    '/modules/security/permissions.html': 'security_permissions_write',
-    '/modules/security/user-roles.html': 'security_user_roles_write',
-    '/modules/security/role-permissions.html': 'security_role_permissions_write',
+    '/modules/security/users.html': 'Gestión de usuarios',
+    '/modules/security/roles.html': 'Gestión de roles', 
+    '/modules/security/permissions.html': 'Gestión de permisos',
+    '/modules/security/user-roles.html': 'Asignar roles',
+    '/modules/security/role-permissions.html': 'Configurar permisos',
     
     // Módulo Configuración
-    '/modules/config/config.html': 'config_general_write',
-    '/modules/config/academic-years.html': 'config_years_write',
-    '/modules/config/sections.html': 'config_sections_write',
-    '/modules/config/grades.html': 'config_grades_write',
-    '/modules/config/courses.html': 'config_courses_write',
-    '/modules/config/academic-areas.html': 'config_academic_areas_write',
-    '/modules/config/programs.html': 'config_programs_write',
+    '/modules/config/config.html': 'Configuración general',
+    '/modules/config/academic-years.html': 'Años académicos',
+    '/modules/config/sections.html': 'Gestionar secciones',
+    '/modules/config/grades.html': 'Gestionar grados',
+    '/modules/config/courses.html': 'Gestionar cursos',
+    '/modules/config/academic-areas.html': 'Gestionar áreas académicas',
+    '/modules/config/programs.html': 'Gestionar programas',
     
     // Módulo Indicadores
-    '/modules/indicators/variables.html': 'indicators_variables_write',
-    '/modules/indicators/segments.html': 'indicators_segments_write',
-    '/modules/indicators/data-entry.html': 'indicators_data_entry_write',
-    '/modules/indicators/variable-assignments.html': 'indicators_variable_assignments_write',
-    '/modules/indicators/indicators.html': 'indicators_indicators_write',
+    '/modules/indicators/variables.html': 'Variables.',
+    '/modules/indicators/segments.html': 'Segmentaciones',
+    '/modules/indicators/data-entry.html': 'Captura de datos',
+    '/modules/indicators/variable-assignments.html': 'Asignar variables a usuarios',
+    '/modules/indicators/indicators.html': 'Indicadores',
     
     // Módulo Talento Humano
-    '/modules/hr/divisions.html': 'hr_divisions_write',
-    '/modules/hr/cost-centers.html': 'hr_cost_centers_write',
-    '/modules/hr/organizational-areas.html': 'hr_organizational_areas_write',
-    '/modules/hr/subareas.html': 'hr_subareas_write',
-    '/modules/hr/job-roles.html': 'hr_job_roles_write',
-    '/modules/hr/workers.html': 'hr_workers_write'
+    '/modules/hr/divisions.html': 'Divisiones',
+    '/modules/hr/cost-centers.html': 'Centros de costos',
+    '/modules/hr/organizational-areas.html': 'Secciones / Áreas',
+    '/modules/hr/subareas.html': 'Subáreas',
+    '/modules/hr/job-roles.html': 'Roles y cargos',
+    '/modules/hr/workers.html': 'Gestionar trabajadores',
+    '/modules/hr/payroll-review.html': 'Revisión de nómina'
 };
+
 
 // Función principal de validación
 // Función principal de validación
