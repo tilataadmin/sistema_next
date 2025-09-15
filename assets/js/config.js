@@ -607,8 +607,8 @@ function detectRequiredPermission() {
 // Verificar si usuario tiene permiso específico
 async function checkUserPermission(userId, permissionName) {
     try {
-        // Primero verificar si es super admin
-        const superAdminQuery = `/users?select=user_roles(role_id,roles(is_super_admin))&user_id=eq.${userId}`;
+        // Primero verificar si es super admin usando la relación correcta
+        const superAdminQuery = `/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(is_super_admin))&user_id=eq.${userId}`;
         const userData = await supabaseRequest(superAdminQuery);
         
         if (!userData || userData.length === 0) {
@@ -626,7 +626,7 @@ async function checkUserPermission(userId, permissionName) {
         }
         
         // Si no es super admin, verificar permiso específico
-        const permissionQuery = `/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`;
+        const permissionQuery = `/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`;
         const permissionData = await supabaseRequest(permissionQuery);
         
         if (!permissionData || permissionData.length === 0) {
