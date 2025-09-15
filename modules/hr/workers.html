@@ -301,7 +301,7 @@
                                         
                                         <!-- Primer nombre -->
                                         <div class="mb-3">
-                                            <label for="workerFirstName" class="form-label">Nombres *</label>
+                                            <label for="workerFirstName" class="form-label">Primer Nombre *</label>
                                             <input type="text" class="form-control" id="workerFirstName" name="worker_first_name" required>
                                         </div>
                                         
@@ -365,7 +365,7 @@
                                         <div class="mb-3">
                                             <label for="alternativeCalendar" class="form-label">Calendario Alternativo</label>
                                             <input type="text" class="form-control" id="alternativeCalendar" name="alternative_calendar">
-                                            <div class="form-text">Es el identificador de Google Calendar</div>
+                                            <div class="form-text">Ej: Calendario B, Calendario Docente, etc.</div>
                                         </div>
                                     </div>
                                 </div>
@@ -436,7 +436,16 @@
                                             <div class="form-text">Solo para personal académico</div>
                                         </div>
                                     </div>
-                                    
+                                    <div class="col-md-6">
+                                        <!-- Área de gestión -->
+                                        <div class="mb-3">
+                                            <label for="managementAreaId" class="form-label">Área de Gestión</label>
+                                            <select class="form-select" id="managementAreaId" name="management_area_id">
+                                                <option value="">Seleccionar área...</option>
+                                            </select>
+                                            <div class="form-text">Solo para personal administrativo</div>
+                                        </div>
+                                    </div>
                                 </div>
                                 
                                 <!-- Indicador visual del nivel requerido -->
@@ -623,7 +632,7 @@
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
-
+    
     <script>
         // ==========================================
         // VARIABLES GLOBALES
@@ -700,11 +709,13 @@
                     gendersData,
                     divisionsData,
                     sectionsData,
+                    managementAreasData,
                     jobRolesData
                 ] = await Promise.all([
                     supabaseRequest('/genders?select=*&order=gender_name.asc'),
                     supabaseRequest('/organizational_divisions?select=*&division_status=eq.active&order=division_order.asc'),
-                    supabaseRequest('/sections?select=*&section_status=eq.active&order=section_name.asc'),                
+                    supabaseRequest('/sections?select=*&section_status=eq.active&order=section_name.asc'),
+                    supabaseRequest('/management_areas?select=*&area_status=eq.active&order=area_name.asc'),
                     supabaseRequest('/job_roles?select=*&role_status=eq.active&order=role_name.asc')
                 ]);
                 
@@ -712,6 +723,7 @@
                 genders = gendersData || [];
                 divisions = divisionsData || [];
                 sections = sectionsData || [];
+                managementAreas = managementAreasData || [];
                 jobRoles = jobRolesData || [];
                 
                 // Poblar dropdowns estáticos
@@ -746,7 +758,11 @@
             sectionSelect.innerHTML = '<option value="">Seleccionar sección...</option>' +
                 sections.map(s => `<option value="${s.section_id}">${s.section_name}</option>`).join('');
             
-                       
+            // Áreas de gestión
+            const managementAreaSelect = document.getElementById('managementAreaId');
+            managementAreaSelect.innerHTML = '<option value="">Seleccionar área...</option>' +
+                managementAreas.map(ma => `<option value="${ma.area_id}">${ma.area_name}</option>`).join('');
+            
             // Roles disponibles
             const roleSelect = document.getElementById('newRoleSelect');
             roleSelect.innerHTML = '<option value="">Seleccionar rol...</option>' +
@@ -763,8 +779,17 @@
                 showLoading(true);
                 
                 // Cargar trabajadores con todas las relaciones
-                const workers = await supabaseRequest('/workers?select=*&order=worker_first_name.asc');
-                
+                const workers = await supabaseRequest(`
+                    /workers?select=*,
+                    genders(gender_name),
+                    sections(section_name),
+                    management_areas(area_name),
+                    organizational_divisions(division_name),
+                    cost_centers(cost_center_name),
+                    organizational_areas(area_name),
+                    organizational_subareas(subarea_name)
+                    &order=worker_first_name.asc
+                `);
                 
                 allWorkers = workers || [];
                 
@@ -1179,75 +1204,6 @@
             badge.className = count > 0 ? 'badge bg-success ms-1' : 'badge bg-warning ms-1 d-none';
         }
 
-        async function saveWorkerRoles(workerId) {
-            try {
-                // Eliminar todas las asignaciones actuales (solo si estamos editando)
-                if (currentEditingWorkerId) {
-                    await supabaseRequest(`/worker_job_roles?worker_id=eq.${workerId}`, {
-                        method: 'DELETE'
-                    });
-                }
-
-                // Crear nuevas asignaciones
-                if (tempAssignedRoles.length > 0) {
-                    const roleAssignments = tempAssignedRoles.map(role => ({
-                        worker_id: workerId,
-                        job_role_id: role.job_role_id,
-                        assigned_date: role.assigned_date || new Date().toISOString().split('T')[0],
-                        is_primary_role: role.is_primary_role,
-                        assignment_status: 'active',
-                        notes: role.notes || null
-                    }));
-
-                    await supabaseRequest('/worker_job_roles', {
-                        method: 'POST',
-                        body: JSON.stringify(roleAssignments)
-                    });
-                }
-
-            } catch (error) {
-                console.error('❌ Error guardando roles:', error);
-                throw new Error('Error al guardar los roles del trabajador');
-            }
-        }
-
-        async function loadWorkerRoles(workerId) {
-            try {
-                const workerRoles = await supabaseRequest(`
-                    /worker_job_roles?select=*,job_roles(role_name)
-                    &worker_id=eq.${workerId}
-                    &assignment_status=eq.active
-                    &order=is_primary_role.desc,job_roles(role_name).asc
-                `);
-                
-                tempAssignedRoles = (workerRoles || []).map(wr => ({
-                    job_role_id: wr.job_role_id,
-                    role_name: wr.job_roles?.role_name || 'Rol desconocido',
-                    is_primary_role: wr.is_primary_role,
-                    assigned_date: wr.assigned_date,
-                    assignment_status: wr.assignment_status,
-                    notes: wr.notes || '',
-                    _isExisting: true // Marcar como existente
-                }));
-                
-            } catch (error) {
-                console.error('❌ Error cargando roles del trabajador:', error);
-                tempAssignedRoles = [];
-            }
-        }
-
-        async function manageWorkerRoles(workerId) {
-            // Esta función podría abrir un modal específico para gestión rápida de roles
-            // Por ahora, abre el modal de edición en la pestaña de roles
-            await editWorker(workerId);
-            
-            // Cambiar a la pestaña de roles
-            setTimeout(() => {
-                const rolesTab = new bootstrap.Tab(document.querySelector('#roles-tab'));
-                rolesTab.show();
-            }, 100);
-        }
-
         // ==========================================
         // FUNCIONES DE NAVEGACIÓN DE PESTAÑAS
         // ==========================================
@@ -1311,8 +1267,7 @@
             };
             
             const orgSummary = document.getElementById('organizationalSummary');
-            const orgPath = [orgData.division, orgData.costCenter, orgData.area, orgData.subarea]
-                .filter(x => x && x !== 'Seleccionar...' && !x.includes('Primero')).join(' → ');
+            const orgPath = [orgData.division, orgData.costCenter, orgData.area, orgData.subarea].filter(x => x && x !== 'Seleccionar...' && !x.includes('Primero')).join(' → ');
             
             if (orgPath) {
                 orgSummary.innerHTML = `
@@ -1445,6 +1400,31 @@
             }
         }
 
+        async function loadWorkerRoles(workerId) {
+            try {
+                const workerRoles = await supabaseRequest(`
+                    /worker_job_roles?select=*,job_roles(role_name)
+                    &worker_id=eq.${workerId}
+                    &assignment_status=eq.active
+                    &order=is_primary_role.desc,job_roles(role_name).asc
+                `);
+                
+                tempAssignedRoles = (workerRoles || []).map(wr => ({
+                    job_role_id: wr.job_role_id,
+                    role_name: wr.job_roles?.role_name || 'Rol desconocido',
+                    is_primary_role: wr.is_primary_role,
+                    assigned_date: wr.assigned_date,
+                    assignment_status: wr.assignment_status,
+                    notes: wr.notes || '',
+                    _isExisting: true // Marcar como existente
+                }));
+                
+            } catch (error) {
+                console.error('❌ Error cargando roles del trabajador:', error);
+                tempAssignedRoles = [];
+            }
+        }
+
         function resetCascadingDropdowns() {
             document.getElementById('organizationalCostCenterId').innerHTML = '<option value="">Primero selecciona una división...</option>';
             document.getElementById('organizationalCostCenterId').disabled = true;
@@ -1473,6 +1453,7 @@
                     worker_status: formData.get('worker_status'),
                     alternative_calendar: formData.get('alternative_calendar')?.trim() || null,
                     section_id: formData.get('section_id') || null,
+                    management_area_id: formData.get('management_area_id') || null,
                     organizational_division_id: formData.get('organizational_division_id') || null,
                     organizational_cost_center_id: formData.get('organizational_cost_center_id') || null,
                     organizational_area_id: formData.get('organizational_area_id') || null,
@@ -1570,6 +1551,54 @@
             } finally {
                 showLoading(false);
             }
+        }
+
+        async function saveWorkerRoles(workerId) {
+            try {
+                // Eliminar todas las asignaciones actuales (solo las que no son nuevas)
+                if (currentEditingWorkerId) {
+                    await supabaseRequest(`/worker_job_roles?worker_id=eq.${workerId}`, {
+                        method: 'DELETE'
+                    });
+                }
+
+                // Crear nuevas asignaciones
+                if (tempAssignedRoles.length > 0) {
+                    const roleAssignments = tempAssignedRoles.map(role => ({
+                        worker_id: workerId,
+                        job_role_id: role.job_role_id,
+                        assigned_date: role.assigned_date || new Date().toISOString().split('T')[0],
+                        is_primary_role: role.is_primary_role,
+                        assignment_status: 'active',
+                        notes: role.notes || null
+                    }));
+
+                    await supabaseRequest('/worker_job_roles', {
+                        method: 'POST',
+                        body: JSON.stringify(roleAssignments)
+                    });
+                }
+
+            } catch (error) {
+                console.error('❌ Error guardando roles:', error);
+                throw new Error('Error al guardar los roles del trabajador');
+            }
+        }
+
+        // ==========================================
+        // FUNCIONES DE GESTIÓN RÁPIDA DE ROLES
+        // ==========================================
+
+        async function manageWorkerRoles(workerId) {
+            // Esta función podría abrir un modal específico para gestión rápida de roles
+            // Por ahora, abre el modal de edición en la pestaña de roles
+            await editWorker(workerId);
+            
+            // Cambiar a la pestaña de roles
+            setTimeout(() => {
+                const rolesTab = new bootstrap.Tab(document.querySelector('#roles-tab'));
+                rolesTab.show();
+            }, 100);
         }
 
         // ==========================================
