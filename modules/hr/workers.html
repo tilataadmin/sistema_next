@@ -705,9 +705,213 @@
             });
         }
 
+        
+        function populateDropdowns() {
+            // Géneros
+            const genderSelect = document.getElementById('genderId');
+            genderSelect.innerHTML = '<option value="">Seleccionar...</option>' +
+                genders.map(g => `<option value="${g.gender_id}">${g.gender_name}</option>`).join('');
+            
+            // Divisiones
+            const divisionSelect = document.getElementById('organizationalDivisionId');
+            divisionSelect.innerHTML = '<option value="">Seleccionar División...</option>' +
+                divisions.map(d => `<option value="${d.division_id}">${d.division_name}</option>`).join('');
+            
+            // Secciones académicas
+            const sectionSelect = document.getElementById('sectionId');
+            sectionSelect.innerHTML = '<option value="">Seleccionar sección...</option>' +
+                sections.map(s => `<option value="${s.section_id}">${s.section_name}</option>`).join('');
+            
+            // Roles disponibles
+            const roleSelect = document.getElementById('newRoleSelect');
+            roleSelect.innerHTML = '<option value="">Seleccionar rol...</option>' +
+                jobRoles.map(jr => `<option value="${jr.role_id}">${jr.role_name}</option>`).join('');
+        }
+
+        // ==========================================
+        // FUNCIONES DE CARGA DE DATOS
+        // ==========================================
+
+        // ==========================================
+        // FUNCIONES DE CARGA DE DATOS - CORREGIDAS
+        // ==========================================
+
+        async function loadWorkers() {
+            try {
+                console.log('📡 Cargando trabajadores...');
+                showLoading(true);
+                
+                // Cargar trabajadores SIN relaciones complejas
+                const workers = await supabaseRequest('/workers?select=*&order=worker_first_name.asc');
+                
+                allWorkers = workers || [];
+                
+                // Cargar roles por separado si hay trabajadores
+                if (allWorkers.length > 0) {
+                    await loadWorkersRoles();
+                }
+                
+                renderWorkersTable(allWorkers);
+                updateStatistics();
+                
+                console.log(`✅ ${allWorkers.length} trabajadores cargados`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando trabajadores:', error);
+                showMessage('Error al cargar trabajadores: ' + error.message, 'danger');
+                renderWorkersTable([]);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadWorkersRoles() {
+            try {
+                // Cargar todas las asignaciones de roles activas
+                const workerRoles = await supabaseRequest(
+                    '/worker_job_roles?select=worker_id,job_role_id,is_primary_role,assigned_date' +
+                    '&assignment_status=eq.active'
+                );
+                
+                // Cargar información de los roles
+                const jobRolesData = await supabaseRequest('/job_roles?select=role_id,role_name');
+                
+                // Crear mapa de roles para búsqueda rápida
+                const rolesMap = {};
+                if (jobRolesData) {
+                    jobRolesData.forEach(role => {
+                        rolesMap[role.role_id] = role.role_name;
+                    });
+                }
+                
+                // Agrupar roles por trabajador
+                const rolesByWorker = {};
+                if (workerRoles) {
+                    workerRoles.forEach(wr => {
+                        if (!rolesByWorker[wr.worker_id]) {
+                            rolesByWorker[wr.worker_id] = [];
+                        }
+                        
+                        rolesByWorker[wr.worker_id].push({
+                            job_role_id: wr.job_role_id,
+                            role_name: rolesMap[wr.job_role_id] || 'Rol desconocido',
+                            is_primary_role: wr.is_primary_role,
+                            assigned_date: wr.assigned_date
+                        });
+                    });
+                }
+                
+                // Asignar roles a cada trabajador y ordenar
+                allWorkers.forEach(worker => {
+                    const workerRolesList = rolesByWorker[worker.worker_id] || [];
+                    // Ordenar: roles principales primero, luego por nombre
+                    workerRolesList.sort((a, b) => {
+                        if (a.is_primary_role && !b.is_primary_role) return -1;
+                        if (!a.is_primary_role && b.is_primary_role) return 1;
+                        return a.role_name.localeCompare(b.role_name);
+                    });
+                    worker.roles = workerRolesList;
+                });
+                
+            } catch (error) {
+                console.error('❌ Error cargando roles de trabajadores:', error);
+                // Continuar sin roles si falla
+                allWorkers.forEach(worker => {
+                    worker.roles = [];
+                });
+            }
+        }
+
+        async function loadWorkerRoles(workerId) {
+            try {
+                // Cargar roles del trabajador específico - consulta simple
+                const workerRoles = await supabaseRequest(
+                    `/worker_job_roles?select=job_role_id,is_primary_role,assigned_date,notes` +
+                    `&worker_id=eq.${workerId}&assignment_status=eq.active`
+                );
+                
+                // Cargar información de los roles si hay asignaciones
+                if (workerRoles && workerRoles.length > 0) {
+                    const roleIds = workerRoles.map(wr => wr.job_role_id);
+                    const jobRolesData = await supabaseRequest(
+                        `/job_roles?select=role_id,role_name&role_id=in.(${roleIds.join(',')})`
+                    );
+                    
+                    // Crear mapa de roles
+                    const rolesMap = {};
+                    if (jobRolesData) {
+                        jobRolesData.forEach(role => {
+                            rolesMap[role.role_id] = role.role_name;
+                        });
+                    }
+                    
+                    // Mapear roles con información completa
+                    tempAssignedRoles = workerRoles.map(wr => ({
+                        job_role_id: wr.job_role_id,
+                        role_name: rolesMap[wr.job_role_id] || 'Rol desconocido',
+                        is_primary_role: wr.is_primary_role,
+                        assigned_date: wr.assigned_date,
+                        assignment_status: 'active',
+                        notes: wr.notes || '',
+                        _isExisting: true
+                    }));
+                    
+                    // Ordenar roles: principales primero
+                    tempAssignedRoles.sort((a, b) => {
+                        if (a.is_primary_role && !b.is_primary_role) return -1;
+                        if (!a.is_primary_role && b.is_primary_role) return 1;
+                        return a.role_name.localeCompare(b.role_name);
+                    });
+                } else {
+                    tempAssignedRoles = [];
+                }
+                
+            } catch (error) {
+                console.error('❌ Error cargando roles del trabajador:', error);
+                tempAssignedRoles = [];
+            }
+        }
+
+        function buildRolesHtml(roles) {
+            if (!roles || roles.length === 0) {
+                return '<span class="text-muted"><i class="bi bi-dash-circle me-1"></i>Sin roles</span>';
+            }
+            
+            return roles.map(role => {
+                const badgeClass = role.is_primary_role ? 'role-primary text-white' : 'bg-secondary';
+                const primaryIcon = role.is_primary_role ? '<i class="bi bi-star-fill me-1"></i>' : '';
+                return `<span class="badge ${badgeClass} role-badge">${primaryIcon}${role.role_name}</span>`;
+            }).join(' ');
+        }
+
+        // Función auxiliar para verificar si hay problemas de CORS
+        async function testConnection() {
+            try {
+                console.log('🔍 Probando conexión básica...');
+                const test = await supabaseRequest('/users?select=user_id&limit=1');
+                console.log('✅ Conexión básica funcionando');
+                return true;
+            } catch (error) {
+                console.error('❌ Error de conexión:', error);
+                if (error.message.includes('CORS')) {
+                    showMessage('Error de configuración CORS. Verifica la configuración de Supabase.', 'danger');
+                } else {
+                    showMessage('Error de conexión con la base de datos.', 'danger');
+                }
+                return false;
+            }
+        }
+
+        // Actualizar la función de inicialización para incluir test de conexión
         async function loadInitialData() {
             try {
                 showLoading(true);
+                
+                // Primero probar la conexión
+                const connectionOk = await testConnection();
+                if (!connectionOk) {
+                    return; // Salir si hay problemas de conexión
+                }
                 
                 // Cargar todos los datos necesarios en paralelo
                 const [
@@ -744,99 +948,8 @@
             }
         }
 
-        function populateDropdowns() {
-            // Géneros
-            const genderSelect = document.getElementById('genderId');
-            genderSelect.innerHTML = '<option value="">Seleccionar...</option>' +
-                genders.map(g => `<option value="${g.gender_id}">${g.gender_name}</option>`).join('');
-            
-            // Divisiones
-            const divisionSelect = document.getElementById('organizationalDivisionId');
-            divisionSelect.innerHTML = '<option value="">Seleccionar División...</option>' +
-                divisions.map(d => `<option value="${d.division_id}">${d.division_name}</option>`).join('');
-            
-            // Secciones académicas
-            const sectionSelect = document.getElementById('sectionId');
-            sectionSelect.innerHTML = '<option value="">Seleccionar sección...</option>' +
-                sections.map(s => `<option value="${s.section_id}">${s.section_name}</option>`).join('');
-            
-            // Roles disponibles
-            const roleSelect = document.getElementById('newRoleSelect');
-            roleSelect.innerHTML = '<option value="">Seleccionar rol...</option>' +
-                jobRoles.map(jr => `<option value="${jr.role_id}">${jr.role_name}</option>`).join('');
-        }
 
-        // ==========================================
-        // FUNCIONES DE CARGA DE DATOS
-        // ==========================================
-
-        async function loadWorkers() {
-            try {
-                console.log('📡 Cargando trabajadores...');
-                showLoading(true);
-                
-                // Cargar trabajadores con todas las relaciones
-                const workers = await supabaseRequest('/workers?select=*&order=worker_first_name.asc');
-                
-                allWorkers = workers || [];
-                
-                // Cargar roles de cada trabajador
-                await loadWorkersRoles();
-                
-                renderWorkersTable(allWorkers);
-                updateStatistics();
-                
-                console.log(`✅ ${allWorkers.length} trabajadores cargados`);
-                
-            } catch (error) {
-                console.error('❌ Error cargando trabajadores:', error);
-                showMessage('Error al cargar trabajadores: ' + error.message, 'danger');
-                renderWorkersTable([]);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-
-        async function loadWorkersRoles() {
-    try {
-        if (allWorkers.length === 0) return;
         
-        const workerIds = allWorkers.map(w => w.worker_id);
-        
-        // Consulta simplificada sin ordenamiento complejo
-        const workerRoles = await supabaseRequest(`
-            /worker_job_roles?select=*,job_roles(role_name)
-            &worker_id=in.(${workerIds.join(',')})
-            &assignment_status=eq.active
-            &order=is_primary_role.desc
-        `);
-        
-        // Agrupar roles por trabajador
-        const rolesByWorker = {};
-        if (workerRoles) {
-            workerRoles.forEach(wr => {
-                if (!rolesByWorker[wr.worker_id]) {
-                    rolesByWorker[wr.worker_id] = [];
-                }
-                rolesByWorker[wr.worker_id].push(wr);
-            });
-        }
-        
-        // Asignar roles a cada trabajador
-        allWorkers.forEach(worker => {
-            worker.roles = rolesByWorker[worker.worker_id] || [];
-        });
-        
-    } catch (error) {
-        console.error('❌ Error cargando roles de trabajadores:', error);
-        // Continuar sin roles si falla
-        allWorkers.forEach(worker => {
-            worker.roles = [];
-        });
-    }
-}
-
         
         function renderWorkersTable(workers) {
             const tbody = document.getElementById('workersTableBody');
