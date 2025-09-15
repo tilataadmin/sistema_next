@@ -1401,122 +1401,172 @@
         }
 
         async function handleFormSubmit(e) {
-            e.preventDefault();
-            
-            try {
-                showLoading(true);
-                
-                const formData = new FormData(e.target);
-                const workerData = {
-                    worker_id_doc: formData.get('worker_id_doc').trim(),
-                    worker_first_name: formData.get('worker_first_name').trim(),
-                    worker_last_name_1: formData.get('worker_last_name_1').trim(),
-                    worker_last_name_2: formData.get('worker_last_name_2')?.trim() || null,
-                    email: formData.get('email').trim(),
-                    gender_id: formData.get('gender_id') || null,
-                    worker_birthday: formData.get('worker_birthday'),
-                    worker_entry_date: formData.get('worker_entry_date'),
-                    worker_status: formData.get('worker_status'),
-                    alternative_calendar: formData.get('alternative_calendar')?.trim() || null,
-                    section_id: formData.get('section_id') || null,
-                    organizational_division_id: formData.get('organizational_division_id') || null,
-                    organizational_cost_center_id: formData.get('organizational_cost_center_id') || null,
-                    organizational_area_id: formData.get('organizational_area_id') || null,
-                    organizational_subarea_id: formData.get('organizational_subarea_id') || null,
-                    required_organizational_level: parseInt(formData.get('required_organizational_level')) || 2
-                };
-
-                // Validaciones básicas
-                if (!workerData.worker_id_doc) {
-                    showMessage('El documento de identidad es requerido', 'danger');
-                    return;
-                }
-                
-                if (!workerData.worker_first_name || !workerData.worker_last_name_1) {
-                    showMessage('El nombre y primer apellido son requeridos', 'danger');
-                    return;
-                }
-                
-                if (!workerData.email) {
-                    showMessage('El correo electrónico es requerido', 'danger');
-                    return;
-                }
-                
-                // Validar estructura organizacional según nivel requerido
-                const requiredLevel = workerData.required_organizational_level;
-                if (requiredLevel >= 1 && !workerData.organizational_division_id) {
-                    showMessage('Debe seleccionar una división organizacional', 'danger');
-                    return;
-                }
-                if (requiredLevel >= 2 && !workerData.organizational_cost_center_id) {
-                    showMessage('Debe seleccionar un centro de costo', 'danger');
-                    return;
-                }
-                if (requiredLevel >= 3 && !workerData.organizational_area_id) {
-                    showMessage('Debe seleccionar un área/sección organizacional', 'danger');
-                    return;
-                }
-                if (requiredLevel >= 4 && !workerData.organizational_subarea_id) {
-                    showMessage('Debe seleccionar una subárea organizacional', 'danger');
-                    return;
-                }
-
-                let response;
-                if (currentEditingWorkerId) {
-                    // Actualizar trabajador
-                    response = await supabaseRequest(`/workers?worker_id=eq.${currentEditingWorkerId}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify(workerData)
-                    });
-                } else {
-                    // Crear trabajador
-                    response = await supabaseRequest('/workers', {
-                        method: 'POST',
-                        body: JSON.stringify(workerData)
-                    });
-                }
-
-                const workerId = currentEditingWorkerId || (response && response[0]?.worker_id);
-                
-                if (!workerId) {
-                    throw new Error('No se pudo obtener el ID del trabajador');
-                }
-
-                // Gestionar roles asignados
-                await saveWorkerRoles(workerId);
-
-                showMessage(
-                    currentEditingWorkerId ? 'Trabajador actualizado exitosamente' : 'Trabajador creado exitosamente', 
-                    'success'
-                );
-
-                // Cerrar modal y recargar
-                bootstrap.Modal.getInstance(document.getElementById('workerModal')).hide();
-                await loadWorkers();
-
-            } catch (error) {
-                console.error('❌ Error guardando trabajador:', error);
-                let errorMessage = 'Error al guardar el trabajador';
-                
-                if (error.message.includes('duplicate key')) {
-                    if (error.message.includes('worker_id_doc')) {
-                        errorMessage = 'Ya existe un trabajador con este documento de identidad';
-                    } else if (error.message.includes('email')) {
-                        errorMessage = 'Ya existe un trabajador con este correo electrónico';
-                    } else {
-                        errorMessage = 'Ya existe un trabajador con estos datos';
-                    }
-                } else if (error.message.includes('foreign key')) {
-                    errorMessage = 'Error de referencia: Verifica que todas las selecciones organizacionales sean válidas';
-                } else if (error.message) {
-                    errorMessage += ': ' + error.message;
-                }
-                
-                showMessage(errorMessage, 'danger');
-            } finally {
-                showLoading(false);
+    e.preventDefault();
+    
+    // Validar pestañas y cambiar a la pestaña con errores si es necesario
+    const divisionField = document.getElementById('organizationalDivisionId');
+    const costCenterField = document.getElementById('organizationalCostCenterId');
+    const areaField = document.getElementById('organizationalAreaId');
+    const requiredLevel = parseInt(document.getElementById('requiredOrganizationalLevel').value) || 2;
+    
+    // Verificar si hay errores en la pestaña organizacional
+    let hasOrgError = false;
+    if (requiredLevel >= 1 && !divisionField.value) {
+        hasOrgError = true;
+    }
+    if (requiredLevel >= 2 && !costCenterField.value) {
+        hasOrgError = true;
+    }
+    if (requiredLevel >= 3 && !areaField.value) {
+        hasOrgError = true;
+    }
+    
+    // Si hay errores organizacionales, cambiar a esa pestaña
+    if (hasOrgError) {
+        const orgTab = new bootstrap.Tab(document.querySelector('#organizational-tab'));
+        orgTab.show();
+        setTimeout(() => {
+            if (!divisionField.value) {
+                divisionField.focus();
+            } else if (!costCenterField.value) {
+                costCenterField.focus();
+            } else if (!areaField.value) {
+                areaField.focus();
             }
+        }, 100);
+    }
+    
+    try {
+        showLoading(true);
+        
+        const formData = new FormData(e.target);
+        const workerData = {
+            worker_id_doc: formData.get('worker_id_doc').trim(),
+            worker_first_name: formData.get('worker_first_name').trim(),
+            worker_last_name_1: formData.get('worker_last_name_1').trim(),
+            worker_last_name_2: formData.get('worker_last_name_2')?.trim() || null,
+            email: formData.get('email').trim(),
+            gender_id: formData.get('gender_id') || null,
+            worker_birthday: formData.get('worker_birthday'),
+            worker_entry_date: formData.get('worker_entry_date'),
+            worker_status: formData.get('worker_status'),
+            alternative_calendar: formData.get('alternative_calendar')?.trim() || null,
+            section_id: formData.get('section_id') || null,
+            organizational_division_id: formData.get('organizational_division_id') || null,
+            organizational_cost_center_id: formData.get('organizational_cost_center_id') || null,
+            organizational_area_id: formData.get('organizational_area_id') || null,
+            organizational_subarea_id: formData.get('organizational_subarea_id') || null,
+            required_organizational_level: parseInt(formData.get('required_organizational_level')) || 2
+        };
+
+        // Validaciones básicas
+        if (!workerData.worker_id_doc) {
+            showMessage('El documento de identidad es requerido', 'danger');
+            // Cambiar a pestaña personal
+            const personalTab = new bootstrap.Tab(document.querySelector('#personal-tab'));
+            personalTab.show();
+            setTimeout(() => document.getElementById('workerIdDoc').focus(), 100);
+            return;
         }
+        
+        if (!workerData.worker_first_name || !workerData.worker_last_name_1) {
+            showMessage('El nombre y primer apellido son requeridos', 'danger');
+            // Cambiar a pestaña personal
+            const personalTab = new bootstrap.Tab(document.querySelector('#personal-tab'));
+            personalTab.show();
+            setTimeout(() => {
+                if (!workerData.worker_first_name) {
+                    document.getElementById('workerFirstName').focus();
+                } else {
+                    document.getElementById('workerLastName1').focus();
+                }
+            }, 100);
+            return;
+        }
+        
+        if (!workerData.email) {
+            showMessage('El correo electrónico es requerido', 'danger');
+            // Cambiar a pestaña personal
+            const personalTab = new bootstrap.Tab(document.querySelector('#personal-tab'));
+            personalTab.show();
+            setTimeout(() => document.getElementById('workerEmail').focus(), 100);
+            return;
+        }
+        
+        // Validar estructura organizacional según nivel requerido
+        if (requiredLevel >= 1 && !workerData.organizational_division_id) {
+            showMessage('Debe seleccionar una división organizacional', 'danger');
+            return; // Ya manejamos el cambio de pestaña arriba
+        }
+        if (requiredLevel >= 2 && !workerData.organizational_cost_center_id) {
+            showMessage('Debe seleccionar un centro de costo', 'danger');
+            return; // Ya manejamos el cambio de pestaña arriba
+        }
+        if (requiredLevel >= 3 && !workerData.organizational_area_id) {
+            showMessage('Debe seleccionar un área/sección organizacional', 'danger');
+            return; // Ya manejamos el cambio de pestaña arriba
+        }
+        if (requiredLevel >= 4 && !workerData.organizational_subarea_id) {
+            showMessage('Debe seleccionar una subárea organizacional', 'danger');
+            return; // Ya manejamos el cambio de pestaña arriba
+        }
+
+        let response;
+        if (currentEditingWorkerId) {
+            // Actualizar trabajador
+            response = await supabaseRequest(`/workers?worker_id=eq.${currentEditingWorkerId}`, {
+                method: 'PATCH',
+                body: JSON.stringify(workerData)
+            });
+        } else {
+            // Crear trabajador
+            response = await supabaseRequest('/workers', {
+                method: 'POST',
+                body: JSON.stringify(workerData)
+            });
+        }
+
+        const workerId = currentEditingWorkerId || (response && response[0]?.worker_id);
+        
+        if (!workerId) {
+            throw new Error('No se pudo obtener el ID del trabajador');
+        }
+
+        // Gestionar roles asignados
+        await saveWorkerRoles(workerId);
+
+        showMessage(
+            currentEditingWorkerId ? 'Trabajador actualizado exitosamente' : 'Trabajador creado exitosamente', 
+            'success'
+        );
+
+        // Cerrar modal y recargar
+        bootstrap.Modal.getInstance(document.getElementById('workerModal')).hide();
+        await loadWorkers();
+
+    } catch (error) {
+        console.error('❌ Error guardando trabajador:', error);
+        let errorMessage = 'Error al guardar el trabajador';
+        
+        if (error.message.includes('duplicate key')) {
+            if (error.message.includes('worker_id_doc')) {
+                errorMessage = 'Ya existe un trabajador con este documento de identidad';
+            } else if (error.message.includes('email')) {
+                errorMessage = 'Ya existe un trabajador con este correo electrónico';
+            } else {
+                errorMessage = 'Ya existe un trabajador con estos datos';
+            }
+        } else if (error.message.includes('foreign key')) {
+            errorMessage = 'Error de referencia: Verifica que todas las selecciones organizacionales sean válidas';
+        } else if (error.message) {
+            errorMessage += ': ' + error.message;
+        }
+        
+        showMessage(errorMessage, 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
 
         async function saveWorkerRoles(workerId) {
             try {
