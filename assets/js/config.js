@@ -546,6 +546,7 @@ const URL_PERMISSIONS = {
 };
 
 // Función principal de validación
+// Función principal de validación
 async function validatePageAccess(requiredPermission = null) {
     try {
         console.log('🔐 Validando acceso a página...');
@@ -569,20 +570,14 @@ async function validatePageAccess(requiredPermission = null) {
             return true;
         }
         
-        // 4. Super admin siempre tiene acceso
-        if (session.user.is_super_admin) {
-            console.log('✅ Super admin - acceso permitido');
-            return true;
-        }
-        
-        // 5. Verificar permiso específico
+        // 4. Verificar permiso específico (incluye verificación de super admin)
         const hasPermission = await checkUserPermission(session.user.user_id, requiredPermission);
         
         if (hasPermission) {
-            console.log(`✅ Usuario tiene permiso: ${requiredPermission}`);
+            console.log(`✅ Usuario tiene acceso requerido`);
             return true;
         } else {
-            console.log(`❌ Usuario NO tiene permiso: ${requiredPermission}`);
+            console.log(`❌ Usuario NO tiene acceso requerido`);
             showAccessDenied(requiredPermission);
             return false;
         }
@@ -609,18 +604,38 @@ function detectRequiredPermission() {
 }
 
 // Verificar si usuario tiene permiso específico
+// Verificar si usuario tiene permiso específico
 async function checkUserPermission(userId, permissionName) {
     try {
-        const query = `/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`;
-        const userData = await supabaseRequest(query);
+        // Primero verificar si es super admin
+        const superAdminQuery = `/users?select=user_roles(role_id,roles(is_super_admin))&user_id=eq.${userId}`;
+        const userData = await supabaseRequest(superAdminQuery);
         
         if (!userData || userData.length === 0) {
             return false;
         }
         
+        // Verificar si tiene rol de super admin
+        const isSuperAdmin = userData[0].user_roles?.some(userRole => 
+            userRole.roles?.is_super_admin === true
+        );
+        
+        if (isSuperAdmin) {
+            console.log('✅ Usuario es super admin - acceso total permitido');
+            return true;
+        }
+        
+        // Si no es super admin, verificar permiso específico
+        const permissionQuery = `/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`;
+        const permissionData = await supabaseRequest(permissionQuery);
+        
+        if (!permissionData || permissionData.length === 0) {
+            return false;
+        }
+        
         // Extraer todos los permisos del usuario
         const userPermissions = [];
-        userData[0].user_roles?.forEach(userRole => {
+        permissionData[0].user_roles?.forEach(userRole => {
             userRole.roles?.role_permissions?.forEach(rolePermission => {
                 const permName = rolePermission.permissions?.permission_name;
                 if (permName) {
