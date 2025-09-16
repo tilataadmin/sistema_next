@@ -780,54 +780,74 @@ function filtrarPorAnioLocal(yearId) {
         }
 
         /**
-         * Configura los inputs de valor con eventos
-         */
-        function configurarInputsValor() {
-            const inputs = elementos.tablaPresupuestoBody.querySelectorAll('.input-valor');
+ * Configura los inputs de valor con eventos - VERSIÓN CON DEBUGGING
+ */
+function configurarInputsValor() {
+    const inputs = elementos.tablaPresupuestoBody.querySelectorAll('.input-valor');
+    console.log('🔧 Configurando', inputs.length, 'inputs de valor...');
+    
+    inputs.forEach((input, index) => {
+        console.log(`🔧 Configurando input ${index + 1}:`, {
+            assignmentId: input.dataset.assignmentId,
+            valorOriginal: input.dataset.valorOriginal,
+            valorActual: input.value
+        });
+        
+        // Cambio inmediato - sin debouncing
+        input.addEventListener('input', function() {
+            console.log('✏️ Cambio detectado en input:', this.dataset.assignmentId);
             
-            inputs.forEach(input => {
-                // Cambio inmediato - sin debouncing
-                input.addEventListener('input', function() {
-                    const assignmentId = parseInt(this.dataset.assignmentId);
-                    const valorOriginal = parseInt(this.dataset.valorOriginal);
-                    
-                    // Solo números
-                    let valor = this.value.replace(/[^\d]/g, '');
-                    this.value = valor;
-                    
-                    const valorActual = parseInt(valor) || 0;
-                    
-                    if (valorActual !== valorOriginal) {
-                        this.classList.add('modificado');
-                        modificacionesPendientes.set(assignmentId, valorActual);
-                    } else {
-                        this.classList.remove('modificado');
-                        modificacionesPendientes.delete(assignmentId);
-                    }
-                    
-                    actualizarBotonGuardar();
-                    recalcularResumen();
-                });
-                
-                // Formatear al salir del campo
-                input.addEventListener('blur', function() {
-                    const valor = parseInt(this.value.replace(/[^\d]/g, '')) || 0;
-                    this.value = formatearNumero(valor);
-                });
-                
-                // Solo permitir números
-                input.addEventListener('keypress', function(e) {
-                    if (!/[\d]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Enter'].includes(e.key)) {
-                        e.preventDefault();
-                    }
-                });
-                
-                // Seleccionar todo al hacer focus
-                input.addEventListener('focus', function() {
-                    this.select();
-                });
+            const assignmentId = parseInt(this.dataset.assignmentId);
+            const valorOriginal = parseInt(this.dataset.valorOriginal);
+            
+            // Solo números
+            let valor = this.value.replace(/[^\d]/g, '');
+            this.value = valor;
+            
+            const valorActual = parseInt(valor) || 0;
+            
+            console.log('✏️ Valores:', {
+                assignmentId,
+                valorOriginal,
+                valorActual,
+                esModificacion: valorActual !== valorOriginal
             });
-        }
+            
+            if (valorActual !== valorOriginal) {
+                this.classList.add('modificado');
+                modificacionesPendientes.set(assignmentId, valorActual);
+                console.log('✏️ Agregado a modificaciones pendientes:', assignmentId, '=', valorActual);
+            } else {
+                this.classList.remove('modificado');
+                modificacionesPendientes.delete(assignmentId);
+                console.log('✏️ Removido de modificaciones pendientes:', assignmentId);
+            }
+            
+            console.log('✏️ Estado actual de modificaciones:', modificacionesPendientes);
+            
+            actualizarBotonGuardar();
+            recalcularResumen();
+        });
+        
+        // Formatear al salir del campo
+        input.addEventListener('blur', function() {
+            const valor = parseInt(this.value.replace(/[^\d]/g, '')) || 0;
+            this.value = formatearNumero(valor);
+        });
+        
+        // Solo permitir números
+        input.addEventListener('keypress', function(e) {
+            if (!/[\d]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Enter'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+        
+        // Seleccionar todo al hacer focus
+        input.addEventListener('focus', function() {
+            this.select();
+        });
+    });
+}
 
         /**
          * Calcula y muestra el resumen estadístico
@@ -908,68 +928,92 @@ function filtrarPorAnioLocal(yearId) {
         }
 
         /**
-         * Guarda los cambios pendientes
-         */
-        async function guardarCambios() {
-            if (modificacionesPendientes.size === 0) {
-                return;
-            }
-            
+ * Guarda los cambios pendientes - VERSIÓN CON DEBUGGING COMPLETO
+ */
+async function guardarCambios() {
+    console.log('💾 Iniciando proceso de guardado...');
+    console.log('💾 Modificaciones pendientes:', modificacionesPendientes);
+    
+    if (modificacionesPendientes.size === 0) {
+        console.log('❌ No hay modificaciones pendientes');
+        return;
+    }
+    
+    try {
+        elementos.btnGuardarCambios.disabled = true;
+        elementos.btnGuardarCambios.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Guardando...';
+        mostrarLoading('Guardando cambios...');
+        
+        // Preparar actualizaciones
+        const actualizaciones = [];
+        modificacionesPendientes.forEach((valor, assignmentId) => {
+            console.log(`💾 Preparando actualización: Assignment ${assignmentId} = ${valor}`);
+            actualizaciones.push({
+                assignmentId: assignmentId,
+                requestedValue: valor
+            });
+        });
+        
+        console.log('💾 Total de actualizaciones a enviar:', actualizaciones.length);
+        
+        // Enviar actualizaciones una por una (más confiable que batch)
+        let actualizacionesExitosas = 0;
+        for (const actualizacion of actualizaciones) {
             try {
-                elementos.btnGuardarCambios.disabled = true;
-                elementos.btnGuardarCambios.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Guardando...';
-                mostrarLoading('Guardando cambios...');
+                console.log(`💾 Enviando actualización para assignment ${actualizacion.assignmentId}...`);
                 
-                // Preparar actualizaciones
-                const actualizaciones = [];
-                modificacionesPendientes.forEach((valor, assignmentId) => {
-                    actualizaciones.push({
-                        assignmentId: assignmentId,
-                        requestedValue: valor
-                    });
+                const updateUrl = `/budget_assignments?assignment_id=eq.${actualizacion.assignmentId}`;
+                const updateData = {
+                    requested_value: actualizacion.requestedValue
+                };
+                
+                console.log('💾 URL de actualización:', updateUrl);
+                console.log('💾 Datos a enviar:', updateData);
+                
+                const response = await supabaseRequest(updateUrl, {
+                    method: 'PATCH',
+                    body: JSON.stringify(updateData)
                 });
                 
-                // Enviar actualizaciones una por una (más confiable que batch)
-                let actualizacionesExitosas = 0;
-                for (const actualizacion of actualizaciones) {
-                    try {
-                        await supabaseRequest(`/budget_assignments?assignment_id=eq.${actualizacion.assignmentId}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({
-                                requested_value: actualizacion.requestedValue
-                            })
-                        });
-                        actualizacionesExitosas++;
-                    } catch (error) {
-                        console.error(`Error actualizando asignación ${actualizacion.assignmentId}:`, error);
-                    }
-                }
-                
-                if (actualizacionesExitosas > 0) {
-                    // Actualizar datos locales
-                    actualizarDatosLocales();
-                    
-                    // Limpiar modificaciones pendientes
-                    modificacionesPendientes.clear();
-                    
-                    // Actualizar valores originales en inputs
-                    actualizarValoresOriginales();
-                    
-                    showMessage(`Se actualizaron ${actualizacionesExitosas} registros correctamente`, 'success');
-                } else {
-                    showMessage('No se pudo actualizar ningún registro', 'danger');
-                }
+                console.log(`✅ Actualización exitosa para assignment ${actualizacion.assignmentId}:`, response);
+                actualizacionesExitosas++;
                 
             } catch (error) {
-                console.error('Error al guardar cambios:', error);
-                showMessage('Error al guardar cambios: ' + error.message, 'danger');
-            } finally {
-                ocultarLoading();
-                elementos.btnGuardarCambios.disabled = false;
-                actualizarBotonGuardar();
+                console.error(`❌ Error actualizando asignación ${actualizacion.assignmentId}:`, error);
             }
         }
-
+        
+        console.log(`💾 Resumen: ${actualizacionesExitosas} de ${actualizaciones.length} actualizaciones exitosas`);
+        
+        if (actualizacionesExitosas > 0) {
+            // Actualizar datos locales
+            console.log('💾 Actualizando datos locales...');
+            actualizarDatosLocales();
+            
+            // Limpiar modificaciones pendientes
+            console.log('💾 Limpiando modificaciones pendientes...');
+            modificacionesPendientes.clear();
+            
+            // Actualizar valores originales en inputs
+            console.log('💾 Actualizando valores originales en inputs...');
+            actualizarValoresOriginales();
+            
+            showMessage(`Se actualizaron ${actualizacionesExitosas} registros correctamente`, 'success');
+        } else {
+            console.error('❌ No se pudo actualizar ningún registro');
+            showMessage('No se pudo actualizar ningún registro', 'danger');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error al guardar cambios:', error);
+        showMessage('Error al guardar cambios: ' + error.message, 'danger');
+    } finally {
+        console.log('💾 Finalizando proceso de guardado...');
+        ocultarLoading();
+        elementos.btnGuardarCambios.disabled = false;
+        actualizarBotonGuardar();
+    }
+}
         /**
          * Actualiza los datos locales después de guardar
          */
