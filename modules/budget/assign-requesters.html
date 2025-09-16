@@ -1615,5 +1615,264 @@
 
         console.log('✅ Sistema de Designar Solicitantes - Funcionalidad de guardado completada');
     </script>
+    // ===== CORRECCIONES DE ERRORES =====
+
+// PROBLEMA 1: Funciones no disponibles globalmente
+// SOLUCIÓN: Exponer funciones necesarias al objeto window
+
+// Hacer funciones disponibles globalmente para el HTML
+window.handleYearChange = handleYearChange;
+window.handleWorkerChange = handleWorkerChange;
+window.handleSelectAll = handleSelectAll;
+window.handleAssignmentCheckboxChange = handleAssignmentCheckboxChange;
+window.handleSaveChanges = handleSaveChanges;
+window.handleCancel = handleCancel;
+window.handleResetSelection = handleResetSelection;
+window.confirmSaveChanges = confirmSaveChanges;
+
+// PROBLEMA 2: Bucle infinito en showMessage
+// SOLUCIÓN: Función showMessage corregida
+
+/**
+ * Muestra mensajes al usuario - VERSIÓN CORREGIDA
+ */
+function showMessage(message, type = 'info') {
+    // Prevenir bucles infinitos
+    if (typeof message !== 'string') {
+        console.error('showMessage: mensaje debe ser string');
+        return;
+    }
+    
+    const container = document.getElementById('alertContainer');
+    if (!container) {
+        console.warn('Alert container no encontrado');
+        return;
+    }
+    
+    // Limpiar mensajes anteriores
+    container.innerHTML = '';
+    
+    const alertTypes = {
+        'success': 'alert-success',
+        'danger': 'alert-danger', 
+        'warning': 'alert-warning',
+        'info': 'alert-info'
+    };
+    
+    const icons = {
+        'success': 'bi-check-circle-fill',
+        'danger': 'bi-exclamation-triangle-fill',
+        'warning': 'bi-exclamation-triangle-fill', 
+        'info': 'bi-info-circle-fill'
+    };
+    
+    const alertClass = alertTypes[type] || 'alert-info';
+    const iconClass = icons[type] || 'bi-info-circle-fill';
+    
+    const alertElement = document.createElement('div');
+    alertElement.className = `alert ${alertClass} alert-dismissible fade show`;
+    alertElement.innerHTML = `
+        <i class="bi ${iconClass} me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    container.appendChild(alertElement);
+    
+    // Auto-ocultar después de 5 segundos
+    setTimeout(() => {
+        if (alertElement.parentNode) {
+            alertElement.remove();
+        }
+    }, 5000);
+}
+
+// PROBLEMA 3: getStoredSession puede no estar disponible
+// SOLUCIÓN: Función local de respaldo
+
+/**
+ * Obtiene la sesión almacenada - VERSIÓN SEGURA
+ */
+function getStoredSessionSafe() {
+    try {
+        // Intentar usar función global primero
+        if (typeof window.getStoredSession === 'function') {
+            return window.getStoredSession();
+        }
+        
+        // Respaldo local
+        const sessionData = localStorage.getItem('nextSystemSession') || 
+                           sessionStorage.getItem('nextSystemSession');
+        return sessionData ? JSON.parse(sessionData) : null;
+        
+    } catch (error) {
+        console.error('Error obteniendo sesión:', error);
+        return null;
+    }
+}
+
+// PROBLEMA 4: originalState puede estar siendo sobrescrito
+// SOLUCIÓN: Usar nombre de variable diferente para evitar conflictos
+
+// Cambiar todas las referencias de originalState a originalAuthState
+let originalAuthState = new Map(); // Renombrar para evitar conflictos
+
+// CORRECCIONES EN FUNCIONES EXISTENTES:
+
+// Corregir loadCurrentAuthorizations
+async function loadCurrentAuthorizationsFixed(workerEmail, yearId) {
+    try {
+        const query = `/budget_requesters?select=assignment_id,budget_assignments!inner(academic_year_id)&worker_email=eq.${workerEmail}&budget_assignments.academic_year_id=eq.${yearId}`;
+        
+        const authorizations = await supabaseRequest(query);
+        const authorizedAssignmentIds = authorizations.map(auth => auth.assignment_id);
+        
+        globalData.userAssignments.forEach(assignment => {
+            assignment.is_authorized = authorizedAssignmentIds.includes(assignment.assignment_id);
+        });
+        
+        // Usar nombre corregido
+        originalAuthState.clear();
+        globalData.userAssignments.forEach(assignment => {
+            originalAuthState.set(assignment.assignment_id, assignment.is_authorized);
+        });
+        
+        pendingChanges.clear();
+        
+        console.log(`✅ Autorizaciones actuales cargadas: ${authorizedAssignmentIds.length} de ${globalData.userAssignments.length} asignaciones`);
+        
+    } catch (error) {
+        console.error('Error cargando autorizaciones actuales:', error);
+        
+        globalData.userAssignments.forEach(assignment => {
+            assignment.is_authorized = false;
+        });
+        originalAuthState.clear();
+        pendingChanges.clear();
+        
+        throw error;
+    }
+}
+
+// Corregir handleAssignmentCheckboxChange
+function handleAssignmentCheckboxChangeFixed(checkbox) {
+    const assignmentId = checkbox.dataset.assignmentId;
+    const isAuthorized = checkbox.checked;
+    const originallyAuthorized = originalAuthState.has(assignmentId) ? originalAuthState.get(assignmentId) : false;
+    
+    if (isAuthorized !== originallyAuthorized) {
+        pendingChanges.set(assignmentId, isAuthorized);
+    } else {
+        pendingChanges.delete(assignmentId);
+    }
+    
+    updateAssignmentRowStatus(assignmentId, isAuthorized);
+    updateSelectAllState();
+    updateSummaryStatistics();
+    updateSaveButtonState();
+    
+    logDebug('Assignment checkbox changed', { 
+        assignmentId, 
+        isAuthorized, 
+        originallyAuthorized,
+        pendingChangesCount: pendingChanges.size 
+    });
+}
+
+// Corregir revertChanges
+function revertChangesFixed() {
+    globalData.userAssignments.forEach(assignment => {
+        const checkbox = document.querySelector(`input[data-assignment-id="${assignment.assignment_id}"]`);
+        if (checkbox) {
+            const originalState = originalAuthState.get(assignment.assignment_id) || false;
+            checkbox.checked = originalState;
+            updateAssignmentRowStatus(assignment.assignment_id, originalState);
+        }
+    });
+    
+    pendingChanges.clear();
+    updateSelectAllState();
+    updateSummaryStatistics();
+    updateSaveButtonState();
+    
+    showMessage('Cambios revertidos al estado original', 'info');
+}
+
+// Corregir updateOriginalState
+function updateOriginalStateFixed() {
+    const checkboxes = document.querySelectorAll('input[data-assignment-id]');
+    checkboxes.forEach(checkbox => {
+        const assignmentId = checkbox.dataset.assignmentId;
+        originalAuthState.set(assignmentId, checkbox.checked);
+        
+        const assignment = globalData.userAssignments.find(a => a.assignment_id === assignmentId);
+        if (assignment) {
+            assignment.is_authorized = checkbox.checked;
+        }
+    });
+}
+
+// PROBLEMA 5: loadUserAssignments puede fallar si no hay usuario
+// SOLUCIÓN: Función mejorada con mejor manejo de errores
+
+async function loadUserAssignmentsFixed(yearId) {
+    try {
+        const session = getStoredSessionSafe();
+        if (!session || !session.user) {
+            throw new Error('No se pudo obtener la información del usuario actual');
+        }
+        
+        const userEmail = session.user.user_mail || session.user.email;
+        if (!userEmail) {
+            throw new Error('No se pudo obtener el email del usuario');
+        }
+        
+        const query = `/budget_assignments?select=assignment_id,budget_item_id,assignment_category,category_detail,approved_value,budget_items(item_name,budget_categories(category_name))&worker_email=eq.${userEmail}&academic_year_id=eq.${yearId}&assignment_status=eq.active&order=budget_items(budget_categories(category_name)).asc,budget_items(item_name).asc`;
+        
+        const assignments = await supabaseRequest(query);
+        
+        globalData.userAssignments = assignments.map(assignment => ({
+            assignment_id: assignment.assignment_id,
+            budget_item_id: assignment.budget_item_id,
+            assignment_category: assignment.assignment_category,
+            category_detail: assignment.category_detail,
+            approved_value: assignment.approved_value || 0,
+            item_name: assignment.budget_items?.item_name || 'Sin nombre',
+            category_name: assignment.budget_items?.budget_categories?.category_name || 'Sin categoría',
+            is_authorized: false
+        }));
+        
+        console.log(`✅ Asignaciones del usuario cargadas: ${globalData.userAssignments.length} registros`);
+        
+        if (globalData.userAssignments.length === 0) {
+            showMessage('No tienes asignaciones presupuestales para el año seleccionado', 'warning');
+        }
+        
+    } catch (error) {
+        console.error('Error cargando asignaciones del usuario:', error);
+        globalData.userAssignments = [];
+        throw error;
+    }
+}
+
+// REEMPLAZAR FUNCIONES ORIGINALES
+window.loadCurrentAuthorizations = loadCurrentAuthorizationsFixed;
+window.handleAssignmentCheckboxChange = handleAssignmentCheckboxChangeFixed;
+window.revertChanges = revertChangesFixed;
+window.updateOriginalState = updateOriginalStateFixed;
+window.loadUserAssignments = loadUserAssignmentsFixed;
+
+// SOBRESCRIBIR LA FUNCIÓN showMessage GLOBAL SI ES NECESARIO
+window.showMessage = showMessage;
+
+console.log('✅ Correcciones de errores aplicadas - Sistema listo');
+
+// DEBUG: Verificar que las funciones están disponibles
+console.log('🔍 Funciones disponibles globalmente:', {
+    handleYearChange: typeof window.handleYearChange,
+    handleWorkerChange: typeof window.handleWorkerChange,
+    handleAssignmentCheckboxChange: typeof window.handleAssignmentCheckboxChange,
+    showMessage: typeof window.showMessage
+});
 </body>
 </html>
