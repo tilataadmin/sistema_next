@@ -593,77 +593,92 @@
         }
 
         /**
-         * Filtra asignaciones por año y rubro
-         */
-        async function filtrarAsignaciones() {
-            const anioId = elementos.selectAnio.value;
-            const rubroId = elementos.selectRubro.value;
-            
-            if (!anioId || !rubroId) {
-                showMessage('Seleccione año y rubro para continuar', 'warning');
-                return;
-            }
-            
-            try {
-                // Mostrar loading para filtrado
-                elementos.loadingRecords.classList.remove('hidden');
-                elementos.navigationSection.classList.add('hidden');
-                elementos.noRecords.classList.add('hidden');
-                
-                // Obtener asignaciones presupuestales filtradas
-                const query = `
-                    /budget_assignments?select=
-                        assignment_id,
-                        budget_item_id,
-                        category_detail,
-                        worker_email,
-                        requested_value,
-                        approved_value,
-                        budget_items(item_name,budget_categories(category_name)),
-                        workers(worker_first_name,worker_last_name_1,worker_last_name_2)
-                    &academic_year_id=eq.${anioId}
-                    &budget_items.budget_categories.category_id=eq.${rubroId}
-                    &assignment_status=eq.active
-                    &order=budget_items(item_name),category_detail
-                `;
-                
-                const asignaciones = await supabaseRequest(query);
-                
-                if (asignaciones && asignaciones.length > 0) {
-                    // Procesar los datos para formato consistente
-                    datosCompletos.asignacionesFiltradas = asignaciones.map(asignacion => ({
-                        assignment_id: asignacion.assignment_id,
-                        budget_item_id: asignacion.budget_item_id,
-                        category_detail: asignacion.category_detail || 'General',
-                        worker_email: asignacion.worker_email,
-                        requested_value: asignacion.requested_value || 0,
-                        approved_value: asignacion.approved_value || 0,
-                        item_name: asignacion.budget_items?.item_name || 'Sin nombre',
-                        worker_name: asignacion.workers ? 
-                            `${asignacion.workers.worker_first_name} ${asignacion.workers.worker_last_name_1} ${asignacion.workers.worker_last_name_2 || ''}`.trim() 
-                            : 'Sin asignar',
-                        category_name: asignacion.budget_items?.budget_categories?.category_name || 'Sin categoría'
-                    }));
-                    
-                    registroActual = 0;
-                    registroModificado = false;
-                    mostrarSeccionNavegacion();
-                    mostrarRegistroActual();
-                    showMessage(`Se encontraron ${datosCompletos.asignacionesFiltradas.length} asignaciones`, 'success');
-                    
-                } else {
-                    mostrarNoRecords();
-                    showMessage('No se encontraron asignaciones para los criterios seleccionados', 'info');
-                }
-                
-            } catch (error) {
-                console.error('Error al filtrar asignaciones:', error);
-                showMessage('Error al cargar asignaciones: ' + error.message, 'danger');
-                mostrarNoRecords();
-            } finally {
-                elementos.loadingRecords.classList.add('hidden');
-            }
+ * Filtra asignaciones por año y rubro (VERSIÓN CORREGIDA)
+ */
+async function filtrarAsignaciones() {
+    const anioId = elementos.selectAnio.value;
+    const rubroId = elementos.selectRubro.value;
+    
+    if (!anioId || !rubroId) {
+        showMessage('Seleccione año y rubro para continuar', 'warning');
+        return;
+    }
+    
+    try {
+        // Mostrar loading para filtrado
+        elementos.loadingRecords.classList.remove('hidden');
+        elementos.navigationSection.classList.add('hidden');
+        elementos.noRecords.classList.add('hidden');
+        
+        // PASO 1: Obtener items del rubro seleccionado
+        const itemsQuery = `/budget_items?select=item_id,item_name&category_id=eq.${rubroId}`;
+        const items = await supabaseRequest(itemsQuery);
+        
+        if (!items || items.length === 0) {
+            mostrarNoRecords();
+            showMessage('No hay items para el rubro seleccionado', 'info');
+            return;
         }
+        
+        // PASO 2: Obtener asignaciones para esos items y año
+        const itemIds = items.map(item => item.item_id).join(',');
+        const asignacionesQuery = `/budget_assignments?select=assignment_id,budget_item_id,category_detail,worker_email,requested_value,approved_value&academic_year_id=eq.${anioId}&budget_item_id=in.(${itemIds})&assignment_status=eq.active`;
+        
+        const asignaciones = await supabaseRequest(asignacionesQuery);
+        
+        if (!asignaciones || asignaciones.length === 0) {
+            mostrarNoRecords();
+            showMessage('No se encontraron asignaciones para los criterios seleccionados', 'info');
+            return;
+        }
+        
+        // PASO 3: Obtener información de workers
+        const emails = [...new Set(asignaciones.map(a => a.worker_email).filter(e => e))];
+        let workersMap = new Map();
+        
+        if (emails.length > 0) {
+            const workersQuery = `/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emails.join(',')})`;
+            const workers = await supabaseRequest(workersQuery);
+            workers.forEach(w => {
+                const fullName = `${w.worker_first_name} ${w.worker_last_name_1} ${w.worker_last_name_2 || ''}`.trim();
+                workersMap.set(w.email, fullName);
+            });
+        }
+        
+        // PASO 4: Crear mapa de items
+        const itemsMap = new Map(items.map(item => [item.item_id, item.item_name]));
+        
+        // PASO 5: Combinar datos
+        datosCompletos.asignacionesFiltradas = asignaciones.map(asignacion => ({
+            assignment_id: asignacion.assignment_id,
+            budget_item_id: asignacion.budget_item_id,
+            category_detail: asignacion.category_detail || 'General',
+            worker_email: asignacion.worker_email,
+            requested_value: asignacion.requested_value || 0,
+            approved_value: asignacion.approved_value || 0,
+            item_name: itemsMap.get(asignacion.budget_item_id) || 'Sin nombre',
+            worker_name: workersMap.get(asignacion.worker_email) || 'Sin asignar'
+        }));
+        
+        if (datosCompletos.asignacionesFiltradas.length > 0) {
+            registroActual = 0;
+            registroModificado = false;
+            mostrarSeccionNavegacion();
+            mostrarRegistroActual();
+            showMessage(`Se encontraron ${datosCompletos.asignacionesFiltradas.length} asignaciones`, 'success');
+        } else {
+            mostrarNoRecords();
+            showMessage('No se encontraron asignaciones válidas', 'info');
+        }
+        
+    } catch (error) {
+        console.error('Error al filtrar asignaciones:', error);
+        showMessage('Error al cargar asignaciones: ' + error.message, 'danger');
+        mostrarNoRecords();
+    } finally {
+        elementos.loadingRecords.classList.add('hidden');
+    }
+}
 
         /**
          * Navegación - ir al registro anterior
