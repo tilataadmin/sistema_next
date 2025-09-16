@@ -662,46 +662,65 @@
         }
 
         /**
-         * Carga datos iniciales
-         */
-        async function cargarDatosIniciales() {
-            try {
-                mostrarLoading('Cargando datos iniciales...');
-                
-                // Cargar proveedores
-                const proveedoresData = await supabaseRequest('/suppliers?select=supplier_id,supplier_name&supplier_status=eq.active&order=supplier_name.asc');
-                datosCompletos.proveedores = proveedoresData || [];
-                cargarSelectProveedores();
-                
-                // Cargar requerimientos aprobados (usando execution_requests)
-                const requerimientosQuery = `/execution_requests?select=request_id,request_details,requested_value,worker_email,workers(worker_first_name,worker_last_name_1,worker_last_name_2)&request_status=eq.approved&order=requested_at.desc`;
-                const requerimientosData = await supabaseRequest(requerimientosQuery);
-                
-                if (requerimientosData) {
-                    // Procesar los datos para formato consistente
-                    datosCompletos.requerimientos = requerimientosData.map(req => ({
-                        request_id: req.request_id,
-                        request_details: req.request_details,
-                        requested_value: req.requested_value,
-                        worker_email: req.worker_email,
-                        solicitante_nombre: req.workers ? 
-                            `${req.workers.worker_first_name} ${req.workers.worker_last_name_1} ${req.workers.worker_last_name_2 || ''}`.trim() 
-                            : 'Sin nombre',
-                        autorizador_nombre: 'Autorizado' // Simplificado por ahora
-                    }));
-                }
-                
-                renderizarTablaRequerimientos();
-                ocultarLoading();
-                
-                showMessage(`Datos cargados: ${datosCompletos.requerimientos.length} requerimientos, ${datosCompletos.proveedores.length} proveedores`, 'success');
-                
-            } catch (error) {
-                console.error('Error al cargar datos iniciales:', error);
-                showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
-                ocultarLoading();
-            }
+ * Carga datos iniciales (VERSIÓN CORREGIDA)
+ */
+async function cargarDatosIniciales() {
+    try {
+        mostrarLoading('Cargando datos iniciales...');
+        
+        // Cargar proveedores
+        const proveedoresData = await supabaseRequest('/suppliers?select=supplier_id,supplier_name&supplier_status=eq.active&order=supplier_name.asc');
+        datosCompletos.proveedores = proveedoresData || [];
+        cargarSelectProveedores();
+        
+        // SOLUCIÓN: Consultas separadas para evitar ambigüedad
+        
+        // PASO 1: Obtener execution_requests básicos
+        const requerimientosData = await supabaseRequest('/execution_requests?select=request_id,request_details,requested_value,worker_email,worker_id&request_status=eq.approved&order=requested_at.desc');
+        
+        if (!requerimientosData || requerimientosData.length === 0) {
+            datosCompletos.requerimientos = [];
+            renderizarTablaRequerimientos();
+            ocultarLoading();
+            showMessage('No se encontraron requerimientos aprobados', 'info');
+            return;
         }
+        
+        // PASO 2: Obtener workers por email (relación más confiable)
+        const emails = [...new Set(requerimientosData.map(req => req.worker_email).filter(email => email))];
+        let workersMap = new Map();
+        
+        if (emails.length > 0) {
+            const emailsQuery = emails.map(() => '?').join(',');
+            const workersData = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emails.join(',')})`);
+            
+            workersData.forEach(worker => {
+                const fullName = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
+                workersMap.set(worker.email, fullName);
+            });
+        }
+        
+        // PASO 3: Combinar datos
+        datosCompletos.requerimientos = requerimientosData.map(req => ({
+            request_id: req.request_id,
+            request_details: req.request_details,
+            requested_value: req.requested_value,
+            worker_email: req.worker_email,
+            solicitante_nombre: workersMap.get(req.worker_email) || 'Sin nombre',
+            autorizador_nombre: 'Autorizado' // Simplificado por ahora
+        }));
+        
+        renderizarTablaRequerimientos();
+        ocultarLoading();
+        
+        showMessage(`Datos cargados: ${datosCompletos.requerimientos.length} requerimientos, ${datosCompletos.proveedores.length} proveedores`, 'success');
+        
+    } catch (error) {
+        console.error('Error al cargar datos iniciales:', error);
+        showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
+        ocultarLoading();
+    }
+}
 
         /**
          * Carga el select de proveedores
