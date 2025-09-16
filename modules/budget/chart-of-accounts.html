@@ -495,39 +495,50 @@
         }
 
         async function loadStats() {
-            try {
-                showLoading();
-                
-                // Cargar total de cuentas
-                const accounts = await supabaseRequest('/chart_of_accounts?select=account_code,created_at');
-                
-                document.getElementById('totalAccounts').textContent = accounts ? accounts.length : 0;
-                
-                // Contar nuevas cuentas hoy
-                const today = new Date().toISOString().split('T')[0];
-                const newToday = accounts ? accounts.filter(a => 
-                    a.created_at && a.created_at.startsWith(today)
-                ).length : 0;
-                
-                document.getElementById('newAccountsToday').textContent = newToday;
-                
-                // Última actualización
-                if (accounts && accounts.length > 0) {
-                    const latest = accounts.reduce((latest, current) => 
-                        new Date(current.created_at) > new Date(latest.created_at) ? current : latest
-                    );
-                    document.getElementById('lastUpdate').textContent = formatDate(latest.created_at);
-                } else {
-                    document.getElementById('lastUpdate').textContent = '--';
-                }
-                
-            } catch (error) {
-                console.error('Error cargando estadísticas:', error);
-            } finally {
-                hideLoading();
-            }
+    try {
+        showLoading();
+        
+        // Cargar total de cuentas
+        const accounts = await supabaseRequest('/chart_of_accounts?select=account_code,created_at&order=account_code.asc');
+        
+        document.getElementById('totalAccounts').textContent = accounts ? accounts.length : 0;
+        
+        // Contar nuevas cuentas hoy
+        const today = new Date().toISOString().split('T')[0];
+        const newToday = accounts ? accounts.filter(a => 
+            a.created_at && a.created_at.startsWith(today)
+        ).length : 0;
+        
+        document.getElementById('newAccountsToday').textContent = newToday;
+        
+        // Última actualización
+        if (accounts && accounts.length > 0) {
+            const latest = accounts.reduce((latest, current) => 
+                new Date(current.created_at) > new Date(latest.created_at) ? current : latest
+            );
+            document.getElementById('lastUpdate').textContent = formatDate(latest.created_at);
+        } else {
+            document.getElementById('lastUpdate').textContent = '--';
         }
+        
+        // MEJORA: Si hay cuentas y no hay búsqueda activa, mostrar todas las cuentas
+        const searchInput = document.getElementById('searchInput');
+        if (accounts && accounts.length > 0 && !searchInput.value.trim()) {
+            // Actualizar accountsData para evitar segunda consulta
+            accountsData = accounts;
+            renderAccountsTable(accounts);
+            updateSearchInfo(accounts.length, '');
+            document.getElementById('searchResults').textContent = accounts.length;
+        }
+        
+    } catch (error) {
+        console.error('Error cargando estadísticas:', error);
+    } finally {
+        hideLoading();
+    }
+}
 
+        
         async function searchAccounts(term = '') {
             if (isSearching) return;
             
@@ -751,42 +762,37 @@
 
         // CRUD Operations
         async function createAccount(code, name) {
-            try {
-                showLoading();
-                
-                const newAccount = {
-                    account_code: code,
-                    account_name: name
-                };
-                
-                await supabaseRequest('/chart_of_accounts', {
-                    method: 'POST',
-                    body: JSON.stringify(newAccount)
-                });
-                
-                showMessage('Cuenta PUC creada exitosamente', 'success');
-                hideAccountForm();
-                
-                // Actualizar lista y estadísticas
-                const currentSearch = document.getElementById('searchInput').value.trim();
-                if (currentSearch) {
-                    await searchAccounts(currentSearch);
-                } else {
-                    clearResults();
-                }
-                await loadStats();
-                
-            } catch (error) {
-                console.error('Error creando cuenta:', error);
-                if (error.message.includes('duplicate key value')) {
-                    showMessage('Ya existe una cuenta con ese código', 'danger');
-                } else {
-                    showMessage('Error al crear la cuenta PUC', 'danger');
-                }
-            } finally {
-                hideLoading();
-            }
+    try {
+        showLoading();
+        
+        const newAccount = {
+            account_code: code,
+            account_name: name
+        };
+        
+        await supabaseRequest('/chart_of_accounts', {
+            method: 'POST',
+            body: JSON.stringify(newAccount)
+        });
+        
+        showMessage('Cuenta PUC creada exitosamente', 'success');
+        hideAccountForm();
+        
+        // CORRECCIÓN: Siempre mostrar todas las cuentas después de crear
+        await searchAccounts(); // Sin parámetro = muestra todas las cuentas
+        await loadStats();
+        
+    } catch (error) {
+        console.error('Error creando cuenta:', error);
+        if (error.message.includes('duplicate key value')) {
+            showMessage('Ya existe una cuenta con ese código', 'danger');
+        } else {
+            showMessage('Error al crear la cuenta PUC', 'danger');
         }
+    } finally {
+        hideLoading();
+    }
+}
 
         async function editAccount(code) {
             try {
@@ -825,79 +831,71 @@
             }
         }
 
-        async function updateAccount(originalCode, newCode, newName) {
-            try {
-                showLoading();
-                
-                const updatedAccount = {
-                    account_code: newCode,
-                    account_name: newName
-                };
-                
-                await supabaseRequest(`/chart_of_accounts?account_code=eq.${originalCode}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify(updatedAccount)
-                });
-                
-                showMessage('Cuenta PUC actualizada exitosamente', 'success');
-                hideAccountForm();
-                
-                // Actualizar lista
-                const currentSearch = document.getElementById('searchInput').value.trim();
-                if (currentSearch) {
-                    await searchAccounts(currentSearch);
-                } else {
-                    clearResults();
-                }
-                await loadStats();
-                
-            } catch (error) {
-                console.error('Error actualizando cuenta:', error);
-                if (error.message.includes('duplicate key value')) {
-                    showMessage('Ya existe una cuenta con ese código o nombre', 'danger');
-                } else {
-                    showMessage('Error al actualizar la cuenta PUC', 'danger');
-                }
-            } finally {
-                hideLoading();
-            }
-        }
 
-        async function deleteAccount(code, name) {
-            const confirmed = confirm(
-                `¿Está seguro de que desea eliminar la cuenta PUC?\n\n` +
-                `Código: ${code}\n` +
-                `Nombre: ${name}\n\n` +
-                `Esta acción no se puede deshacer.`
-            );
-            
-            if (!confirmed) return;
-            
-            try {
-                showLoading();
-                
-                await supabaseRequest(`/chart_of_accounts?account_code=eq.${code}`, {
-                    method: 'DELETE'
-                });
-                
-                showMessage('Cuenta PUC eliminada exitosamente', 'success');
-                
-                // Actualizar lista y estadísticas
-                const currentSearch = document.getElementById('searchInput').value.trim();
-                if (currentSearch) {
-                    await searchAccounts(currentSearch);
-                } else {
-                    clearResults();
-                }
-                await loadStats();
-                
-            } catch (error) {
-                console.error('Error eliminando cuenta:', error);
-                showMessage('Error al eliminar la cuenta PUC', 'danger');
-            } finally {
-                hideLoading();
-            }
+
+        async function updateAccount(originalCode, newCode, newName) {
+    try {
+        showLoading();
+        
+        const updatedAccount = {
+            account_code: newCode,
+            account_name: newName
+        };
+        
+        await supabaseRequest(`/chart_of_accounts?account_code=eq.${originalCode}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updatedAccount)
+        });
+        
+        showMessage('Cuenta PUC actualizada exitosamente', 'success');
+        hideAccountForm();
+        
+        // CORRECCIÓN: Siempre mostrar todas las cuentas después de actualizar
+        await searchAccounts(); // Sin parámetro = muestra todas las cuentas
+        await loadStats();
+        
+    } catch (error) {
+        console.error('Error actualizando cuenta:', error);
+        if (error.message.includes('duplicate key value')) {
+            showMessage('Ya existe una cuenta con ese código o nombre', 'danger');
+        } else {
+            showMessage('Error al actualizar la cuenta PUC', 'danger');
         }
+    } finally {
+        hideLoading();
+    }
+}
+        
+        async function deleteAccount(code, name) {
+    const confirmed = confirm(
+        `¿Está seguro de que desea eliminar la cuenta PUC?\n\n` +
+        `Código: ${code}\n` +
+        `Nombre: ${name}\n\n` +
+        `Esta acción no se puede deshacer.`
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+        showLoading();
+        
+        await supabaseRequest(`/chart_of_accounts?account_code=eq.${code}`, {
+            method: 'DELETE'
+        });
+        
+        showMessage('Cuenta PUC eliminada exitosamente', 'success');
+        
+        // CORRECCIÓN: Siempre mostrar todas las cuentas después de eliminar
+        await searchAccounts(); // Sin parámetro = muestra todas las cuentas
+        await loadStats();
+        
+    } catch (error) {
+        console.error('Error eliminando cuenta:', error);
+        showMessage('Error al eliminar la cuenta PUC', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
 
         // Utility functions
         function validateAccountCode() {
