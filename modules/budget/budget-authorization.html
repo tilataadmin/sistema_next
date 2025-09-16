@@ -582,8 +582,8 @@
  */
 
         async function filtrarAsignaciones() {
-    const anioId = elementos.selectAnio.value; // NO parseInt - mantener UUID
-    const rubroId = elementos.selectRubro.value; // NO parseInt - mantener UUID
+    const anioId = elementos.selectAnio.value;
+    const rubroId = elementos.selectRubro.value;
     
     if (!anioId || !rubroId) {
         showMessage('Seleccione año y rubro para continuar', 'warning');
@@ -593,7 +593,6 @@
     try {
         console.log('🔍 Filtrando asignaciones:', { anioId, rubroId });
         
-        // Mostrar loading para filtrado
         elementos.loadingRecords.classList.remove('hidden');
         elementos.navigationSection.classList.add('hidden');
         elementos.noRecords.classList.add('hidden');
@@ -611,16 +610,25 @@
         
         console.log('📊 Items encontrados:', items.length);
         
-        // PASO 2: Obtener asignaciones para esos items y año
+        // PASO 2: Obtener asignaciones - CON DEBUGGING ESPECÍFICO PARA APPROVED_VALUE
         const itemIds = items.map(item => item.item_id);
-        console.log('📊 Item IDs:', itemIds);
-        
-        // Construir consulta de asignaciones sin template literals problemáticos
         const asignacionesQuery = `/budget_assignments?select=assignment_id,budget_item_id,category_detail,worker_email,requested_value,approved_value&academic_year_id=eq.${anioId}&budget_item_id=in.(${itemIds.join(',')})&assignment_status=eq.active`;
         console.log('📊 Consultando asignaciones:', asignacionesQuery);
         
         const asignaciones = await supabaseRequest(asignacionesQuery);
-        console.log('📊 Asignaciones encontradas:', asignaciones ? asignaciones.length : 'NULL');
+        console.log('📊 Asignaciones RAW de Supabase:', asignaciones);
+        
+        // DEBUGGING ESPECÍFICO: Mostrar los valores aprobados que vienen de la base
+        if (asignaciones && asignaciones.length > 0) {
+            console.log('💰 VALORES APROBADOS EN BASE DE DATOS:');
+            asignaciones.forEach((asig, index) => {
+                console.log(`   ${index + 1}. Assignment ${asig.assignment_id}:`);
+                console.log(`      - requested_value: ${asig.requested_value} (tipo: ${typeof asig.requested_value})`);
+                console.log(`      - approved_value: ${asig.approved_value} (tipo: ${typeof asig.approved_value})`);
+                console.log(`      - worker_email: ${asig.worker_email}`);
+                console.log(`      - item_id: ${asig.budget_item_id}`);
+            });
+        }
         
         if (!asignaciones || asignaciones.length === 0) {
             mostrarNoRecords();
@@ -632,16 +640,10 @@
         const emails = [...new Set(asignaciones.map(a => a.worker_email).filter(e => e))];
         let workersMap = new Map();
         
-        console.log('👥 Emails únicos encontrados:', emails.length);
-        
         if (emails.length > 0) {
-            // Consulta de workers sin template literals
             const emailsList = emails.map(email => `"${email}"`).join(',');
             const workersQuery = `/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emailsList})`;
-            console.log('👥 Consultando workers:', workersQuery);
-            
             const workers = await supabaseRequest(workersQuery);
-            console.log('👥 Workers encontrados:', workers ? workers.length : 'NULL');
             
             if (workers) {
                 workers.forEach(w => {
@@ -654,19 +656,36 @@
         // PASO 4: Crear mapa de items
         const itemsMap = new Map(items.map(item => [item.item_id, item.item_name]));
         
-        // PASO 5: Combinar datos
-        datosCompletos.asignacionesFiltradas = asignaciones.map(asignacion => ({
-            assignment_id: asignacion.assignment_id, // Mantener como UUID
-            budget_item_id: asignacion.budget_item_id,
-            category_detail: asignacion.category_detail || 'General',
-            worker_email: asignacion.worker_email,
-            requested_value: asignacion.requested_value || 0,
-            approved_value: asignacion.approved_value || 0,
-            item_name: itemsMap.get(asignacion.budget_item_id) || 'Sin nombre',
-            worker_name: workersMap.get(asignacion.worker_email) || 'Sin asignar'
-        }));
+        // PASO 5: Combinar datos - CON PRESERVACIÓN EXACTA DE VALORES
+        datosCompletos.asignacionesFiltradas = asignaciones.map((asignacion, index) => {
+            const procesamientoInfo = {
+                originalRequestedValue: asignacion.requested_value,
+                originalApprovedValue: asignacion.approved_value,
+                processedRequestedValue: asignacion.requested_value || 0,
+                processedApprovedValue: asignacion.approved_value || 0
+            };
+            
+            console.log(`💰 Procesando asignación ${index + 1}:`, procesamientoInfo);
+            
+            return {
+                assignment_id: asignacion.assignment_id,
+                budget_item_id: asignacion.budget_item_id,
+                category_detail: asignacion.category_detail || 'General',
+                worker_email: asignacion.worker_email,
+                requested_value: Number(asignacion.requested_value) || 0,
+                approved_value: Number(asignacion.approved_value) || 0,
+                item_name: itemsMap.get(asignacion.budget_item_id) || 'Sin nombre',
+                worker_name: workersMap.get(asignacion.worker_email) || 'Sin asignar'
+            };
+        });
         
-        console.log('✅ Asignaciones procesadas:', datosCompletos.asignacionesFiltradas.length);
+        console.log('✅ DATOS FINALES PROCESADOS:');
+        datosCompletos.asignacionesFiltradas.forEach((asig, index) => {
+            console.log(`   ${index + 1}. ${asig.item_name}:`);
+            console.log(`      - requested_value: ${asig.requested_value}`);
+            console.log(`      - approved_value: ${asig.approved_value}`);
+            console.log(`      - assignment_id: ${asig.assignment_id}`);
+        });
         
         if (datosCompletos.asignacionesFiltradas.length > 0) {
             registroActual = 0;
@@ -687,7 +706,6 @@
         elementos.loadingRecords.classList.add('hidden');
     }
 }
-
         
         /**
          * Navegación - ir al registro anterior
@@ -766,99 +784,58 @@
          * Muestra el registro actual en el formulario
          */
         function mostrarRegistroActual() {
-            if (datosCompletos.asignacionesFiltradas.length === 0) return;
-            
-            const registro = datosCompletos.asignacionesFiltradas[registroActual];
-            
-            // Llenar campos
-            elementos.fieldSubitem.value = registro.item_name;
-            elementos.fieldDistribucion.value = registro.category_detail;
-            elementos.fieldResponsable.value = registro.worker_name;
-            elementos.fieldValorSolicitado.value = formatearMoneda(registro.requested_value);
-            elementos.fieldValorAprobado.value = registro.approved_value.toLocaleString('es-CO');
-            
-            // Actualizar contador
-            elementos.currentRecord.textContent = registroActual + 1;
-            elementos.totalRecords.textContent = datosCompletos.asignacionesFiltradas.length;
-            
-            // Reset modificado
-            registroModificado = false;
-            actualizarEstadoBotones();
-            
-            // Enfocar campo editable
-            elementos.fieldValorAprobado.focus();
-            elementos.fieldValorAprobado.select();
-        }
-
-        /**
-         * Guarda el registro actual
-         */
-
-        async function guardarRegistro() {
-    if (!registroModificado) {
-        showMessage('No hay cambios para guardar', 'info');
-        return true;
-    }
+    if (datosCompletos.asignacionesFiltradas.length === 0) return;
     
     const registro = datosCompletos.asignacionesFiltradas[registroActual];
-    const nuevoValor = limpiarFormatoMoneda(elementos.fieldValorAprobado.value);
-    
-    console.log('💾 Guardando registro:', {
+    console.log('📋 MOSTRANDO REGISTRO ACTUAL:', {
+        indice: registroActual + 1,
         assignment_id: registro.assignment_id,
-        nuevoValor: nuevoValor,
-        valorOriginal: registro.approved_value
+        item_name: registro.item_name,
+        requested_value: registro.requested_value,
+        approved_value: registro.approved_value,
+        worker_name: registro.worker_name
     });
     
-    if (!validarValorAprobado(nuevoValor)) {
-        return false;
+    // Llenar campos con debugging
+    elementos.fieldSubitem.value = registro.item_name;
+    elementos.fieldDistribucion.value = registro.category_detail;
+    elementos.fieldResponsable.value = registro.worker_name;
+    elementos.fieldValorSolicitado.value = formatearMoneda(registro.requested_value);
+    
+    // DEBUGGING ESPECÍFICO PARA APPROVED_VALUE
+    const valorAprobadoOriginal = registro.approved_value;
+    let valorAprobadoMostrar = '';
+    
+    if (valorAprobadoOriginal && valorAprobadoOriginal > 0) {
+        valorAprobadoMostrar = valorAprobadoOriginal.toLocaleString('es-CO');
     }
     
-    try {
-        elementos.btnGuardar.disabled = true;
-        elementos.btnGuardar.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Guardando...';
-        
-        // Actualizar en Supabase usando UUID completo
-        const updateUrl = `/budget_assignments?assignment_id=eq.${registro.assignment_id}`;
-        console.log('💾 URL de actualización:', updateUrl);
-        
-        const response = await supabaseRequest(updateUrl, {
-            method: 'PATCH',
-            body: JSON.stringify({
-                approved_value: nuevoValor
-            })
-        });
-        
-        console.log('✅ Respuesta de actualización:', response);
-        
-        // Actualizar datos locales
-        datosCompletos.asignacionesFiltradas[registroActual].approved_value = nuevoValor;
-        
-        registroModificado = false;
-        showMessage('Valor aprobado actualizado correctamente', 'success');
-        
-        // Auto-navegación al siguiente registro
-        if (registroActual < datosCompletos.asignacionesFiltradas.length - 1) {
-            setTimeout(() => {
-                registroActual++;
-                mostrarRegistroActual();
-            }, 1000);
-        } else {
-            showMessage('¡Último registro completado!', 'info');
-        }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Error al guardar:', error);
-        showMessage('Error al guardar: ' + error.message, 'danger');
-        return false;
-    } finally {
-        elementos.btnGuardar.disabled = false;
-        elementos.btnGuardar.innerHTML = '<i class="bi bi-save me-1"></i>Guardar';
-        actualizarEstadoBotones();
-    }
+    console.log('💰 VALOR APROBADO - ANÁLISIS:', {
+        valorOriginalBD: valorAprobadoOriginal,
+        valorOriginalTipo: typeof valorAprobadoOriginal,
+        valorOriginalMayorCero: valorAprobadoOriginal > 0,
+        valorAMostrar: valorAprobadoMostrar
+    });
+    
+    elementos.fieldValorAprobado.value = valorAprobadoMostrar;
+    
+    console.log('💰 CAMPO ACTUALIZADO:', {
+        campoValue: elementos.fieldValorAprobado.value,
+        campoVacio: elementos.fieldValorAprobado.value === ''
+    });
+    
+    // Actualizar contador
+    elementos.currentRecord.textContent = registroActual + 1;
+    elementos.totalRecords.textContent = datosCompletos.asignacionesFiltradas.length;
+    
+    // Reset modificado
+    registroModificado = false;
+    actualizarEstadoBotones();
+    
+    // Enfocar campo editable
+    elementos.fieldValorAprobado.focus();
+    elementos.fieldValorAprobado.select();
 }
-
         
         /**
          * Event handler para cambio en valor aprobado
