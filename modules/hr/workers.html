@@ -1822,94 +1822,99 @@
         // ==========================================
 
         async function createUserFromWorker(workerId, workerFullName) {
-            try {
-                // Confirmar acción
-                const confirmed = confirm(
-                    `¿Crear usuario del sistema para:\n${workerFullName}?\n\n` +
-                    `Se generará automáticamente:\n` +
-                    `• Nombre de usuario basado en inicial + apellido\n` +
-                    `• Autenticación por Google habilitada\n` +
-                    `• Sin roles asignados inicialmente`
-                );
-                
-                if (!confirmed) return;
-                
-                showLoading(true);
-                
-                // Obtener datos completos del worker
-                const workers = await supabaseRequest(`/workers?select=*&worker_id=eq.${workerId}`);
-                const worker = workers?.[0];
-                
-                if (!worker) {
-                    throw new Error('Trabajador no encontrado');
-                }
-                
-                if (worker.worker_status !== 'active') {
-                    throw new Error('Solo se pueden crear usuarios para trabajadores activos');
-                }
-                
-                // Verificar si ya existe usuario con este email
-                const existingUsers = await supabaseRequest(`/users?select=user_id,user_name&user_mail=eq.${encodeURIComponent(worker.email)}`);
-                if (existingUsers && existingUsers.length > 0) {
-                    throw new Error(`Ya existe un usuario con el email: ${worker.email}\nNombre de usuario: ${existingUsers[0].user_name}`);
-                }
-                
-                // Generar user_name
-                const userName = await generateUserName(worker.worker_first_name, worker.worker_last_name_1);
-                
-                // Crear usuario
-                const newUser = {
-                    user_name: userName,
-                    user_display_name: `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim(),
-                    user_mail: worker.email,
-                    user_password: null, // Sin password para autenticación Google
-                    auth_provider: 'google',
-                    email_verified: false,
-                    user_status: 'active'
-                };
-                
-                const createdUser = await supabaseRequest('/users', {
-                    method: 'POST',
-                    body: JSON.stringify(newUser)
-                });
-                
-                if (!createdUser || createdUser.length === 0) {
-                    throw new Error('Error al crear el usuario');
-                }
-                
-                showMessage(
-                    `Usuario creado exitosamente:\n` +
-                    `• Nombre: ${newUser.user_display_name}\n` +
-                    `• Usuario: ${userName}\n` +
-                    `• Email: ${worker.email}\n` +
-                    `• Autenticación: Google\n\n` +
-                    `El usuario puede ahora acceder con su cuenta de Google.`,
-                    'success'
-                );
-                
-                // Recargar tabla para reflejar cambios
-                await loadWorkers();
-                
-            } catch (error) {
-                console.error('❌ Error creando usuario:', error);
-                
-                let errorMessage = 'Error al crear usuario del sistema';
-                if (error.message.includes('duplicate key')) {
-                    if (error.message.includes('user_name')) {
-                        errorMessage = 'Ya existe un usuario con ese nombre de usuario';
-                    } else if (error.message.includes('user_mail')) {
-                        errorMessage = 'Ya existe un usuario con ese correo electrónico';
-                    }
-                } else if (error.message) {
-                    errorMessage = error.message;
-                }
-                
-                showMessage(errorMessage, 'danger');
-            } finally {
-                showLoading(false);
-            }
+    try {
+        // Confirmar acción
+        const confirmed = confirm(
+            `¿Crear usuario del sistema para:\n${workerFullName}?\n\n` +
+            `Se generará automáticamente:\n` +
+            `• Nombre de usuario basado en inicial + apellido\n` +
+            `• Contraseña temporal: TempPass123!\n` +
+            `• Autenticación local (usuario/contraseña)\n` +
+            `• Sin roles asignados inicialmente\n\n` +
+            `El usuario deberá cambiar la contraseña en su primer acceso.`
+        );
+        
+        if (!confirmed) return;
+        
+        showLoading(true);
+        
+        // Obtener datos completos del worker
+        const workers = await supabaseRequest(`/workers?select=*&worker_id=eq.${workerId}`);
+        const worker = workers?.[0];
+        
+        if (!worker) {
+            throw new Error('Trabajador no encontrado');
         }
+        
+        if (worker.worker_status !== 'active') {
+            throw new Error('Solo se pueden crear usuarios para trabajadores activos');
+        }
+        
+        // Verificar si ya existe usuario con este email
+        const existingUsers = await supabaseRequest(`/users?select=user_id,user_name&user_mail=eq.${encodeURIComponent(worker.email)}`);
+        if (existingUsers && existingUsers.length > 0) {
+            throw new Error(`Ya existe un usuario con el email: ${worker.email}\nNombre de usuario: ${existingUsers[0].user_name}`);
+        }
+        
+        // Generar user_name
+        const userName = await generateUserName(worker.worker_first_name, worker.worker_last_name_1);
+        
+        // Crear usuario con autenticación local
+        const newUser = {
+            user_name: userName,
+            user_display_name: `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim(),
+            user_mail: worker.email,
+            user_password: 'TempPass123!', // Contraseña temporal estándar
+            auth_provider: 'local', // Cambio a autenticación local
+            email_verified: true, // Marcar como verificado (es trabajador interno)
+            user_status: 'active'
+        };
+        
+        const createdUser = await supabaseRequest('/users', {
+            method: 'POST',
+            body: JSON.stringify(newUser)
+        });
+        
+        if (!createdUser || createdUser.length === 0) {
+            throw new Error('Error al crear el usuario');
+        }
+        
+        showMessage(
+            `Usuario creado exitosamente:\n` +
+            `• Nombre: ${newUser.user_display_name}\n` +
+            `• Usuario: ${userName}\n` +
+            `• Email: ${worker.email}\n` +
+            `• Contraseña temporal: TempPass123!\n` +
+            `• Autenticación: Local (usuario/contraseña)\n\n` +
+            `IMPORTANTE: El usuario debe cambiar la contraseña en su primer acceso.`,
+            'success'
+        );
+        
+        // Recargar tabla para reflejar cambios
+        await loadWorkers();
+        
+    } catch (error) {
+        console.error('❌ Error creando usuario:', error);
+        
+        let errorMessage = 'Error al crear usuario del sistema';
+        if (error.message.includes('duplicate key')) {
+            if (error.message.includes('user_name')) {
+                errorMessage = 'Ya existe un usuario con ese nombre de usuario';
+            } else if (error.message.includes('user_mail')) {
+                errorMessage = 'Ya existe un usuario con ese correo electrónico';
+            }
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        showMessage(errorMessage, 'danger');
+    } finally {
+        showLoading(false);
+    }
+}
 
+
+        
         async function generateUserName(firstName, lastName) {
             // Limpiar y normalizar nombres
             const cleanFirstName = firstName.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
