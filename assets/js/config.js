@@ -352,6 +352,20 @@ function validateForm(formId, rules = {}) {
     return isValid;
 }
 
+
+// Función auxiliar para mapear nombres de módulos a carpetas
+function getModuleFolder(moduleName) {
+    const moduleMap = {
+        'Seguridad': 'security',
+        'Configuración': 'config',
+        'Talento Humano': 'hr',
+        'Indicadores': 'indicators',
+        'Presupuesto': 'budget'
+    };
+    
+    return moduleMap[moduleName] || moduleName.toLowerCase();
+}
+
 // Función para generar breadcrumbs consistentes
 function generateBreadcrumbs(moduleName, pageName) {
     return `
@@ -772,4 +786,5 @@ window.updatePageTitle = updatePageTitle;
 window.updatePageHeader = updatePageHeader;
 window.updatePageFooter = updatePageFooter;
 window.initializePage = initializePage;
-window.applyBrandingAutomatically = applyBrandingAutomatically;
+window.applyBrandingAutomatically = applyBrandingAutomatically;window.generateBreadcrumbs = generateBreadcrumbs;
+window.getModuleFolder = getModuleFolder;
