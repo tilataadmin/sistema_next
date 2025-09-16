@@ -671,12 +671,75 @@
         // ==========================================
         
         async function handleGoogleLogin() {
-            if (isLoading) return;
-            
-            showMessage('Funcionalidad de Google en desarrollo...', 'info');
-            console.log('🔄 Google Auth - En desarrollo');
+    if (isLoading) return;
+    
+    try {
+        setLoading(true);
+        console.log('🔄 Iniciando Google Sign-In...');
+        
+        // Inicializar Google Identity
+        if (typeof google === 'undefined') {
+            throw new Error('Google Identity Services no cargado');
         }
         
+        // Configurar Google Sign-In
+        google.accounts.id.initialize({
+            client_id: '1087806377219-8mf6ijnlu2nr1ug7lc7aqn6lp3hqs8sv.apps.googleusercontent.com', // Client ID de prueba público
+            callback: handleGoogleCallback,
+            auto_select: false,
+            cancel_on_tap_outside: true
+        });
+        
+        // Mostrar popup de Google
+        google.accounts.id.prompt();
+        
+    } catch (error) {
+        console.error('❌ Error en Google Sign-In:', error);
+        showMessage('Error al inicializar Google Sign-In: ' + error.message, 'danger');
+        setLoading(false);
+    }
+}
+
+        // Función que maneja la respuesta de Google
+async function handleGoogleCallback(response) {
+    try {
+        console.log('📧 Respuesta de Google recibida');
+        
+        // Decodificar el token JWT de Google
+        const token = response.credential;
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        
+        console.log('👤 Usuario Google:', payload.email);
+        
+        // Buscar usuario en la base de datos por email
+        const userQuery = `/users?select=*&user_status=eq.active&user_mail=eq.${encodeURIComponent(payload.email)}&limit=1`;
+        const userResponse = await supabaseRequest(userQuery);
+        
+        if (!userResponse || userResponse.length === 0) {
+            throw new Error(`Usuario ${payload.email} no está registrado en el sistema`);
+        }
+        
+        const user = userResponse[0];
+        
+        // Actualizar último login
+        await supabaseRequest(`/users?user_id=eq.${user.user_id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                last_login: new Date().toISOString(),
+                auth_provider: 'google',
+                external_id: payload.sub
+            })
+        });
+        
+        // Obtener roles y permisos del usuario
+        const { userRoles, userPermissions } = await getUserPermissions(user.user_id);
+        
+        // Crear objeto de sesión
+        const sessionData = {
+            user: {
+                user_id: user.user_id,
+                user_name: user.user_name,
+                user_display_name: user.user_display_name || payload.name
                
         function handleForgotPassword(e) {
             e.preventDefault();
