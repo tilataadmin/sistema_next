@@ -485,57 +485,42 @@
         /**
          * Configura event listeners
          */
+
         function configurarEventListeners() {
-            // Filtros
-            elementos.selectAnio.addEventListener('change', onAnioChange);
-            elementos.selectRubro.addEventListener('change', onRubroChange);
-            elementos.btnBuscar.addEventListener('click', filtrarAsignaciones);
-            
-            // Navegación
-            elementos.btnAnterior.addEventListener('click', irAnterior);
-            elementos.btnSiguiente.addEventListener('click', irSiguiente);
-            elementos.btnPrimerRegistro.addEventListener('click', irPrimerRegistro);
-            elementos.btnUltimoRegistro.addEventListener('click', irUltimoRegistro);
-            
-            // Guardado
-            elementos.btnGuardar.addEventListener('click', guardarRegistro);
-            elementos.btnCancelarCambios.addEventListener('click', cancelarCambios);
-            
-            // Campo editable
-            elementos.fieldValorAprobado.addEventListener('input', onValorAprobadoChange);
-            elementos.fieldValorAprobado.addEventListener('blur', formatearValorAprobado);
-            
-            // Teclas rápidas
-            document.addEventListener('keydown', manejarTeclasRapidas);
+    // Filtros
+    elementos.selectAnio.addEventListener('change', onAnioChange);
+    elementos.selectRubro.addEventListener('change', onRubroChange);
+    elementos.btnBuscar.addEventListener('click', filtrarAsignaciones);
+    
+    // Navegación
+    elementos.btnAnterior.addEventListener('click', irAnterior);
+    elementos.btnSiguiente.addEventListener('click', irSiguiente);
+    elementos.btnPrimerRegistro.addEventListener('click', irPrimerRegistro);
+    elementos.btnUltimoRegistro.addEventListener('click', irUltimoRegistro);
+    
+    // Guardado
+    elementos.btnGuardar.addEventListener('click', guardarRegistro);
+    elementos.btnCancelarCambios.addEventListener('click', cancelarCambios);
+    
+    // Campo editable - eventos mejorados
+    elementos.fieldValorAprobado.addEventListener('input', onValorAprobadoChange);
+    
+    // CAMBIO IMPORTANTE: Solo formatear cuando el usuario presiona Enter o cambia de campo de manera intencional
+    elementos.fieldValorAprobado.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            formatearValorAprobado();
+            e.target.blur(); // Quitar foco después de formatear
         }
+    });
+    
+    // NO usar blur automático - solo formatear cuando sea necesario
+    // elementos.fieldValorAprobado.addEventListener('blur', formatearValorAprobado); // COMENTADO
+    
+    // Teclas rápidas
+    document.addEventListener('keydown', manejarTeclasRapidas);
+}
 
-        /**
-         * Carga datos iniciales
-         */
-        async function cargarDatosIniciales() {
-            try {
-                mostrarLoading('Cargando datos iniciales...');
-                
-                // Cargar años académicos
-                const aniosData = await supabaseRequest('/academic_years?select=year_id,year_name,year_order&order=year_order.desc');
-                datosCompletos.anios = aniosData || [];
-                cargarSelectAnios();
-                
-                // Cargar rubros presupuestales
-                const rubrosData = await supabaseRequest('/budget_categories?select=category_id,category_name&category_status=eq.active&order=category_name.asc');
-                datosCompletos.rubros = rubrosData || [];
-                cargarSelectRubros();
-                
-                ocultarLoading();
-                showMessage('Datos iniciales cargados correctamente', 'success');
-                
-            } catch (error) {
-                console.error('Error al cargar datos iniciales:', error);
-                showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
-                ocultarLoading();
-            }
-        }
-
+        
         /**
          * Carga el select de años académicos
          */
@@ -595,9 +580,10 @@
         /**
  * Filtra asignaciones por año y rubro (VERSIÓN CORREGIDA)
  */
-async function filtrarAsignaciones() {
-    const anioId = elementos.selectAnio.value;
-    const rubroId = elementos.selectRubro.value;
+
+        async function filtrarAsignaciones() {
+    const anioId = elementos.selectAnio.value; // NO parseInt - mantener UUID
+    const rubroId = elementos.selectRubro.value; // NO parseInt - mantener UUID
     
     if (!anioId || !rubroId) {
         showMessage('Seleccione año y rubro para continuar', 'warning');
@@ -605,6 +591,8 @@ async function filtrarAsignaciones() {
     }
     
     try {
+        console.log('🔍 Filtrando asignaciones:', { anioId, rubroId });
+        
         // Mostrar loading para filtrado
         elementos.loadingRecords.classList.remove('hidden');
         elementos.navigationSection.classList.add('hidden');
@@ -612,6 +600,7 @@ async function filtrarAsignaciones() {
         
         // PASO 1: Obtener items del rubro seleccionado
         const itemsQuery = `/budget_items?select=item_id,item_name&category_id=eq.${rubroId}`;
+        console.log('📊 Consultando items:', itemsQuery);
         const items = await supabaseRequest(itemsQuery);
         
         if (!items || items.length === 0) {
@@ -620,11 +609,18 @@ async function filtrarAsignaciones() {
             return;
         }
         
+        console.log('📊 Items encontrados:', items.length);
+        
         // PASO 2: Obtener asignaciones para esos items y año
-        const itemIds = items.map(item => item.item_id).join(',');
-        const asignacionesQuery = `/budget_assignments?select=assignment_id,budget_item_id,category_detail,worker_email,requested_value,approved_value&academic_year_id=eq.${anioId}&budget_item_id=in.(${itemIds})&assignment_status=eq.active`;
+        const itemIds = items.map(item => item.item_id);
+        console.log('📊 Item IDs:', itemIds);
+        
+        // Construir consulta de asignaciones sin template literals problemáticos
+        const asignacionesQuery = `/budget_assignments?select=assignment_id,budget_item_id,category_detail,worker_email,requested_value,approved_value&academic_year_id=eq.${anioId}&budget_item_id=in.(${itemIds.join(',')})&assignment_status=eq.active`;
+        console.log('📊 Consultando asignaciones:', asignacionesQuery);
         
         const asignaciones = await supabaseRequest(asignacionesQuery);
+        console.log('📊 Asignaciones encontradas:', asignaciones ? asignaciones.length : 'NULL');
         
         if (!asignaciones || asignaciones.length === 0) {
             mostrarNoRecords();
@@ -636,13 +632,23 @@ async function filtrarAsignaciones() {
         const emails = [...new Set(asignaciones.map(a => a.worker_email).filter(e => e))];
         let workersMap = new Map();
         
+        console.log('👥 Emails únicos encontrados:', emails.length);
+        
         if (emails.length > 0) {
-            const workersQuery = `/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emails.join(',')})`;
+            // Consulta de workers sin template literals
+            const emailsList = emails.map(email => `"${email}"`).join(',');
+            const workersQuery = `/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emailsList})`;
+            console.log('👥 Consultando workers:', workersQuery);
+            
             const workers = await supabaseRequest(workersQuery);
-            workers.forEach(w => {
-                const fullName = `${w.worker_first_name} ${w.worker_last_name_1} ${w.worker_last_name_2 || ''}`.trim();
-                workersMap.set(w.email, fullName);
-            });
+            console.log('👥 Workers encontrados:', workers ? workers.length : 'NULL');
+            
+            if (workers) {
+                workers.forEach(w => {
+                    const fullName = `${w.worker_first_name} ${w.worker_last_name_1} ${w.worker_last_name_2 || ''}`.trim();
+                    workersMap.set(w.email, fullName);
+                });
+            }
         }
         
         // PASO 4: Crear mapa de items
@@ -650,7 +656,7 @@ async function filtrarAsignaciones() {
         
         // PASO 5: Combinar datos
         datosCompletos.asignacionesFiltradas = asignaciones.map(asignacion => ({
-            assignment_id: asignacion.assignment_id,
+            assignment_id: asignacion.assignment_id, // Mantener como UUID
             budget_item_id: asignacion.budget_item_id,
             category_detail: asignacion.category_detail || 'General',
             worker_email: asignacion.worker_email,
@@ -659,6 +665,8 @@ async function filtrarAsignaciones() {
             item_name: itemsMap.get(asignacion.budget_item_id) || 'Sin nombre',
             worker_name: workersMap.get(asignacion.worker_email) || 'Sin asignar'
         }));
+        
+        console.log('✅ Asignaciones procesadas:', datosCompletos.asignacionesFiltradas.length);
         
         if (datosCompletos.asignacionesFiltradas.length > 0) {
             registroActual = 0;
@@ -672,7 +680,7 @@ async function filtrarAsignaciones() {
         }
         
     } catch (error) {
-        console.error('Error al filtrar asignaciones:', error);
+        console.error('❌ Error al filtrar asignaciones:', error);
         showMessage('Error al cargar asignaciones: ' + error.message, 'danger');
         mostrarNoRecords();
     } finally {
@@ -680,6 +688,7 @@ async function filtrarAsignaciones() {
     }
 }
 
+        
         /**
          * Navegación - ir al registro anterior
          */
@@ -784,84 +793,108 @@ async function filtrarAsignaciones() {
         /**
          * Guarda el registro actual
          */
-        async function guardarRegistro() {
-            if (!registroModificado) {
-                showMessage('No hay cambios para guardar', 'info');
-                return true;
-            }
-            
-            const registro = datosCompletos.asignacionesFiltradas[registroActual];
-            const nuevoValor = limpiarFormatoMoneda(elementos.fieldValorAprobado.value);
-            
-            if (!validarValorAprobado(nuevoValor)) {
-                return false;
-            }
-            
-            try {
-                elementos.btnGuardar.disabled = true;
-                elementos.btnGuardar.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Guardando...';
-                
-                // Actualizar en Supabase
-                await supabaseRequest(`/budget_assignments?assignment_id=eq.${registro.assignment_id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                        approved_value: nuevoValor
-                    })
-                });
-                
-                // Actualizar datos locales
-                datosCompletos.asignacionesFiltradas[registroActual].approved_value = nuevoValor;
-                
-                registroModificado = false;
-                showMessage('Valor aprobado actualizado correctamente', 'success');
-                
-                // Auto-navegación al siguiente registro
-                if (registroActual < datosCompletos.asignacionesFiltradas.length - 1) {
-                    setTimeout(() => {
-                        registroActual++;
-                        mostrarRegistroActual();
-                    }, 1000);
-                } else {
-                    showMessage('¡Último registro completado!', 'info');
-                }
-                
-                return true;
-                
-            } catch (error) {
-                console.error('Error al guardar:', error);
-                showMessage('Error al guardar: ' + error.message, 'danger');
-                return false;
-            } finally {
-                elementos.btnGuardar.disabled = false;
-                elementos.btnGuardar.innerHTML = '<i class="bi bi-save me-1"></i>Guardar';
-                actualizarEstadoBotones();
-            }
-        }
 
+        async function guardarRegistro() {
+    if (!registroModificado) {
+        showMessage('No hay cambios para guardar', 'info');
+        return true;
+    }
+    
+    const registro = datosCompletos.asignacionesFiltradas[registroActual];
+    const nuevoValor = limpiarFormatoMoneda(elementos.fieldValorAprobado.value);
+    
+    console.log('💾 Guardando registro:', {
+        assignment_id: registro.assignment_id,
+        nuevoValor: nuevoValor,
+        valorOriginal: registro.approved_value
+    });
+    
+    if (!validarValorAprobado(nuevoValor)) {
+        return false;
+    }
+    
+    try {
+        elementos.btnGuardar.disabled = true;
+        elementos.btnGuardar.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Guardando...';
+        
+        // Actualizar en Supabase usando UUID completo
+        const updateUrl = `/budget_assignments?assignment_id=eq.${registro.assignment_id}`;
+        console.log('💾 URL de actualización:', updateUrl);
+        
+        const response = await supabaseRequest(updateUrl, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                approved_value: nuevoValor
+            })
+        });
+        
+        console.log('✅ Respuesta de actualización:', response);
+        
+        // Actualizar datos locales
+        datosCompletos.asignacionesFiltradas[registroActual].approved_value = nuevoValor;
+        
+        registroModificado = false;
+        showMessage('Valor aprobado actualizado correctamente', 'success');
+        
+        // Auto-navegación al siguiente registro
+        if (registroActual < datosCompletos.asignacionesFiltradas.length - 1) {
+            setTimeout(() => {
+                registroActual++;
+                mostrarRegistroActual();
+            }, 1000);
+        } else {
+            showMessage('¡Último registro completado!', 'info');
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Error al guardar:', error);
+        showMessage('Error al guardar: ' + error.message, 'danger');
+        return false;
+    } finally {
+        elementos.btnGuardar.disabled = false;
+        elementos.btnGuardar.innerHTML = '<i class="bi bi-save me-1"></i>Guardar';
+        actualizarEstadoBotones();
+    }
+}
+
+        
         /**
          * Event handler para cambio en valor aprobado
          */
-        function onValorAprobadoChange() {
-            registroModificado = true;
-            
-            // Solo números
-            const valor = elementos.fieldValorAprobado.value;
-            const valorLimpio = valor.replace(/[^\d]/g, '');
-            
-            if (valor !== valorLimpio) {
-                elementos.fieldValorAprobado.value = valorLimpio;
-            }
-            
-            actualizarEstadoBotones();
-        }
 
+        function onValorAprobadoChange() {
+    registroModificado = true;
+    
+    // Solo números - permitir borrar completamente
+    const valor = elementos.fieldValorAprobado.value;
+    const valorLimpio = valor.replace(/[^\d]/g, '');
+    
+    // Actualizar solo si hay diferencia significativa
+    if (valor !== valorLimpio) {
+        elementos.fieldValorAprobado.value = valorLimpio;
+    }
+    
+    actualizarEstadoBotones();
+}
+        
         /**
          * Formatea el valor aprobado
          */
         function formatearValorAprobado() {
-            const valor = limpiarFormatoMoneda(elementos.fieldValorAprobado.value);
+    const valorActual = elementos.fieldValorAprobado.value;
+    
+    // Solo formatear si el campo tiene contenido y no está vacío
+    if (valorActual && valorActual.trim() !== '') {
+        const valor = limpiarFormatoMoneda(valorActual);
+        
+        // Solo formatear si es un número válido mayor a 0
+        if (valor > 0) {
             elementos.fieldValorAprobado.value = valor.toLocaleString('es-CO');
         }
+    }
+}
 
         /**
          * Cancela los cambios actuales
