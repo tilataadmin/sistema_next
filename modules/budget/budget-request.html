@@ -536,69 +536,89 @@
         /**
          * Carga datos iniciales
          */
-        async function cargarDatosIniciales() {
-            try {
-                mostrarLoading('Cargando datos iniciales...');
-                
-                // PASO 1: Cargar años académicos
-                const aniosData = await supabaseRequest('/academic_years?select=year_id,year_name,year_order&order=year_order.desc');
-                datosCompletos.anios = aniosData || [];
-                cargarSelectorAnios();
-                
-                // PASO 2: Obtener usuario actual para filtrar asignaciones
-                const session = getStoredSession();
-                const userEmail = session?.user?.user_mail;
-                
-                if (!userEmail) {
-                    throw new Error('No se pudo obtener el email del usuario actual');
-                }
-                
-                // PASO 3: Cargar asignaciones del usuario (usando budget_assignments)
-                const asignacionesQuery = `/budget_assignments?select=assignment_id,academic_year_id,budget_item_id,category_detail,requested_value,approved_value,budget_items(item_name),academic_years(year_name,year_order)&worker_email=eq.${userEmail}&assignment_status=eq.active&order=academic_years(year_order).desc,budget_items(item_name).asc`;
-                
-                const asignacionesData = await supabaseRequest(asignacionesQuery);
-                
-                if (asignacionesData) {
-                    // Procesar datos para formato consistente
-                    datosCompletos.asignaciones = asignacionesData.map(asignacion => ({
-                        assignment_id: asignacion.assignment_id,
-                        year_id: asignacion.academic_year_id,
-                        budget_item_id: asignacion.budget_item_id,
-                        category_detail: asignacion.category_detail || 'General',
-                        requested_value: asignacion.requested_value || 0,
-                        approved_value: asignacion.approved_value || 0,
-                        item_name: asignacion.budget_items?.item_name || 'Sin nombre',
-                        year_name: asignacion.academic_years?.year_name || 'Sin año',
-                        year_order: asignacion.academic_years?.year_order || 0
-                    }));
-                } else {
-                    datosCompletos.asignaciones = [];
-                }
-                
-                // PASO 4: Organizar asignaciones por año para búsqueda rápida
-                organizarAsignacionesPorAnio();
-                
-                ocultarLoading();
-                showMessage(`Datos cargados: ${datosCompletos.anios.length} años, ${datosCompletos.asignaciones.length} asignaciones`, 'success');
-                
-            } catch (error) {
-                console.error('Error al cargar datos iniciales:', error);
-                showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
-                ocultarLoading();
-            }
-        }
 
-        /**
-         * Obtiene sesión almacenada
-         */
-        function getStoredSession() {
+      /**
+ * Carga datos iniciales - VERSIÓN CON DEBUGGING
+ */
+async function cargarDatosIniciales() {
     try {
-        const sessionData = localStorage.getItem('nextSystemSession') || sessionStorage.getItem('nextSystemSession');
-        return sessionData ? JSON.parse(sessionData) : null;
+        mostrarLoading('Cargando datos iniciales...');
+        
+        // PASO 1: Cargar años académicos
+        console.log('📅 Cargando años académicos...');
+        const aniosData = await supabaseRequest('/academic_years?select=year_id,year_name,year_order&order=year_order.desc');
+        datosCompletos.anios = aniosData || [];
+        console.log('✅ Años cargados:', datosCompletos.anios.length);
+        cargarSelectorAnios();
+        
+        // PASO 2: Obtener usuario actual para filtrar asignaciones
+        const session = getStoredSession();
+        console.log('👤 Sesión obtenida:', session ? 'SÍ' : 'NO');
+        
+        if (!session || !session.user) {
+            throw new Error('No hay sesión de usuario activa');
+        }
+        
+        const userEmail = session.user.user_mail;
+        console.log('📧 Email del usuario logueado:', userEmail);
+        
+        if (!userEmail) {
+            throw new Error('No se pudo obtener el email del usuario actual');
+        }
+        
+        // PASO 3: Verificar si el usuario existe en workers
+        console.log('🔍 Verificando usuario en tabla workers...');
+        const workerVerification = await supabaseRequest(`/workers?select=worker_id,email&email=eq.${userEmail}`);
+        console.log('👷 Worker encontrado:', workerVerification);
+        
+        // PASO 4: Cargar TODAS las asignaciones para debugging
+        console.log('🔍 Consultando TODAS las asignaciones (para debugging)...');
+        const todasAsignaciones = await supabaseRequest('/budget_assignments?select=assignment_id,worker_email,assignment_status&limit=10');
+        console.log('📊 Muestra de todas las asignaciones:', todasAsignaciones);
+        
+        // PASO 5: Cargar asignaciones del usuario específico
+        console.log('🎯 Consultando asignaciones específicas del usuario...');
+        const asignacionesQuery = `/budget_assignments?select=assignment_id,academic_year_id,budget_item_id,category_detail,requested_value,approved_value,budget_items(item_name),academic_years(year_name,year_order)&worker_email=eq.${userEmail}&assignment_status=eq.active&order=academic_years(year_order).desc,budget_items(item_name).asc`;
+        
+        console.log('🔗 URL de consulta:', asignacionesQuery);
+        
+        const asignacionesData = await supabaseRequest(asignacionesQuery);
+        console.log('📋 Asignaciones del usuario encontradas:', asignacionesData ? asignacionesData.length : 'NULL');
+        console.log('📋 Datos completos de asignaciones:', asignacionesData);
+        
+        if (asignacionesData) {
+            // Procesar datos para formato consistente
+            datosCompletos.asignaciones = asignacionesData.map(asignacion => ({
+                assignment_id: asignacion.assignment_id,
+                year_id: asignacion.academic_year_id,
+                budget_item_id: asignacion.budget_item_id,
+                category_detail: asignacion.category_detail || 'General',
+                requested_value: asignacion.requested_value || 0,
+                approved_value: asignacion.approved_value || 0,
+                item_name: asignacion.budget_items?.item_name || 'Sin nombre',
+                year_name: asignacion.academic_years?.year_name || 'Sin año',
+                year_order: asignacion.academic_years?.year_order || 0
+            }));
+        } else {
+            datosCompletos.asignaciones = [];
+        }
+        
+        console.log('✅ Asignaciones procesadas:', datosCompletos.asignaciones.length);
+        
+        // PASO 6: Organizar asignaciones por año para búsqueda rápida
+        organizarAsignacionesPorAnio();
+        
+        ocultarLoading();
+        showMessage(`Datos cargados: ${datosCompletos.anios.length} años, ${datosCompletos.asignaciones.length} asignaciones`, 'success');
+        
     } catch (error) {
-        return null;
+        console.error('❌ Error al cargar datos iniciales:', error);
+        showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
+        ocultarLoading();
     }
 }
+
+      
         /**
          * Carga el selector de años académicos
          */
