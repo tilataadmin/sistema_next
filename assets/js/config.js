@@ -352,6 +352,30 @@ function validateForm(formId, rules = {}) {
     return isValid;
 }
 
+// Función para generar breadcrumbs consistentes
+function generateBreadcrumbs(moduleName, pageName) {
+    return `
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="/dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="/modules/${getModuleFolder(moduleName)}/index.html">
+                        ${moduleName}
+                    </a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    ${pageName}
+                </li>
+            </ol>
+        </nav>
+    `;
+}
+
+
 // Funciones de branding (sin cambios)
 function updatePageTitle(pageKey, moduleName = '') {
     const baseTitle = APP_CONFIG.ui.titles[pageKey] || 'Página';
