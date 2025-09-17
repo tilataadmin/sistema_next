@@ -632,22 +632,169 @@
         }
 
         async function loadDashboardStats() {
-            try {
-                console.log('📊 Cargando estadísticas del dashboard...');
-                
-                // Por ahora mostrar datos demo, después conectar con la BD
-                document.getElementById('totalBudget').textContent = '$2,500,000,000';
-                document.getElementById('executedBudget').textContent = '$1,750,000,000';
-                document.getElementById('pendingRequests').textContent = '12';
-                document.getElementById('executionPercent').textContent = '70%';
-                
-                // TODO: Implementar consultas reales a las tablas de presupuesto
-                // const budgetData = await supabaseRequest('/budget_assignments?select=*');
-                
-            } catch (error) {
-                console.error('❌ Error cargando estadísticas:', error);
-            }
+    try {
+        console.log('📊 Cargando estadísticas del dashboard...');
+        
+        // 1. Obtener año presupuestal actual del sistema
+        const systemConfig = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
+        const currentBudgetYearId = systemConfig?.[0]?.current_budget_year_id;
+        
+        if (!currentBudgetYearId) {
+            console.warn('⚠️ No hay año presupuestal configurado en system_config');
+            showEmptyStats();
+            return;
         }
+        
+        console.log(`📅 Año presupuestal actual: ${currentBudgetYearId}`);
+        
+        // 2. Determinar nivel de acceso del usuario
+        const userAccessLevel = await getUserAccessLevel();
+        
+        // 3. Construir filtros según el nivel de acceso
+        let assignmentsFilter = `academic_year_id=eq.${currentBudgetYearId}&assignment_status=eq.active`;
+        let requestsFilter = '';
+        
+        if (userAccessLevel === 'personal') {
+            // Usuario normal: solo sus asignaciones
+            assignmentsFilter += `&worker_email=eq.${currentUser.user_mail}`;
+            requestsFilter += `&worker_email=eq.${currentUser.user_mail}`;
+            console.log('👤 Vista personal - Usuario:', currentUser.user_mail);
+        } else {
+            // Super admin o Gestor de presupuesto: vista institucional
+            console.log('🏢 Vista institucional - Todos los datos');
+        }
+        
+        // 4. Consultas paralelas para mejor rendimiento
+        const [budgetAssignments, executionRequests, budgetPayments] = await Promise.all([
+            // Asignaciones presupuestales del año actual
+            supabaseRequest(`/budget_assignments?select=requested_value,approved_value,executed_value&${assignmentsFilter}`),
+            
+            // Solicitudes de ejecución pendientes
+            supabaseRequest(`/execution_requests?select=request_id,requested_value&request_status=in.(pending,approved)${requestsFilter}`),
+            
+            // Pagos asociados a las ejecuciones del año
+            supabaseRequest(`/budget_payments?select=invoice_value&payment_status=eq.paid`)
+        ]);
+        
+        // 5. Calcular estadísticas
+        const stats = calculateBudgetStats(budgetAssignments, executionRequests, budgetPayments);
+        
+        // 6. Actualizar interfaz
+        updateDashboardUI(stats, userAccessLevel);
+        
+        console.log('✅ Estadísticas cargadas:', stats);
+        
+    } catch (error) {
+        console.error('❌ Error cargando estadísticas:', error);
+        showErrorStats(error.message);
+    }
+}
+
+async function getUserAccessLevel() {
+    try {
+        // Verificar si es super admin
+        if (userPermissions.includes('*')) {
+            return 'institutional';
+        }
+        
+        // Verificar si tiene rol de "Gestor de presupuesto" u otros roles institucionales
+        const userRolesQuery = await supabaseRequest(
+            `/user_roles?select=roles(role_name)&user_id=eq.${currentUser.user_id}`
+        );
+        
+        const userRoleNames = userRolesQuery?.map(ur => ur.roles?.role_name) || [];
+        
+        // Roles que tienen acceso institucional
+        const institutionalRoles = [
+            'Gestor de presupuesto',
+            'Administrador de presupuesto',
+            'Director Financiero'
+        ];
+        
+        const hasInstitutionalRole = institutionalRoles.some(role => 
+            userRoleNames.includes(role)
+        );
+        
+        return hasInstitutionalRole ? 'institutional' : 'personal';
+        
+    } catch (error) {
+        console.error('❌ Error determinando nivel de acceso:', error);
+        return 'personal'; // Por defecto, acceso personal
+    }
+}
+
+function calculateBudgetStats(assignments, requests, payments) {
+    // Calcular totales de asignaciones
+    const totalRequested = assignments.reduce((sum, item) => sum + (item.requested_value || 0), 0);
+    const totalApproved = assignments.reduce((sum, item) => sum + (item.approved_value || 0), 0);
+    const totalExecuted = assignments.reduce((sum, item) => sum + (item.executed_value || 0), 0);
+    
+    // Calcular solicitudes pendientes
+    const pendingRequestsCount = requests.length;
+    const pendingAmount = requests.reduce((sum, item) => sum + (item.requested_value || 0), 0);
+    
+    // Calcular porcentaje de ejecución
+    const executionPercent = totalApproved > 0 ? Math.round((totalExecuted / totalApproved) * 100) : 0;
+    
+    // Calcular disponible
+    const availableBudget = totalApproved - totalExecuted;
+    
+    return {
+        totalRequested,
+        totalApproved,
+        totalExecuted,
+        availableBudget,
+        pendingRequestsCount,
+        pendingAmount,
+        executionPercent
+    };
+}
+
+function updateDashboardUI(stats, accessLevel) {
+    // Formatear números como moneda colombiana
+    const formatter = new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        minimumFractionDigits: 0
+    });
+    
+    // Actualizar elementos del dashboard
+    document.getElementById('totalBudget').textContent = formatter.format(stats.totalApproved);
+    document.getElementById('executedBudget').textContent = formatter.format(stats.totalExecuted);
+    document.getElementById('pendingRequests').textContent = stats.pendingRequestsCount.toString();
+    document.getElementById('executionPercent').textContent = `${stats.executionPercent}%`;
+    
+    // Actualizar título según el nivel de acceso
+    const headerText = accessLevel === 'institutional' 
+        ? 'Presupuesto Institucional' 
+        : 'Mi Presupuesto Personal';
+    
+    // Agregar indicador visual del nivel de acceso
+    const yearBadge = document.querySelector('.badge.bg-light');
+    if (yearBadge && accessLevel === 'personal') {
+        yearBadge.insertAdjacentHTML('afterend', 
+            '<span class="badge bg-info fs-6 ms-2"><i class="bi bi-person"></i> Personal</span>'
+        );
+    }
+}
+
+function showEmptyStats() {
+    document.getElementById('totalBudget').textContent = '$0';
+    document.getElementById('executedBudget').textContent = '$0';
+    document.getElementById('pendingRequests').textContent = '0';
+    document.getElementById('executionPercent').textContent = '0%';
+    
+    showMessage('No hay año presupuestal configurado en el sistema', 'warning');
+}
+
+function showErrorStats(errorMessage) {
+    document.getElementById('totalBudget').textContent = 'Error';
+    document.getElementById('executedBudget').textContent = 'Error';
+    document.getElementById('pendingRequests').textContent = 'Error';
+    document.getElementById('executionPercent').textContent = 'Error';
+    
+    showMessage(`Error cargando estadísticas: ${errorMessage}`, 'danger');
+}
 
         function getStoredSession() {
             try {
