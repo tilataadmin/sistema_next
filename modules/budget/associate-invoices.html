@@ -1071,42 +1071,113 @@ async function cargarDatosIniciales() {
         /**
          * Cierra el requerimiento actual
          */
-        async function cerrarRequerimiento() {
-            if (!requerimientoActual) {
-                showMessage('No hay requerimiento seleccionado', 'warning');
-                return;
+        /**
+ * Cierra el requerimiento actual con validación de tolerancia y notificaciones
+ * Implementa la lógica completa del sistema GAS + notificaciones por email
+ */
+async function cerrarRequerimiento() {
+    if (!requerimientoActual) {
+        showMessage('No hay requerimiento seleccionado', 'warning');
+        return;
+    }
+    
+    if (!datosCompletos.facturasActuales || datosCompletos.facturasActuales.length === 0) {
+        showMessage('No se puede cerrar un requerimiento sin facturas asociadas', 'warning');
+        return;
+    }
+    
+    if (!confirm('¿Está seguro que desea cerrar este requerimiento? Esta acción no se puede deshacer.')) {
+        return;
+    }
+    
+    try {
+        mostrarLoading('Procesando cierre del requerimiento...');
+        
+        // 1. Obtener configuración de tolerancia
+        const configData = await supabaseRequest('/system_config?select=over_execution_tolerance&limit=1');
+        const tolerance = (configData && configData.length > 0) ? configData[0].over_execution_tolerance : 10;
+        
+        // 2. Calcular totales actuales
+        const valorInicial = requerimientoActual.requested_value;
+        let totalFacturas = 0;
+        let totalNC = 0;
+        
+        datosCompletos.facturasActuales.forEach(factura => {
+            if (factura.payment_type === 'invoice') {
+                totalFacturas += factura.invoice_value;
+            } else if (factura.payment_type === 'receipt') {
+                totalNC += factura.invoice_value;
             }
-            
-            if (!datosCompletos.facturasActuales || datosCompletos.facturasActuales.length === 0) {
-                showMessage('No se puede cerrar un requerimiento sin facturas asociadas', 'warning');
-                return;
-            }
-            
-            if (!confirm('¿Está seguro que desea cerrar este requerimiento? Esta acción no se puede deshacer.')) {
-                return;
-            }
-            
-            try {
-                mostrarLoading('Cerrando requerimiento...');
-                
-                await supabaseRequest(`/execution_requests?request_id=eq.${requerimientoActual.request_id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                        request_status: 'closed'
-                    })
-                });
-                
-                showMessage('Requerimiento cerrado exitosamente', 'success');
-                modalInstance.hide();
-                await cargarDatosIniciales();
-                
-            } catch (error) {
-                console.error('Error al cerrar requerimiento:', error);
-                showMessage('Error al cerrar requerimiento: ' + error.message, 'danger');
-            } finally {
-                ocultarLoading();
+        });
+        
+        const valorFinal = totalFacturas - totalNC;
+        
+        // 3. Determinar estado final y necesidad de notificación
+        let nuevoEstado = 'closed';
+        let debeEnviarNotificacion = false;
+        
+        if (valorInicial < valorFinal) {
+            const limiteTolerancia = valorInicial + (valorInicial * tolerance / 100);
+            if (valorFinal > limiteTolerancia) {
+                nuevoEstado = 'pre-closed';
+                debeEnviarNotificacion = true;
             }
         }
+        
+        // 4. Actualizar requerimiento con todos los valores
+        await supabaseRequest(`/execution_requests?request_id=eq.${requerimientoActual.request_id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                request_status: nuevoEstado,
+                closed_value: valorFinal,
+                invoice_value: totalFacturas,
+                notes_value: totalNC
+            })
+        });
+        
+        // 5. Enviar notificación si hay sobreejecución
+        if (debeEnviarNotificacion) {
+            console.log('Enviando notificación de sobreejecución...');
+            
+            // Usar la función del sistema de notificaciones de config.js
+            const notificationSent = await notifyBudgetOverrun(
+                requerimientoActual.worker_email,
+                requerimientoActual.request_details,
+                valorInicial,
+                valorFinal,
+                tolerance
+            );
+            
+            if (notificationSent) {
+                console.log('Notificación enviada exitosamente');
+            } else {
+                console.warn('No se pudo enviar la notificación por email');
+            }
+        }
+        
+        // 6. Mostrar resultado
+        let mensaje = `Requerimiento ${nuevoEstado === 'pre-closed' ? 'pre-cerrado' : 'cerrado'} exitosamente`;
+        let tipoMensaje = nuevoEstado === 'pre-closed' ? 'warning' : 'success';
+        
+        if (debeEnviarNotificacion) {
+            mensaje += `\n\n⚠️ SOBREEJECUCIÓN DETECTADA:\n` +
+                      `• Valor inicial: ${formatearMoneda(valorInicial)}\n` +
+                      `• Valor final: ${formatearMoneda(valorFinal)}\n` +
+                      `• Exceso: ${formatearMoneda(valorFinal - valorInicial)} (Tolerancia: ${tolerance}%)\n` +
+                      `• Se ha enviado notificación por email a: ${requerimientoActual.worker_email}`;
+        }
+        
+        showMessage(mensaje, tipoMensaje);
+        modalInstance.hide();
+        await cargarDatosIniciales();
+        
+    } catch (error) {
+        console.error('Error al cerrar requerimiento:', error);
+        showMessage('Error al cerrar requerimiento: ' + error.message, 'danger');
+    } finally {
+        ocultarLoading();
+    }
+}
 
         /**
          * Valida el formulario de factura
