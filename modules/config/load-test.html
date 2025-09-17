@@ -404,112 +404,220 @@
 
         // Ejecutar consulta principal
         async function executeQuery() {
-            const startTime = Date.now();
+    const startTime = Date.now();
+    
+    try {
+        document.querySelector('.loading-spinner').style.display = 'inline-block';
+        document.getElementById('queryTime').textContent = 'Ejecutando...';
+        
+        // NUEVA ESTRATEGIA: Consulta en dos pasos
+        // 1. Primero obtener IDs de estudiantes que cumplen los filtros
+        // 2. Luego obtener calificaciones de esos estudiantes específicos
+        
+        let studentIds = null;
+        const filters = buildFilters();
+        
+        // Si hay filtros de estudiante, obtener los IDs primero
+        const studentFilters = filters.filter(f => f.startsWith('test_students.'));
+        if (studentFilters.length > 0) {
+            console.log('🔍 Aplicando filtros de estudiante:', studentFilters);
             
-            try {
-                document.querySelector('.loading-spinner').style.display = 'inline-block';
-                document.getElementById('queryTime').textContent = 'Ejecutando...';
-                
-                let query = '/test_grades?select=grade_id,grade_value,grade_type,academic_period,grade_date,teacher_observations,test_students(student_code,first_name,last_name,grade_level,section),test_subjects(subject_code,subject_name,department,is_core)';
-                
-                const filters = buildFilters();
-                if (filters.length > 0) {
-                    query += '&' + filters.join('&');
-                }
-                
-                query += '&order=grade_date.desc';
-                
-                const limit = document.getElementById('limitRecords').value;
-                if (limit && limit !== '') {
-                    query += `&limit=${limit}`;
-                }
-                
-                console.log('🔍 Consulta construida:', query);
-                
-                const data = await supabaseRequest(query);
-                currentData = data;
-                
-                const queryTime = Date.now() - startTime;
-                
+            // Construir consulta para estudiantes
+            let studentQuery = '/test_students?select=student_id';
+            const cleanStudentFilters = studentFilters.map(f => f.replace('test_students.', ''));
+            studentQuery += '&' + cleanStudentFilters.join('&');
+            
+            console.log('👥 Consulta de estudiantes:', studentQuery);
+            
+            const students = await supabaseRequest(studentQuery);
+            studentIds = students.map(s => s.student_id);
+            
+            console.log('✅ Estudiantes encontrados:', studentIds.length);
+            
+            if (studentIds.length === 0) {
+                // No hay estudiantes que cumplan los filtros
+                currentData = [];
+                displayResults([]);
                 document.querySelector('.loading-spinner').style.display = 'none';
-                document.getElementById('queryTime').textContent = `${queryTime}ms`;
-                document.getElementById('recordCount').textContent = data.length.toLocaleString();
-                
-                displayResults(data);
-                
-                showAlert(`Consulta ejecutada en ${queryTime}ms - ${data.length} registros encontrados`, 'success');
-                
-            } catch (error) {
-                console.error('Error ejecutando consulta:', error);
-                document.querySelector('.loading-spinner').style.display = 'none';
-                document.getElementById('queryTime').textContent = 'Error';
-                showAlert('Error ejecutando la consulta: ' + error.message, 'danger');
+                document.getElementById('queryTime').textContent = `${Date.now() - startTime}ms`;
+                document.getElementById('recordCount').textContent = '0';
+                showAlert('No se encontraron estudiantes con esos filtros', 'info');
+                return;
             }
         }
+        
+        // Construir consulta principal para calificaciones
+        let query = '/test_grades?select=grade_id,grade_value,grade_type,academic_period,grade_date,teacher_observations,test_students(student_code,first_name,last_name,grade_level,section),test_subjects(subject_code,subject_name,department,is_core)';
+        
+        // Aplicar filtros que NO son de estudiante
+        const nonStudentFilters = filters.filter(f => !f.startsWith('test_students.'));
+        if (nonStudentFilters.length > 0) {
+            query += '&' + nonStudentFilters.join('&');
+        }
+        
+        // Si tenemos IDs específicos de estudiantes, filtrar por ellos
+        if (studentIds && studentIds.length > 0) {
+            // Supabase PostgREST sintaxis para filtrar por array de IDs
+            query += `&student_id=in.(${studentIds.join(',')})`;
+        }
+        
+        // Aplicar ordenamiento
+        query += '&order=grade_date.desc';
+        
+        // Aplicar límite
+        const limit = document.getElementById('limitRecords').value;
+        if (limit && limit !== '') {
+            query += `&limit=${limit}`;
+        }
+        
+        console.log('🔍 CONSULTA FINAL:', query);
+        
+        // Ejecutar consulta principal
+        const data = await supabaseRequest(query);
+        currentData = data;
+        
+        // Calcular tiempo de respuesta
+        const queryTime = Date.now() - startTime;
+        
+        // Verificar resultados
+        const uniqueStudents = [...new Set(data.map(r => r.test_students.student_code))];
+        const uniqueGrades = [...new Set(data.map(r => r.test_students.grade_level))];
+        
+        console.log('📊 RESULTADOS:');
+        console.log('- Total registros:', data.length);
+        console.log('- Estudiantes únicos:', uniqueStudents.length);
+        console.log('- Grados únicos:', uniqueGrades);
+        console.log('- Primeros estudiantes:', uniqueStudents.slice(0, 5));
+        
+        // Actualizar interfaz
+        document.querySelector('.loading-spinner').style.display = 'none';
+        document.getElementById('queryTime').textContent = `${queryTime}ms`;
+        document.getElementById('recordCount').textContent = data.length.toLocaleString();
+        
+        // Mostrar resultados
+        displayResults(data);
+        
+        // Mensaje de éxito con detalles
+        showAlert(`Consulta ejecutada en ${queryTime}ms - ${data.length} registros - ${uniqueStudents.length} estudiantes - Grados: ${uniqueGrades.join(', ')}`, 'success');
+        
+    } catch (error) {
+        console.error('❌ ERROR:', error);
+        document.querySelector('.loading-spinner').style.display = 'none';
+        document.getElementById('queryTime').textContent = 'Error';
+        showAlert('Error ejecutando la consulta: ' + error.message, 'danger');
+    }
+}
 
         // Construir filtros para la consulta
-        function buildFilters() {
-            const filters = [];
-            
-            const studentCode = document.getElementById('studentCode').value.trim();
-            if (studentCode) {
-                filters.push(`test_students.student_code.ilike.%${studentCode}%`);
-            }
-            
-            const gradeLevel = document.getElementById('gradeLevel').value;
-            if (gradeLevel) {
-                filters.push(`test_students.grade_level.eq.${gradeLevel}`);
-            }
-            
-            const section = document.getElementById('section').value;
-            if (section) {
-                filters.push(`test_students.section.eq.${section}`);
-            }
-            
-            const studentStatus = document.getElementById('studentStatus').value;
-            if (studentStatus) {
-                filters.push(`test_students.student_status.eq.${studentStatus}`);
-            }
-            
-            const subjectId = document.getElementById('subjectId').value;
-            if (subjectId) {
-                filters.push(`subject_id.eq.${subjectId}`);
-            }
-            
-            const department = document.getElementById('department').value;
-            if (department) {
-                filters.push(`test_subjects.department.eq.${department}`);
-            }
-            
-            const isCore = document.getElementById('isCore').value;
-            if (isCore !== '') {
-                filters.push(`test_subjects.is_core.eq.${isCore}`);
-            }
-            
-            const academicPeriod = document.getElementById('academicPeriod').value;
-            if (academicPeriod) {
-                filters.push(`academic_period.eq.${academicPeriod}`);
-            }
-            
-            const gradeType = document.getElementById('gradeType').value;
-            if (gradeType) {
-                filters.push(`grade_type.eq.${gradeType}`);
-            }
-            
-            const minGrade = document.getElementById('minGrade').value;
-            if (minGrade) {
-                filters.push(`grade_value.gte.${minGrade}`);
-            }
-            
-            const maxGrade = document.getElementById('maxGrade').value;
-            if (maxGrade) {
-                filters.push(`grade_value.lte.${maxGrade}`);
-            }
-            
-            console.log('🔧 Filtros construidos:', filters);
-            return filters;
-        }
+ function buildFilters() {
+    const filters = [];
+    
+    // Filtros de estudiante (se procesarán por separado)
+    const studentCode = document.getElementById('studentCode').value.trim();
+    if (studentCode) {
+        filters.push(`test_students.student_code.ilike.%${studentCode}%`);
+    }
+    
+    const gradeLevel = document.getElementById('gradeLevel').value;
+    if (gradeLevel) {
+        filters.push(`test_students.grade_level.eq.${gradeLevel}`);
+    }
+    
+    const section = document.getElementById('section').value;
+    if (section) {
+        filters.push(`test_students.section.eq.${section}`);
+    }
+    
+    const studentStatus = document.getElementById('studentStatus').value;
+    if (studentStatus) {
+        filters.push(`test_students.student_status.eq.${studentStatus}`);
+    }
+    
+    // Filtros de materia (se aplicarán directamente)
+    const subjectId = document.getElementById('subjectId').value;
+    if (subjectId) {
+        filters.push(`subject_id.eq.${subjectId}`);
+    }
+    
+    const department = document.getElementById('department').value;
+    if (department) {
+        filters.push(`test_subjects.department.eq.${department}`);
+    }
+    
+    const isCore = document.getElementById('isCore').value;
+    if (isCore !== '') {
+        filters.push(`test_subjects.is_core.eq.${isCore}`);
+    }
+    
+    // Filtros de calificación (se aplicarán directamente)
+    const academicPeriod = document.getElementById('academicPeriod').value;
+    if (academicPeriod) {
+        filters.push(`academic_period.eq.${academicPeriod}`);
+    }
+    
+    const gradeType = document.getElementById('gradeType').value;
+    if (gradeType) {
+        filters.push(`grade_type.eq.${gradeType}`);
+    }
+    
+    const minGrade = document.getElementById('minGrade').value;
+    if (minGrade) {
+        filters.push(`grade_value.gte.${minGrade}`);
+    }
+    
+    const maxGrade = document.getElementById('maxGrade').value;
+    if (maxGrade) {
+        filters.push(`grade_value.lte.${maxGrade}`);
+    }
+    
+    console.log('🔧 Filtros construidos:', filters);
+    return filters;
+}
 
+// Función adicional para pruebas rápidas
+async function testSpecificGrade(grade) {
+    console.log(`🧪 Probando grado específico: ${grade}`);
+    
+    try {
+        // Paso 1: Obtener estudiantes del grado
+        const students = await supabaseRequest(`/test_students?select=student_id&grade_level=eq.${grade}`);
+        console.log(`👥 Estudiantes de ${grade}:`, students.length);
+        
+        if (students.length === 0) {
+            console.log('❌ No hay estudiantes en ese grado');
+            return;
+        }
+        
+        const studentIds = students.map(s => s.student_id);
+        
+        // Paso 2: Obtener calificaciones de esos estudiantes
+        const grades = await supabaseRequest(`/test_grades?select=*,test_students(student_code,grade_level)&student_id=in.(${studentIds.join(',')})&limit=10`);
+        console.log(`📚 Calificaciones encontradas:`, grades.length);
+        console.log('📝 Muestra:', grades.map(g => `${g.test_students.student_code} (${g.test_students.grade_level})`));
+        
+    } catch (error) {
+        console.error('❌ Error en prueba:', error);
+    }
+}
+
+// Agregar botones de prueba
+document.addEventListener('DOMContentLoaded', function() {
+    const consultarButton = document.querySelector('button[onclick="executeQuery()"]');
+    
+    // Botón para probar Preescolar
+    const testPreButton = document.createElement('button');
+    testPreButton.innerHTML = '🧪 Test Preescolar';
+    testPreButton.className = 'btn btn-info btn-sm ms-2';
+    testPreButton.onclick = () => testSpecificGrade('Preescolar');
+    consultarButton.parentNode.appendChild(testPreButton);
+    
+    // Botón para probar Octavo
+    const testOctButton = document.createElement('button');
+    testOctButton.innerHTML = '🧪 Test Octavo';
+    testOctButton.className = 'btn btn-info btn-sm ms-2';
+    testOctButton.onclick = () => testSpecificGrade('Octavo');
+    consultarButton.parentNode.appendChild(testOctButton);
+});
         // Mostrar resultados en la tabla
         function displayResults(data) {
             const tbody = document.getElementById('resultsBody');
