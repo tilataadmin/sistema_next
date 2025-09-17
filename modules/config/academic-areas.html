@@ -244,6 +244,7 @@
     <script src="../../assets/js/config.js"></script>
     
     <script>
+
         // ==========================================
         // VALIDACIÓN DE ACCESO A LA PÁGINA
         // ==========================================
@@ -252,8 +253,8 @@
             console.log('🔐 Iniciando validación de acceso...');
             
             try {
-                // Validar acceso antes de continuar
-                const hasAccess = await validatePageAccess('config_academic_areas_write');
+                // Validar acceso antes de continuar - PERMISO CORREGIDO
+                const hasAccess = await validatePageAccess('Gestionar áreas académicas');
                 
                 if (!hasAccess) {
                     console.log('❌ Acceso denegado - deteniendo inicialización');
@@ -287,15 +288,27 @@
         let areaToDelete = null;
         
         // ==========================================
-        // INICIALIZACIÓN
+        // INICIALIZACIÓN - ORDEN CORREGIDO
         // ==========================================
         
         function initializePage() {
-            console.log('🔧 Inicializando página');
-            Promise.all([loadAreas(), loadWorkers()]).then(() => {
-                loadStats();
-            });
-            setupEventListeners();
+            console.log('🔧 Inicializando página de áreas académicas');
+            
+            // IMPORTANTE: Cargar workers PRIMERO, luego áreas
+            loadWorkers()
+                .then(() => {
+                    console.log('✅ Workers cargados, procediendo con áreas académicas...');
+                    return loadAreas();
+                })
+                .then(() => {
+                    console.log('✅ Áreas cargadas, configurando interfaz...');
+                    setupEventListeners();
+                    loadStats();
+                })
+                .catch(error => {
+                    console.error('❌ Error inicializando:', error);
+                    showMessage('Error cargando datos: ' + error.message, 'danger');
+                });
         }
         
         function setupEventListeners() {
@@ -310,8 +323,43 @@
         }
         
         // ==========================================
-        // CARGAR DATOS
+        // CARGAR DATOS - MEJORADO CON DEBUGGING
         // ==========================================
+        
+        async function loadWorkers() {
+            try {
+                console.log('📋 Cargando trabajadores para coordinadores...');
+                
+                // Consulta simple sin filtros complicados
+                const workers = await supabaseRequest('/workers?select=*&order=worker_first_name');
+                
+                allWorkers = workers || [];
+                
+                console.log(`✅ ${allWorkers.length} trabajadores cargados como coordinadores potenciales`);
+                
+                // DEBUG: Mostrar emails de trabajadores
+                if (allWorkers.length > 0) {
+                    console.log('📧 Emails de trabajadores disponibles:');
+                    allWorkers.slice(0, 10).forEach((worker, index) => {
+                        console.log(`   ${index + 1}. ${worker.worker_first_name} ${worker.worker_last_name_1} - ${worker.email}`);
+                    });
+                    
+                    if (allWorkers.length > 10) {
+                        console.log(`   ... y ${allWorkers.length - 10} más`);
+                    }
+                } else {
+                    console.error('❌ NO SE ENCONTRARON WORKERS');
+                }
+                
+                // Poblar select después de cargar workers
+                populateWorkerSelect();
+                
+            } catch (error) {
+                console.error('❌ Error cargando trabajadores:', error);
+                allWorkers = [];
+                throw error;
+            }
+        }
         
         async function loadAreas() {
             const container = document.getElementById('areasContainer');
@@ -323,15 +371,31 @@
             `;
             
             try {
+                console.log('📋 Cargando áreas académicas...');
+                
                 const areas = await supabaseRequest('/academic_areas?select=*&order=area_name.asc');
                 allAreas = areas || [];
                 filteredAreas = [...allAreas];
-                renderAreasGrid();
                 
                 console.log(`✅ ${allAreas.length} áreas académicas cargadas`);
                 
+                // DEBUG: Mostrar coordinadores asignados en áreas
+                console.log('📧 Coordinadores asignados en áreas:');
+                allAreas.forEach((area, index) => {
+                    console.log(`   ${index + 1}. ${area.area_name} - Coordinador: ${area.area_chief_email || 'Sin asignar'}`);
+                });
+                
+                // IMPORTANTE: Solo renderizar DESPUÉS de que allWorkers esté cargado
+                if (allWorkers.length > 0) {
+                    console.log('✅ Renderizando áreas con coordinadores disponibles...');
+                    renderAreasGrid();
+                } else {
+                    console.warn('⚠️ No hay coordinadores disponibles, renderizando sin nombres...');
+                    renderAreasGrid();
+                }
+                
             } catch (error) {
-                console.error('Error cargando áreas académicas:', error);
+                console.error('❌ Error cargando áreas académicas:', error);
                 container.innerHTML = `
                     <div class="empty-state">
                         <i class="bi bi-exclamation-triangle text-warning"></i>
@@ -340,18 +404,6 @@
                         <button class="btn btn-outline-primary" onclick="loadAreas()">Reintentar</button>
                     </div>
                 `;
-            }
-        }
-        
-        async function loadWorkers() {
-            try {
-                const workers = await supabaseRequest('/workers?select=*&worker_status=eq.active&order=worker_first_name.asc');
-                allWorkers = workers || [];
-                populateWorkerSelect();
-                console.log(`✅ ${allWorkers.length} trabajadores cargados`);
-            } catch (error) {
-                console.error('Error cargando trabajadores:', error);
-                allWorkers = [];
             }
         }
         
@@ -370,7 +422,7 @@
         }
         
         // ==========================================
-        // RENDERIZADO
+        // RENDERIZADO - MEJORADO CON DEBUGGING
         // ==========================================
         
         function renderAreasGrid() {
@@ -397,11 +449,31 @@
             let gridHtml = '<div class="row">';
             
             filteredAreas.forEach(area => {
-                // Buscar el nombre del coordinador por email
-                const coordinator = allWorkers.find(w => w.email === area.area_chief_email);
-                const coordinatorName = coordinator ? 
-                    `${coordinator.worker_first_name} ${coordinator.worker_last_name_1}${coordinator.worker_last_name_2 ? ` ${coordinator.worker_last_name_2}` : ''}` : 
-                    'Coordinador no encontrado';
+                // DEBUG: Agregar logs para entender el problema
+                console.log('🔍 Procesando área:', area.area_name);
+                console.log('📧 Email del coordinador en área:', area.area_chief_email);
+                
+                // Buscar el coordinador por email (normalizar emails para comparación)
+                const coordinator = allWorkers.find(w => {
+                    const workerEmail = w.email ? w.email.trim().toLowerCase() : '';
+                    const areaEmail = area.area_chief_email ? area.area_chief_email.trim().toLowerCase() : '';
+                    
+                    console.log(`   Comparando: "${areaEmail}" vs "${workerEmail}"`);
+                    return workerEmail === areaEmail;
+                });
+                
+                console.log('👤 Coordinador encontrado:', coordinator ? `${coordinator.worker_first_name} ${coordinator.worker_last_name_1}` : 'NO ENCONTRADO');
+                
+                // Construir nombre del coordinador
+                let coordinatorName = 'Sin coordinador asignado';
+                
+                if (coordinator) {
+                    coordinatorName = `${coordinator.worker_first_name} ${coordinator.worker_last_name_1}${coordinator.worker_last_name_2 ? ` ${coordinator.worker_last_name_2}` : ''}`;
+                } else if (area.area_chief_email) {
+                    // Si no se encuentra en workers, mostrar advertencia
+                    coordinatorName = `⚠️ Coordinador no encontrado`;
+                    console.warn(`⚠️ No se encontró worker con email: ${area.area_chief_email}`);
+                }
                 
                 gridHtml += `
                     <div class="col-md-6 col-lg-4 mb-3">
@@ -420,6 +492,12 @@
                                 <div class="mb-3">
                                     <small class="text-muted">Coordinador:</small><br>
                                     <strong>${coordinatorName}</strong>
+                                    ${!coordinator && area.area_chief_email ? `
+                                        <br><small class="text-warning">
+                                            <i class="bi bi-exclamation-triangle"></i>
+                                            Este trabajador ya no está en el sistema
+                                        </small>
+                                    ` : ''}
                                     <br><small class="text-muted">${area.area_chief_email}</small>
                                 </div>
                                 
@@ -442,7 +520,7 @@
             gridHtml += '</div>';
             container.innerHTML = gridHtml;
         }
-        
+
         // ==========================================
         // GESTIÓN DE MODALES
         // ==========================================
@@ -523,7 +601,8 @@
                 
                 showMessage(`Área académica "${formData.area_name}" creada exitosamente`, 'success');
                 closeAreaModal();
-                loadAreas();
+                await loadAreas();
+                loadStats();
                 
             } catch (error) {
                 console.error('❌ Error creando área académica:', error);
@@ -591,7 +670,8 @@
                 
                 showMessage(`Área académica "${formData.area_name}" actualizada exitosamente`, 'success');
                 closeAreaModal();
-                loadAreas();
+                await loadAreas();
+                loadStats();
                 
             } catch (error) {
                 console.error('❌ Error actualizando área académica:', error);
@@ -632,7 +712,8 @@
                 
                 showMessage('Área académica eliminada exitosamente', 'success');
                 closeConfirmModal();
-                loadAreas();
+                await loadAreas();
+                loadStats();
                 
             } catch (error) {
                 console.error('❌ Error eliminando área académica:', error);
@@ -683,6 +764,32 @@
             
             document.getElementById('totalAreas').textContent = allAreas.length;
             document.getElementById('totalCoordinators').textContent = totalCoordinators;
+        }
+        
+        // ==========================================
+        // FUNCIÓN DE DIAGNÓSTICO
+        // ==========================================
+        
+        // Ejecutar en consola para verificar estado
+        function debugAreasCoordinators() {
+            console.log('🔍 ESTADO ACTUAL:');
+            console.log(`📊 Total coordinadores en memoria: ${allWorkers.length}`);
+            console.log(`📊 Total áreas en memoria: ${allAreas.length}`);
+            
+            if (allWorkers.length > 0) {
+                console.log('👥 Primeros 3 coordinadores:');
+                allWorkers.slice(0, 3).forEach(w => {
+                    console.log(`   ${w.worker_first_name} ${w.worker_last_name_1} - ${w.email}`);
+                });
+            }
+            
+            if (allAreas.length > 0) {
+                console.log('🎓 Áreas y sus coordinadores:');
+                allAreas.forEach(area => {
+                    const coordinator = allWorkers.find(w => w.email === area.area_chief_email);
+                    console.log(`   ${area.area_name} → ${area.area_chief_email} → ${coordinator ? 'ENCONTRADO' : 'NO ENCONTRADO'}`);
+                });
+            }
         }
     </script>
 </body>
