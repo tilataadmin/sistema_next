@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initi<scriptal-scale=1.0">
     <title>Prueba de Carga - SchoolNet</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" rel="stylesheet">
@@ -323,330 +323,341 @@
 
     <script>
         let currentData = [];
+// ==========================================
+// JAVASCRIPT CORREGIDO PARA LOAD-TEST.HTML
+// Reemplaza todo el script existente con este código
+// ==========================================
 
-        // Inicialización
-        document.addEventListener('DOMContentLoaded', function() {
-            initializePage('config', 'Prueba de Carga');
-            loadInitialData();
+let currentData = [];
+
+// Inicialización
+document.addEventListener('DOMContentLoaded', function() {
+    initializePage('config', 'Prueba de Carga');
+    loadInitialData();
+});
+
+// Cargar datos iniciales para los filtros
+async function loadInitialData() {
+    try {
+        // Cargar estadísticas generales
+        await loadGeneralStats();
+        
+        // Cargar opciones para los filtros
+        await loadFilterOptions();
+        
+    } catch (error) {
+        console.error('Error cargando datos iniciales:', error);
+        showAlert('Error cargando datos iniciales', 'danger');
+    }
+}
+
+// Cargar estadísticas generales
+async function loadGeneralStats() {
+    try {
+        // Estadísticas básicas
+        const students = await supabaseRequest('/test_students?select=count');
+        const subjects = await supabaseRequest('/test_subjects?select=count');
+        const grades = await supabaseRequest('/test_grades?select=count');
+        const avgGrade = await supabaseRequest('/test_grades?select=grade_value');
+
+        document.getElementById('totalStudents').textContent = students.length || '-';
+        document.getElementById('totalSubjects').textContent = subjects.length || '-';
+        document.getElementById('totalGrades').textContent = grades.length.toLocaleString() || '-';
+        
+        if (avgGrade.length > 0) {
+            const avg = avgGrade.reduce((sum, item) => sum + item.grade_value, 0) / avgGrade.length;
+            document.getElementById('avgGrade').textContent = avg.toFixed(2);
+        }
+        
+    } catch (error) {
+        console.error('Error cargando estadísticas:', error);
+    }
+}
+
+// Cargar opciones para filtros
+async function loadFilterOptions() {
+    try {
+        // Cargar grados únicos
+        const students = await supabaseRequest('/test_students?select=grade_level');
+        const uniqueGrades = [...new Set(students.map(s => s.grade_level))];
+        const gradeLevelSelect = document.getElementById('gradeLevel');
+        uniqueGrades.sort().forEach(grade => {
+            const option = document.createElement('option');
+            option.value = grade;
+            option.textContent = grade;
+            gradeLevelSelect.appendChild(option);
         });
 
-        // Cargar datos iniciales para los filtros
-        async function loadInitialData() {
-            try {
-                // Cargar estadísticas generales
-                await loadGeneralStats();
-                
-                // Cargar opciones para los filtros
-                await loadFilterOptions();
-                
-            } catch (error) {
-                console.error('Error cargando datos iniciales:', error);
-                showAlert('Error cargando datos iniciales', 'danger');
-            }
+        // Cargar materias
+        const subjects = await supabaseRequest('/test_subjects?select=subject_id,subject_name,subject_code&order=subject_name.asc');
+        const subjectSelect = document.getElementById('subjectId');
+        subjects.forEach(subject => {
+            const option = document.createElement('option');
+            option.value = subject.subject_id;
+            option.textContent = `${subject.subject_code} - ${subject.subject_name}`;
+            subjectSelect.appendChild(option);
+        });
+
+        // Cargar departamentos únicos
+        const subjectsForDept = await supabaseRequest('/test_subjects?select=department');
+        const uniqueDepartments = [...new Set(subjectsForDept.map(s => s.department))];
+        const departmentSelect = document.getElementById('department');
+        uniqueDepartments.sort().forEach(dept => {
+            const option = document.createElement('option');
+            option.value = dept;
+            option.textContent = dept;
+            departmentSelect.appendChild(option);
+        });
+
+    } catch (error) {
+        console.error('Error cargando opciones de filtros:', error);
+    }
+}
+
+// Ejecutar consulta principal - CORREGIDA
+async function executeQuery() {
+    const startTime = Date.now();
+    
+    try {
+        // Mostrar indicador de carga
+        document.querySelector('.loading-spinner').style.display = 'inline-block';
+        document.getElementById('queryTime').textContent = 'Ejecutando...';
+        
+        // Construir consulta base
+        let query = '/test_grades?select=grade_id,grade_value,grade_type,academic_period,grade_date,teacher_observations,test_students(student_code,first_name,last_name,grade_level,section),test_subjects(subject_code,subject_name,department,is_core)';
+        
+        // Aplicar filtros - CORREGIDO
+        const filters = buildFilters();
+        if (filters.length > 0) {
+            query += '&' + filters.join('&');
         }
-
-        // Cargar estadísticas generales
-        async function loadGeneralStats() {
-            try {
-                const [studentsData, subjectsData, gradesData] = await Promise.all([
-                    supabaseRequest('/test_students?select=count'),
-                    supabaseRequest('/test_subjects?select=count'),
-                    supabaseRequest('/test_grades?select=count,grade_value')
-                ]);
-
-                document.getElementById('totalStudents').textContent = studentsData[0]?.count || '-';
-                document.getElementById('totalSubjects').textContent = subjectsData[0]?.count || '-';
-                document.getElementById('totalGrades').textContent = gradesData.length.toLocaleString();
-                
-                if (gradesData.length > 0) {
-                    const avg = gradesData.reduce((sum, item) => sum + item.grade_value, 0) / gradesData.length;
-                    document.getElementById('avgGrade').textContent = avg.toFixed(2);
-                }
-                
-            } catch (error) {
-                console.error('Error cargando estadísticas:', error);
-            }
+        
+        // Aplicar ordenamiento
+        query += '&order=grade_date.desc';
+        
+        // Aplicar límite DESPUÉS de los filtros - CORREGIDO
+        const limit = document.getElementById('limitRecords').value;
+        if (limit && limit !== '') {
+            query += `&limit=${limit}`;
         }
+        
+        console.log('🔍 Consulta construida:', query);
+        
+        // Ejecutar consulta
+        const data = await supabaseRequest(query);
+        currentData = data;
+        
+        // Calcular tiempo de respuesta
+        const queryTime = Date.now() - startTime;
+        
+        // Actualizar interfaz
+        document.querySelector('.loading-spinner').style.display = 'none';
+        document.getElementById('queryTime').textContent = `${queryTime}ms`;
+        document.getElementById('recordCount').textContent = data.length.toLocaleString();
+        
+        // Mostrar resultados
+        displayResults(data);
+        
+        // Mostrar mensaje de éxito
+        showAlert(`Consulta ejecutada en ${queryTime}ms - ${data.length} registros encontrados`, 'success');
+        
+    } catch (error) {
+        console.error('Error ejecutando consulta:', error);
+        document.querySelector('.loading-spinner').style.display = 'none';
+        document.getElementById('queryTime').textContent = 'Error';
+        showAlert('Error ejecutando la consulta: ' + error.message, 'danger');
+    }
+}
 
-        // Cargar opciones para filtros
-        async function loadFilterOptions() {
-            try {
-                // Cargar grados únicos
-                const gradeLevels = await supabaseRequest('/test_students?select=grade_level&group=grade_level');
-                const gradeLevelSelect = document.getElementById('gradeLevel');
-                gradeLevels.forEach(grade => {
-                    const option = document.createElement('option');
-                    option.value = grade.grade_level;
-                    option.textContent = grade.grade_level;
-                    gradeLevelSelect.appendChild(option);
-                });
+// Construir filtros para la consulta - CORREGIDO
+function buildFilters() {
+    const filters = [];
+    
+    // Filtros de estudiante
+    const studentCode = document.getElementById('studentCode').value.trim();
+    if (studentCode) {
+        filters.push(`test_students.student_code.ilike.%${studentCode}%`);
+    }
+    
+    const gradeLevel = document.getElementById('gradeLevel').value;
+    if (gradeLevel) {
+        filters.push(`test_students.grade_level.eq.${gradeLevel}`);
+    }
+    
+    const section = document.getElementById('section').value;
+    if (section) {
+        filters.push(`test_students.section.eq.${section}`);
+    }
+    
+    const studentStatus = document.getElementById('studentStatus').value;
+    if (studentStatus) {
+        filters.push(`test_students.student_status.eq.${studentStatus}`);
+    }
+    
+    // Filtros de materia
+    const subjectId = document.getElementById('subjectId').value;
+    if (subjectId) {
+        filters.push(`subject_id.eq.${subjectId}`);
+    }
+    
+    const department = document.getElementById('department').value;
+    if (department) {
+        filters.push(`test_subjects.department.eq.${department}`);
+    }
+    
+    const isCore = document.getElementById('isCore').value;
+    if (isCore !== '') {
+        filters.push(`test_subjects.is_core.eq.${isCore}`);
+    }
+    
+    // Filtros de calificación
+    const academicPeriod = document.getElementById('academicPeriod').value;
+    if (academicPeriod) {
+        filters.push(`academic_period.eq.${academicPeriod}`);
+    }
+    
+    const gradeType = document.getElementById('gradeType').value;
+    if (gradeType) {
+        filters.push(`grade_type.eq.${gradeType}`);
+    }
+    
+    const minGrade = document.getElementById('minGrade').value;
+    if (minGrade) {
+        filters.push(`grade_value.gte.${minGrade}`);
+    }
+    
+    const maxGrade = document.getElementById('maxGrade').value;
+    if (maxGrade) {
+        filters.push(`grade_value.lte.${maxGrade}`);
+    }
+    
+    console.log('🔧 Filtros construidos:', filters);
+    return filters;
+}
 
-                // Cargar materias
-                const subjects = await supabaseRequest('/test_subjects?select=subject_id,subject_name,subject_code&order=subject_name.asc');
-                const subjectSelect = document.getElementById('subjectId');
-                subjects.forEach(subject => {
-                    const option = document.createElement('option');
-                    option.value = subject.subject_id;
-                    option.textContent = `${subject.subject_code} - ${subject.subject_name}`;
-                    subjectSelect.appendChild(option);
-                });
+// Mostrar resultados en la tabla
+function displayResults(data) {
+    const tbody = document.getElementById('resultsBody');
+    
+    if (data.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="10" class="text-center text-muted p-5">
+                    <i class="bi bi-inbox" style="font-size: 2rem;"></i><br>
+                    No se encontraron resultados con los filtros especificados
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = data.map(record => {
+        const student = record.test_students;
+        const subject = record.test_subjects;
+        const gradeClass = getGradeClass(record.grade_value);
+        
+        return `
+            <tr>
+                <td><code>${student.student_code}</code></td>
+                <td>${student.first_name} ${student.last_name}</td>
+                <td><span class="badge bg-secondary">${student.grade_level} - ${student.section}</span></td>
+                <td>${subject.subject_code} - ${subject.subject_name}</td>
+                <td><span class="badge bg-info">${subject.department}</span></td>
+                <td><span class="badge bg-warning text-dark">${record.academic_period}</span></td>
+                <td><span class="badge bg-light text-dark">${record.grade_type}</span></td>
+                <td><span class="badge ${gradeClass}">${record.grade_value}</span></td>
+                <td>${formatDate(record.grade_date)}</td>
+                <td class="text-truncate" style="max-width: 200px;" title="${record.teacher_observations || ''}">
+                    ${record.teacher_observations || '-'}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
 
-                // Cargar departamentos únicos
-                const departments = await supabaseRequest('/test_subjects?select=department&group=department');
-                const departmentSelect = document.getElementById('department');
-                departments.forEach(dept => {
-                    const option = document.createElement('option');
-                    option.value = dept.department;
-                    option.textContent = dept.department;
-                    departmentSelect.appendChild(option);
-                });
+// Obtener clase CSS para calificación
+function getGradeClass(grade) {
+    if (grade >= 4.5) return 'badge grade-excellent';
+    if (grade >= 3.5) return 'badge grade-good';
+    if (grade >= 2.5) return 'badge grade-regular';
+    return 'badge grade-poor';
+}
 
-            } catch (error) {
-                console.error('Error cargando opciones de filtros:', error);
-            }
-        }
+// Limpiar filtros
+function clearFilters() {
+    document.getElementById('filterForm').reset();
+    document.getElementById('resultsBody').innerHTML = `
+        <tr>
+            <td colspan="10" class="text-center text-muted p-5">
+                <i class="bi bi-search" style="font-size: 2rem;"></i><br>
+                Seleccione los filtros y haga clic en "Consultar" para ver los resultados
+            </td>
+        </tr>
+    `;
+    document.getElementById('queryTime').textContent = '-';
+    document.getElementById('recordCount').textContent = '-';
+}
 
-        // Ejecutar consulta principal
-        async function executeQuery() {
-            const startTime = Date.now();
-            
-            try {
-                // Mostrar indicador de carga
-                document.querySelector('.loading-spinner').style.display = 'inline-block';
-                document.getElementById('queryTime').textContent = 'Ejecutando...';
-                
-                // Construir consulta
-                let query = `/test_grades?select=grade_id,grade_value,grade_type,academic_period,grade_date,teacher_observations,test_students(student_code,first_name,last_name,grade_level,section),test_subjects(subject_code,subject_name,department,is_core)`;
-                
-                // Aplicar filtros
-                const filters = buildFilters();
-                if (filters.length > 0) {
-                    query += '&' + filters.join('&');
-                }
-                
-                // Aplicar límite si está especificado
-                const limit = document.getElementById('limitRecords').value;
-                if (limit) {
-                    query += `&limit=${limit}`;
-                }
-                
-                // Ordenar por fecha más reciente
-                query += '&order=grade_date.desc';
-                
-                // Ejecutar consulta
-                const data = await supabaseRequest(query);
-                currentData = data;
-                
-                // Calcular tiempo de respuesta
-                const queryTime = Date.now() - startTime;
-                
-                // Actualizar interfaz
-                document.querySelector('.loading-spinner').style.display = 'none';
-                document.getElementById('queryTime').textContent = `${queryTime}ms`;
-                document.getElementById('recordCount').textContent = data.length.toLocaleString();
-                
-                // Mostrar resultados
-                displayResults(data);
-                
-                // Mostrar mensaje de éxito
-                showAlert(`Consulta ejecutada en ${queryTime}ms - ${data.length} registros encontrados`, 'success');
-                
-            } catch (error) {
-                console.error('Error ejecutando consulta:', error);
-                document.querySelector('.loading-spinner').style.display = 'none';
-                document.getElementById('queryTime').textContent = 'Error';
-                showAlert('Error ejecutando la consulta: ' + error.message, 'danger');
-            }
-        }
+// Exportar a CSV
+function exportToCSV() {
+    if (currentData.length === 0) {
+        showAlert('No hay datos para exportar', 'warning');
+        return;
+    }
+    
+    const headers = ['Código', 'Estudiante', 'Grado', 'Sección', 'Materia', 'Departamento', 'Período', 'Tipo', 'Calificación', 'Fecha', 'Observaciones'];
+    const csvContent = [
+        headers.join(','),
+        ...currentData.map(record => {
+            const student = record.test_students;
+            const subject = record.test_subjects;
+            return [
+                student.student_code,
+                `"${student.first_name} ${student.last_name}"`,
+                student.grade_level,
+                student.section,
+                `"${subject.subject_code} - ${subject.subject_name}"`,
+                subject.department,
+                record.academic_period,
+                record.grade_type,
+                record.grade_value,
+                record.grade_date,
+                `"${record.teacher_observations || ''}"`
+            ].join(',');
+        })
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `consulta_academica_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    
+    showAlert('Archivo CSV descargado exitosamente', 'success');
+}
 
-        // Construir filtros para la consulta
-        function buildFilters() {
-            const filters = [];
-            
-            // Filtros de estudiante
-            const studentCode = document.getElementById('studentCode').value.trim();
-            if (studentCode) {
-                filters.push(`test_students.student_code.ilike.%${studentCode}%`);
-            }
-            
-            const gradeLevel = document.getElementById('gradeLevel').value;
-            if (gradeLevel) {
-                filters.push(`test_students.grade_level.eq.${gradeLevel}`);
-            }
-            
-            const section = document.getElementById('section').value;
-            if (section) {
-                filters.push(`test_students.section.eq.${section}`);
-            }
-            
-            const studentStatus = document.getElementById('studentStatus').value;
-            if (studentStatus) {
-                filters.push(`test_students.student_status.eq.${studentStatus}`);
-            }
-            
-            // Filtros de materia
-            const subjectId = document.getElementById('subjectId').value;
-            if (subjectId) {
-                filters.push(`subject_id.eq.${subjectId}`);
-            }
-            
-            const department = document.getElementById('department').value;
-            if (department) {
-                filters.push(`test_subjects.department.eq.${department}`);
-            }
-            
-            const isCore = document.getElementById('isCore').value;
-            if (isCore !== '') {
-                filters.push(`test_subjects.is_core.eq.${isCore}`);
-            }
-            
-            // Filtros de calificación
-            const academicPeriod = document.getElementById('academicPeriod').value;
-            if (academicPeriod) {
-                filters.push(`academic_period.eq.${academicPeriod}`);
-            }
-            
-            const gradeType = document.getElementById('gradeType').value;
-            if (gradeType) {
-                filters.push(`grade_type.eq.${gradeType}`);
-            }
-            
-            const minGrade = document.getElementById('minGrade').value;
-            if (minGrade) {
-                filters.push(`grade_value.gte.${minGrade}`);
-            }
-            
-            const maxGrade = document.getElementById('maxGrade').value;
-            if (maxGrade) {
-                filters.push(`grade_value.lte.${maxGrade}`);
-            }
-            
-            return filters;
-        }
+// Mostrar alertas
+function showAlert(message, type = 'info') {
+    const alertId = 'alert_' + Date.now();
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert" id="${alertId}">
+            ${message}
+            <button type="button" class="btn-close" onclick="closeAlert('${alertId}')"></button>
+        </div>
+    `;
+    
+    document.getElementById('alertContainer').innerHTML = alertHtml;
+    
+    setTimeout(() => closeAlert(alertId), 5000);
+}
 
-        // Mostrar resultados en la tabla
-        function displayResults(data) {
-            const tbody = document.getElementById('resultsBody');
-            
-            if (data.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="10" class="text-center text-muted p-5">
-                            <i class="bi bi-inbox" style="font-size: 2rem;"></i><br>
-                            No se encontraron resultados con los filtros especificados
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-            
-            tbody.innerHTML = data.map(record => {
-                const student = record.test_students;
-                const subject = record.test_subjects;
-                const gradeClass = getGradeClass(record.grade_value);
-                
-                return `
-                    <tr>
-                        <td><code>${student.student_code}</code></td>
-                        <td>${student.first_name} ${student.last_name}</td>
-                        <td><span class="badge bg-secondary">${student.grade_level} - ${student.section}</span></td>
-                        <td>${subject.subject_code} - ${subject.subject_name}</td>
-                        <td><span class="badge bg-info">${subject.department}</span></td>
-                        <td><span class="badge bg-warning text-dark">${record.academic_period}</span></td>
-                        <td><span class="badge bg-light text-dark">${record.grade_type}</span></td>
-                        <td><span class="badge ${gradeClass}">${record.grade_value}</span></td>
-                        <td>${formatDate(record.grade_date)}</td>
-                        <td class="text-truncate" style="max-width: 200px;" title="${record.teacher_observations || ''}">
-                            ${record.teacher_observations || '-'}
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        // Obtener clase CSS para calificación
-        function getGradeClass(grade) {
-            if (grade >= 4.5) return 'badge grade-excellent';
-            if (grade >= 3.5) return 'badge grade-good';
-            if (grade >= 2.5) return 'badge grade-regular';
-            return 'badge grade-poor';
-        }
-
-        // Limpiar filtros
-        function clearFilters() {
-            document.getElementById('filterForm').reset();
-            document.getElementById('resultsBody').innerHTML = `
-                <tr>
-                    <td colspan="10" class="text-center text-muted p-5">
-                        <i class="bi bi-search" style="font-size: 2rem;"></i><br>
-                        Seleccione los filtros y haga clic en "Consultar" para ver los resultados
-                    </td>
-                </tr>
-            `;
-            document.getElementById('queryTime').textContent = '-';
-            document.getElementById('recordCount').textContent = '-';
-        }
-
-        // Exportar a CSV
-        function exportToCSV() {
-            if (currentData.length === 0) {
-                showAlert('No hay datos para exportar', 'warning');
-                return;
-            }
-            
-            const headers = ['Código', 'Estudiante', 'Grado', 'Sección', 'Materia', 'Departamento', 'Período', 'Tipo', 'Calificación', 'Fecha', 'Observaciones'];
-            const csvContent = [
-                headers.join(','),
-                ...currentData.map(record => {
-                    const student = record.test_students;
-                    const subject = record.test_subjects;
-                    return [
-                        student.student_code,
-                        `"${student.first_name} ${student.last_name}"`,
-                        student.grade_level,
-                        student.section,
-                        `"${subject.subject_code} - ${subject.subject_name}"`,
-                        subject.department,
-                        record.academic_period,
-                        record.grade_type,
-                        record.grade_value,
-                        record.grade_date,
-                        `"${record.teacher_observations || ''}"`
-                    ].join(',');
-                })
-            ].join('\n');
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `consulta_academica_${new Date().toISOString().split('T')[0]}.csv`;
-            link.click();
-            
-            showAlert('Archivo CSV descargado exitosamente', 'success');
-        }
-
-        // Mostrar alertas
-        function showAlert(message, type = 'info') {
-            const alertId = 'alert_' + Date.now();
-            const alertHtml = `
-                <div class="alert alert-${type} alert-dismissible fade show" role="alert" id="${alertId}">
-                    ${message}
-                    <button type="button" class="btn-close" onclick="closeAlert('${alertId}')"></button>
-                </div>
-            `;
-            
-            document.getElementById('alertContainer').innerHTML = alertHtml;
-            
-            setTimeout(() => closeAlert(alertId), 5000);
-        }
-
-        function closeAlert(alertId) {
-            const alert = document.getElementById(alertId);
-            if (alert) {
-                alert.classList.remove('show');
-                setTimeout(() => alert.remove(), 150);
-            }
-        }
+function closeAlert(alertId) {
+    const alert = document.getElementById(alertId);
+    if (alert) {
+        alert.classList.remove('show');
+        setTimeout(() => alert.remove(), 150);
+    }
+}
     </script>
 </body>
 </html>
