@@ -939,7 +939,7 @@ async function notifyBudgetOverrun(workerEmail, requestDetails, valorInicial, va
  * @param {string} scriptId - ID del Google Apps Script desplegado
  */
 function configureNotifications(scriptId) {
-    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/${scriptId}/exec`;
+    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/AKfycbyioTXdQt1xU-KvCjur83ulJxergfxttRJ-hVsiSquxtYqqZ57xR0VNP56nsdNGwJj9/exec`;
     console.log('Endpoint de notificaciones configurado:', NOTIFICATION_CONFIG.endpoint);
 }
 
