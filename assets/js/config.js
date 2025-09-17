@@ -764,6 +764,199 @@ function redirectToLogin() {
     window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
 }
 
+// ==========================================
+// SISTEMA DE NOTIFICACIONES - SchoolNet
+// ==========================================
+
+// URL del Google Apps Script para envío de emails
+// REEMPLAZAR 'TU_SCRIPT_ID' con el ID real del script desplegado
+const NOTIFICATION_CONFIG = {
+    endpoint: 'https://script.google.com/macros/s/TU_SCRIPT_ID/exec',
+    enabled: true,
+    timeout: 10000, // 10 segundos timeout
+    retries: 2
+};
+
+/**
+ * Función principal para enviar notificaciones por email
+ * @param {string} to - Email del destinatario
+ * @param {string} subject - Asunto del email
+ * @param {string} htmlContent - Contenido HTML del email
+ * @param {boolean} silent - Si true, no muestra mensajes de error en UI
+ * @returns {Promise<boolean>} - true si se envió exitosamente
+ */
+async function sendNotification(to, subject, htmlContent, silent = true) {
+    if (!NOTIFICATION_CONFIG.enabled) {
+        console.log('Notificaciones deshabilitadas');
+        return false;
+    }
+
+    if (!to || !subject || !htmlContent) {
+        console.error('Faltan parámetros requeridos para notificación');
+        return false;
+    }
+
+    let attempts = 0;
+    const maxAttempts = NOTIFICATION_CONFIG.retries + 1;
+
+    while (attempts < maxAttempts) {
+        try {
+            attempts++;
+            console.log(`Enviando notificación (intento ${attempts}/${maxAttempts}) a:`, to);
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), NOTIFICATION_CONFIG.timeout);
+
+            const response = await fetch(NOTIFICATION_CONFIG.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    to: to,
+                    subject: subject,
+                    htmlBody: htmlContent
+                }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                console.log('Notificación enviada exitosamente a:', to);
+                return true;
+            } else {
+                throw new Error(result.error || 'Error desconocido en el envío');
+            }
+
+        } catch (error) {
+            console.error(`Error en intento ${attempts}:`, error.message);
+
+            if (attempts >= maxAttempts) {
+                if (!silent) {
+                    showMessage(`Error enviando notificación: ${error.message}`, 'warning');
+                }
+                return false;
+            }
+
+            // Esperar antes del siguiente intento (backoff exponencial)
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Plantilla para notificación de sobreejecución presupuestal
+ * @param {string} requestDetails - Detalles del requerimiento
+ * @param {number} valorInicial - Valor inicial autorizado
+ * @param {number} valorFinal - Valor final ejecutado
+ * @param {number} tolerance - Porcentaje de tolerancia configurado
+ * @returns {string} HTML formateado para el email
+ */
+function getOverrunNotificationTemplate(requestDetails, valorInicial, valorFinal, tolerance) {
+    const valorInicialFormateado = formatearMoneda(valorInicial);
+    const valorFinalFormateado = formatearMoneda(valorFinal);
+    const diferencia = valorFinal - valorInicial;
+    const diferenciaFormateada = formatearMoneda(diferencia);
+    const porcentajeSobreejecucion = ((diferencia / valorInicial) * 100).toFixed(1);
+
+    return `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+                <h2 style="color: #856404; margin-top: 0; margin-bottom: 10px;">⚠️ Notificación de Sobreejecución Presupuestal</h2>
+                <p style="margin: 0; color: #856404; font-weight: 500;">SchoolNet - Sistema de Gestión Educativa</p>
+            </div>
+            
+            <div style="background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <p style="margin-top: 0;">Saludos,</p>
+                <p>La solicitud de <strong>"${escapeHtml(requestDetails)}"</strong> ha sido ejecutada con una diferencia significativa respecto al valor inicial autorizado.</p>
+                
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #dee2e6;">
+                    <tr style="background-color: #f8f9fa;">
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">Concepto</td>
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">Valor</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 12px; border: 1px solid #dee2e6;">Valor inicial autorizado:</td>
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-family: monospace;">${valorInicialFormateado}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 12px; border: 1px solid #dee2e6;">Valor final ejecutado:</td>
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-family: monospace;">${valorFinalFormateado}</td>
+                    </tr>
+                    <tr style="background-color: #fff3cd;">
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">Sobreejecución:</td>
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-family: monospace; color: #856404; font-weight: bold;">${diferenciaFormateada} (+${porcentajeSobreejecucion}%)</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 12px; border: 1px solid #dee2e6;">Tolerancia configurada:</td>
+                        <td style="padding: 12px; border: 1px solid #dee2e6; font-family: monospace;">${tolerance}%</td>
+                    </tr>
+                </table>
+                
+                <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; padding: 15px; margin: 20px 0;">
+                    <p style="margin: 0; color: #0c5460;"><strong>Acción requerida:</strong> Recuerda revisar y autorizar esta diferencia en el sistema SchoolNet.</p>
+                </div>
+                
+                <p style="margin-bottom: 0;">Este requerimiento ha sido marcado como <strong>"pre-cerrado"</strong> hasta que se autorice la sobreejecución.</p>
+            </div>
+            
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
+            <p style="color: #6c757d; font-size: 12px; margin: 0; text-align: center;">
+                Este correo es generado automáticamente por SchoolNet. Por favor, no responder a este mensaje.<br>
+                Colegio Tilata - Sistema de Gestión Educativa
+            </p>
+        </div>
+    `;
+}
+
+/**
+ * Función específica para notificar sobreejecución presupuestal
+ * @param {string} workerEmail - Email del trabajador responsable
+ * @param {string} requestDetails - Detalles del requerimiento
+ * @param {number} valorInicial - Valor inicial autorizado
+ * @param {number} valorFinal - Valor final ejecutado
+ * @param {number} tolerance - Porcentaje de tolerancia
+ * @returns {Promise<boolean>} - true si se envió exitosamente
+ */
+async function notifyBudgetOverrun(workerEmail, requestDetails, valorInicial, valorFinal, tolerance = 10) {
+    const subject = 'SchoolNet - Notificación de sobreejecución presupuestal';
+    const htmlContent = getOverrunNotificationTemplate(requestDetails, valorInicial, valorFinal, tolerance);
+    
+    return await sendNotification(workerEmail, subject, htmlContent, true);
+}
+
+/**
+ * Configurar endpoint de notificaciones
+ * @param {string} scriptId - ID del Google Apps Script desplegado
+ */
+function configureNotifications(scriptId) {
+    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/${scriptId}/exec`;
+    console.log('Endpoint de notificaciones configurado:', NOTIFICATION_CONFIG.endpoint);
+}
+
+/**
+ * Habilitar/deshabilitar notificaciones
+ * @param {boolean} enabled - true para habilitar, false para deshabilitar
+ */
+function toggleNotifications(enabled) {
+    NOTIFICATION_CONFIG.enabled = enabled;
+    console.log('Notificaciones', enabled ? 'habilitadas' : 'deshabilitadas');
+}
+
+// Hacer funciones disponibles globalmente
+window.sendNotification = sendNotification;
+window.notifyBudgetOverrun = notifyBudgetOverrun;
+window.configureNotifications = configureNotifications;
+window.toggleNotifications = toggleNotifications;
 // Hacer función disponible globalmente
 window.validatePageAccess = validatePageAccess;
 
