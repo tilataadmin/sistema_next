@@ -152,7 +152,7 @@ const APP_CONFIG = {
             icon: 'bi-calculator',
             path: '/modules/budget/',
             status: 'planned'
-        }
+        },
 
         {
             id: 'new-students',
