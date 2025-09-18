@@ -518,16 +518,6 @@ async function setCurrentUserInSession() {
     }
 }
 
-// Función auxiliar para obtener sesión almacenada
-function getStoredSession() {
-    try {
-        const sessionData = localStorage.getItem('schoolnetSession') || sessionStorage.getItem('schoolnetSession');
-        return sessionData ? JSON.parse(sessionData) : null;
-    } catch (error) {
-        return null;
-    }
-}
-
 // Función para establecer usuario en sesión de PostgreSQL
 async function setCurrentUserInSession() {
     const session = getStoredSession();
@@ -624,7 +614,7 @@ const URL_PERMISSIONS = {
     '/modules/budget/close-transfer.html': 'Cerrar traslado presupuestal',
     '/modules/budget/category-detail.html': 'Vista detallada por rubro',
     '/modules/budget/budget-overview.html': 'Vista particular del presupuesto',
-    '/modules/budget/budget-queries.html': 'Consultas de presupuesto'
+    '/modules/budget/budget-queries.html': 'Consultas de presupuesto',
 
     // Agregar estas líneas al objeto URL_PERMISSIONS en config.js
     // Después de los permisos de Presupuesto y antes del cierre del objeto
