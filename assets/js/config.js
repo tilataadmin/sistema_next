@@ -153,6 +153,15 @@ const APP_CONFIG = {
             path: '/modules/budget/',
             status: 'planned'
         }
+
+        {
+            id: 'new-students',
+            name: 'Gestión de Estudiantes Nuevos',
+            description: 'Proceso de inculturación para estudiantes nuevos y sus familias',
+            icon: 'bi-person-plus',
+            path: '/modules/new-students/',
+            status: 'active'
+        }
     ],
     
     // Configuración de UI
@@ -616,6 +625,18 @@ const URL_PERMISSIONS = {
     '/modules/budget/category-detail.html': 'Vista detallada por rubro',
     '/modules/budget/budget-overview.html': 'Vista particular del presupuesto',
     '/modules/budget/budget-queries.html': 'Consultas de presupuesto'
+
+    // Agregar estas líneas al objeto URL_PERMISSIONS en config.js
+    // Después de los permisos de Presupuesto y antes del cierre del objeto
+
+    // Módulo Gestión de estudiantes nuevos
+    '/modules/new-students/activities.html': 'Actividades',
+    '/modules/new-students/actors.html': 'Actores', 
+    '/modules/new-students/new-students-report.html': 'Reporte de estudiantes nuevos',
+    '/modules/new-students/register-activities.html': 'Registrar actividades',
+    '/modules/new-students/registration-queries.html': 'Consulta de registro',
+    '/modules/new-students/students-dashboard.html': 'Tablero de control'
+    
 };
 
 // Función principal de validación
