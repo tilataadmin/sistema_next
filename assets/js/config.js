@@ -398,6 +398,36 @@ function generateBreadcrumbs(moduleName, pageName) {
     `;
 }
 
+// En config.js - Función para obtener URLs de fotos
+async function getPhotoUrl(type, identifier) {
+  try {
+    // Obtener URL base de fotos desde system_config
+    const configData = await supabaseRequest('/system_config?select=photos_url&limit=1');
+    const baseUrl = configData.length > 0 ? configData[0].photos_url : '';
+    
+    if (!baseUrl || !identifier) {
+      return null;
+    }
+    
+    // Construir URL según el tipo
+    return `${baseUrl}${identifier}.jpg`;
+    
+  } catch (error) {
+    console.error('Error obteniendo URL de foto:', error);
+    return null;
+  }
+}
+
+// Funciones específicas para facilidad de uso
+async function getStudentPhotoUrl(student_code) {
+  return await getPhotoUrl('student', student_code);
+}
+
+async function getWorkerPhotoUrl(worker_id_doc) {
+  return await getPhotoUrl('worker', worker_id_doc);
+}
+
+
 
 // Funciones de branding (sin cambios)
 function updatePageTitle(pageKey, moduleName = '') {
