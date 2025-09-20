@@ -787,33 +787,26 @@
         // FUNCIONES DE CARGA DE DATOS
         // ==========================================
 
-        // CORRECCIÓN PARA workers.html (Módulo Talento Humano)
-// Reemplazar la función loadWorkers() con esta versión corregida
-
-async function loadWorkers() {
+        async function loadWorkers() {
     try {
         console.log('📡 Cargando trabajadores...');
         showLoading(true);
         
-        // Cargar trabajadores con todas las relaciones - SIN ORDENAMIENTO EN SUPABASE
+        // Cargar trabajadores con todas las relaciones - CONSULTA CORREGIDA EN UNA SOLA LÍNEA
         const workers = await supabaseRequest('/workers?select=*,genders(gender_name),sections(section_name),organizational_divisions(division_name),cost_centers(cost_center_name),organizational_areas(area_name),organizational_subareas(subarea_name)');
-        
+
         // Ordenar en JavaScript por apellidos
         const sortedWorkers = (workers || []).sort((a, b) => {
-            // Primero por primer apellido
             if (a.worker_last_name_1 !== b.worker_last_name_1) {
                 return a.worker_last_name_1.localeCompare(b.worker_last_name_1);
             }
-            // Luego por segundo apellido
             const lastName2A = a.worker_last_name_2 || '';
             const lastName2B = b.worker_last_name_2 || '';
             if (lastName2A !== lastName2B) {
                 return lastName2A.localeCompare(lastName2B);
             }
-            // Finalmente por primer nombre
             return a.worker_first_name.localeCompare(b.worker_first_name);
-        });
-        
+        });    
         allWorkers = sortedWorkers;
         
         // Cargar roles de cada trabajador
@@ -834,6 +827,107 @@ async function loadWorkers() {
         showLoading(false);
     }
 }
+
+        async function loadWorkersRoles() {
+    try {
+        if (allWorkers.length === 0) return;
+        
+        const workerIds = allWorkers.map(w => w.worker_id);
+        const workerRoles = await supabaseRequest(`/worker_job_roles?select=*,job_roles(role_name)&worker_id=in.(${workerIds.join(',')})&assignment_status=eq.active&order=is_primary_role.desc,job_roles(role_name).asc`);
+        
+        // Agrupar roles por trabajador
+        const rolesByWorker = {};
+        if (workerRoles) {
+            workerRoles.forEach(wr => {
+                if (!rolesByWorker[wr.worker_id]) {
+                    rolesByWorker[wr.worker_id] = [];
+                }
+                rolesByWorker[wr.worker_id].push(wr);
+            });
+        }
+        
+        // Asignar roles a cada trabajador
+        allWorkers.forEach(worker => {
+            worker.roles = rolesByWorker[worker.worker_id] || [];
+        });
+        
+    } catch (error) {
+        console.error('❌ Error cargando roles de trabajadores:', error);
+    }
+}
+        
+        function renderWorkersTable(workers) {
+            const tbody = document.getElementById('workersTableBody');
+            
+            if (!workers || workers.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <div class="mt-2 text-muted">No se encontraron trabajadores</div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = workers.map(worker => {
+                const fullName = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
+                const orgPath = buildOrganizationalPath(worker);
+                const rolesHtml = buildRolesHtml(worker.roles || []);
+                
+                return `
+                    <tr>
+                        <td>
+                            <div>
+                                <strong>${fullName}</strong>
+                            </div>
+                            <small class="text-muted">${worker.worker_id_doc} • ${worker.email}</small>
+                            <div id="userStatus_${worker.worker_id}"></div>
+                        </td>
+                        <td>
+                            <div class="organizational-path">${orgPath}</div>
+                        </td>
+                        <td>${rolesHtml}</td>
+                        <td>
+                            <span class="badge ${getStatusClass(worker.worker_status)}">
+                                <i class="bi bi-${getStatusIcon(worker.worker_status)} me-1"></i>
+                                ${getStatusText(worker.worker_status)}
+                            </span>
+                        </td>
+                        <td>
+                            <small class="text-muted">
+                                ${formatDate(worker.worker_entry_date)}
+                            </small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" title="Editar" 
+                                        onclick="editWorker('${worker.worker_id}')">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-outline-success" title="Gestionar Roles" 
+                                        onclick="manageWorkerRoles('${worker.worker_id}')">
+                                    <i class="bi bi-award"></i>
+                                </button>
+                                ${worker.worker_status === 'active' ? `
+                                    <button class="btn btn-create-user ${worker.hasUser ? 'disabled' : ''}" 
+                                            title="${worker.hasUser ? 'Usuario ya creado' : 'Crear como usuario'}" 
+                                            onclick="createUserFromWorker('${worker.worker_id}', '${fullName.replace(/'/g, "\\'")}')"
+                                            ${worker.hasUser ? 'disabled' : ''}>
+                                        <i class="bi bi-${worker.hasUser ? 'person-check' : 'person-plus'}"></i>
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-outline-danger" title="Eliminar" 
+                                        onclick="prepareDelete('${worker.worker_id}', '${fullName}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
 
         function buildOrganizationalPath(worker) {
             const parts = [];
