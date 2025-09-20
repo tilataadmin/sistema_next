@@ -9,6 +9,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     
+    <!-- TinyMCE -->
+    <script src="https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+    
     <style>
         .loading-overlay {
             position: fixed;
@@ -299,7 +302,8 @@
             selectedStudent: null,
             searchTimeout: null,
             categories: [],
-            isSubmitting: false
+            isSubmitting: false,
+            tinymceEditor: null
         };
 
         // Inicialización
@@ -330,6 +334,9 @@
             try {
                 // Cargar categorías
                 await loadCategories();
+                
+                // Inicializar TinyMCE
+                await initializeTinyMCE();
                 
                 showMessage('Formulario cargado correctamente. Puede comenzar a registrar asuntos.', 'success');
                 
@@ -388,6 +395,31 @@
                     </div>
                 `;
                 container.appendChild(categoryDiv);
+            });
+        }
+
+        async function initializeTinyMCE() {
+            return new Promise((resolve, reject) => {
+                tinymce.init({
+                    selector: '#issue-description',
+                    height: 300,
+                    menubar: false,
+                    plugins: [
+                        'lists', 'link', 'charmap', 'preview', 'searchreplace', 'wordcount'
+                    ],
+                    toolbar: 'undo redo | formatselect | bold italic underline | alignleft aligncenter alignright | bullist numlist outdent indent | link | removeformat',
+                    content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 14px; }',
+                    placeholder: 'Escriba aquí la descripción detallada del asunto...',
+                    setup: function(editor) {
+                        appData.tinymceEditor = editor;
+                        editor.on('init', function() {
+                            resolve();
+                        });
+                        editor.on('change', function() {
+                            // Trigger change para validación si es necesario
+                        });
+                    }
+                });
             });
         }
 
@@ -715,20 +747,22 @@
             }
             
             // Validar descripción
-            const description = document.getElementById('issue-description').value.trim();
-            if (!description) {
+            const description = appData.tinymceEditor ? appData.tinymceEditor.getContent().trim() : '';
+            if (!description || description === '<p></p>' || description === '<p><br></p>') {
                 return {
                     isValid: false,
                     message: 'La descripción del asunto es obligatoria.',
-                    focusElement: document.getElementById('issue-description')
+                    focusElement: null // TinyMCE no tiene focus directo
                 };
             }
             
-            if (description.length < 10) {
+            // Validar longitud mínima de descripción
+            const textContent = appData.tinymceEditor ? appData.tinymceEditor.getContent({format: 'text'}).trim() : '';
+            if (textContent.length < 10) {
                 return {
                     isValid: false,
                     message: 'La descripción debe tener al menos 10 caracteres.',
-                    focusElement: document.getElementById('issue-description')
+                    focusElement: null
                 };
             }
             
@@ -753,8 +787,8 @@
                 selectedCategories.push(parseInt(checkbox.value));
             });
             
-            // Obtener descripción
-            const description = document.getElementById('issue-description').value.trim();
+            // Obtener descripción del editor TinyMCE
+            const description = appData.tinymceEditor ? appData.tinymceEditor.getContent() : '';
             
             return {
                 student_id: appData.selectedStudent.student_id,
@@ -1027,8 +1061,10 @@
             clearStudentSelection();
             hideSuggestions();
             
-            // Limpiar descripción
-            document.getElementById('issue-description').value = '';
+            // Limpiar descripción TinyMCE
+            if (appData.tinymceEditor) {
+                appData.tinymceEditor.setContent('');
+            }
             
             // Limpiar categorías
             const categoryCheckboxes = document.querySelectorAll('input[name="categories"]');
@@ -1058,7 +1094,7 @@
 
         function hasFormData() {
             const searchValue = document.getElementById('student-search').value.trim();
-            const descriptionValue = document.getElementById('issue-description').value.trim();
+            const descriptionValue = appData.tinymceEditor ? appData.tinymceEditor.getContent().trim() : '';
             const selectedCategories = document.querySelectorAll('input[name="categories"]:checked');
             
             return searchValue || descriptionValue || selectedCategories.length > 0;
@@ -1070,17 +1106,20 @@
             const submitBtn = document.getElementById('submit-btn');
             const clearBtn = document.getElementById('clear-form-btn');
             const searchInput = document.getElementById('student-search');
-            const descriptionInput = document.getElementById('issue-description');
             const categoryCheckboxes = document.querySelectorAll('input[name="categories"]');
             
             // Deshabilitar/habilitar elementos
             submitBtn.disabled = submitting;
             clearBtn.disabled = submitting;
             searchInput.disabled = submitting;
-            descriptionInput.disabled = submitting;
             categoryCheckboxes.forEach(checkbox => {
                 checkbox.disabled = submitting;
             });
+            
+            // Deshabilitar/habilitar TinyMCE
+            if (appData.tinymceEditor) {
+                appData.tinymceEditor.mode.set(submitting ? 'readonly' : 'design');
+            }
             
             // Cambiar apariencia del botón
             if (submitting) {
