@@ -1098,66 +1098,60 @@
         }
         
         async function enviarNotificaciones(studentId, descripcion) {
-            console.log('🔍 INICIO: enviarNotificaciones con studentId:', studentId);
+        try {
+            // Obtener datos del estudiante y directores
+            const studentData = await supabaseRequest(`/students?select=student_first_name,student_last_name_1,courses!inner(course_director_email,grades!inner(sections!inner(director_email)))&student_id=eq.${studentId}&limit=1`);
             
-            try {
-                // Obtener datos del estudiante y directores
-                const studentData = await supabaseRequest(`/students?select=student_first_name,student_last_name_1,courses!inner(course_director_email,grades!inner(sections!inner(director_email)))&student_id=eq.${studentId}&limit=1`);
-                
-                console.log('📊 DATOS ESTUDIANTE:', studentData);
-                
-                if (!studentData || studentData.length === 0) {
-                    console.warn('❌ No se encontraron datos del estudiante');
-                    return;
-                }
-                
-                const student = studentData[0];
-                console.log('👤 ESTUDIANTE PROCESADO:', student);
-                
-                const studentName = `${student.student_first_name} ${student.student_last_name_1}`;
-                const directorEmail = student.courses?.course_director_email;
-                
-                console.log('📧 EMAIL DIRECTOR:', directorEmail);
-                console.log('👤 NOMBRE ESTUDIANTE:', studentName);
-                
-                if (!directorEmail) {
-                    console.warn('❌ No hay email del director');
-                    return;
-                }
-                
-                // Verificar configuración de notificaciones
-                console.log('⚙️ NOTIFICATION_CONFIG:', window.NOTIFICATION_CONFIG || 'NO DEFINIDO');
-                
-                const asunto = 'Hay un nuevo asunto relacionado con un estudiante de tu curso.';
-                const contenidoHtml = `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <h3 style="color: #0d6efd;">Nuevo Asunto Individual Registrado</h3>
-                        <p>En relación con <strong>${studentName}</strong> se ha registrado la siguiente incidencia:</p>
-                        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0d6efd; margin: 20px 0;">
-                            ${descripcion}
-                        </div>
-                        <p style="font-size: 12px; color: #6c757d;">
-                            Este es un correo generado automáticamente por SchoolNet. Por favor no responder.
-                        </p>
-                    </div>
-                `;
-                
-                console.log('📝 ASUNTO:', asunto);
-                console.log('📄 CONTENIDO (primeros 100 chars):', contenidoHtml.substring(0, 100));
-                
-                // Verificar si la función sendNotification existe
-                console.log('🔧 sendNotification existe:', typeof window.sendNotification);
-                
-                // Intentar envío
-                console.log('📤 INTENTANDO ENVÍO...');
-                const resultado = await sendNotification(directorEmail, asunto, contenidoHtml, false);
-                console.log('📬 RESULTADO FINAL:', resultado);
-                
-            } catch (error) {
-                console.error('💥 ERROR EN enviarNotificaciones:', error);
-                console.error('📍 Stack trace:', error.stack);
+            if (!studentData || studentData.length === 0) {
+                console.warn('No se encontraron datos del estudiante para notificación');
+                return;
             }
+            
+            const student = studentData[0];
+            const studentName = `${student.student_first_name} ${student.student_last_name_1}`;
+            const directorEmail = student.courses?.course_director_email;
+            const sectionDirectorEmail = student.courses?.grades?.sections?.director_email;
+            
+            if (!directorEmail) {
+                console.warn('No se encontró email del director del curso');
+                return;
+            }
+            
+            // Obtener datos del usuario que reporta
+            const session = getStoredSession();
+            const reporterName = session?.user?.user_display_name || session?.user?.user_name || session?.user?.user_mail || 'Usuario no identificado';
+            
+            // Preparar contenido del email
+            const asunto = 'Hay un nuevo asunto relacionado con un estudiante de tu curso.';
+            const contenidoHtml = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h3 style="color: #0d6efd;">Nuevo Asunto Individual Registrado</h3>
+                    <p>En relación con <strong>${studentName}</strong> se ha registrado la siguiente incidencia:</p>
+                    <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0d6efd; margin: 20px 0;">
+                        ${descripcion}
+                    </div>
+                    <div style="background-color: #e7f3ff; padding: 12px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #0d6efd;">
+                        <strong>Reportado por:</strong> ${reporterName}
+                    </div>
+                    <p style="font-size: 12px; color: #6c757d;">
+                        Este es un correo generado automáticamente por SchoolNet. Por favor no responder.
+                    </p>
+                </div>
+            `;
+            
+            // Enviar notificación principal
+            await sendNotification(directorEmail, asunto, contenidoHtml, true);
+            
+            // Enviar copia al director de sección si es diferente
+            if (sectionDirectorEmail && sectionDirectorEmail !== directorEmail) {
+                await sendNotification(sectionDirectorEmail, asunto, contenidoHtml, true);
+            }
+            
+        } catch (error) {
+            console.error('Error enviando notificaciones:', error);
+            // No interrumpir el proceso por fallos de notificación
         }
+    }
         
         function handleLimpiarForm() {
             if (confirm('¿Está seguro que desea limpiar el formulario? Se perderán todos los datos ingresados.')) {
