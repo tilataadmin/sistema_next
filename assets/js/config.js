@@ -839,7 +839,7 @@ function redirectToLogin() {
 // URL del Google Apps Script para envío de emails
 // REEMPLAZAR 'TU_SCRIPT_ID' con el ID real del script desplegado
 const NOTIFICATION_CONFIG = {
-    endpoint: 'https://script.google.com/macros/s/TU_SCRIPT_ID/exec',
+    endpoint: 'https://script.google.com/macros/s/AKfycbyioTXdQt1xU-KvCjur83ulJxergfxttRJ-hVsiSquxtYqqZ57xR0VNP56nsdNGwJj9/exec',
     enabled: true,
     timeout: 10000, // 10 segundos timeout
     retries: 2
