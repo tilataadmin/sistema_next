@@ -509,73 +509,52 @@
                     showMessage('Sesión no válida', 'danger');
                     return;
                 }
-
-                const cursosData = await supabaseRequest('/worker_courses?select=courses!inner(course_id,course_name)&worker_id=eq.' + session.user.worker_id);
+        
+                // Buscar trabajador por email
+                const workerData = await supabaseRequest(`/workers?select=worker_id,email,section_id&email=eq.${session.user.user_mail}`);
                 
-                const selectCurso = document.getElementById('selectCurso');
-                const mensajePermisos = document.getElementById('mensajePermisos');
-                
-                if (cursosData && cursosData.length > 0) {
-                    cursosData.forEach(item => {
-                        const option = document.createElement('option');
-                        option.value = item.courses.course_id;
-                        option.textContent = item.courses.course_name;
-                        selectCurso.appendChild(option);
-                    });
-                } else {
-                    selectCurso.disabled = true;
-                    selectCurso.innerHTML = '<option value="">No tiene cursos disponibles</option>';
-                    
-                    mensajePermisos.innerHTML = `
-                        <div class="alert alert-warning">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            No tiene cursos a su cargo
-                        </div>
-                    `;
-                    mensajePermisos.style.display = 'block';
-                }
-            } catch (error) {
-                console.error('Error cargando cursos:', error);
-                showMessage('Error al cargar los cursos disponibles', 'danger');
-            }
-        }
-
-        // Carga estudiantes del curso seleccionado
-        async function cargarEstudiantes() {
-            const selectCurso = document.getElementById('selectCurso');
-            const courseId = selectCurso.value;
-            
-            limpiarTabla();
-            
-            if (!courseId) {
-                return;
-            }
-            
-            try {
-                const mensajeCarga = document.getElementById('mensajeCarga');
-                mensajeCarga.style.display = 'block';
-                
-                // Obtener estudiantes del curso
-                const estudiantes = await supabaseRequest(`/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2&course_id=eq.${courseId}&status_id=eq.1&order=student_first_name,student_last_name_1`);
-                
-                if (estudiantes.length === 0) {
-                    mensajeCarga.style.display = 'none';
-                    document.getElementById('noData').style.display = 'block';
+                if (workerData.length === 0) {
+                    mostrarSinPermisos('Usuario no encontrado en el sistema');
                     return;
                 }
                 
-                // Obtener conteos para todos los estudiantes
-                const studentIds = estudiantes.map(e => e.student_id);
-                const conteos = await obtenerConteosEstudiantes(studentIds);
+                const worker = workerData[0];
                 
-                estudiantesData = estudiantes;
-                mostrarEstudiantesConConteos(estudiantes, conteos);
-                mensajeCarga.style.display = 'none';
+                // Verificar si es director de curso
+                const cursosDirector = await supabaseRequest(`/courses?select=course_id,course_name&course_director_email=eq.${session.user.user_mail}`);
+                
+                // Si es director de curso, mostrar sus cursos
+                if (cursosDirector.length > 0) {
+                    llenarSelectCursos(cursosDirector, `Sus cursos: ${cursosDirector.length} curso(s)`);
+                    return;
+                }
+                
+                // Verificar si es director de sección
+                const seccionData = await supabaseRequest(`/sections?select=section_id,section_name&director_email=eq.${session.user.user_mail}`);
+                
+                if (seccionData.length > 0) {
+                    // Obtener todos los cursos de la sección
+                    const cursosSeccion = await supabaseRequest(`/courses?select=course_id,course_name,grades!inner(section_id)&grades.section_id=eq.${seccionData[0].section_id}`);
+                    llenarSelectCursos(cursosSeccion, `Cursos de la sección: ${seccionData[0].section_name}`);
+                    return;
+                }
+                
+                // Si no es director, verificar si es super admin
+                const hasPermission = await checkUserPermission(session.user.user_id, 'Seguimientos por cursos');
+                
+                if (hasPermission) {
+                    // Es super admin, puede ver todos los cursos
+                    const todosCursos = await supabaseRequest('/courses?select=course_id,course_name&order=course_name');
+                    llenarSelectCursos(todosCursos, 'Todos los cursos (Admin)');
+                    return;
+                }
+                
+                // Sin permisos
+                mostrarSinPermisos('No tiene cursos a su cargo');
                 
             } catch (error) {
-                console.error('Error cargando estudiantes:', error);
-                document.getElementById('mensajeCarga').style.display = 'none';
-                showMessage('Error al cargar los estudiantes del curso', 'danger');
+                console.error('Error cargando cursos:', error);
+                showMessage('Error al cargar los cursos disponibles', 'danger');
             }
         }
 
@@ -595,7 +574,7 @@
                     };
                 });
                 
-                // Conteo de asuntos EAE
+                // Conteo de asuntos EAE - CORREGIDO
                 const eaeData = await supabaseRequest(`/stm_eae_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI`);
                 eaeData.forEach(item => {
                     if (conteos[item.student_id]) {
@@ -603,7 +582,7 @@
                     }
                 });
                 
-                // Conteo de asuntos individuales escalables
+                // Conteo de asuntos individuales escalables - CORREGIDO
                 const asuntosData = await supabaseRequest(`/stm_students_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI&is_escalable=eq.SI`);
                 asuntosData.forEach(item => {
                     if (conteos[item.student_id]) {
@@ -611,7 +590,7 @@
                     }
                 });
                 
-                // Conteo de tareas activas
+                // Conteo de tareas activas - CORREGIDO
                 const tareasData = await supabaseRequest(`/tasks?select=student_id&student_id=in.(${studentIds.join(',')})&task_state=in.(Asignada,En proceso)`);
                 tareasData.forEach(item => {
                     if (conteos[item.student_id]) {
@@ -619,7 +598,7 @@
                     }
                 });
                 
-                // Conteo de metas activas
+                // Conteo de metas activas - CORREGIDO
                 const metasData = await supabaseRequest(`/stm_student_goals?select=student_id&student_id=in.(${studentIds.join(',')})&goal_status=neq.3`);
                 metasData.forEach(item => {
                     if (conteos[item.student_id]) {
@@ -627,7 +606,7 @@
                     }
                 });
                 
-                // Conteo de documentos
+                // Conteo de documentos - CORREGIDO
                 const docsData = await supabaseRequest(`/stm_docs?select=student_id&student_id=in.(${studentIds.join(',')})`);
                 docsData.forEach(item => {
                     if (conteos[item.student_id]) {
@@ -642,7 +621,80 @@
                 return {};
             }
         }
-
+async function cargarEstudiantes() {
+    const selectCurso = document.getElementById('selectCurso');
+    const courseId = selectCurso.value;
+    
+    limpiarTabla();
+    
+    if (!courseId) {
+        return;
+    }
+    
+    try {
+        const mensajeCarga = document.getElementById('mensajeCarga');
+        mensajeCarga.style.display = 'block';
+        
+        // Obtener estudiantes del curso - CORREGIDO
+        const estudiantes = await supabaseRequest(`/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2&course_id=eq.${courseId}&order=student_first_name,student_last_name_1`);
+        
+        if (estudiantes.length === 0) {
+            mensajeCarga.style.display = 'none';
+            document.getElementById('noData').style.display = 'block';
+            return;
+        }
+        
+        // Obtener conteos para todos los estudiantes
+        const studentIds = estudiantes.map(e => e.student_id);
+        const conteos = await obtenerConteosEstudiantes(studentIds);
+        
+        estudiantesData = estudiantes;
+        mostrarEstudiantesConConteos(estudiantes, conteos);
+        mensajeCarga.style.display = 'none';
+        
+    } catch (error) {
+        console.error('Error cargando estudiantes:', error);
+        document.getElementById('mensajeCarga').style.display = 'none';
+        showMessage('Error al cargar los estudiantes del curso', 'danger');
+    }
+}
+        
+        function mostrarSinPermisos(mensaje) {
+            const selectCurso = document.getElementById('selectCurso');
+            const mensajePermisos = document.getElementById('mensajePermisos');
+            
+            selectCurso.disabled = true;
+            selectCurso.innerHTML = '<option value="">No tiene cursos disponibles</option>';
+            
+            mensajePermisos.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>${mensaje}
+                </div>
+            `;
+            mensajePermisos.style.display = 'block';
+        }
+        
+        function llenarSelectCursos(cursos, mensaje) {
+            const selectCurso = document.getElementById('selectCurso');
+            const mensajePermisos = document.getElementById('mensajePermisos');
+            
+            cursos.forEach(curso => {
+                const option = document.createElement('option');
+                option.value = curso.course_id;
+                option.textContent = curso.course_name;
+                selectCurso.appendChild(option);
+            });
+            
+            if (mensaje) {
+                mensajePermisos.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>${mensaje}
+                    </div>
+                `;
+                mensajePermisos.style.display = 'block';
+            }
+        }
+        
         // Limpia la tabla de estudiantes
         function limpiarTabla() {
             document.getElementById('tablaContainer').style.display = 'none';
