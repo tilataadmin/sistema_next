@@ -839,7 +839,7 @@ function redirectToLogin() {
 // URL del Google Apps Script para envío de emails
 // REEMPLAZAR 'TU_SCRIPT_ID' con el ID real del script desplegado
 const NOTIFICATION_CONFIG = {
-    endpoint: 'https://script.google.com/macros/s/AKfycby869Ghxv0u_y8R0jqmmhWd_bIE-ME2yS9iH7h7YEBzygNf-fbiWpnUuj7FGPEBJTam/exec',
+    endpoint: 'https://script.google.com/macros/s/AKfycbzhfLGSk8WYPRTDxMTNwj3IPE_gfhUbkmhnaKT8k-hf2pjjdD1570oncw1t8XLb-yIC/exec',
     enabled: true,
     timeout: 10000, // 10 segundos timeout
     retries: 2
@@ -853,73 +853,66 @@ const NOTIFICATION_CONFIG = {
  * @param {boolean} silent - Si true, no muestra mensajes de error en UI
  * @returns {Promise<boolean>} - true si se envió exitosamente
  */
-async function sendNotification(to, subject, htmlContent, silent = true) {
-    if (!NOTIFICATION_CONFIG.enabled) {
-        console.log('Notificaciones deshabilitadas');
-        return false;
-    }
-
-    if (!to || !subject || !htmlContent) {
-        console.error('Faltan parámetros requeridos para notificación');
-        return false;
-    }
-
-    let attempts = 0;
-    const maxAttempts = NOTIFICATION_CONFIG.retries + 1;
-
-    while (attempts < maxAttempts) {
-        try {
-            attempts++;
-            console.log(`Enviando notificación (intento ${attempts}/${maxAttempts}) a:`, to);
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), NOTIFICATION_CONFIG.timeout);
-
-            const response = await fetch(NOTIFICATION_CONFIG.endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    to: to,
-                    subject: subject,
-                    htmlBody: htmlContent
-                }),
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-
-            if (result.success) {
-                console.log('Notificación enviada exitosamente a:', to);
-                return true;
-            } else {
-                throw new Error(result.error || 'Error desconocido en el envío');
-            }
-
-        } catch (error) {
-            console.error(`Error en intento ${attempts}:`, error.message);
-
-            if (attempts >= maxAttempts) {
-                if (!silent) {
-                    showMessage(`Error enviando notificación: ${error.message}`, 'warning');
-                }
-                return false;
-            }
-
-            // Esperar antes del siguiente intento (backoff exponencial)
-            await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+    async function sendNotification(to, subject, htmlContent, silent = true) {
+        if (!NOTIFICATION_CONFIG.enabled) {
+            console.log('Notificaciones deshabilitadas');
+            return false;
         }
+    
+        if (!to || !subject || !htmlContent) {
+            console.error('Faltan parámetros requeridos para notificación');
+            return false;
+        }
+    
+        let attempts = 0;
+        const maxAttempts = NOTIFICATION_CONFIG.retries + 1;
+    
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                console.log(`Enviando notificación (intento ${attempts}/${maxAttempts}) a:`, to);
+    
+                // CAMBIO CRÍTICO: Usar FormData en lugar de JSON
+                const formData = new FormData();
+                formData.append('to', to);
+                formData.append('subject', subject);
+                formData.append('htmlBody', htmlContent);
+    
+                const response = await fetch(NOTIFICATION_CONFIG.endpoint, {
+                    method: 'POST',
+                    body: formData  // Sin Content-Type header para FormData
+                });
+    
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+    
+                const result = await response.json();
+    
+                if (result.success) {
+                    console.log('Notificación enviada exitosamente a:', to);
+                    return true;
+                } else {
+                    throw new Error(result.error || 'Error desconocido en el envío');
+                }
+    
+            } catch (error) {
+                console.error(`Error en intento ${attempts}:`, error.message);
+    
+                if (attempts >= maxAttempts) {
+                    if (!silent) {
+                        showMessage(`Error enviando notificación: ${error.message}`, 'warning');
+                    }
+                    return false;
+                }
+    
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+            }
+        }
+    
+        return false;
     }
 
-    return false;
-}
 
 /**
  * Plantilla para notificación de sobreejecución presupuestal
@@ -1007,7 +1000,7 @@ async function notifyBudgetOverrun(workerEmail, requestDetails, valorInicial, va
  * @param {string} scriptId - ID del Google Apps Script desplegado
  */
 function configureNotifications(scriptId) {
-    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/AKfycby869Ghxv0u_y8R0jqmmhWd_bIE-ME2yS9iH7h7YEBzygNf-fbiWpnUuj7FGPEBJTam/exec`;
+    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/AKfycbzhfLGSk8WYPRTDxMTNwj3IPE_gfhUbkmhnaKT8k-hf2pjjdD1570oncw1t8XLb-yIC/exec`;
     console.log('Endpoint de notificaciones configurado:', NOTIFICATION_CONFIG.endpoint);
 }
 
