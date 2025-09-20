@@ -35,6 +35,35 @@
             margin-bottom: 20px;
         }
         
+        .role-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .role-checkbox:hover {
+            background-color: #f8f9fa;
+            border-color: #0d6efd;
+        }
+        
+        .role-checkbox input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+        
+        .role-checkbox label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: normal;
+            flex: 1;
+        }
+        
         .worker-item {
             display: flex;
             align-items: center;
@@ -111,6 +140,10 @@
         }
         
         @media (max-width: 768px) {
+            .roles-grid {
+                grid-template-columns: 1fr;
+            }
+            
             .btn-group-custom {
                 flex-direction: column;
             }
@@ -158,7 +191,7 @@
                     Asignar usuarios a cursos
                 </h1>
                 <p class="text-muted">
-                    Asigna profesores responsables a cursos específicos para el seguimiento de estudiantes
+                    Asigna trabajadores responsables a cursos específicos para el seguimiento de estudiantes
                 </p>
             </div>
         </div>
@@ -204,23 +237,46 @@
                 </div>
             </div>
 
-            <!-- Lista de trabajadores (profesores) -->
+            <!-- Filtro por roles -->
+            <div id="roles-section" class="card mb-4 d-none">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-funnel me-2"></i>
+                        Filtrar trabajadores por roles
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div id="roles-container" class="roles-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                        <!-- Los roles se cargarán aquí -->
+                    </div>
+                    <div class="btn-group-custom d-flex mt-3">
+                        <button type="button" id="select-all-roles" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-check-all me-1"></i>Seleccionar todos
+                        </button>
+                        <button type="button" id="clear-roles" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-x-lg me-1"></i>Limpiar selección
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de trabajadores -->
             <div id="workers-section" class="card mb-4 d-none">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">
                         <i class="bi bi-people me-2"></i>
-                        Profesores disponibles
+                        Trabajadores disponibles
                     </h6>
                     <div class="search-box" style="width: 300px;">
                         <i class="bi bi-search"></i>
                         <input type="text" id="worker-search" class="form-control form-control-sm" 
-                               placeholder="Buscar profesores...">
+                               placeholder="Buscar trabajadores...">
                     </div>
                 </div>
                 <div class="card-body">
                     <div id="workers-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 6px; background-color: #fff;">
                         <div id="workers-list">
-                            <!-- Los profesores se cargarán aquí -->
+                            <!-- Los trabajadores se cargarán aquí -->
                         </div>
                     </div>
 
@@ -239,7 +295,7 @@
                     <!-- Resumen de selección -->
                     <div class="summary-card mt-3">
                         <strong>Resumen:</strong> 
-                        <span id="selection-summary">0 profesores seleccionados</span>
+                        <span id="selection-summary">0 trabajadores seleccionados</span>
                     </div>
                 </div>
             </div>
@@ -256,10 +312,11 @@
             isDirector: false,
             sectionInfo: null,
             availableCourses: [],
+            availableRoles: [],
             availableWorkers: [],
             assignedWorkers: [],
             selectedCourse: null,
-            profesorRoleId: '1817868e-9426-4d4a-ad69-53a6f75cb9b2', // ID del rol Profesor
+            selectedRoles: [],
             selectedWorkers: []
         };
 
@@ -293,8 +350,11 @@
                 await validateDirectorSection();
                 
                 if (appData.isDirector) {
-                    // Cargar cursos de la sección
-                    await loadSectionCourses();
+                    // Cargar datos en paralelo
+                    await Promise.all([
+                        loadSectionCourses(),
+                        loadAllRoles()
+                    ]);
                     
                     // Mostrar formulario
                     document.getElementById('main-form').classList.remove('d-none');
@@ -318,7 +378,7 @@
                 const userEmail = session.user.user_mail;
                 
                 // Consultar si es director de sección
-                const sections = await supabaseRequest('/sections?select=section_id,section_name,director_email&director_email=eq.' + userEmail + '&section_status=eq.active');
+                const sections = await supabaseRequest(`/sections?select=section_id,section_name,director_email&director_email=eq.${userEmail}&section_status=eq.active`);
                 
                 if (!sections || sections.length === 0) {
                     appData.isDirector = false;
@@ -342,8 +402,8 @@
             try {
                 const sectionId = appData.sectionInfo.section_id;
                 
-                // Consulta para obtener cursos de la sección
-                const courses = await supabaseRequest('/courses?select=course_id,course_name,course_order,grades!inner(grade_name,grade_order,section_id)&grades.section_id=eq.' + sectionId + '&course_status=eq.active');
+                // Consulta corregida sin order en relaciones anidadas
+                const courses = await supabaseRequest(`/courses?select=course_id,course_name,course_order,grades!inner(grade_name,grade_order,section_id)&grades.section_id=eq.${sectionId}&course_status=eq.active`);
                 
                 // Ordenar en JavaScript después de recibir los datos
                 const sortedCourses = (courses || []).sort((a, b) => {
@@ -363,9 +423,58 @@
             }
         }
 
+        async function loadAllRoles() {
+            try {
+                const roles = await supabaseRequest('/job_roles?select=role_id,role_name&role_status=eq.active&order=role_name');
+                
+                appData.availableRoles = roles || [];
+                renderRoles();
+                
+            } catch (error) {
+                console.error('Error cargando roles:', error);
+                showMessage('Error al cargar roles de trabajo', 'danger');
+            }
+        }
+
+        function renderCourseSelect() {
+            const select = document.getElementById('course-select');
+            select.innerHTML = '<option value="">-- Seleccione un curso --</option>';
+            
+            appData.availableCourses.forEach(course => {
+                const option = document.createElement('option');
+                option.value = course.course_id;
+                option.textContent = `${course.grades.grade_name} - ${course.course_name}`;
+                select.appendChild(option);
+            });
+        }
+
+        function renderRoles() {
+            const container = document.getElementById('roles-container');
+            container.innerHTML = '';
+            
+            appData.availableRoles.forEach(role => {
+                const roleDiv = document.createElement('div');
+                roleDiv.className = 'role-checkbox';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `role_${role.role_id}`;
+                checkbox.value = role.role_id;
+                checkbox.addEventListener('change', handleRoleChange);
+                
+                const label = document.createElement('label');
+                label.htmlFor = `role_${role.role_id}`;
+                label.textContent = role.role_name;
+                
+                roleDiv.appendChild(checkbox);
+                roleDiv.appendChild(label);
+                container.appendChild(roleDiv);
+            });
+        }
+
         async function loadAssignedWorkers(courseId) {
             try {
-                const assigned = await supabaseRequest('/worker_courses?select=worker_id,workers!inner(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email)&course_id=eq.' + courseId + '&assignment_status=eq.active');
+                const assigned = await supabaseRequest(`/worker_courses?select=worker_id,workers!inner(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email)&course_id=eq.${courseId}&assignment_status=eq.active`);
                 
                 appData.assignedWorkers = assigned ? assigned.map(a => a.workers) : [];
                 
@@ -375,14 +484,18 @@
             }
         }
 
-        async function loadProfesores(courseId) {
+        async function loadWorkersByRoles() {
+            if (appData.selectedRoles.length === 0) {
+                document.getElementById('workers-section').classList.add('d-none');
+                return;
+            }
+            
             showLoading();
             
             try {
-                // Consultar solo profesores
-                const workers = await supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,worker_job_roles!inner(job_role_id)&worker_status=eq.active&worker_job_roles.job_role_id=eq.' + appData.profesorRoleId + '&worker_job_roles.assignment_status=eq.active&order=worker_last_name_1,worker_last_name_2,worker_first_name');
-                
-                console.log('Profesores encontrados:', workers);
+                // Consultar trabajadores con roles seleccionados
+                const roleIds = appData.selectedRoles.join(',');
+                const workers = await supabaseRequest(`/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,worker_job_roles!inner(job_role_id)&worker_status=eq.active&worker_job_roles.job_role_id=in.(${roleIds})&worker_job_roles.assignment_status=eq.active&order=worker_last_name_1,worker_last_name_2,worker_first_name`);
                 
                 // Eliminar duplicados
                 const uniqueWorkers = [];
@@ -403,8 +516,8 @@
                 document.getElementById('worker-search').value = '';
                 
             } catch (error) {
-                console.error('Error cargando profesores:', error);
-                showMessage('Error al cargar profesores', 'danger');
+                console.error('Error cargando trabajadores:', error);
+                showMessage('Error al cargar trabajadores', 'danger');
                 appData.availableWorkers = [];
                 document.getElementById('workers-section').classList.add('d-none');
             } finally {
@@ -412,24 +525,12 @@
             }
         }
 
-        function renderCourseSelect() {
-            const select = document.getElementById('course-select');
-            select.innerHTML = '<option value="">-- Seleccione un curso --</option>';
-            
-            appData.availableCourses.forEach(course => {
-                const option = document.createElement('option');
-                option.value = course.course_id;
-                option.textContent = course.grades.grade_name + ' - ' + course.course_name;
-                select.appendChild(option);
-            });
-        }
-
         function renderWorkers() {
             const container = document.getElementById('workers-list');
             container.innerHTML = '';
             
             if (appData.availableWorkers.length === 0) {
-                container.innerHTML = '<div class="text-center p-4 text-muted">No hay profesores disponibles</div>';
+                container.innerHTML = '<div class="text-center p-4 text-muted">No hay trabajadores disponibles con los roles seleccionados</div>';
                 updateSelectionSummary();
                 return;
             }
@@ -450,7 +551,7 @@
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.className = 'worker-checkbox';
-                checkbox.id = 'worker_' + worker.worker_id;
+                checkbox.id = `worker_${worker.worker_id}`;
                 checkbox.value = worker.worker_id;
                 checkbox.checked = isAssigned;
                 checkbox.addEventListener('change', handleWorkerChange);
@@ -460,7 +561,7 @@
                 
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'worker-name';
-                nameDiv.textContent = (worker.worker_last_name_1 + ' ' + (worker.worker_last_name_2 || '') + ' ' + worker.worker_first_name).trim();
+                nameDiv.textContent = `${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''} ${worker.worker_first_name}`.trim();
                 
                 const emailDiv = document.createElement('div');
                 emailDiv.className = 'worker-email';
@@ -483,6 +584,8 @@
         // Event handlers
         function setupEventListeners() {
             document.getElementById('course-select').addEventListener('change', handleCourseChange);
+            document.getElementById('select-all-roles').addEventListener('click', selectAllRoles);
+            document.getElementById('clear-roles').addEventListener('click', clearRoles);
             document.getElementById('select-all-workers').addEventListener('click', selectAllWorkers);
             document.getElementById('clear-workers').addEventListener('click', clearWorkers);
             document.getElementById('save-assignments').addEventListener('click', saveAssignments);
@@ -494,6 +597,7 @@
             const courseId = select.value;
             
             if (!courseId) {
+                document.getElementById('roles-section').classList.add('d-none');
                 document.getElementById('workers-section').classList.add('d-none');
                 appData.selectedCourse = null;
                 return;
@@ -501,9 +605,27 @@
             
             appData.selectedCourse = courseId;
             
-            // Cargar trabajadores asignados y profesores
+            // Mostrar sección de roles
+            document.getElementById('roles-section').classList.remove('d-none');
+            
+            // Cargar trabajadores asignados
             await loadAssignedWorkers(courseId);
-            await loadProfesores(courseId);
+        }
+
+        function handleRoleChange() {
+            // Actualizar roles seleccionados
+            appData.selectedRoles = [];
+            const checkboxes = document.querySelectorAll('#roles-container input[type="checkbox"]:checked');
+            checkboxes.forEach(checkbox => {
+                appData.selectedRoles.push(checkbox.value);
+            });
+            
+            if (appData.selectedRoles.length > 0) {
+                loadWorkersByRoles();
+            } else {
+                document.getElementById('workers-section').classList.add('d-none');
+                appData.availableWorkers = [];
+            }
         }
 
         function handleWorkerChange() {
@@ -525,6 +647,18 @@
                     item.style.display = 'none';
                 }
             });
+        }
+
+        function selectAllRoles() {
+            const checkboxes = document.querySelectorAll('#roles-container input[type="checkbox"]');
+            checkboxes.forEach(checkbox => checkbox.checked = true);
+            handleRoleChange();
+        }
+
+        function clearRoles() {
+            const checkboxes = document.querySelectorAll('#roles-container input[type="checkbox"]');
+            checkboxes.forEach(checkbox => checkbox.checked = false);
+            handleRoleChange();
         }
 
         function selectAllWorkers() {
@@ -554,11 +688,11 @@
             const count = appData.selectedWorkers.length;
             
             if (count === 0) {
-                summaryElement.textContent = 'Ningún profesor seleccionado';
+                summaryElement.textContent = 'Ningún trabajador seleccionado';
             } else if (count === 1) {
-                summaryElement.textContent = '1 profesor seleccionado';
+                summaryElement.textContent = '1 trabajador seleccionado';
             } else {
-                summaryElement.textContent = count + ' profesores seleccionados';
+                summaryElement.textContent = `${count} trabajadores seleccionados`;
             }
         }
 
@@ -570,14 +704,14 @@
             
             // Confirmar acción
             const courseInfo = appData.availableCourses.find(c => c.course_id === appData.selectedCourse);
-            const courseName = courseInfo ? (courseInfo.grades.grade_name + ' - ' + courseInfo.course_name) : 'el curso seleccionado';
+            const courseName = courseInfo ? `${courseInfo.grades.grade_name} - ${courseInfo.course_name}` : 'el curso seleccionado';
             const selectedCount = appData.selectedWorkers.length;
             
             let message;
             if (selectedCount === 0) {
-                message = '¿Estás seguro de quitar TODOS los profesores asignados a ' + courseName + '?';
+                message = `¿Estás seguro de quitar TODOS los trabajadores asignados a ${courseName}?`;
             } else {
-                message = '¿Estás seguro de asignar ' + selectedCount + ' profesor(es) a ' + courseName + '?\n\nEsto reemplazará las asignaciones actuales.';
+                message = `¿Estás seguro de asignar ${selectedCount} trabajador(es) a ${courseName}?\n\nEsto reemplazará las asignaciones actuales.`;
             }
             
             if (!confirm(message)) return;
@@ -589,7 +723,7 @@
                 const userId = session.user.user_id;
                 
                 // Eliminar asignaciones actuales
-                await supabaseRequest('/worker_courses?course_id=eq.' + appData.selectedCourse, {
+                await supabaseRequest(`/worker_courses?course_id=eq.${appData.selectedCourse}`, {
                     method: 'DELETE'
                 });
                 
@@ -608,7 +742,7 @@
                     });
                 }
                 
-                showMessage('Asignaciones de ' + courseName + ' actualizadas exitosamente. ' + selectedCount + ' profesores asignados.', 'success');
+                showMessage(`Asignaciones de ${courseName} actualizadas exitosamente. ${selectedCount} trabajadores asignados.`, 'success');
                 
                 // Recargar trabajadores asignados
                 await loadAssignedWorkers(appData.selectedCourse);
@@ -638,8 +772,11 @@
         function showMessage(message, type) {
             const container = document.getElementById('alert-container');
             const alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-' + type + ' alert-dismissible fade show';
-            alertDiv.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
             container.appendChild(alertDiv);
             
             // Auto-remove success messages
