@@ -656,8 +656,22 @@ const URL_PERMISSIONS = {
     '/modules/new-students/new-students-report.html': 'Reporte de estudiantes nuevos',
     '/modules/new-students/register-activities.html': 'Registrar actividades',
     '/modules/new-students/registration-queries.html': 'Consulta de registro',
-    '/modules/new-students/students-dashboard.html': 'Tablero de control'
-    
+    '/modules/new-students/students-dashboard.html': 'Tablero de control',
+        
+    // Módulo Seguimientos
+    '/modules/follow-ups/categories.html': 'Gestionar categorías',
+    '/modules/follow-ups/user-course-assignments.html': 'Asignar usuarios a cursos',
+    '/modules/follow-ups/individual-issues.html': 'Registrar asuntos individuales',
+    '/modules/follow-ups/eae-issues.html': 'Registrar asuntos EAE',
+    '/modules/follow-ups/review-individual-issues.html': 'Revisar asuntos individuales',
+    '/modules/follow-ups/manage-eae-issues.html': 'Gestionar asuntos EAE',
+    '/modules/follow-ups/course-follow-ups.html': 'Seguimientos por cursos',
+    '/modules/follow-ups/group-issues.html': 'Registrar asuntos grupales',
+    '/modules/follow-ups/manage-group-issues.html': 'Gestionar asuntos grupales',
+    '/modules/follow-ups/manage-unescalated-issues.html': 'Gestionar asuntos no escalados',
+    '/modules/follow-ups/tasks.html': 'Gestionar tareas',
+    '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
+    '/modules/follow-ups/general-queries.html': 'Consultas'
 };
 
 // Función principal de validación
