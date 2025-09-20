@@ -371,9 +371,9 @@
         // ==========================================
         async function loadDropdownData() {
             try {
-                // Cargar en paralelo
+                // Cargar en paralelo - NOTA: Usar family_code para compatibilidad con datos actuales
                 const [familiesData, coursesData, statusesData, gendersData] = await Promise.all([
-                    supabaseRequest('/families?select=family_id,family_name&family_status=eq.active&order=family_name'),
+                    supabaseRequest('/families?select=family_code,family_name&family_status=eq.active&order=family_name'),
                     supabaseRequest('/courses?select=course_id,course_name&course_status=eq.active&order=course_name'),
                     supabaseRequest('/student_status?select=status_id,status_description&order=status_description'),
                     supabaseRequest('/genders?select=gender_id,gender_name&order=gender_name')
@@ -393,11 +393,14 @@
         }
         
         function populateDropdowns() {
-            // Families
+            // Families - USAR family_code como value
             const familySelect = document.getElementById('familyCode');
             familySelect.innerHTML = '<option value="">Seleccione una familia...</option>';
+            
+            console.log('Familias cargadas:', families); // Debug
+            
             families.forEach(family => {
-                familySelect.innerHTML += `<option value="${family.family_id}">${family.family_name}</option>`;
+                familySelect.innerHTML += `<option value="${family.family_code}">${family.family_name}</option>`;
             });
             
             // Courses
@@ -426,7 +429,9 @@
             try {
                 showLoading();
                 
-                let query = `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,families(family_name),courses(course_name),student_status(status_description)`;
+                // NOTA: Hacer join manualmente debido a inconsistencia en esquema de datos
+                // students.family_id contiene family_code (integer), no family_id (UUID)
+                let query = `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,family_id,course_id,status_id`;
                 
                 // Agregar filtro de búsqueda si existe
                 if (search.trim()) {
@@ -438,8 +443,35 @@
                 const offset = (page - 1) * limit;
                 query += `&limit=${limit}&offset=${offset}&order=student_last_name_1,student_first_name`;
                 
-                const data = await supabaseRequest(query);
-                students = data || [];
+                const studentsData = await supabaseRequest(query);
+                
+                if (studentsData && studentsData.length > 0) {
+                    // Cargar datos relacionados en paralelo
+                    const [familiesData, coursesData, statusesData] = await Promise.all([
+                        supabaseRequest('/families?select=family_code,family_name'),
+                        supabaseRequest('/courses?select=course_id,course_name'),
+                        supabaseRequest('/student_status?select=status_id,status_description')
+                    ]);
+                    
+                    // Crear mapas para lookup eficiente
+                    const familiesMap = {};
+                    const coursesMap = {};
+                    const statusesMap = {};
+                    
+                    if (familiesData) familiesData.forEach(f => familiesMap[f.family_code] = f);
+                    if (coursesData) coursesData.forEach(c => coursesMap[c.course_id] = c);
+                    if (statusesData) statusesData.forEach(s => statusesMap[s.status_id] = s);
+                    
+                    // Combinar datos manualmente
+                    students = studentsData.map(student => ({
+                        ...student,
+                        families: familiesMap[student.family_id] || null,
+                        courses: coursesMap[student.course_id] || null,
+                        student_status: statusesMap[student.status_id] || null
+                    }));
+                } else {
+                    students = [];
+                }
                 
                 // Obtener total para paginación
                 let countQuery = `/students?select=student_id`;
