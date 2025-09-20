@@ -839,7 +839,7 @@ function redirectToLogin() {
 // URL del Google Apps Script para envío de emails
 // REEMPLAZAR 'TU_SCRIPT_ID' con el ID real del script desplegado
 const NOTIFICATION_CONFIG = {
-    endpoint: 'https://script.google.com/macros/s/AKfycbyioTXdQt1xU-KvCjur83ulJxergfxttRJ-hVsiSquxtYqqZ57xR0VNP56nsdNGwJj9/exec',
+    endpoint: 'https://script.google.com/macros/s/AKfycby869Ghxv0u_y8R0jqmmhWd_bIE-ME2yS9iH7h7YEBzygNf-fbiWpnUuj7FGPEBJTam/exec',
     enabled: true,
     timeout: 10000, // 10 segundos timeout
     retries: 2
@@ -1007,7 +1007,7 @@ async function notifyBudgetOverrun(workerEmail, requestDetails, valorInicial, va
  * @param {string} scriptId - ID del Google Apps Script desplegado
  */
 function configureNotifications(scriptId) {
-    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/AKfycbyioTXdQt1xU-KvCjur83ulJxergfxttRJ-hVsiSquxtYqqZ57xR0VNP56nsdNGwJj9/exec`;
+    NOTIFICATION_CONFIG.endpoint = `https://script.google.com/macros/s/AKfycby869Ghxv0u_y8R0jqmmhWd_bIE-ME2yS9iH7h7YEBzygNf-fbiWpnUuj7FGPEBJTam/exec`;
     console.log('Endpoint de notificaciones configurado:', NOTIFICATION_CONFIG.endpoint);
 }
 
