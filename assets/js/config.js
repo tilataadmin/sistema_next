@@ -161,7 +161,19 @@ const APP_CONFIG = {
             icon: 'bi-person-plus',
             path: '/modules/new-students/',
             status: 'active'
+        },
+
+        {
+            id: 'follow-ups',
+            name: 'Seguimientos',
+            description: 'Gestión de seguimientos académicos y disciplinarios',
+            icon: 'bi-clipboard-check',
+            path: '/modules/follow-ups/',
+            status: 'planned'
         }
+
+        
+        
     ],
     
     // Configuración de UI
