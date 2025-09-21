@@ -202,7 +202,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
 
-  <script>
+    <script>
         // === VARIABLES GLOBALES ===
         let appData = {
             categorias: [],
@@ -210,20 +210,198 @@
             enviandoFormulario: false
         };
 
+        // === FUNCIONES CRUD (PRIMERO) ===
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            if (appData.enviandoFormulario) {
+                showMessage('Por favor espere, la operación se está procesando...', 'warning');
+                return;
+            }
+            
+            const validacion = validarFormulario();
+            if (!validacion.valido) {
+                showMessage(validacion.mensaje, 'danger');
+                if (validacion.campo) {
+                    validacion.campo.focus();
+                    validacion.campo.classList.add('is-invalid');
+                }
+                return;
+            }
+            
+            appData.enviandoFormulario = true;
+            deshabilitarFormulario(true);
+            
+            try {
+                const categoryId = parseInt(document.getElementById('category_id').value) || 0;
+                const categoryName = document.getElementById('category_name').value.trim();
+                
+                if (categoryId === 0) {
+                    await crearCategoria(categoryName);
+                } else {
+                    await actualizarCategoria(categoryId, categoryName);
+                }
+                
+            } catch (error) {
+                console.error('Error en operación CRUD:', error);
+                showMessage('Error al procesar la solicitud: ' + error.message, 'danger');
+            } finally {
+                appData.enviandoFormulario = false;
+                deshabilitarFormulario(false);
+            }
+        }
+
+        async function crearCategoria(categoryName) {
+            try {
+                const nuevaCategoria = { category_name: categoryName };
+                
+                const resultado = await supabaseRequest('/stm_category', {
+                    method: 'POST',
+                    body: JSON.stringify(nuevaCategoria)
+                });
+                
+                if (!resultado || resultado.length === 0) {
+                    throw new Error('No se pudo crear la categoría');
+                }
+                
+                showMessage('Categoría creada correctamente', 'success');
+                limpiarFormulario();
+                await loadCategorias();
+                
+            } catch (error) {
+                if (error.message.includes('duplicate') || error.message.includes('unique')) {
+                    throw new Error('Ya existe una categoría con ese nombre');
+                }
+                throw error;
+            }
+        }
+
+        async function actualizarCategoria(categoryId, categoryName) {
+            try {
+                const datosActualizacion = { category_name: categoryName };
+                
+                const resultado = await supabaseRequest('/stm_category?category_id=eq.' + categoryId, {
+                    method: 'PATCH',
+                    body: JSON.stringify(datosActualizacion)
+                });
+                
+                if (!resultado || resultado.length === 0) {
+                    throw new Error('No se encontró la categoría para actualizar');
+                }
+                
+                showMessage('Categoría actualizada correctamente', 'success');
+                limpiarFormulario();
+                await loadCategorias();
+                
+            } catch (error) {
+                if (error.message.includes('duplicate') || error.message.includes('unique')) {
+                    throw new Error('Ya existe otra categoría con ese nombre');
+                }
+                throw error;
+            }
+        }
+
+        async function eliminarCategoria(categoryId) {
+            try {
+                const resultado = await supabaseRequest('/stm_category?category_id=eq.' + categoryId, {
+                    method: 'DELETE'
+                });
+                
+                showMessage('Categoría eliminada correctamente', 'success');
+                await loadCategorias();
+                
+            } catch (error) {
+                if (error.message.includes('foreign key') || error.message.includes('constraint')) {
+                    throw new Error('No se puede eliminar la categoría porque está siendo utilizada en otros registros');
+                }
+                throw error;
+            }
+        }
+
+        function validarFormulario() {
+            const categoryName = document.getElementById('category_name').value.trim();
+            
+            if (!categoryName) {
+                return {
+                    valido: false,
+                    mensaje: 'El nombre de la categoría es obligatorio',
+                    campo: document.getElementById('category_name')
+                };
+            }
+            
+            if (categoryName.length < 2) {
+                return {
+                    valido: false,
+                    mensaje: 'El nombre de la categoría debe tener al menos 2 caracteres',
+                    campo: document.getElementById('category_name')
+                };
+            }
+            
+            if (categoryName.length > 100) {
+                return {
+                    valido: false,
+                    mensaje: 'El nombre de la categoría no puede superar los 100 caracteres',
+                    campo: document.getElementById('category_name')
+                };
+            }
+            
+            return { valido: true };
+        }
+
+        function editarCategoria(categoryId, categoryName) {
+            clearMessages();
+            
+            document.getElementById('category_id').value = categoryId;
+            document.getElementById('category_name').value = categoryName;
+            
+            appData.categoriaEditando = {
+                category_id: categoryId,
+                category_name: categoryName
+            };
+            
+            const submitBtn = document.querySelector('#categoria-form button[type="submit"]');
+            submitBtn.innerHTML = '<i class="bi bi-floppy me-1"></i>Actualizar';
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            document.getElementById('category_name').focus();
+            document.getElementById('category_name').select();
+        }
+
+        function confirmarEliminar(categoryId, categoryName) {
+            clearMessages();
+            
+            const mensaje = `¿Está seguro que desea eliminar la categoría "${categoryName}"?\n\nEsta acción no se puede deshacer y puede fallar si la categoría está siendo utilizada en otros registros.`;
+            
+            if (confirm(mensaje)) {
+                eliminarCategoriaConfirmado(categoryId, categoryName);
+            }
+        }
+
+        async function eliminarCategoriaConfirmado(categoryId, categoryName) {
+            showMessage('Eliminando categoría...', 'info');
+            
+            const botonesAccion = document.querySelectorAll('.btn-action');
+            botonesAccion.forEach(btn => btn.disabled = true);
+            
+            try {
+                await eliminarCategoria(categoryId);
+            } catch (error) {
+                console.error('Error eliminando categoría:', error);
+                showMessage('Error al eliminar categoría: ' + error.message, 'danger');
+            } finally {
+                const botonesAccion = document.querySelectorAll('.btn-action');
+                botonesAccion.forEach(btn => btn.disabled = false);
+            }
+        }
+
         // === FUNCIONES DE INICIALIZACIÓN ===
         document.addEventListener('DOMContentLoaded', async function() {
             try {
-                // Validar acceso con permisos
                 const hasAccess = await validatePageAccess('Gestionar categorías');
                 if (!hasAccess) return;
 
-                // Inicializar página
                 initializePage('categories', 'Seguimientos');
-                
-                // Configurar eventos
                 setupEventListeners();
-                
-                // Cargar datos iniciales
                 await loadInitialData();
                 
             } catch (error) {
@@ -236,13 +414,8 @@
             showLoading();
             
             try {
-                // Cargar categorías
                 await loadCategorias();
-                
-                // Ocultar loading
                 hideLoading();
-                
-                // Focus en campo nombre
                 document.getElementById('category_name').focus();
                 
             } catch (error) {
@@ -272,23 +445,18 @@
         }
 
         function setupEventListeners() {
-            // Envío de formulario
             const form = document.getElementById('categoria-form');
             form.addEventListener('submit', handleFormSubmit);
             
-            // Botón limpiar
             document.getElementById('btn-limpiar').addEventListener('click', limpiarFormulario);
             
-            // Botón actualizar
             document.getElementById('btn-refresh').addEventListener('click', function() {
                 loadCategorias();
             });
             
-            // Validación en tiempo real
             const categoryNameInput = document.getElementById('category_name');
             categoryNameInput.addEventListener('input', function() {
                 this.classList.remove('is-invalid');
-                // Limpiar mensajes de error si hay texto válido
                 if (this.value.trim().length >= 2) {
                     clearMessages();
                 }
@@ -324,11 +492,9 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
             
-            // Limpiar mensajes anteriores
             container.innerHTML = '';
             container.appendChild(alertDiv);
             
-            // Auto-remove success messages
             if (type === 'success') {
                 setTimeout(() => {
                     if (alertDiv.parentNode) {
@@ -337,7 +503,6 @@
                 }, 5000);
             }
             
-            // Scroll to top
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -364,11 +529,9 @@
             appData.categoriaEditando = null;
             clearMessages();
             
-            // Cambiar texto del botón si estaba editando
             const submitBtn = document.querySelector('#categoria-form button[type="submit"]');
             submitBtn.innerHTML = '<i class="bi bi-floppy me-1"></i>Guardar';
             
-            // Focus en campo nombre
             document.getElementById('category_name').focus();
         }
 
@@ -377,7 +540,6 @@
             const emptyState = document.getElementById('empty-state');
             const tableContainer = document.getElementById('table-container');
             
-            // Limpiar tabla
             tbody.innerHTML = '';
             
             if (!categorias || categorias.length === 0) {
@@ -386,11 +548,9 @@
                 return;
             }
             
-            // Mostrar tabla y ocultar estado vacío
             tableContainer.classList.remove('d-none');
             emptyState.classList.add('d-none');
             
-            // Renderizar filas
             const fragment = document.createDocumentFragment();
             
             categorias.forEach(categoria => {
@@ -440,7 +600,6 @@
                 }
             });
             
-            // Cambiar texto del botón submit
             const submitBtn = document.querySelector('#categoria-form button[type="submit"]');
             if (submitBtn) {
                 if (deshabilitar) {
@@ -453,466 +612,11 @@
                 }
             }
         }
-    </script>
 
-  // === FUNCIONES CRUD ===
-        async function handleFormSubmit(e) {
-            e.preventDefault();
-            
-            // Protección anti-duplicados
-            if (appData.enviandoFormulario) {
-                showMessage('Por favor espere, la operación se está procesando...', 'warning');
-                return;
-            }
-            
-            // Validar formulario
-            const validacion = validarFormulario();
-            if (!validacion.valido) {
-                showMessage(validacion.mensaje, 'danger');
-                if (validacion.campo) {
-                    validacion.campo.focus();
-                    validacion.campo.classList.add('is-invalid');
-                }
-                return;
-            }
-            
-            // Marcar como enviando
-            appData.enviandoFormulario = true;
-            deshabilitarFormulario(true);
-            
-            // Timeout de seguridad
-            const timeoutId = setTimeout(() => {
-                if (appData.enviandoFormulario) {
-                    console.warn('Timeout de seguridad activado');
-                    appData.enviandoFormulario = false;
-                    deshabilitarFormulario(false);
-                    showMessage('La operación está tomando más tiempo del esperado. Puede intentar nuevamente.', 'warning');
-                }
-            }, 30000);
-            
-            try {
-                const categoryId = parseInt(document.getElementById('category_id').value) || 0;
-                const categoryName = document.getElementById('category_name').value.trim();
-                
-                if (categoryId === 0) {
-                    // Crear nueva categoría
-                    await crearCategoria(categoryName);
-                } else {
-                    // Actualizar categoría existente
-                    await actualizarCategoria(categoryId, categoryName);
-                }
-                
-            } catch (error) {
-                console.error('Error en operación CRUD:', error);
-                showMessage('Error al procesar la solicitud: ' + error.message, 'danger');
-            } finally {
-                clearTimeout(timeoutId);
-                appData.enviandoFormulario = false;
-                deshabilitarFormulario(false);
-            }
-        }
-
-        async function crearCategoria(categoryName) {
-            try {
-                const nuevaCategoria = {
-                    category_name: categoryName
-                };
-                
-                const resultado = await supabaseRequest('/stm_category', {
-                    method: 'POST',
-                    body: JSON.stringify(nuevaCategoria)
-                });
-                
-                if (!resultado || resultado.length === 0) {
-                    throw new Error('No se pudo crear la categoría');
-                }
-                
-                showMessage('Categoría creada correctamente', 'success');
-                
-                // Limpiar formulario y recargar lista
-                limpiarFormulario();
-                await loadCategorias();
-                
-            } catch (error) {
-                // Verificar si es error de duplicado
-                if (error.message.includes('duplicate') || error.message.includes('unique')) {
-                    throw new Error('Ya existe una categoría con ese nombre');
-                }
-                throw error;
-            }
-        }
-
-        async function actualizarCategoria(categoryId, categoryName) {
-            try {
-                const datosActualizacion = {
-                    category_name: categoryName
-                };
-                
-                const resultado = await supabaseRequest('/stm_category?category_id=eq.' + categoryId, {
-                    method: 'PATCH',
-                    body: JSON.stringify(datosActualizacion)
-                });
-                
-                if (!resultado || resultado.length === 0) {
-                    throw new Error('No se encontró la categoría para actualizar');
-                }
-                
-                showMessage('Categoría actualizada correctamente', 'success');
-                
-                // Limpiar formulario y recargar lista
-                limpiarFormulario();
-                await loadCategorias();
-                
-            } catch (error) {
-                // Verificar si es error de duplicado
-                if (error.message.includes('duplicate') || error.message.includes('unique')) {
-                    throw new Error('Ya existe otra categoría con ese nombre');
-                }
-                throw error;
-            }
-        }
-
-        async function eliminarCategoria(categoryId) {
-            try {
-                const resultado = await supabaseRequest('/stm_category?category_id=eq.' + categoryId, {
-                    method: 'DELETE'
-                });
-                
-                showMessage('Categoría eliminada correctamente', 'success');
-                
-                // Recargar lista
-                await loadCategorias();
-                
-            } catch (error) {
-                // Verificar si es error de restricción de clave foránea
-                if (error.message.includes('foreign key') || error.message.includes('constraint')) {
-                    throw new Error('No se puede eliminar la categoría porque está siendo utilizada en otros registros');
-                }
-                throw error;
-            }
-        }
-
-        function validarFormulario() {
-            const categoryName = document.getElementById('category_name').value.trim();
-            
-            // Validar que no esté vacío
-            if (!categoryName) {
-                return {
-                    valido: false,
-                    mensaje: 'El nombre de la categoría es obligatorio',
-                    campo: document.getElementById('category_name')
-                };
-            }
-            
-            // Validar longitud mínima
-            if (categoryName.length < 2) {
-                return {
-                    valido: false,
-                    mensaje: 'El nombre de la categoría debe tener al menos 2 caracteres',
-                    campo: document.getElementById('category_name')
-                };
-            }
-            
-            // Validar longitud máxima
-            if (categoryName.length > 100) {
-                return {
-                    valido: false,
-                    mensaje: 'El nombre de la categoría no puede superar los 100 caracteres',
-                    campo: document.getElementById('category_name')
-                };
-            }
-            
-            // Validar caracteres especiales básicos (opcional)
-            const patronValido = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s\-_.,()]+$/;
-            if (!patronValido.test(categoryName)) {
-                return {
-                    valido: false,
-                    mensaje: 'El nombre de la categoría contiene caracteres no permitidos',
-                    campo: document.getElementById('category_name')
-                };
-            }
-            
-            return { valido: true };
-        }
-
-        // === FUNCIONES DE EDICIÓN ===
-        function editarCategoria(categoryId, categoryName) {
-            // Limpiar mensajes previos
-            clearMessages();
-            
-            // Cargar datos en el formulario
-            document.getElementById('category_id').value = categoryId;
-            document.getElementById('category_name').value = categoryName;
-            
-            // Marcar como editando
-            appData.categoriaEditando = {
-                category_id: categoryId,
-                category_name: categoryName
-            };
-            
-            // Cambiar texto del botón
-            const submitBtn = document.querySelector('#categoria-form button[type="submit"]');
-            submitBtn.innerHTML = '<i class="bi bi-floppy me-1"></i>Actualizar';
-            
-            // Scroll al formulario y focus
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            document.getElementById('category_name').focus();
-            document.getElementById('category_name').select(); // Seleccionar todo el texto
-        }
-
-        function confirmarEliminar(categoryId, categoryName) {
-            // Limpiar mensajes previos
-            clearMessages();
-            
-            const mensaje = `¿Está seguro que desea eliminar la categoría "${categoryName}"?\n\nEsta acción no se puede deshacer y puede fallar si la categoría está siendo utilizada en otros registros.`;
-            
-            if (confirm(mensaje)) {
-                eliminarCategoriaConfirmado(categoryId, categoryName);
-            }
-        }
-
-        async function eliminarCategoriaConfirmado(categoryId, categoryName) {
-            // Mostrar mensaje de procesamiento
-            showMessage('Eliminando categoría...', 'info');
-            
-            // Deshabilitar botones durante la operación
-            const botonesAccion = document.querySelectorAll('.btn-action');
-            botonesAccion.forEach(btn => btn.disabled = true);
-            
-            try {
-                await eliminarCategoria(categoryId);
-            } catch (error) {
-                console.error('Error eliminando categoría:', error);
-                showMessage('Error al eliminar categoría: ' + error.message, 'danger');
-            } finally {
-                // Rehabilitar botones
-                const botonesAccion = document.querySelectorAll('.btn-action');
-                botonesAccion.forEach(btn => btn.disabled = false);
-            }
-        }
-
-        // === FUNCIONES GLOBALES (para onclick en HTML) ===
+        // === FUNCIONES GLOBALES ===
         window.editarCategoria = editarCategoria;
         window.confirmarEliminar = confirmarEliminar;
-
-        // === FUNCIONES DE UTILIDAD ADICIONALES ===
-        function setupKeyboardShortcuts() {
-            document.addEventListener('keydown', function(e) {
-                // Ctrl + Enter para enviar formulario
-                if (e.ctrlKey && e.key === 'Enter') {
-                    e.preventDefault();
-                    const submitBtn = document.querySelector('#categoria-form button[type="submit"]');
-                    if (submitBtn && !submitBtn.disabled) {
-                        submitBtn.click();
-                    }
-                }
-                
-                // Escape para limpiar formulario
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    limpiarFormulario();
-                }
-                
-                // Ctrl + R para actualizar lista
-                if (e.ctrlKey && e.key === 'r') {
-                    e.preventDefault();
-                    loadCategorias();
-                }
-            });
-        }
-// === FUNCIONES DE BÚSQUEDA Y FILTRADO ===
-        function setupSearchFunctionality() {
-            // Crear campo de búsqueda si se necesita en el futuro
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.className = 'form-control form-control-sm';
-            searchInput.placeholder = 'Buscar categorías...';
-            searchInput.style.display = 'none'; // Oculto por ahora
-            
-            // Función de filtrado en tiempo real
-            searchInput.addEventListener('input', function() {
-                const searchTerm = this.value.toLowerCase().trim();
-                filterCategorias(searchTerm);
-            });
-        }
-
-        function filterCategorias(searchTerm) {
-            const filas = document.querySelectorAll('#categorias-tbody tr');
-            let visibleCount = 0;
-            
-            filas.forEach(fila => {
-                const nombreCategoria = fila.cells[1].textContent.toLowerCase();
-                const isVisible = nombreCategoria.includes(searchTerm);
-                
-                fila.style.display = isVisible ? '' : 'none';
-                if (isVisible) visibleCount++;
-            });
-            
-            // Mostrar mensaje si no hay resultados
-            if (visibleCount === 0 && filas.length > 0) {
-                showNoResultsMessage();
-            } else {
-                hideNoResultsMessage();
-            }
-        }
-
-        function showNoResultsMessage() {
-            let noResultsRow = document.getElementById('no-results-row');
-            if (!noResultsRow) {
-                noResultsRow = document.createElement('tr');
-                noResultsRow.id = 'no-results-row';
-                noResultsRow.innerHTML = `
-                    <td colspan="3" class="text-center py-4 text-muted">
-                        <i class="bi bi-search me-2"></i>
-                        No se encontraron categorías que coincidan con la búsqueda
-                    </td>
-                `;
-                document.getElementById('categorias-tbody').appendChild(noResultsRow);
-            }
-            noResultsRow.style.display = '';
-        }
-
-        function hideNoResultsMessage() {
-            const noResultsRow = document.getElementById('no-results-row');
-            if (noResultsRow) {
-                noResultsRow.style.display = 'none';
-            }
-        }
-
-        // === FUNCIONES DE ESTADÍSTICAS ===
-        function updateCategoryStats() {
-            const totalCategorias = appData.categorias.length;
-            const statsContainer = document.querySelector('.card-header h5');
-            
-            if (statsContainer && totalCategorias > 0) {
-                statsContainer.innerHTML = `
-                    <i class="bi bi-list-ul me-2"></i>
-                    Categorías existentes 
-                    <span class="badge bg-primary ms-2">${totalCategorias}</span>
-                `;
-            }
-        }
-
-        // === FUNCIONES DE VALIDACIÓN AVANZADA ===
-        function validarCategoriaExistente(categoryName, excludeId = null) {
-            if (!appData.categorias || appData.categorias.length === 0) {
-                return false;
-            }
-            
-            return appData.categorias.some(categoria => 
-                categoria.category_name.toLowerCase().trim() === categoryName.toLowerCase().trim() &&
-                categoria.category_id !== excludeId
-            );
-        }
-
-        // === FUNCIONES DE BACKUP Y EXPORTACIÓN ===
-        function exportarCategorias() {
-            if (!appData.categorias || appData.categorias.length === 0) {
-                showMessage('No hay categorías para exportar', 'warning');
-                return;
-            }
-            
-            try {
-                const dataStr = JSON.stringify(appData.categorias, null, 2);
-                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-                
-                const exportFileDefaultName = `categorias_stm_${new Date().toISOString().split('T')[0]}.json`;
-                
-                const linkElement = document.createElement('a');
-                linkElement.setAttribute('href', dataUri);
-                linkElement.setAttribute('download', exportFileDefaultName);
-                linkElement.click();
-                
-                showMessage('Categorías exportadas correctamente', 'success');
-            } catch (error) {
-                console.error('Error exportando categorías:', error);
-                showMessage('Error al exportar categorías: ' + error.message, 'danger');
-            }
-        }
-
-        // === FUNCIONES DE DEBUGGING (solo en desarrollo) ===
-        if (window.location.hostname === 'localhost' || window.location.hostname.includes('vercel.app')) {
-            window.debugCategorias = function() {
-                console.log('=== DEBUG CATEGORÍAS ===');
-                console.log('App Data:', appData);
-                console.log('Total categorías:', appData.categorias.length);
-                console.log('Categoría editando:', appData.categoriaEditando);
-                console.log('Enviando formulario:', appData.enviandoFormulario);
-                console.log('========================');
-            };
-            
-            window.testCRUD = async function() {
-                console.log('Iniciando test CRUD...');
-                try {
-                    // Test crear
-                    await crearCategoria('Test Category ' + Date.now());
-                    console.log('✅ Crear: OK');
-                    
-                    // Recargar para test de edición
-                    await loadCategorias();
-                    
-                    if (appData.categorias.length > 0) {
-                        const testCategory = appData.categorias[0];
-                        await actualizarCategoria(testCategory.category_id, testCategory.category_name + ' - Editado');
-                        console.log('✅ Editar: OK');
-                    }
-                    
-                    console.log('Test CRUD completado');
-                } catch (error) {
-                    console.error('❌ Error en test CRUD:', error);
-                }
-            };
-        }
-
-        // === FUNCIONES DE INICIALIZACIÓN FINAL ===
-        function initializeAdvancedFeatures() {
-            // Configurar tooltips si es necesario
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
-            });
-            
-            // Configurar funcionalidad de búsqueda
-            setupSearchFunctionality();
-            
-            // Actualizar estadísticas iniciales
-            setTimeout(updateCategoryStats, 500);
-        }
-
-        // === MANEJO DE ERRORES GLOBALES ===
-        window.addEventListener('error', function(e) {
-            console.error('Error global en categorías:', e.error);
-            if (!document.getElementById('alert-container').innerHTML) {
-                showMessage('Error inesperado en la aplicación. Si el problema persiste, recargue la página.', 'danger');
-            }
-        });
-
-        // Prevenir pérdida de datos
-        window.addEventListener('beforeunload', function(e) {
-            const categoryName = document.getElementById('category_name').value.trim();
-            if (categoryName && !appData.enviandoFormulario) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        });
-
-        // === INICIALIZACIÓN FINAL ===
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(() => {
-                initializeAdvancedFeatures();
-                console.log('Gestión de categorías STM inicializada correctamente');
-            }, 200);
-        });
-
-        // Hacer funciones disponibles globalmente si es necesario
         window.loadCategorias = loadCategorias;
-        window.exportarCategorias = exportarCategorias;
     </script>
 </body>
 </html>
-        // Inicializar atajos de teclado después de cargar el DOM
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(setupKeyboardShortcuts, 100);
-        });
-
-              
