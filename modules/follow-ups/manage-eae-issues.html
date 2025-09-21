@@ -862,12 +862,42 @@
             try {
                 const filtroLower = filtro.toLowerCase().trim();
                 
-                // Consulta optimizada para búsqueda de estudiantes
-                const query = `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday&student_status_id=eq.1&or=(student_first_name.ilike.%${filtroLower}%,student_last_name_1.ilike.%${filtroLower}%,student_last_name_2.ilike.%${filtroLower}%)&order=student_first_name,student_last_name_1&limit=20`;
+                // CONSULTA CORREGIDA - Usar múltiples requests para evitar CORS
+                const queries = [
+                    `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday&student_status_id=eq.1&student_first_name=ilike.*${filtroLower}*&order=student_first_name,student_last_name_1&limit=10`,
+                    `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday&student_status_id=eq.1&student_last_name_1=ilike.*${filtroLower}*&order=student_first_name,student_last_name_1&limit=10`
+                ];
                 
-                const estudiantes = await supabaseRequest(query);
-                datosGlobales.estudiantes = estudiantes;
-                mostrarSugerencias(estudiantes);
+                // Ejecutar búsquedas en paralelo
+                const resultados = await Promise.all(
+                    queries.map(query => supabaseRequest(query).catch(() => []))
+                );
+                
+                // Combinar resultados y eliminar duplicados
+                const todosEstudiantes = [];
+                const vistos = new Set();
+                
+                resultados.forEach(resultado => {
+                    resultado.forEach(estudiante => {
+                        if (!vistos.has(estudiante.student_id)) {
+                            vistos.add(estudiante.student_id);
+                            todosEstudiantes.push(estudiante);
+                        }
+                    });
+                });
+                
+                // Ordenar por nombre
+                todosEstudiantes.sort((a, b) => {
+                    const nombreA = `${a.student_first_name} ${a.student_last_name_1}`.toLowerCase();
+                    const nombreB = `${b.student_first_name} ${b.student_last_name_1}`.toLowerCase();
+                    return nombreA.localeCompare(nombreB);
+                });
+                
+                // Limitar a 20 resultados
+                const estudiantesFiltrados = todosEstudiantes.slice(0, 20);
+                
+                datosGlobales.estudiantes = estudiantesFiltrados;
+                mostrarSugerencias(estudiantesFiltrados);
                 
             } catch (error) {
                 console.error('Error en búsqueda:', error);
@@ -877,7 +907,6 @@
                 }, 3000);
             }
         }
-
       /**
          * Mostrar sugerencias de estudiantes
          */
