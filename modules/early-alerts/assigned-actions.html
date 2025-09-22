@@ -121,6 +121,12 @@
                             <option value="Cancelada">Canceladas</option>
                         </select>
                     </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="taskAssignedTo" class="form-label">Asignar a *</label>
+                        <select class="form-select" id="taskAssignedTo" required>
+                            <option value="">Selecciona un trabajador...</option>
+                        </select>
+                    </div>
                     <div class="col-md-3">
                         <label for="priorityFilter" class="form-label">Prioridad</label>
                         <select class="form-select" id="priorityFilter">
@@ -215,6 +221,14 @@
                                     <option value="Cancelada">Cancelada</option>
                                 </select>
                             </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="taskAssignedTo" class="form-label">Asignar a *</label>
+                                <select class="form-select" id="taskAssignedTo" required>
+                                    <option value="">Selecciona un trabajador...</option>
+                                </select>
+                            </div>
+                            
                             <div class="col-12 mb-3">
                                 <label for="taskDescription" class="form-label">Descripción de la tarea *</label>
                                 <textarea class="form-control" id="taskDescription" rows="3" required
@@ -249,6 +263,7 @@
         let tasks = [];
         let currentUser = null;
         let taskModal;
+        let workers = [];
 
         // Inicialización
         document.addEventListener('DOMContentLoaded', function() {
@@ -266,24 +281,27 @@
                 // Obtener usuario actual
                 const session = getStoredSession();
                 currentUser = session?.user;
-
+        
                 if (!currentUser) {
                     showMessage('Error: No se pudo obtener información del usuario', 'danger');
                     return;
                 }
-
+        
                 // Inicializar modal
                 taskModal = new bootstrap.Modal(document.getElementById('taskModal'));
-
+        
+                // Cargar trabajadores disponibles
+                await loadWorkers();  // ← AGREGAR ESTA LÍNEA
+        
                 // Verificar si se debe crear una tarea desde alerta
                 checkCreateTaskFromAlert();
-
+        
                 // Cargar tareas
                 await loadTasks();
-
+        
                 // Event listeners
                 document.getElementById('searchFilter').addEventListener('input', debounce(applyFilters, 300));
-
+        
                 console.log('Página inicializada correctamente');
             } catch (error) {
                 console.error('Error inicializando página:', error);
@@ -291,6 +309,30 @@
             }
         }
 
+        async function loadWorkers() {
+            try {
+                const data = await supabaseRequest('/workers?select=worker_id,email,worker_first_name,worker_last_name_1,worker_last_name_2&worker_status=eq.active&order=worker_first_name');
+                workers = data || [];
+                
+                const select = document.getElementById('taskAssignedTo');
+                select.innerHTML = '<option value="">Selecciona un trabajador...</option>';
+                
+                workers.forEach(worker => {
+                    const option = document.createElement('option');
+                    option.value = worker.email;
+                    option.textContent = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
+                    if (worker.email === currentUser.user_mail) {
+                        option.textContent += ' (Yo)';
+                    }
+                    select.appendChild(option);
+                });
+        
+                console.log(`${workers.length} trabajadores cargados`);
+            } catch (error) {
+                console.error('Error cargando trabajadores:', error);
+            }
+        }
+        
         function checkCreateTaskFromAlert() {
             const urlParams = new URLSearchParams(window.location.search);
             const createTask = urlParams.get('create_task');
@@ -497,12 +539,12 @@
             try {
                 const taskId = document.getElementById('taskId').value;
                 const isEdit = !!taskId;
-
+        
                 const taskData = {
                     module_type: document.getElementById('taskModule').value,
                     reference_id: document.getElementById('taskReferenceId').value || null,
                     reference_type: document.getElementById('taskModule').value === 'early-alerts' ? 'alert_log' : 'student',
-                    assigned_to_mail: currentUser.user_mail,
+                    assigned_to_mail: document.getElementById('taskAssignedTo').value,
                     due_date: document.getElementById('taskDueDate').value || null,
                     task_description: document.getElementById('taskDescription').value.trim(),
                     task_progress: document.getElementById('taskProgress').value.trim(),
@@ -510,14 +552,19 @@
                     task_priority: document.getElementById('taskPriority').value,
                     updated_at: new Date().toISOString()
                 };
-
+        
+                if (!taskData.assigned_to_mail) {
+                    showMessage('Debes seleccionar un trabajador', 'warning');
+                    return;
+                }
+        
                 if (!taskData.task_description) {
                     showMessage('La descripción de la tarea es requerida', 'warning');
                     return;
                 }
-
+        
                 console.log(isEdit ? 'Actualizando tarea:' : 'Creando nueva tarea:', taskData);
-
+        
                 if (isEdit) {
                     await supabaseRequest(`/tasks?task_id=eq.${taskId}`, {
                         method: 'PATCH',
@@ -531,16 +578,19 @@
                     });
                     showMessage('Tarea creada exitosamente', 'success');
                 }
-
+        
                 taskModal.hide();
                 await loadTasks();
-
+        
             } catch (error) {
                 console.error('Error guardando tarea:', error);
                 showMessage('Error guardando la tarea', 'danger');
             }
         }
 
+
+
+        
         async function markAsCompleted(taskId) {
             try {
                 const updateData = {
