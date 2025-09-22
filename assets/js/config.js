@@ -170,10 +170,17 @@ const APP_CONFIG = {
             icon: 'bi-clipboard-check',
             path: '/modules/follow-ups/',
             status: 'planned'
-        }
+        },
 
-        
-        
+        {
+            id: 'early-alerts',
+            name: 'Alertas Tempranas',
+            description: 'Sistema de alertas tempranas y seguimiento preventivo',
+            icon: 'bi-exclamation-triangle',
+            path: '/modules/early-alerts/',
+            status: 'active'
+        }
+      
     ],
     
     // Configuración de UI
@@ -683,7 +690,13 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/manage-unescalated-issues.html': 'Gestionar asuntos no escalados',
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
-    '/modules/follow-ups/general-queries.html': 'Consultas'
+    '/modules/follow-ups/general-queries.html': 'Consultas',
+    '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',
+    '/modules/early-alerts/register-alerts.html': 'Registro de alertas',
+    '/modules/early-alerts/manage-alerts.html': 'Gestión de alertas tempranas',
+    '/modules/early-alerts/assigned-actions.html': 'Atender gestiones asignadas',
+    '/modules/early-alerts/alerts-dashboard.html': 'Tablero de control de alertas tempranas' 
+    
 };
 
 // Función principal de validación
