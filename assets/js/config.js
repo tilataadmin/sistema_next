@@ -280,6 +280,22 @@ async function supabaseRequest(endpoint, options = {}) {
     }
 }
 
+// Función para consultar logs de auditoría
+async function getAuditLogs(filters = {}) {
+    const { table, user, operation, startDate, endDate, limit = 50 } = filters;
+    
+    let query = '/audit_log?select=*,users(user_display_name)&order=changed_at.desc';
+    
+    if (table) query += `&table_name=eq.${table}`;
+    if (user) query += `&changed_by=eq.${user}`;
+    if (operation) query += `&operation=eq.${operation}`;
+    if (startDate) query += `&changed_at=gte.${startDate}T00:00:00`;
+    if (endDate) query += `&changed_at=lte.${endDate}T23:59:59`;
+    if (limit) query += `&limit=${limit}`;
+    
+    return await supabaseRequest(query);
+}
+
 // Función para mostrar mensajes con indicador de ambiente
 function showMessage(message, type = 'info', containerId = 'alertContainer') {
     const container = document.getElementById(containerId);
@@ -611,6 +627,7 @@ const URL_PERMISSIONS = {
     '/modules/security/permissions.html': 'Gestión de permisos',
     '/modules/security/user-roles.html': 'Asignar roles',
     '/modules/security/role-permissions.html': 'Configurar permisos',
+    '/modules/security/audit-log.html': 'Logs de auditoría',
     
     // Módulo Configuración
     '/modules/config/config.html': 'Configuración general',
@@ -1055,3 +1072,4 @@ window.updatePageFooter = updatePageFooter;
 window.initializePage = initializePage;
 window.applyBrandingAutomatically = applyBrandingAutomatically;window.generateBreadcrumbs = generateBreadcrumbs;
 window.getModuleFolder = getModuleFolder;
+window.getAuditLogs = getAuditLogs;

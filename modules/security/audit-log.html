@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs de Auditoría - SchoolNet</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        .audit-card {
+            border-left: 4px solid var(--bs-primary);
+            transition: all 0.3s ease;
+        }
+        
+        .audit-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .operation-insert { border-left-color: #198754 !important; }
+        .operation-update { border-left-color: #fd7e14 !important; }
+        .operation-delete { border-left-color: #dc3545 !important; }
+        
+        .operation-badge-insert { background-color: #198754; }
+        .operation-badge-update { background-color: #fd7e14; }
+        .operation-badge-delete { background-color: #dc3545; }
+        
+        .table-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        .changes-diff {
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        
+        .json-key { color: #0066cc; font-weight: bold; }
+        .json-string { color: #009900; }
+        .json-number { color: #cc6600; }
+        .json-null { color: #999999; font-style: italic; }
+        
+        .filter-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .loading-spinner {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .timeline-item {
+            position: relative;
+            padding-left: 2rem;
+        }
+        
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: 0.5rem;
+            top: 0.5rem;
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: var(--bs-primary);
+        }
+        
+        .timeline-item::after {
+            content: '';
+            position: absolute;
+            left: 0.75rem;
+            top: 1rem;
+            width: 2px;
+            height: calc(100% - 1rem);
+            background: #e9ecef;
+        }
+        
+        .timeline-item:last-child::after {
+            display: none;
+        }
+        
+        .export-btn {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border: none;
+            color: white;
+        }
+        
+        .export-btn:hover {
+            background: linear-gradient(45deg, #218838, #1ea085);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <div>Cargando logs de auditoría...</div>
+        </div>
+    </div>
+
+    <!-- Contenedor principal -->
+    <div class="container-fluid">
+        <!-- Breadcrumbs -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="index.html">
+                        Seguridad
+                    </a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Logs de Auditoría
+                </li>
+            </ol>
+        </nav>
+
+        <!-- Encabezado de página -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-clipboard-data me-2"></i>
+                    Logs de Auditoría
+                </h1>
+                <p class="text-muted">
+                    Registro completo de cambios realizados en el sistema
+                </p>
+            </div>
+            <div class="col-auto">
+                <button class="btn export-btn" onclick="exportToCSV()">
+                    <i class="bi bi-download me-1"></i>
+                    Exportar CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- Contenedor de alertas -->
+        <div id="alertContainer"></div>
+
+        <!-- Estadísticas rápidas -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-clipboard-data" style="font-size: 2rem;"></i>
+                        <h4 class="mt-2 mb-1" id="totalLogs">-</h4>
+                        <small>Total Registros</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <i class="bi bi-plus-circle" style="font-size: 2rem;"></i>
+                        <h4 class="mt-2 mb-1" id="insertCount">-</h4>
+                        <small>Inserciones</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <i class="bi bi-pencil-square" style="font-size: 2rem;"></i>
+                        <h4 class="mt-2 mb-1" id="updateCount">-</h4>
+                        <small>Actualizaciones</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <i class="bi bi-trash" style="font-size: 2rem;"></i>
+                        <h4 class="mt-2 mb-1" id="deleteCount">-</h4>
+                        <small>Eliminaciones</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="filter-section">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Tabla</label>
+                    <select class="form-select" id="tableFilter">
+                        <option value="">Todas las tablas</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Operación</label>
+                    <select class="form-select" id="operationFilter">
+                        <option value="">Todas las operaciones</option>
+                        <option value="INSERT">Inserción</option>
+                        <option value="UPDATE">Actualización</option>
+                        <option value="DELETE">Eliminación</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Usuario</label>
+                    <select class="form-select" id="userFilter">
+                        <option value="">Todos los usuarios</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Límite</label>
+                    <select class="form-select" id="limitFilter">
+                        <option value="50">50 registros</option>
+                        <option value="100">100 registros</option>
+                        <option value="200">200 registros</option>
+                        <option value="500">500 registros</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row g-3 mt-2">
+                <div class="col-md-4">
+                    <label class="form-label">Desde</label>
+                    <input type="date" class="form-control" id="startDateFilter">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Hasta</label>
+                    <input type="date" class="form-control" id="endDateFilter">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button class="btn btn-primary me-2" onclick="applyFilters()">
+                        <i class="bi bi-funnel me-1"></i>Filtrar
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearFilters()">
+                        <i class="bi bi-x-circle me-1"></i>Limpiar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lista de logs -->
+        <div id="logsContainer">
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <div class="mt-2">Cargando logs de auditoría...</div>
+            </div>
+        </div>
+    </div>
+    <!-- Modal para ver detalles del cambio -->
+    <div class="modal fade" id="auditDetailModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="auditDetailTitle">
+                        <i class="bi bi-info-circle me-2"></i>Detalles del Cambio
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-danger text-white">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-arrow-left-circle me-1"></i>
+                                        Valores Anteriores
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="changes-diff" id="oldValues">
+                                        <div class="text-muted">Sin valores anteriores</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-success text-white">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-arrow-right-circle me-1"></i>
+                                        Valores Nuevos
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="changes-diff" id="newValues">
+                                        <div class="text-muted">Sin valores nuevos</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-info-square me-1"></i>
+                                        Información Adicional
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="additionalInfo">
+                                        <div class="text-muted">Sin información adicional</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        
+        let allLogs = [];
+        let currentFilters = {};
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('📋 Logs de Auditoría - Iniciando...');
+            
+            // Verificar acceso
+            const hasAccess = await validatePageAccess('Logs de auditoría');
+            if (!hasAccess) return;
+            
+            // Configurar fechas por defecto (últimos 30 días)
+            const today = new Date();
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            
+            document.getElementById('startDateFilter').value = thirtyDaysAgo.toISOString().split('T')[0];
+            document.getElementById('endDateFilter').value = today.toISOString().split('T')[0];
+            
+            // Cargar datos iniciales
+            await loadInitialData();
+            await loadAuditLogs();
+        });
+
+        async function loadInitialData() {
+            try {
+                // Cargar tablas disponibles
+                const tables = await supabaseRequest('/audit_log?select=table_name&order=table_name.asc');
+                const uniqueTables = [...new Set(tables?.map(t => t.table_name) || [])];
+                
+                const tableSelect = document.getElementById('tableFilter');
+                tableSelect.innerHTML = '<option value="">Todas las tablas</option>' +
+                    uniqueTables.map(table => `<option value="${table}">${table}</option>`).join('');
+                
+                // Cargar usuarios disponibles
+                const users = await supabaseRequest('/users?select=user_id,user_display_name&order=user_display_name.asc');
+                const userSelect = document.getElementById('userFilter');
+                userSelect.innerHTML = '<option value="">Todos los usuarios</option>' +
+                    (users?.map(user => `<option value="${user.user_id}">${user.user_display_name}</option>`).join('') || '');
+                
+            } catch (error) {
+                console.error('❌ Error cargando datos iniciales:', error);
+            }
+        }
+
+        async function loadAuditLogs() {
+            try {
+                showLoading(true);
+                
+                // Obtener filtros actuales
+                const filters = {
+                    table: document.getElementById('tableFilter').value,
+                    operation: document.getElementById('operationFilter').value,
+                    user: document.getElementById('userFilter').value,
+                    startDate: document.getElementById('startDateFilter').value,
+                    endDate: document.getElementById('endDateFilter').value,
+                    limit: parseInt(document.getElementById('limitFilter').value) || 50
+                };
+                
+                currentFilters = filters;
+                
+                // Cargar logs usando la función de config.js
+                allLogs = await getAuditLogs(filters);
+                
+                renderAuditLogs(allLogs);
+                updateStatistics(allLogs);
+                
+                console.log(`✅ ${allLogs.length} logs de auditoría cargados`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando logs:', error);
+                showMessage('Error al cargar logs de auditoría: ' + error.message, 'danger');
+                document.getElementById('logsContainer').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Error al cargar los logs de auditoría. Verifica tu conexión e intenta nuevamente.
+                    </div>
+                `;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderAuditLogs(logs) {
+            const container = document.getElementById('logsContainer');
+            
+            if (!logs || logs.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
+                        <div class="mt-3 text-muted">
+                            <h5>No se encontraron logs</h5>
+                            <p>No hay registros de auditoría para los filtros seleccionados</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            const timeline = logs.map((log, index) => {
+                const operationClass = `operation-${log.operation.toLowerCase()}`;
+                const operationBadgeClass = `operation-badge-${log.operation.toLowerCase()}`;
+                
+                return `
+                    <div class="timeline-item mb-4">
+                        <div class="card audit-card ${operationClass}">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <span class="badge ${operationBadgeClass} me-2">
+                                                <i class="bi bi-${getOperationIcon(log.operation)} me-1"></i>
+                                                ${getOperationText(log.operation)}
+                                            </span>
+                                            <span class="badge bg-secondary table-badge me-2">
+                                                ${log.table_name}
+                                            </span>
+                                            <small class="text-muted">ID: ${log.row_id}</small>
+                                        </div>
+                                        <div class="mb-2">
+                                            <strong>Usuario:</strong> 
+                                            <span class="text-primary">
+                                                ${log.user_display_name || 'Sistema'}
+                                            </span>
+                                        </div>
+                                        <div class="text-muted">
+                                            <i class="bi bi-clock me-1"></i>
+                                            ${formatDateTime(log.changed_at)}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <button class="btn btn-outline-primary btn-sm" 
+                                                onclick="showAuditDetail('${log.audit_id}')">
+                                            <i class="bi bi-eye me-1"></i>
+                                            Ver Detalles
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = timeline;
+        }
+
+        function updateStatistics(logs) {
+            const total = logs.length;
+            const insertCount = logs.filter(l => l.operation === 'INSERT').length;
+            const updateCount = logs.filter(l => l.operation === 'UPDATE').length;
+            const deleteCount = logs.filter(l => l.operation === 'DELETE').length;
+            
+            document.getElementById('totalLogs').textContent = total;
+            document.getElementById('insertCount').textContent = insertCount;
+            document.getElementById('updateCount').textContent = updateCount;
+            document.getElementById('deleteCount').textContent = deleteCount;
+        }
+
+        async function showAuditDetail(auditId) {
+            try {
+                const log = allLogs.find(l => l.audit_id === auditId);
+                if (!log) {
+                    showMessage('Log de auditoría no encontrado', 'danger');
+                    return;
+                }
+                
+                // Actualizar título del modal
+                document.getElementById('auditDetailTitle').innerHTML = `
+                    <i class="bi bi-info-circle me-2"></i>
+                    ${getOperationText(log.operation)} en ${log.table_name}
+                `;
+                
+                // Mostrar valores anteriores
+                const oldValuesContainer = document.getElementById('oldValues');
+                if (log.old_values) {
+                    oldValuesContainer.innerHTML = formatJSON(log.old_values);
+                } else {
+                    oldValuesContainer.innerHTML = '<div class="text-muted">Sin valores anteriores (INSERT)</div>';
+                }
+                
+                // Mostrar valores nuevos
+                const newValuesContainer = document.getElementById('newValues');
+                if (log.new_values) {
+                    newValuesContainer.innerHTML = formatJSON(log.new_values);
+                } else {
+                    newValuesContainer.innerHTML = '<div class="text-muted">Sin valores nuevos (DELETE)</div>';
+                }
+                
+                // Información adicional
+                const additionalInfo = document.getElementById('additionalInfo');
+                additionalInfo.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>ID del Registro:</strong> ${log.row_id}<br>
+                            <strong>Usuario:</strong> ${log.user_display_name || 'Sistema'}<br>
+                            <strong>Fecha/Hora:</strong> ${formatDateTime(log.changed_at)}
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Tabla:</strong> ${log.table_name}<br>
+                            <strong>Operación:</strong> ${getOperationText(log.operation)}<br>
+                            <strong>ID de Auditoría:</strong> ${log.audit_id}
+                        </div>
+                    </div>
+                    ${log.additional_info ? `
+                        <div class="mt-3">
+                            <strong>Info Adicional:</strong>
+                            <pre class="bg-light p-2 rounded mt-2">${JSON.stringify(log.additional_info, null, 2)}</pre>
+                        </div>
+                    ` : ''}
+                `;
+                
+                const modal = new bootstrap.Modal(document.getElementById('auditDetailModal'));
+                modal.show();
+                
+            } catch (error) {
+                console.error('❌ Error mostrando detalles:', error);
+                showMessage('Error al cargar los detalles del log', 'danger');
+            }
+        }
+
+        // ==========================================
+        // FUNCIONES DE FILTRADO
+        // ==========================================
+
+        function applyFilters() {
+            loadAuditLogs();
+        }
+
+        function clearFilters() {
+            document.getElementById('tableFilter').value = '';
+            document.getElementById('operationFilter').value = '';
+            document.getElementById('userFilter').value = '';
+            document.getElementById('limitFilter').value = '50';
+            
+            // Restablecer fechas a últimos 30 días
+            const today = new Date();
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            
+            document.getElementById('startDateFilter').value = thirtyDaysAgo.toISOString().split('T')[0];
+            document.getElementById('endDateFilter').value = today.toISOString().split('T')[0];
+            
+            loadAuditLogs();
+        }
+
+        // ==========================================
+        // FUNCIONES DE EXPORTACIÓN
+        // ==========================================
+
+        function exportToCSV() {
+            if (!allLogs || allLogs.length === 0) {
+                showMessage('No hay datos para exportar', 'warning');
+                return;
+            }
+            
+            try {
+                const headers = [
+                    'Fecha/Hora',
+                    'Tabla',
+                    'Operación',
+                    'ID Registro',
+                    'Usuario',
+                    'Valores Anteriores',
+                    'Valores Nuevos'
+                ];
+                
+                const csvData = allLogs.map(log => [
+                    formatDateTime(log.changed_at),
+                    log.table_name,
+                    log.operation,
+                    log.row_id,
+                    log.user_display_name || 'Sistema',
+                    log.old_values ? JSON.stringify(log.old_values) : '',
+                    log.new_values ? JSON.stringify(log.new_values) : ''
+                ]);
+                
+                const csvContent = [headers, ...csvData]
+                    .map(row => row.map(field => `"${field?.toString().replace(/"/g, '""') || ''}"`).join(','))
+                    .join('\n');
+                
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                
+                link.setAttribute('href', url);
+                link.setAttribute('download', `audit_logs_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showMessage('Archivo CSV exportado exitosamente', 'success');
+                
+            } catch (error) {
+                console.error('❌ Error exportando CSV:', error);
+                showMessage('Error al exportar CSV: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // FUNCIONES DE UTILIDAD
+        // ==========================================
+
+        function getOperationIcon(operation) {
+            const icons = {
+                'INSERT': 'plus-circle',
+                'UPDATE': 'pencil-square',
+                'DELETE': 'trash'
+            };
+            return icons[operation] || 'question-circle';
+        }
+
+        function getOperationText(operation) {
+            const texts = {
+                'INSERT': 'Inserción',
+                'UPDATE': 'Actualización',
+                'DELETE': 'Eliminación'
+            };
+            return texts[operation] || operation;
+        }
+
+        function formatDateTime(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleString('es-CO', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function formatJSON(jsonObj) {
+            if (!jsonObj) return '<div class="text-muted">Sin datos</div>';
+            
+            try {
+                const formatted = JSON.stringify(jsonObj, null, 2);
+                return `<pre>${syntaxHighlight(formatted)}</pre>`;
+            } catch (error) {
+                return `<div class="text-danger">Error al mostrar datos: ${error.message}</div>`;
+            }
+        }
+
+        function syntaxHighlight(json) {
+            if (typeof json !== 'string') {
+                json = JSON.stringify(json, undefined, 2);
+            }
+            
+            return json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, 
+                    function (match) {
+                        let cls = 'json-number';
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) {
+                                cls = 'json-key';
+                            } else {
+                                cls = 'json-string';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = 'json-boolean';
+                        } else if (/null/.test(match)) {
+                            cls = 'json-null';
+                        }
+                        return '<span class="' + cls + '">' + match + '</span>';
+                    });
+        }
+
+        function showLoading(show) {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = show ? 'flex' : 'none';
+        }
+    </script>
+</body>
+</html>
