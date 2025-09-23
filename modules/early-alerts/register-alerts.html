@@ -334,33 +334,36 @@
     }
 
     /**
-     * Cargar familias desde la base de datos
-     */
-    async function cargarFamilias() {
-      try {
-        const familias = await supabaseRequest('/families?select=family_code,family_name&order=family_name');
-        
-        familiasDatos = familias;
-        
-        // Poblar selector de familias
-        const selectFamilia = document.getElementById('familia-select');
-        selectFamilia.innerHTML = '<option value="">Seleccione una familia...</option>';
-        
-        familias.forEach(familia => {
-          const option = document.createElement('option');
-          option.value = familia.family_code;
-          option.textContent = familia.family_name;
-          selectFamilia.appendChild(option);
-        });
-
-        console.log(`Cargadas ${familias.length} familias`);
-
-      } catch (error) {
-        console.error('Error al cargar familias:', error);
-        throw new Error('No se pudieron cargar las familias');
-      }
+   * Cargar familias desde la base de datos - CORREGIDO
+   */
+  async function cargarFamilias() {
+    try {
+      // Consulta corregida según esquema SQL
+      const familias = await supabaseRequest('/families?select=family_code,family_name&order=family_name');
+      
+      familiasDatos = familias;
+      
+      const selectFamilia = document.getElementById('familia-select');
+      selectFamilia.innerHTML = '<option value="">Seleccione una familia...</option>';
+      
+      familias.forEach(familia => {
+        const option = document.createElement('option');
+        option.value = familia.family_code; // family_code, no family_id
+        option.textContent = familia.family_name;
+        selectFamilia.appendChild(option);
+      });
+  
+      console.log(`Cargadas ${familias.length} familias`);
+  
+    } catch (error) {
+      console.error('Error al cargar familias:', error);
+      throw new Error('No se pudieron cargar las familias');
     }
+  }
 
+
+
+    
     /**
      * Cargar causas de alertas tempranas
      */
@@ -430,18 +433,23 @@
         guardarAlerta();
       });
     }
-      /**
-     * Cargar estudiantes de una familia específica
+
+    /**
+     * Cargar estudiantes de una familia específica - CORREGIDO
      */
     async function cargarEstudiantesFamilia(familyCode) {
       try {
         mostrarLoading();
         
+        // Consulta corregida según el esquema SQL
         const estudiantes = await supabaseRequest(
-          `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,courses(course_name,grades(grade_name))&family_id=eq.${familyCode}&student_status_id=eq.1&order=student_first_name`
+          `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,courses(course_name,grades(grade_name)),status_id&family_id=eq.${familyCode}&order=student_first_name`
         );
         
-        estudiantesActuales = estudiantes;
+        // Filtrar solo estudiantes activos (status_id = 1 según esquema)
+        const estudiantesActivos = estudiantes.filter(est => est.status_id === 1);
+        
+        estudiantesActuales = estudiantesActivos;
         mostrarEstudiantes();
         
       } catch (error) {
@@ -451,7 +459,10 @@
         ocultarLoading();
       }
     }
+    
 
+
+    
     /**
      * Mostrar estudiantes en tarjetas con fotos
      */
@@ -552,51 +563,48 @@
     }
 
     /**
-     * Guardar alerta temprana
-     */
-    async function guardarAlerta() {
-      try {
-        // Validar formulario
-        if (!validarFormulario()) return;
-        
-        mostrarLoading();
-        
-        // Recopilar datos del formulario
-        const datosAlerta = {
-          family_id: parseInt(document.getElementById('familia-select').value),
-          cause_id: parseInt(document.getElementById('causa-select').value),
-          log_status: document.getElementById('estado-select').value,
-          log_details: document.getElementById('descripcion-alerta').innerHTML,
-          log_closed: false,
-          log_created_date: new Date().toISOString(),
-          log_closed_date: null
-        };
-        
-        // Guardar en base de datos
-        const resultado = await supabaseRequest('/early_alert_logs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(datosAlerta)
-        });
-        
-        if (resultado && resultado.length > 0) {
-          // Enviar notificación
-          await enviarNotificacionAlerta(resultado[0], datosAlerta);
-          
-          showMessage('Alerta registrada exitosamente y notificaciones enviadas', 'success');
-          limpiarFormulario();
-        } else {
-          throw new Error('No se pudo guardar la alerta');
-        }
-        
-      } catch (error) {
-        console.error('Error al guardar alerta:', error);
-        showMessage('Error al guardar la alerta: ' + error.message, 'danger');
-      } finally {
-        ocultarLoading();
+   * Guardar alerta temprana - CORREGIDO
+   */
+  async function guardarAlerta() {
+    try {
+      if (!validarFormulario()) return;
+      
+      mostrarLoading();
+      
+      // Datos corregidos según esquema SQL
+      const datosAlerta = {
+        family_code: parseInt(document.getElementById('familia-select').value), // family_code, no family_id
+        cause_id: parseInt(document.getElementById('causa-select').value),
+        log_status: document.getElementById('estado-select').value,
+        log_details: document.getElementById('descripcion-alerta').innerHTML,
+        worker_id: currentSession.user.worker_id, // Necesario según esquema
+        log_closed: 'NO', // String según esquema, no boolean
+        log_created_date: new Date().toISOString().slice(0, 19).replace('T', ' ') // Formato MySQL
+      };
+      
+      const resultado = await supabaseRequest('/early_alert_logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datosAlerta)
+      });
+      
+      if (resultado && resultado.length > 0) {
+        await enviarNotificacionAlerta(resultado[0], datosAlerta);
+        showMessage('Alerta registrada exitosamente y notificaciones enviadas', 'success');
+        limpiarFormulario();
+      } else {
+        throw new Error('No se pudo guardar la alerta');
       }
+      
+    } catch (error) {
+      console.error('Error al guardar alerta:', error);
+      showMessage('Error al guardar la alerta: ' + error.message, 'danger');
+    } finally {
+      ocultarLoading();
     }
+  }
 
+    
     /**
      * Enviar notificación de nueva alerta
      */
