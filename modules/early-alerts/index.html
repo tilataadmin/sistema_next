@@ -422,24 +422,27 @@
         // ==========================================
         async function checkAnyModulePermission() {
             try {
-                if (!currentUser) return false;
+                if (!currentUser) {
+                    console.log('❌ No hay usuario actual');
+                    return false;
+                }
                 
-                // PASO 1: Verificar si es super admin PRIMERO
+                // PASO 1: Verificar si es super admin PRIMERO (acceso total automático)
                 const isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
                 if (isSuperAdmin) {
-                    console.log('✅ Acceso permitido - es Super Admin');
+                    console.log('✅ Acceso permitido - es Super Admin (acceso total)');
                     return true;
                 }
                 
-                // PASO 2: Lista de permisos del módulo
+                // PASO 2: Si no es super admin, verificar permisos específicos del módulo
                 const modulePermissions = MODULE_CONFIG.modulePermissions || [];
                 
                 if (modulePermissions.length === 0) {
                     console.warn('⚠️ No hay permisos configurados para este módulo');
-                    return true;
+                    return true; // Si no hay permisos configurados, permitir acceso
                 }
                 
-                // PASO 3: Verificar si tiene AL MENOS UNO
+                // PASO 3: Verificar si tiene AL MENOS UNO de los permisos del módulo
                 for (const permission of modulePermissions) {
                     const hasPermission = await checkUserPermission(currentUser.user_id, permission);
                     if (hasPermission) {
@@ -448,6 +451,7 @@
                     }
                 }
                 
+                // Si llegó aquí, no tiene ningún permiso
                 console.log('❌ Sin permisos para este módulo');
                 return false;
                 
@@ -624,7 +628,7 @@
                 return null;
             }
         }
-        
+
         // ==========================================
         // CARGA DE MÉTRICAS CON FILTRADO POR ROLES
         // ==========================================
@@ -632,9 +636,17 @@
             try {
                 console.log('📊 Cargando métricas según roles del usuario...');
                 
+                // Verificar roles del usuario
                 const isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
                 const isEstrategas = userRoles.includes('Estrategas');
                 const isDirectivoDocente = userRoles.includes('Directivo docente');
+                
+                // Si no tiene ningún rol permitido, ocultar toda la sección de métricas
+                if (!isSuperAdmin && !isEstrategas && !isDirectivoDocente) {
+                    document.getElementById('metrics-section').style.display = 'none';
+                    console.log('⏭️ Sin roles para ver métricas');
+                    return;
+                }
                 
                 // MÉTRICA 1: Alertas Abiertas
                 await cargarMetricaAlertasAbiertas(isSuperAdmin, isEstrategas, isDirectivoDocente);
@@ -655,6 +667,9 @@
             }
         }
         
+
+
+        
         // ==========================================
         // MÉTRICA 1: ALERTAS ABIERTAS
         // ==========================================
@@ -662,19 +677,24 @@
             try {
                 let count = 0;
                 
+                // Super Admin y Estrategas ven TODAS
                 if (isSuperAdmin || isEstrategas) {
-                    // Ver TODAS las alertas abiertas
                     const data = await supabaseRequest('/early_alert_logs?select=log_id&is_closed=eq.false');
                     count = data.length;
-                } else if (isDirectivoDocente && userSectionId) {
-                    // Ver solo alertas de familias de su sección
+                    console.log(`📊 Alertas abiertas (${isSuperAdmin ? 'Super Admin' : 'Estrategas'}): ${count}`);
+                } 
+                // Directivo docente ve solo de su sección
+                else if (isDirectivoDocente && userSectionId) {
                     const familias = await obtenerFamiliasDeSeccion(userSectionId);
                     if (familias.length > 0) {
                         const familyCodes = familias.join(',');
                         const data = await supabaseRequest(`/early_alert_logs?select=log_id&is_closed=eq.false&family_code=in.(${familyCodes})`);
                         count = data.length;
+                        console.log(`📊 Alertas abiertas (Directivo docente): ${count}`);
                     }
-                } else {
+                } 
+                // Si no tiene roles, ocultar métrica
+                else {
                     ocultarTarjetaMetrica('metric-1');
                     return;
                 }
@@ -686,8 +706,8 @@
                 document.getElementById('metric-1-value').textContent = 'Error';
             }
         }
-        
-        // ==========================================
+
+        / ==========================================
         // MÉTRICA 2: ALERTAS ROJAS
         // ==========================================
         async function cargarMetricaAlertasRojas(isSuperAdmin, isEstrategas, isDirectivoDocente) {
@@ -697,14 +717,18 @@
                 if (isSuperAdmin || isEstrategas) {
                     const data = await supabaseRequest('/early_alert_logs?select=log_id&is_closed=eq.false&alert_status=eq.red');
                     count = data.length;
-                } else if (isDirectivoDocente && userSectionId) {
+                    console.log(`🔴 Alertas rojas (${isSuperAdmin ? 'Super Admin' : 'Estrategas'}): ${count}`);
+                } 
+                else if (isDirectivoDocente && userSectionId) {
                     const familias = await obtenerFamiliasDeSeccion(userSectionId);
                     if (familias.length > 0) {
                         const familyCodes = familias.join(',');
                         const data = await supabaseRequest(`/early_alert_logs?select=log_id&is_closed=eq.false&alert_status=eq.red&family_code=in.(${familyCodes})`);
                         count = data.length;
+                        console.log(`🔴 Alertas rojas (Directivo docente): ${count}`);
                     }
-                } else {
+                } 
+                else {
                     ocultarTarjetaMetrica('metric-2');
                     return;
                 }
@@ -717,7 +741,10 @@
             }
         }
         
-        // ==========================================
+
+
+        
+        / ==========================================
         // MÉTRICA 3: ALERTAS AMARILLAS
         // ==========================================
         async function cargarMetricaAlertasAmarillas(isSuperAdmin, isEstrategas, isDirectivoDocente) {
@@ -727,14 +754,18 @@
                 if (isSuperAdmin || isEstrategas) {
                     const data = await supabaseRequest('/early_alert_logs?select=log_id&is_closed=eq.false&alert_status=eq.yellow');
                     count = data.length;
-                } else if (isDirectivoDocente && userSectionId) {
+                    console.log(`🟡 Alertas amarillas (${isSuperAdmin ? 'Super Admin' : 'Estrategas'}): ${count}`);
+                } 
+                else if (isDirectivoDocente && userSectionId) {
                     const familias = await obtenerFamiliasDeSeccion(userSectionId);
                     if (familias.length > 0) {
                         const familyCodes = familias.join(',');
                         const data = await supabaseRequest(`/early_alert_logs?select=log_id&is_closed=eq.false&alert_status=eq.yellow&family_code=in.(${familyCodes})`);
                         count = data.length;
+                        console.log(`🟡 Alertas amarillas (Directivo docente): ${count}`);
                     }
-                } else {
+                } 
+                else {
                     ocultarTarjetaMetrica('metric-3');
                     return;
                 }
@@ -757,14 +788,18 @@
                 if (isSuperAdmin || isEstrategas) {
                     const data = await supabaseRequest('/early_alert_logs?select=family_code&is_closed=eq.false');
                     data.forEach(alert => familias.add(alert.family_code));
-                } else if (isDirectivoDocente && userSectionId) {
+                    console.log(`👥 Familias con alertas (${isSuperAdmin ? 'Super Admin' : 'Estrategas'}): ${familias.size}`);
+                } 
+                else if (isDirectivoDocente && userSectionId) {
                     const familiasSeccion = await obtenerFamiliasDeSeccion(userSectionId);
                     if (familiasSeccion.length > 0) {
                         const familyCodes = familiasSeccion.join(',');
                         const data = await supabaseRequest(`/early_alert_logs?select=family_code&is_closed=eq.false&family_code=in.(${familyCodes})`);
                         data.forEach(alert => familias.add(alert.family_code));
+                        console.log(`👥 Familias con alertas (Directivo docente): ${familias.size}`);
                     }
-                } else {
+                } 
+                else {
                     ocultarTarjetaMetrica('metric-4');
                     return;
                 }
