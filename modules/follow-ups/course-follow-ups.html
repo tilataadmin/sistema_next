@@ -475,6 +475,8 @@
         let studentIdActual = null;
         let topicIdActual = null;
         let eaeTopicIdActual = null;
+        let modalTareasInstance = null;
+        let modalCrearTareaInstance = null;
 
         // Inicialización
         document.addEventListener('DOMContentLoaded', async function() {
@@ -646,6 +648,25 @@
             const selectCurso = document.getElementById('selectCurso');
             const courseId = selectCurso.value;
             
+            // LIMPIAR cualquier modal abierto
+            if (modalTareasInstance) {
+                modalTareasInstance.dispose();
+                modalTareasInstance = null;
+            }
+            if (modalCrearTareaInstance) {
+                modalCrearTareaInstance.dispose();
+                modalCrearTareaInstance = null;
+            }
+            
+            // Eliminar modales del DOM si existen
+            ['modalTareas', 'modalCrearTarea', 'modalAsuntos', 'modalEAE', 'modalDocumentos', 'modalVincularDocumento'].forEach(modalId => {
+                const modal = document.getElementById(modalId);
+                if (modal) modal.remove();
+            });
+            
+            // Limpiar studentIdActual
+            studentIdActual = null;
+            
             limpiarTabla();
             
             if (!courseId) {
@@ -656,7 +677,7 @@
                 const mensajeCarga = document.getElementById('mensajeCarga');
                 mensajeCarga.style.display = 'block';
                 
-                // Obtener estudiantes del curso - CORREGIDO
+                // Obtener estudiantes del curso
                 const estudiantes = await supabaseRequest(`/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2&course_id=eq.${courseId}&order=student_first_name,student_last_name_1`);
                 
                 if (estudiantes.length === 0) {
@@ -1137,21 +1158,39 @@
         
 
         // Placeholder para otras funciones de modales
-      // Modal de Tareas - FUNCIONALIDAD COMPLETA RESTAURADA
+      // ==========================================
+        // CORRECCIÓN 2: Función abrirTareas completamente reescrita
+        // ==========================================
         function abrirTareas(studentId) {
+            // Actualizar ID del estudiante actual
             studentIdActual = studentId;
+            
+            // Obtener información del estudiante
             const estudiante = estudiantesData.find(e => e.student_id === studentId);
             const nombreEstudiante = estudiante ? 
                 `${estudiante.student_first_name} ${estudiante.student_last_name_1}` : 
                 'Estudiante';
             
+            // LIMPIAR modal existente si lo hay
+            const modalExistente = document.getElementById('modalTareas');
+            if (modalExistente) {
+                // Cerrar instancia anterior si existe
+                if (modalTareasInstance) {
+                    modalTareasInstance.dispose();
+                    modalTareasInstance = null;
+                }
+                // Eliminar modal del DOM
+                modalExistente.remove();
+            }
+            
+            // Crear nuevo modal con HTML limpio
             const modalHtml = `
-                <div class="modal fade" id="modalTareas" tabindex="-1">
+                <div class="modal fade" id="modalTareas" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
                     <div class="modal-dialog modal-xl">
                         <div class="modal-content">
                             <div class="modal-header">
                                 <h5 class="modal-title">Tareas de ${nombreEstudiante}</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                <button type="button" class="btn-close" onclick="cerrarModalTareas()"></button>
                             </div>
                             <div class="modal-body">
                                 <div id="mensajeCargaTareas" class="alert alert-info" style="display: none;">
@@ -1193,20 +1232,23 @@
                                 </div>
                             </div>
                             <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                                <button type="button" class="btn btn-secondary" onclick="cerrarModalTareas()">Cerrar</button>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
             
-            if (!document.getElementById('modalTareas')) {
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
-            }
+            // Insertar nuevo modal en el DOM
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
             
-            const modal = new bootstrap.Modal(document.getElementById('modalTareas'));
-            modal.show();
+            // Crear nueva instancia del modal
+            modalTareasInstance = new bootstrap.Modal(document.getElementById('modalTareas'));
             
+            // Mostrar modal
+            modalTareasInstance.show();
+            
+            // Cargar tareas del estudiante
             cargarTareasEstudiante(studentId);
         }
         
@@ -1282,6 +1324,27 @@
             cargarDocumentosEstudiante(studentId);
         }
 
+        // ==========================================
+        // CORRECCIÓN 3: Función para cerrar modal
+        // ==========================================
+        function cerrarModalTareas() {
+            if (modalTareasInstance) {
+                modalTareasInstance.hide();
+                modalTareasInstance.dispose();
+                modalTareasInstance = null;
+            }
+            
+            const modalElement = document.getElementById('modalTareas');
+            if (modalElement) {
+                modalElement.remove();
+            }
+            
+            // Limpiar studentIdActual
+            studentIdActual = null;
+        }
+
+
+        
         async function cargarDocumentosEstudiante(studentId) {
             try {
                 document.getElementById('mensajeCargaDocumentos').style.display = 'block';
@@ -1522,20 +1585,32 @@
             return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
 
-
-         async function cargarTareasEstudiante(studentId) {
+        // ==========================================
+        // CORRECCIÓN 4: Función cargarTareasEstudiante mejorada
+        // ==========================================
+        async function cargarTareasEstudiante(studentId) {
             try {
+                // Mostrar mensaje de carga
                 document.getElementById('mensajeCargaTareas').style.display = 'block';
+                document.getElementById('tablaTareasContainer').style.display = 'none';
+                document.getElementById('noDataTareas').style.display = 'none';
                 
-                const tareas = await supabaseRequest(`/tasks?select=task_id,student_id,assigned_to_mail,assigned_to_name,due_date,task_description,task_progress,task_state,workers!inner(worker_first_name,worker_last_name_1)&student_id=eq.${studentId}&task_state=in.(Asignada,En proceso)&order=due_date.asc`);
+                // LIMPIAR tabla antes de cargar
+                document.getElementById('tablaTareas').innerHTML = '';
                 
+                // Cargar tareas con query corregido
+                const tareas = await supabaseRequest(`/tasks?select=task_id,student_id,assigned_to_mail,assigned_to_name,due_date,task_description,task_progress,task_state,workers!tasks_assigned_to_mail_fkey(worker_first_name,worker_last_name_1)&student_id=eq.${studentId}&task_state=in.(Asignada,En proceso)&order=due_date.asc`);
+                
+                // Ocultar mensaje de carga
                 document.getElementById('mensajeCargaTareas').style.display = 'none';
                 
+                // Verificar si hay tareas
                 if (tareas.length === 0) {
                     document.getElementById('noDataTareas').style.display = 'block';
                     return;
                 }
                 
+                // Mostrar tareas
                 mostrarTareas(tareas);
                 
             } catch (error) {
@@ -1545,8 +1620,15 @@
             }
         }
 
+        // ==========================================
+        // CORRECCIÓN 5: Función mostrarTareas sin duplicados
+        // ==========================================
         function mostrarTareas(tareas) {
             const tablaTareas = document.getElementById('tablaTareas');
+            
+            // LIMPIAR tabla completamente primero
+            tablaTareas.innerHTML = '';
+            
             const fragment = document.createDocumentFragment();
             
             tareas.forEach(tarea => {
@@ -1591,15 +1673,30 @@
             document.getElementById('tablaTareasContainer').style.display = 'block';
         }
 
+
+
         // Modal Crear Tarea
+        // ==========================================
+        // CORRECCIÓN 7: Función abrirModalCrearTarea reescrita
+        // ==========================================
         function abrirModalCrearTarea() {
+            // LIMPIAR modal existente si lo hay
+            const modalExistente = document.getElementById('modalCrearTarea');
+            if (modalExistente) {
+                if (modalCrearTareaInstance) {
+                    modalCrearTareaInstance.dispose();
+                    modalCrearTareaInstance = null;
+                }
+                modalExistente.remove();
+            }
+            
             const modalHtml = `
-                <div class="modal fade" id="modalCrearTarea" tabindex="-1">
+                <div class="modal fade" id="modalCrearTarea" tabindex="-1" data-bs-backdrop="static">
                     <div class="modal-dialog">
                         <div class="modal-content">
                             <div class="modal-header">
                                 <h5 class="modal-title">Crear Nueva Tarea</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                <button type="button" class="btn-close" onclick="cerrarModalCrearTarea()"></button>
                             </div>
                             <div class="modal-body">
                                 <div id="mensajeErrorCrearTarea" class="alert alert-danger" style="display: none;"></div>
@@ -1611,7 +1708,7 @@
                                         <option value="">-- Seleccione un trabajador --</option>
                                     </select>
                                 </div>
-
+        
                                 <div class="mb-3">
                                     <label for="editorDescripcionTarea" class="form-label">Descripción: <span class="text-danger">*</span></label>
                                     <div class="editor-container">
@@ -1637,7 +1734,7 @@
                                         </div>
                                     </div>
                                 </div>
-
+        
                                 <div class="mb-3">
                                     <label for="inputFechaLimite" class="form-label">Fecha límite: <span class="text-danger">*</span></label>
                                     <input type="date" id="inputFechaLimite" class="form-control">
@@ -1645,33 +1742,52 @@
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-success" onclick="guardarNuevaTarea()">Guardar</button>
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                                <button type="button" class="btn btn-secondary" onclick="cerrarModalCrearTarea()">Cerrar</button>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
             
-            if (!document.getElementById('modalCrearTarea')) {
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
-            }
-            
-            const modal = new bootstrap.Modal(document.getElementById('modalCrearTarea'));
-            modal.show();
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            modalCrearTareaInstance = new bootstrap.Modal(document.getElementById('modalCrearTarea'));
+            modalCrearTareaInstance.show();
             
             cargarListaTrabajadores();
         }
 
+        // ==========================================
+        // CORRECCIÓN 8: Función para cerrar modal crear tarea
+        // ==========================================
+        function cerrarModalCrearTarea() {
+            if (modalCrearTareaInstance) {
+                modalCrearTareaInstance.hide();
+                modalCrearTareaInstance.dispose();
+                modalCrearTareaInstance = null;
+            }
+            
+            const modalElement = document.getElementById('modalCrearTarea');
+            if (modalElement) {
+                modalElement.remove();
+            }
+        }
+        
         function formatTextTarea(command) {
             document.execCommand(command, false, null);
             document.getElementById('editorDescripcionTarea').focus();
         }
 
+        // ==========================================
+        // CORRECCIÓN 11: Función cargarListaTrabajadores mejorada
+        // ==========================================
         async function cargarListaTrabajadores() {
             try {
                 const trabajadores = await supabaseRequest('/workers?select=worker_id,email,worker_first_name,worker_last_name_1&worker_status=eq.active&order=worker_first_name,worker_last_name_1');
                 
                 const select = document.getElementById('selectAsignadoA');
+                
+                // Limpiar opciones existentes excepto la primera
+                select.innerHTML = '<option value="">-- Seleccione un trabajador --</option>';
                 
                 trabajadores.forEach(trabajador => {
                     const option = document.createElement('option');
@@ -1686,11 +1802,15 @@
             }
         }
 
+        // ==========================================
+        // CORRECCIÓN 9: Función guardarNuevaTarea sin duplicados
+        // ==========================================
         async function guardarNuevaTarea() {
             const assignedToMail = document.getElementById('selectAsignadoA').value;
             const description = document.getElementById('editorDescripcionTarea').innerHTML.trim();
             const dueDate = document.getElementById('inputFechaLimite').value;
             
+            // Validaciones
             if (!assignedToMail) {
                 mostrarErrorTarea('Debe seleccionar a quién asignar la tarea', 'CrearTarea');
                 return;
@@ -1706,15 +1826,26 @@
                 return;
             }
             
+            // Verificar que studentIdActual existe
+            if (!studentIdActual) {
+                mostrarErrorTarea('Error: No se ha identificado el estudiante', 'CrearTarea');
+                return;
+            }
+            
             try {
+                // Deshabilitar botón para evitar doble clic
+                const btnGuardar = event.target;
+                btnGuardar.disabled = true;
+                btnGuardar.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando...';
+                
                 // Obtener nombre del trabajador
                 const trabajadorData = await supabaseRequest(`/workers?select=worker_first_name,worker_last_name_1&email=eq.${assignedToMail}&limit=1`);
                 const assignedToName = trabajadorData.length > 0 ? 
                     `${trabajadorData[0].worker_first_name} ${trabajadorData[0].worker_last_name_1}` : 
                     'Trabajador';
                 
-                // Crear tarea
-                await supabaseRequest('/tasks', {
+                // Crear tarea - UNA SOLA VEZ
+                const nuevaTarea = await supabaseRequest('/tasks', {
                     method: 'POST',
                     body: JSON.stringify({
                         student_id: studentIdActual,
@@ -1722,50 +1853,65 @@
                         assigned_to_name: assignedToName,
                         due_date: dueDate,
                         task_description: description,
-                        task_state: 'Asignada'
+                        task_state: 'Asignada',
+                        module_type: 'follow-ups'
                     })
                 });
                 
-                // Enviar notificación (opcional - depende de si el sistema de notificaciones está configurado)
-                const estudiante = estudiantesData.find(e => e.student_id === studentIdActual);
-                const studentName = estudiante ? 
-                    `${estudiante.student_first_name} ${estudiante.student_last_name_1}` : 
-                    'el estudiante';
+                console.log('Tarea creada:', nuevaTarea);
                 
-                const asunto = `Te han asignado una nueva tarea asociada a ${studentName}`;
-                const contenido = `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <h3 style="color: #0d6efd;">Nueva Tarea Asignada</h3>
-                        <p>Se te ha asignado la siguiente tarea relacionada con <strong>${studentName}</strong>:</p>
-                        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0d6efd; margin: 20px 0;">
-                            ${description}
-                        </div>
-                        <p><strong>Fecha límite:</strong> ${formatDate(dueDate)}</p>
-                        <p style="font-size: 12px; color: #6c757d;">
-                            Este es un correo generado automáticamente por SchoolNet. Por favor no responder.
-                        </p>
-                    </div>
-                `;
-                
+                // Enviar notificación (solo si el sistema está configurado)
                 try {
+                    const estudiante = estudiantesData.find(e => e.student_id === studentIdActual);
+                    const studentName = estudiante ? 
+                        `${estudiante.student_first_name} ${estudiante.student_last_name_1}` : 
+                        'el estudiante';
+                    
+                    const asunto = `Te han asignado una nueva tarea asociada a ${studentName}`;
+                    const contenido = `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h3 style="color: #0d6efd;">Nueva Tarea Asignada</h3>
+                            <p>Se te ha asignado la siguiente tarea relacionada con <strong>${studentName}</strong>:</p>
+                            <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0d6efd; margin: 20px 0;">
+                                ${description}
+                            </div>
+                            <p><strong>Fecha límite:</strong> ${formatDate(dueDate)}</p>
+                            <p style="font-size: 12px; color: #6c757d;">
+                                Este es un correo generado automáticamente por SchoolNet. Por favor no responder.
+                            </p>
+                        </div>
+                    `;
+                    
                     await sendNotification(assignedToMail, asunto, contenido, true);
                 } catch (emailError) {
-                    console.log('Error enviando notificación (no crítico):', emailError);
+                    console.log('Notificación no enviada (no crítico):', emailError);
                 }
                 
                 mostrarExitoTarea('Tarea creada exitosamente', 'CrearTarea');
                 
+                // Esperar 1.5 segundos antes de cerrar
                 setTimeout(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('modalCrearTarea')).hide();
-                    cargarTareasEstudiante(studentIdActual);
-                }, 2000);
+                    cerrarModalCrearTarea();
+                    // Recargar tareas del estudiante actual
+                    if (studentIdActual) {
+                        cargarTareasEstudiante(studentIdActual);
+                    }
+                }, 1500);
                 
             } catch (error) {
                 console.error('Error creando tarea:', error);
-                mostrarErrorTarea('Error al crear la tarea', 'CrearTarea');
+                mostrarErrorTarea('Error al crear la tarea: ' + error.message, 'CrearTarea');
+                
+                // Re-habilitar botón en caso de error
+                const btnGuardar = event.target;
+                if (btnGuardar) {
+                    btnGuardar.disabled = false;
+                    btnGuardar.textContent = 'Guardar';
+                }
             }
         }
 
+        
         // Funciones de mensajes para modales de tareas
         function mostrarErrorTarea(mensaje, tipo) {
             const errorDiv = document.getElementById(`mensajeError${tipo}`);
@@ -1794,6 +1940,37 @@
                 }, 3000);
             }
         }
+
+        // ==========================================
+        // CORRECCIÓN 12: Event listener para limpiar al cerrar modales
+        // ==========================================
+        // Agregar al final del script, antes del cierre de </script>
+        
+        document.addEventListener('hidden.bs.modal', function (event) {
+            // Verificar qué modal se cerró y limpiar apropiadamente
+            if (event.target.id === 'modalTareas') {
+                if (modalTareasInstance) {
+                    modalTareasInstance.dispose();
+                    modalTareasInstance = null;
+                }
+                const modalElement = document.getElementById('modalTareas');
+                if (modalElement) {
+                    modalElement.remove();
+                }
+            }
+            
+            if (event.target.id === 'modalCrearTarea') {
+                if (modalCrearTareaInstance) {
+                    modalCrearTareaInstance.dispose();
+                    modalCrearTareaInstance = null;
+                }
+                const modalElement = document.getElementById('modalCrearTarea');
+                if (modalElement) {
+                    modalElement.remove();
+                }
+            }
+        });
+
         
     </script>
 </body>
