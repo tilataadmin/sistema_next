@@ -143,6 +143,18 @@
             100% { transform: rotate(360deg); }
         }
         
+        /* NUEVO: Estilos para métricas en estado no cargado */
+        .metric-placeholder {
+            color: #adb5bd;
+            font-size: 1.5rem;
+        }
+        
+        .metrics-loading .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-width: 0.2em;
+        }
+        
         /* Responsive */
         @media (max-width: 768px) {
             .metric-value {
@@ -157,7 +169,6 @@
         }
     </style>
 </head>
-
 <body>
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay hidden">
@@ -207,7 +218,6 @@
         <!-- CONTENEDOR DE ALERTAS -->
         <div id="alertContainer"></div>
 
-        <!-- SECCIÓN DE MÉTRICAS -->
         <!-- SECCIÓN DE MÉTRICAS CON CARGA DIFERIDA -->
         <div class="row mb-5" id="metrics-section">
             <div class="col-12">
@@ -284,6 +294,7 @@
                 </div>
             </div>
         </div>
+
         <!-- GRID DE FUNCIONES CON GRUPOS -->
         <div class="row mb-5">
             <div class="col-12">
@@ -622,7 +633,6 @@
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
-
     <script>
         // ==========================================
         // CONFIGURACIÓN DEL MÓDULO PRESUPUESTO
@@ -716,7 +726,7 @@
         let userRoles = [];
         let currentBudgetYearId = null;
         let userEmail = null;
-        let metricsLoaded = false;
+        let metricsLoaded = false; // NUEVO: Bandera para controlar carga de métricas
         
         // ==========================================
         // INICIALIZACIÓN
@@ -829,9 +839,6 @@
         // ==========================================
         // INICIALIZACIÓN DEL MÓDULO
         // ==========================================
-        // ==========================================
-        // INICIALIZACIÓN DEL MÓDULO
-        // ==========================================
         async function inicializarModulo() {
             try {
                 mostrarLoading();
@@ -839,8 +846,10 @@
                 configurarColoresModulo();
                 await cargarDatosUsuario();
                 await cargarBadges();
-                // ⚠️ CAMBIO CRÍTICO: NO cargar métricas automáticamente
+                
+                // ⚠️ CAMBIO IMPORTANTE: NO cargar métricas automáticamente
                 // await cargarMetricas(); // ELIMINADO
+                
                 await configurarFunciones();
                 
                 ocultarLoading();
@@ -853,9 +862,6 @@
                 ocultarLoading();
             }
         }
-
-        
-
         
         function configurarColoresModulo() {
             const root = document.documentElement;
@@ -893,39 +899,40 @@
         // ==========================================
         // CARGA DE BADGES
         // ==========================================
+        // ==========================================
+        // CARGA DE BADGES - OPTIMIZADA
+        // ==========================================
         async function cargarBadges() {
             try {
                 const badgesContainer = document.getElementById('module-badges');
-                let badgesHtml = '';
                 
-                // Obtener año presupuestal activo
-                const configData = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
+                // Query ÚNICA combinada para obtener año presupuestal y nombre
+                const configData = await supabaseRequest('/system_config?select=current_budget_year_id,academic_years:current_budget_year_id(year_name)&limit=1');
                 
                 if (configData.length > 0 && configData[0].current_budget_year_id) {
                     currentBudgetYearId = configData[0].current_budget_year_id;
                     
-                    const yearData = await supabaseRequest(`/academic_years?select=year_name&year_id=eq.${currentBudgetYearId}`);
+                    const yearName = configData[0].academic_years?.year_name;
                     
-                    if (yearData.length > 0) {
-                        badgesHtml = `
+                    if (yearName) {
+                        badgesContainer.innerHTML = `
                             <span class="badge-module">
-                                Año Presupuestal: ${yearData[0].year_name}
+                                Año Presupuestal: ${yearName}
                             </span>
                         `;
                     }
                 }
                 
-                badgesContainer.innerHTML = badgesHtml;
                 console.log('✅ Badges contextuales cargados');
                 
             } catch (error) {
                 console.error('❌ Error cargando badges:', error);
+                // No mostrar error al usuario, solo en consola
             }
         }
+
         
-        // ==========================================
-        // CARGA DE MÉTRICAS
-        // ==========================================
+        
         // ==========================================
         // 🆕 CARGA DIFERIDA DE MÉTRICAS - FUNCIÓN MANUAL
         // ==========================================
@@ -967,7 +974,7 @@
                         const formattedValue = formatearValorMetrica(value, metric.format);
                         const elemento = document.getElementById(metric.id + '-value');
                         if (elemento) {
-                            elemento.innerHTML = formattedValue;
+                            elemento.innerHTML = formattedValue; // Usar innerHTML para reemplazar el span
                         }
                         
                     } catch (error) {
@@ -997,7 +1004,7 @@
                 showMessage('Error al cargar métricas: ' + error.message, 'danger');
             }
         }
-                
+        
         // ==========================================
         // QUERIES PERSONALIZADAS CON LÓGICA POR ROL
         // ==========================================
@@ -1059,6 +1066,7 @@
                 return 0;
             }
         }
+        
         // ==========================================
         // VERIFICAR ACCESO A MÉTRICA
         // ==========================================
@@ -1086,9 +1094,37 @@
             
             return hasAllowedRole;
         }
-
+        
         // ==========================================
-        // 🚀 OBTENER TODOS LOS PERMISOS EN UNA QUERY - OPTIMIZADO
+        // CONFIGURACIÓN DE FUNCIONES
+        // ==========================================
+        async function configurarFunciones() {
+            try {
+                console.log('🔒 Configurando funciones según permisos...');
+                
+                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
+                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
+                
+                // PASO 2: Filtrar funciones basado en los permisos obtenidos
+                const functionCards = document.querySelectorAll('.function-card[data-permission]');
+                
+                for (const card of functionCards) {
+                    const permission = card.getAttribute('data-permission');
+                    
+                    if (permission && !userPermissions.includes(permission)) {
+                        card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
+                    }
+                }
+                
+                console.log('✅ Funciones configuradas según permisos');
+                
+            } catch (error) {
+                console.error('❌ Error configurando funciones:', error);
+            }
+        }
+
+         // ==========================================
+        // OBTENER TODOS LOS PERMISOS EN UNA QUERY
         // ==========================================
         async function obtenerTodosLosPermisosUsuario(userId) {
             try {
@@ -1125,69 +1161,6 @@
             }
         }
         
-        // ==========================================
-        // CONFIGURACIÓN DE FUNCIONES
-        // ==========================================
-        // ==========================================
-        // 🚀 CONFIGURACIÓN DE FUNCIONES - OPTIMIZADA
-        // ==========================================
-        async function configurarFunciones() {
-            try {
-                console.log('🔒 Configurando funciones según permisos...');
-                
-                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
-                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
-                
-                console.log('✅ Permisos del usuario obtenidos:', userPermissions.length);
-                
-                // PASO 2: Filtrar funciones basado en los permisos obtenidos
-                const functionCards = document.querySelectorAll('.function-card[data-permission]');
-                
-                for (const card of functionCards) {
-                    const permission = card.getAttribute('data-permission');
-                    
-                    if (permission && !userPermissions.includes(permission)) {
-                        card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
-                    }
-                }
-                
-                // Ocultar grupos vacíos
-                ocultarGruposVacios();
-                
-                console.log('✅ Funciones configuradas según permisos');
-                
-            } catch (error) {
-                console.error('❌ Error configurando funciones:', error);
-            }
-        }
-
-        // ==========================================
-        // OCULTAR GRUPOS DE FUNCIONES VACÍOS
-        // ==========================================
-        function ocultarGruposVacios() {
-            // Verificar cada grupo de funciones
-            const grupoAdmon = document.querySelectorAll('.row.g-3')[0]; // Primer grupo (Administración)
-            const grupoOperacion = document.querySelectorAll('.row.g-3')[1]; // Segundo grupo (Operación)
-            
-            // Función auxiliar para verificar si un grupo tiene funciones visibles
-            function tieneContenidoVisible(grupo) {
-                if (!grupo) return false;
-                const tarjetasVisibles = grupo.querySelectorAll('.col-12:not([style*="display: none"]), .col-md-6:not([style*="display: none"]), .col-lg-4:not([style*="display: none"])');
-                return tarjetasVisibles.length > 0;
-            }
-            
-            // Ocultar grupo Administración si está vacío
-            if (grupoAdmon && !tieneContenidoVisible(grupoAdmon)) {
-                grupoAdmon.parentElement.style.display = 'none';
-            }
-            
-            // Ocultar grupo Operación si está vacío
-            if (grupoOperacion && !tieneContenidoVisible(grupoOperacion)) {
-                grupoOperacion.parentElement.style.display = 'none';
-            }
-        }
-
-
 
 
         
@@ -1238,10 +1211,13 @@
             }
         }
         
-        console.log(`🎉 Módulo de Presupuesto cargado correctamente`);
+        // ==========================================
+        // HACER FUNCIÓN DISPONIBLE GLOBALMENTE
+        // ==========================================
         window.cargarMetricas = cargarMetricas;
+        
+        console.log(`🎉 Módulo de Presupuesto cargado correctamente`);
+        console.log(`📊 Métricas en modo carga diferida - usar botón "Cargar Métricas"`);
     </script>
 </body>
 </html>
-
-        
