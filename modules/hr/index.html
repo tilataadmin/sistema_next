@@ -659,22 +659,24 @@
         }
         
         // ==========================================
-        // CARGA DE MÉTRICAS
+        // CARGA OPTIMIZADA DE MÉTRICAS - PARALELA
         // ==========================================
         async function cargarMetricas() {
             try {
                 console.log('📊 Cargando métricas según roles del usuario...');
                 
-                for (const metric of MODULE_CONFIG.metrics) {
+                // Verificar acceso una sola vez
+                const tieneAcceso = verificarAccesoMetrica(MODULE_CONFIG.metrics[0], userRoles);
+                
+                if (!tieneAcceso) {
+                    console.log('⏭️ Métricas omitidas - usuario sin rol de Gestor');
+                    document.getElementById('metrics-section').style.display = 'none';
+                    return;
+                }
+                
+                // Ejecutar TODAS las queries en paralelo con Promise.all
+                const metricPromises = MODULE_CONFIG.metrics.map(async (metric) => {
                     try {
-                        const tieneAccesoMetrica = verificarAccesoMetrica(metric, userRoles);
-                        
-                        if (!tieneAccesoMetrica) {
-                            console.log(`⏭️ Métrica ${metric.id} omitida - sin roles requeridos`);
-                            ocultarTarjetaMetrica(metric.id);
-                            continue;
-                        }
-                        
                         let value = 0;
                         
                         if (metric.query.startsWith('custom_')) {
@@ -684,23 +686,28 @@
                             value = Array.isArray(data) ? data.length : (data || 0);
                         }
                         
-                        const formattedValue = formatearValorMetrica(value, metric.format);
-                        const elemento = document.getElementById(metric.id + '-value');
-                        if (elemento) {
-                            elemento.textContent = formattedValue;
-                        }
-                        
+                        return { id: metric.id, value, format: metric.format };
                     } catch (error) {
-                        console.error(`❌ Error cargando métrica ${metric.id}:`, error);
-                        const elemento = document.getElementById(metric.id + '-value');
-                        if (elemento) {
-                            elemento.textContent = 'Error';
-                        }
+                        console.error(`❌ Error en métrica ${metric.id}:`, error);
+                        return { id: metric.id, value: 'Error', format: metric.format };
                     }
-                }
+                });
                 
-                reorganizarGridMetricas();
-                console.log('✅ Métricas cargadas según roles');
+                // Esperar a que TODAS terminen
+                const results = await Promise.all(metricPromises);
+                
+                // Actualizar DOM con todos los resultados
+                results.forEach(result => {
+                    const elemento = document.getElementById(result.id + '-value');
+                    if (elemento) {
+                        const formattedValue = typeof result.value === 'string' ? 
+                            result.value : 
+                            formatearValorMetrica(result.value, result.format);
+                        elemento.textContent = formattedValue;
+                    }
+                });
+                
+                console.log('✅ Métricas cargadas en paralelo');
                 
             } catch (error) {
                 console.error('❌ Error general cargando métricas:', error);
@@ -708,21 +715,29 @@
         }
         
         // ==========================================
-        // QUERIES PERSONALIZADAS
+        // QUERIES PERSONALIZADAS OPTIMIZADAS - PARALELAS
         // ==========================================
         async function ejecutarQueryPersonalizada(queryType) {
             try {
                 switch (queryType) {
                     case 'custom_cost_centers_without_areas':
-                        const allCostCenters = await supabaseRequest('/cost_centers?select=cost_center_id&cost_center_status=eq.active');
-                        const costCentersWithAreas = await supabaseRequest('/organizational_areas?select=cost_center_id&area_status=eq.active');
+                        // Ejecutar ambas queries en paralelo
+                        const [allCostCenters, costCentersWithAreas] = await Promise.all([
+                            supabaseRequest('/cost_centers?select=cost_center_id&cost_center_status=eq.active'),
+                            supabaseRequest('/organizational_areas?select=cost_center_id&area_status=eq.active')
+                        ]);
+                        
                         const costCenterIdsWithAreas = costCentersWithAreas.map(a => a.cost_center_id);
                         const costCentersWithoutAreas = allCostCenters.filter(cc => !costCenterIdsWithAreas.includes(cc.cost_center_id));
                         return costCentersWithoutAreas.length;
                         
                     case 'custom_areas_without_subareas':
-                        const allAreas = await supabaseRequest('/organizational_areas?select=area_id&area_status=eq.active');
-                        const areasWithSubareas = await supabaseRequest('/organizational_subareas?select=area_id&subarea_status=eq.active');
+                        // Ejecutar ambas queries en paralelo
+                        const [allAreas, areasWithSubareas] = await Promise.all([
+                            supabaseRequest('/organizational_areas?select=area_id&area_status=eq.active'),
+                            supabaseRequest('/organizational_subareas?select=area_id&subarea_status=eq.active')
+                        ]);
+                        
                         const areaIdsWithSubareas = areasWithSubareas.map(s => s.area_id);
                         const areasWithoutSubareas = allAreas.filter(a => !areaIdsWithSubareas.includes(a.area_id));
                         return areasWithoutSubareas.length;
@@ -732,8 +747,12 @@
                         return workersWithoutStructure.length;
                         
                     case 'custom_workers_without_roles':
-                        const allWorkers = await supabaseRequest('/workers?select=worker_id&worker_status=eq.active');
-                        const workersWithRoles = await supabaseRequest('/worker_job_roles?select=worker_id&assignment_status=eq.active');
+                        // Ejecutar ambas queries en paralelo
+                        const [allWorkers, workersWithRoles] = await Promise.all([
+                            supabaseRequest('/workers?select=worker_id&worker_status=eq.active'),
+                            supabaseRequest('/worker_job_roles?select=worker_id&assignment_status=eq.active')
+                        ]);
+                        
                         const workerIdsWithRoles = workersWithRoles.map(wr => wr.worker_id);
                         const workersWithoutRoles = allWorkers.filter(w => !workerIdsWithRoles.includes(w.worker_id));
                         return workersWithoutRoles.length;
@@ -746,8 +765,8 @@
                 console.error('Error en query personalizada:', error);
                 return 0;
             }
-        }
-
+        } 
+        
         // ==========================================
         // VERIFICAR ACCESO A MÉTRICA
         // ==========================================
@@ -776,25 +795,65 @@
             
             return hasAllowedRole;
         }
-        
+
         // ==========================================
-        // CONFIGURACIÓN DE FUNCIONES
+        // OBTENER TODOS LOS PERMISOS EN UNA QUERY - OPTIMIZADO
+        // ==========================================
+        async function obtenerTodosLosPermisosUsuario(userId) {
+            try {
+                // Verificar si es super admin primero
+                const isSuperAdmin = await checkUserIsSuperAdmin(userId);
+                if (isSuperAdmin) {
+                    // Super admin tiene todos los permisos del módulo
+                    return MODULE_CONFIG.modulePermissions;
+                }
+                
+                // Una sola query para obtener todos los permisos
+                const data = await supabaseRequest(`/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
+                
+                if (!data || data.length === 0) {
+                    return [];
+                }
+                
+                // Extraer todos los permisos en un array
+                const permissions = [];
+                data[0].user_roles?.forEach(userRole => {
+                    userRole.roles?.role_permissions?.forEach(rolePermission => {
+                        const permName = rolePermission.permissions?.permission_name;
+                        if (permName && !permissions.includes(permName)) {
+                            permissions.push(permName);
+                        }
+                    });
+                });
+                
+                return permissions;
+                
+            } catch (error) {
+                console.error('❌ Error obteniendo permisos:', error);
+                return [];
+            }
+        }
+
+        // ==========================================
+        // CONFIGURACIÓN DE FUNCIONES - OPTIMIZADA
         // ==========================================
         async function configurarFunciones() {
             try {
                 console.log('🔒 Configurando funciones según permisos...');
                 
+                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
+                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
+                
+                console.log('✅ Permisos del usuario obtenidos:', userPermissions.length);
+                
+                // PASO 2: Filtrar funciones basado en los permisos obtenidos
                 const functionCards = document.querySelectorAll('.function-card[data-permission]');
                 
                 for (const card of functionCards) {
                     const permission = card.getAttribute('data-permission');
                     
-                    if (permission) {
-                        const hasPermission = await checkUserPermission(currentUser.user_id, permission);
-                        
-                        if (!hasPermission) {
-                            card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
-                        }
+                    if (permission && !userPermissions.includes(permission)) {
+                        card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
                     }
                 }
                 
@@ -804,6 +863,8 @@
                 console.error('❌ Error configurando funciones:', error);
             }
         }
+
+        
         
         // ==========================================
         // UTILIDADES
