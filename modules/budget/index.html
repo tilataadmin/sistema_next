@@ -143,18 +143,6 @@
             100% { transform: rotate(360deg); }
         }
         
-        /* NUEVO: Estilos para métricas en estado no cargado */
-        .metric-placeholder {
-            color: #adb5bd;
-            font-size: 1.5rem;
-        }
-        
-        .metrics-loading .spinner-border {
-            width: 1.5rem;
-            height: 1.5rem;
-            border-width: 0.2em;
-        }
-        
         /* Responsive */
         @media (max-width: 768px) {
             .metric-value {
@@ -169,6 +157,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay hidden">
@@ -218,18 +207,12 @@
         <!-- CONTENEDOR DE ALERTAS -->
         <div id="alertContainer"></div>
 
-        <!-- SECCIÓN DE MÉTRICAS CON CARGA DIFERIDA -->
+        <!-- SECCIÓN DE MÉTRICAS -->
         <div class="row mb-5" id="metrics-section">
             <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="text-muted mb-0">
-                        <i class="bi bi-graph-up me-2"></i>Resumen del Módulo
-                    </h5>
-                    <!-- BOTÓN DE CARGA DE MÉTRICAS -->
-                    <button class="btn btn-outline-primary btn-sm" id="btn-load-metrics" onclick="cargarMetricas()">
-                        <i class="bi bi-bar-chart me-1"></i>Cargar Métricas
-                    </button>
-                </div>
+                <h5 class="text-muted mb-3">
+                    <i class="bi bi-graph-up me-2"></i>Resumen del Módulo
+                </h5>
                 
                 <div class="row g-3" id="metrics-container">
                     <!-- Métrica 1: Presupuesto Total -->
@@ -237,9 +220,7 @@
                         <div class="card metric-card">
                             <div class="card-body text-center">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
-                                    <div class="metric-value" id="metric-1-value">
-                                        <span class="text-muted">--</span>
-                                    </div>
+                                    <div class="metric-value" id="metric-1-value">-</div>
                                     <i class="bi bi-cash-stack metric-icon"></i>
                                 </div>
                                 <p class="metric-label">Presupuesto Total</p>
@@ -252,9 +233,7 @@
                         <div class="card metric-card">
                             <div class="card-body text-center">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
-                                    <div class="metric-value" id="metric-2-value">
-                                        <span class="text-muted">--</span>
-                                    </div>
+                                    <div class="metric-value" id="metric-2-value">-</div>
                                     <i class="bi bi-graph-up-arrow metric-icon"></i>
                                 </div>
                                 <p class="metric-label">Valor Ejecutado</p>
@@ -267,9 +246,7 @@
                         <div class="card metric-card">
                             <div class="card-body text-center">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
-                                    <div class="metric-value" id="metric-3-value">
-                                        <span class="text-muted">--</span>
-                                    </div>
+                                    <div class="metric-value" id="metric-3-value">-</div>
                                     <i class="bi bi-percent metric-icon"></i>
                                 </div>
                                 <p class="metric-label">% de Ejecución</p>
@@ -282,9 +259,7 @@
                         <div class="card metric-card">
                             <div class="card-body text-center">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
-                                    <div class="metric-value" id="metric-4-value">
-                                        <span class="text-muted">--</span>
-                                    </div>
+                                    <div class="metric-value" id="metric-4-value">-</div>
                                     <i class="bi bi-hourglass-split metric-icon"></i>
                                 </div>
                                 <p class="metric-label">Solicitudes Pendientes</p>
@@ -633,6 +608,7 @@
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
+
     <script>
         // ==========================================
         // CONFIGURACIÓN DEL MÓDULO PRESUPUESTO
@@ -726,7 +702,6 @@
         let userRoles = [];
         let currentBudgetYearId = null;
         let userEmail = null;
-        let metricsLoaded = false; // NUEVO: Bandera para controlar carga de métricas
         
         // ==========================================
         // INICIALIZACIÓN
@@ -846,15 +821,11 @@
                 configurarColoresModulo();
                 await cargarDatosUsuario();
                 await cargarBadges();
-                
-                // ⚠️ CAMBIO IMPORTANTE: NO cargar métricas automáticamente
-                // await cargarMetricas(); // ELIMINADO
-                
+                await cargarMetricas();
                 await configurarFunciones();
                 
                 ocultarLoading();
                 console.log(`✅ Módulo ${MODULE_CONFIG.name} inicializado correctamente`);
-                console.log(`ℹ️ Métricas disponibles para carga manual`);
                 
             } catch (error) {
                 console.error('❌ Error inicializando módulo:', error);
@@ -899,57 +870,41 @@
         // ==========================================
         // CARGA DE BADGES
         // ==========================================
-        // ==========================================
-        // CARGA DE BADGES - OPTIMIZADA
-        // ==========================================
         async function cargarBadges() {
             try {
                 const badgesContainer = document.getElementById('module-badges');
+                let badgesHtml = '';
                 
-                // Query ÚNICA combinada para obtener año presupuestal y nombre
-                const configData = await supabaseRequest('/system_config?select=current_budget_year_id,academic_years:current_budget_year_id(year_name)&limit=1');
+                // Obtener año presupuestal activo
+                const configData = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
                 
                 if (configData.length > 0 && configData[0].current_budget_year_id) {
                     currentBudgetYearId = configData[0].current_budget_year_id;
                     
-                    const yearName = configData[0].academic_years?.year_name;
+                    const yearData = await supabaseRequest(`/academic_years?select=year_name&year_id=eq.${currentBudgetYearId}`);
                     
-                    if (yearName) {
-                        badgesContainer.innerHTML = `
+                    if (yearData.length > 0) {
+                        badgesHtml = `
                             <span class="badge-module">
-                                Año Presupuestal: ${yearName}
+                                Año Presupuestal: ${yearData[0].year_name}
                             </span>
                         `;
                     }
                 }
                 
+                badgesContainer.innerHTML = badgesHtml;
                 console.log('✅ Badges contextuales cargados');
                 
             } catch (error) {
                 console.error('❌ Error cargando badges:', error);
-                // No mostrar error al usuario, solo en consola
             }
         }
-
-        
         
         // ==========================================
-        // 🆕 CARGA DIFERIDA DE MÉTRICAS - FUNCIÓN MANUAL
+        // CARGA DE MÉTRICAS
         // ==========================================
         async function cargarMetricas() {
-            // Evitar múltiples cargas
-            if (metricsLoaded) {
-                showMessage('Las métricas ya están cargadas', 'info');
-                return;
-            }
-            
-            const btnLoadMetrics = document.getElementById('btn-load-metrics');
-            
             try {
-                // Cambiar estado del botón
-                btnLoadMetrics.disabled = true;
-                btnLoadMetrics.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando...';
-                
                 console.log('📊 Cargando métricas según roles del usuario...');
                 
                 for (const metric of MODULE_CONFIG.metrics) {
@@ -974,34 +929,23 @@
                         const formattedValue = formatearValorMetrica(value, metric.format);
                         const elemento = document.getElementById(metric.id + '-value');
                         if (elemento) {
-                            elemento.innerHTML = formattedValue; // Usar innerHTML para reemplazar el span
+                            elemento.textContent = formattedValue;
                         }
                         
                     } catch (error) {
                         console.error(`❌ Error cargando métrica ${metric.id}:`, error);
                         const elemento = document.getElementById(metric.id + '-value');
                         if (elemento) {
-                            elemento.innerHTML = '<span class="text-danger">Error</span>';
+                            elemento.textContent = 'Error';
                         }
                     }
                 }
                 
                 reorganizarGridMetricas();
-                
-                metricsLoaded = true;
-                
-                // Actualizar botón a modo "Actualizar"
-                btnLoadMetrics.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Actualizar Métricas';
-                btnLoadMetrics.disabled = false;
-                
-                console.log('✅ Métricas cargadas exitosamente');
-                showMessage('Métricas cargadas correctamente', 'success');
+                console.log('✅ Métricas cargadas según roles');
                 
             } catch (error) {
                 console.error('❌ Error general cargando métricas:', error);
-                btnLoadMetrics.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error al cargar';
-                btnLoadMetrics.disabled = false;
-                showMessage('Error al cargar métricas: ' + error.message, 'danger');
             }
         }
         
@@ -1066,7 +1010,6 @@
                 return 0;
             }
         }
-        
         // ==========================================
         // VERIFICAR ACCESO A MÉTRICA
         // ==========================================
@@ -1102,17 +1045,17 @@
             try {
                 console.log('🔒 Configurando funciones según permisos...');
                 
-                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
-                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
-                
-                // PASO 2: Filtrar funciones basado en los permisos obtenidos
                 const functionCards = document.querySelectorAll('.function-card[data-permission]');
                 
                 for (const card of functionCards) {
                     const permission = card.getAttribute('data-permission');
                     
-                    if (permission && !userPermissions.includes(permission)) {
-                        card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
+                    if (permission) {
+                        const hasPermission = await checkUserPermission(currentUser.user_id, permission);
+                        
+                        if (!hasPermission) {
+                            card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
+                        }
                     }
                 }
                 
@@ -1122,47 +1065,6 @@
                 console.error('❌ Error configurando funciones:', error);
             }
         }
-
-         // ==========================================
-        // OBTENER TODOS LOS PERMISOS EN UNA QUERY
-        // ==========================================
-        async function obtenerTodosLosPermisosUsuario(userId) {
-            try {
-                // Verificar si es super admin primero
-                const isSuperAdmin = await checkUserIsSuperAdmin(userId);
-                if (isSuperAdmin) {
-                    // Super admin tiene todos los permisos del módulo
-                    return MODULE_CONFIG.modulePermissions;
-                }
-                
-                // Una sola query para obtener todos los permisos
-                const data = await supabaseRequest(`/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
-                
-                if (!data || data.length === 0) {
-                    return [];
-                }
-                
-                // Extraer todos los permisos en un array
-                const permissions = [];
-                data[0].user_roles?.forEach(userRole => {
-                    userRole.roles?.role_permissions?.forEach(rolePermission => {
-                        const permName = rolePermission.permissions?.permission_name;
-                        if (permName && !permissions.includes(permName)) {
-                            permissions.push(permName);
-                        }
-                    });
-                });
-                
-                return permissions;
-                
-            } catch (error) {
-                console.error('❌ Error obteniendo permisos:', error);
-                return [];
-            }
-        }
-        
-
-
         
         // ==========================================
         // UTILIDADES
@@ -1211,13 +1113,9 @@
             }
         }
         
-        // ==========================================
-        // HACER FUNCIÓN DISPONIBLE GLOBALMENTE
-        // ==========================================
-        window.cargarMetricas = cargarMetricas;
-        
         console.log(`🎉 Módulo de Presupuesto cargado correctamente`);
-        console.log(`📊 Métricas en modo carga diferida - usar botón "Cargar Métricas"`);
     </script>
 </body>
 </html>
+
+        
