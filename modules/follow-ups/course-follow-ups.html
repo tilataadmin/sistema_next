@@ -647,39 +647,34 @@
                     };
                 });
                 
-                const eaeData = await supabaseRequest(`/stm_eae_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI`);
+                // EJECUTAR TODAS LAS QUERIES EN PARALELO
+                const [eaeData, asuntosData, tareasData, docsData, estrategiasData] = await Promise.all([
+                    supabaseRequest(`/stm_eae_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI`),
+                    supabaseRequest(`/stm_students_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI&is_escalable=eq.SI`),
+                    supabaseRequest(`/tasks?select=student_id&student_id=in.(${studentIds.join(',')})&task_state=in.(Asignada,En proceso)`),
+                    supabaseRequest(`/stm_docs?select=student_id&student_id=in.(${studentIds.join(',')})`),
+                    supabaseRequest(`/stm_strategies?select=student_id&student_id=in.(${studentIds.join(',')})`)
+                ]);
+                
+                // Procesar resultados
                 eaeData.forEach(item => {
-                    if (conteos[item.student_id]) {
-                        conteos[item.student_id].eae++;
-                    }
+                    if (conteos[item.student_id]) conteos[item.student_id].eae++;
                 });
                 
-                const asuntosData = await supabaseRequest(`/stm_students_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI&is_escalable=eq.SI`);
                 asuntosData.forEach(item => {
-                    if (conteos[item.student_id]) {
-                        conteos[item.student_id].asuntos++;
-                    }
+                    if (conteos[item.student_id]) conteos[item.student_id].asuntos++;
                 });
                 
-                const tareasData = await supabaseRequest(`/tasks?select=student_id&student_id=in.(${studentIds.join(',')})&task_state=in.(Asignada,En proceso)`);
                 tareasData.forEach(item => {
-                    if (conteos[item.student_id]) {
-                        conteos[item.student_id].tareas++;
-                    }
+                    if (conteos[item.student_id]) conteos[item.student_id].tareas++;
                 });
                 
-                const docsData = await supabaseRequest(`/stm_docs?select=student_id&student_id=in.(${studentIds.join(',')})`);
                 docsData.forEach(item => {
-                    if (conteos[item.student_id]) {
-                        conteos[item.student_id].documentos++;
-                    }
+                    if (conteos[item.student_id]) conteos[item.student_id].documentos++;
                 });
                 
-                const estrategiasData = await supabaseRequest(`/stm_strategies?select=student_id&student_id=in.(${studentIds.join(',')})`);
                 estrategiasData.forEach(item => {
-                    if (conteos[item.student_id]) {
-                        conteos[item.student_id].estrategias++;
-                    }
+                    if (conteos[item.student_id]) conteos[item.student_id].estrategias++;
                 });
                 
                 return conteos;
@@ -691,55 +686,66 @@
         }
 
         async function cargarEstudiantes() {
-            const selectCurso = document.getElementById('selectCurso');
-            const courseId = selectCurso.value;
-            
-            if (modalTareasInstance) {
-                modalTareasInstance.dispose();
-                modalTareasInstance = null;
-            }
-            if (modalCrearTareaInstance) {
-                modalCrearTareaInstance.dispose();
-                modalCrearTareaInstance = null;
-            }
-            
-            ['modalTareas', 'modalCrearTarea', 'modalEAE', 'modalDocumentos', 'modalVincularDocumento', 'modalEstrategias', 'modalNuevaEstrategia'].forEach(modalId => {
-                const modal = document.getElementById(modalId);
-                if (modal) modal.remove();
-            });
-            
-            studentIdActual = null;
-            limpiarTabla();
-            
-            if (!courseId) {
-                return;
-            }
-            
-            try {
-                const mensajeCarga = document.getElementById('mensajeCarga');
-                mensajeCarga.style.display = 'block';
-                
-                const estudiantes = await supabaseRequest(`/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2&course_id=eq.${courseId}&order=student_first_name,student_last_name_1`);
-                
-                if (estudiantes.length === 0) {
-                    mensajeCarga.style.display = 'none';
-                    document.getElementById('noData').style.display = 'block';
-                    return;
-                }
-                
-                const studentIds = estudiantes.map(e => e.student_id);
-                const conteos = await obtenerConteosEstudiantes(studentIds);
-                
-                estudiantesData = estudiantes;
-                mostrarEstudiantesConConteos(estudiantes, conteos);
-                mensajeCarga.style.display = 'none';
-                
-            } catch (error) {
-                console.error('Error cargando estudiantes:', error);
-                document.getElementById('mensajeCarga').style.display = 'none';
-                showMessage('Error al cargar los estudiantes del curso', 'danger');
-            }
+    const selectCurso = document.getElementById('selectCurso');
+    const courseId = selectCurso.value;
+    
+    if (modalTareasInstance) {
+        modalTareasInstance.dispose();
+        modalTareasInstance = null;
+    }
+    if (modalCrearTareaInstance) {
+        modalCrearTareaInstance.dispose();
+        modalCrearTareaInstance = null;
+    }
+    
+    ['modalTareas', 'modalCrearTarea', 'modalEAE', 'modalDocumentos', 'modalVincularDocumento', 'modalEstrategias', 'modalNuevaEstrategia'].forEach(modalId => {
+        const modal = document.getElementById(modalId);
+        if (modal) modal.remove();
+    });
+    
+    studentIdActual = null;
+    limpiarTabla();
+    
+    if (!courseId) {
+        return;
+    }
+    
+    try {
+        const mensajeCarga = document.getElementById('mensajeCarga');
+        // CAMBIO: Agregar indicador de estado dinámico
+        mensajeCarga.innerHTML = `
+            <i class="bi bi-hourglass-split me-2"></i>
+            <span id="loadingStatus">Cargando estudiantes...</span>
+        `;
+        mensajeCarga.style.display = 'block';
+        
+        const estudiantes = await supabaseRequest(`/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2&course_id=eq.${courseId}&order=student_first_name,student_last_name_1`);
+        
+        if (estudiantes.length === 0) {
+            mensajeCarga.style.display = 'none';
+            document.getElementById('noData').style.display = 'block';
+            return;
         }
+        
+        // Actualizar estado
+        document.getElementById('loadingStatus').textContent = 'Calculando conteos...';
+        
+        const studentIds = estudiantes.map(e => e.student_id);
+        const conteos = await obtenerConteosEstudiantes(studentIds);
+        
+        // Actualizar estado
+        document.getElementById('loadingStatus').textContent = 'Cargando fotos...';
+        
+        estudiantesData = estudiantes;
+        await mostrarEstudiantesConConteos(estudiantes, conteos);
+        mensajeCarga.style.display = 'none';
+        
+    } catch (error) {
+        console.error('Error cargando estudiantes:', error);
+        document.getElementById('mensajeCarga').style.display = 'none';
+        showMessage('Error al cargar los estudiantes del curso', 'danger');
+    }
+}
 
         function limpiarTabla() {
             document.getElementById('tablaContainer').style.display = 'none';
@@ -747,71 +753,83 @@
             document.getElementById('tablaEstudiantes').innerHTML = '';
         }
 
-        async function mostrarEstudiantesConConteos(estudiantes, conteos) {
-            const tablaContainer = document.getElementById('tablaContainer');
-            const tablaEstudiantes = document.getElementById('tablaEstudiantes');
-            
-            const fragment = document.createDocumentFragment();
-            
-            for (const estudiante of estudiantes) {
-                const nombreCompleto = `${estudiante.student_first_name} ${estudiante.student_last_name_1}`;
-                const fotoUrl = await getStudentPhotoUrl(estudiante.student_code);
-                
-                const conteosEstudiante = conteos[estudiante.student_id] || {
-                    eae: 0, asuntos: 0, tareas: 0, documentos: 0, estrategias: 0
-                };
-                
-                const tr = document.createElement('tr');
-                
-                const tdFoto = document.createElement('td');
-                if (fotoUrl) {
-                    const img = document.createElement('img');
-                    img.src = fotoUrl;
-                    img.alt = `Foto de ${nombreCompleto}`;
-                    img.className = 'student-photo';
-                    img.onerror = function() {
-                        this.style.display = 'none';
-                        this.nextElementSibling.style.display = 'flex';
-                    };
-                    tdFoto.appendChild(img);
-                }
-                
-                const divPlaceholder = document.createElement('div');
-                divPlaceholder.style.cssText = 'display:none; width:50px; height:50px; border-radius:50%; background-color:#f8f9fa; border:2px solid #ddd; align-items:center; justify-content:center; font-size:20px; color:#6c757d;';
-                divPlaceholder.innerHTML = '<i class="bi bi-person"></i>';
-                tdFoto.appendChild(divPlaceholder);
-                tr.appendChild(tdFoto);
-                
-                const tdNombre = document.createElement('td');
-                tdNombre.className = 'student-name';
-                tdNombre.textContent = nombreCompleto;
-                tr.appendChild(tdNombre);
-                
-                const botones = [
-                    { clase: 'btn-eae', texto: 'E.A.E', conteo: conteosEstudiante.eae, funcion: () => abrirEAE(estudiante.student_id) },
-                    { clase: 'btn-asuntos', texto: 'Asuntos', conteo: conteosEstudiante.asuntos, funcion: () => abrirAsuntos(estudiante.student_id) },
-                    { clase: 'btn-tareas', texto: 'Tareas', conteo: conteosEstudiante.tareas, funcion: () => abrirTareas(estudiante.student_id) },
-                    { clase: 'btn-documentos', texto: 'Documentos', conteo: conteosEstudiante.documentos, funcion: () => abrirDocumentos(estudiante.student_id) },
-                    { clase: 'btn-estrategias', texto: 'Estrategias', conteo: conteosEstudiante.estrategias, funcion: () => abrirEstrategias(estudiante.student_id) }
-                ];
-                
-                botones.forEach(boton => {
-                    const td = document.createElement('td');
-                    const btn = document.createElement('button');
-                    btn.className = `action-btn ${boton.clase}`;
-                    btn.textContent = boton.texto + (boton.conteo > 0 ? ` (${boton.conteo})` : '');
-                    btn.onclick = boton.funcion;
-                    td.appendChild(btn);
-                    tr.appendChild(td);
-                });
-                
-                fragment.appendChild(tr);
-            }
-            
-            tablaEstudiantes.appendChild(fragment);
-            tablaContainer.style.display = 'block';
+            async function mostrarEstudiantesConConteos(estudiantes, conteos) {
+    const tablaContainer = document.getElementById('tablaContainer');
+    const tablaEstudiantes = document.getElementById('tablaEstudiantes');
+    
+    const fragment = document.createDocumentFragment();
+    
+    // OPTIMIZACIÓN: Obtener TODAS las URLs de fotos de una sola vez
+    const fotosPromises = estudiantes.map(e => getStudentPhotoUrl(e.student_code));
+    const fotosUrls = await Promise.all(fotosPromises);
+    
+    // Crear mapa de URLs por índice
+    const fotosMap = {};
+    estudiantes.forEach((estudiante, index) => {
+        fotosMap[estudiante.student_id] = fotosUrls[index];
+    });
+    
+    // Ahora crear las filas SIN await dentro del loop
+    estudiantes.forEach((estudiante, index) => {
+        const nombreCompleto = `${estudiante.student_first_name} ${estudiante.student_last_name_1}`;
+        const fotoUrl = fotosMap[estudiante.student_id]; // Ya está cargada
+        
+        const conteosEstudiante = conteos[estudiante.student_id] || {
+            eae: 0, asuntos: 0, tareas: 0, documentos: 0, estrategias: 0
+        };
+        
+        const tr = document.createElement('tr');
+        
+        const tdFoto = document.createElement('td');
+        if (fotoUrl) {
+            const img = document.createElement('img');
+            img.src = fotoUrl;
+            img.alt = `Foto de ${nombreCompleto}`;
+            img.className = 'student-photo';
+            img.onerror = function() {
+                this.style.display = 'none';
+                this.nextElementSibling.style.display = 'flex';
+            };
+            tdFoto.appendChild(img);
         }
+        
+        const divPlaceholder = document.createElement('div');
+        divPlaceholder.style.cssText = 'display:none; width:50px; height:50px; border-radius:50%; background-color:#f8f9fa; border:2px solid #ddd; align-items:center; justify-content:center; font-size:20px; color:#6c757d;';
+        divPlaceholder.innerHTML = '<i class="bi bi-person"></i>';
+        tdFoto.appendChild(divPlaceholder);
+        tr.appendChild(tdFoto);
+        
+        const tdNombre = document.createElement('td');
+        tdNombre.className = 'student-name';
+        tdNombre.textContent = nombreCompleto;
+        tr.appendChild(tdNombre);
+        
+        const botones = [
+            { clase: 'btn-eae', texto: 'E.A.E', conteo: conteosEstudiante.eae, funcion: () => abrirEAE(estudiante.student_id) },
+            { clase: 'btn-asuntos', texto: 'Asuntos', conteo: conteosEstudiante.asuntos, funcion: () => abrirAsuntos(estudiante.student_id) },
+            { clase: 'btn-tareas', texto: 'Tareas', conteo: conteosEstudiante.tareas, funcion: () => abrirTareas(estudiante.student_id) },
+            { clase: 'btn-documentos', texto: 'Documentos', conteo: conteosEstudiante.documentos, funcion: () => abrirDocumentos(estudiante.student_id) },
+            { clase: 'btn-estrategias', texto: 'Estrategias', conteo: conteosEstudiante.estrategias, funcion: () => abrirEstrategias(estudiante.student_id) }
+        ];
+        
+        botones.forEach(boton => {
+            const td = document.createElement('td');
+            const btn = document.createElement('button');
+            btn.className = `action-btn ${boton.clase}`;
+            btn.textContent = boton.texto + (boton.conteo > 0 ? ` (${boton.conteo})` : '');
+            btn.onclick = boton.funcion;
+            td.appendChild(btn);
+            tr.appendChild(td);
+        });
+        
+        fragment.appendChild(tr);
+    });
+    
+    tablaEstudiantes.appendChild(fragment);
+    tablaContainer.style.display = 'block';
+}
 
+        
             // ==========================================
         // MODAL DE ASUNTOS
         // ==========================================
