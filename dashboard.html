@@ -523,7 +523,6 @@
             console.log('🔐 Iniciando dashboard...');
             
             try {
-                mostrarLoading();
                 
                 // Verificar sesión
                 const session = getStoredSession();
@@ -544,13 +543,12 @@
                 // Cargar módulos según permisos
                 await cargarModulos();
                 
-                ocultarLoading();
                 console.log('✅ Dashboard inicializado correctamente');
                 
             } catch (error) {
                 console.error('❌ Error inicializando dashboard:', error);
                 showMessage('Error al cargar el dashboard: ' + error.message, 'danger');
-                ocultarLoading();
+               
             }
         });
 
@@ -716,45 +714,99 @@
         }
 
         // ==========================================
-        // CARGA DIFERIDA DE MÉTRICAS
-        // ==========================================
-        async function cargarMetricas() {
-            // Evitar múltiples cargas
-            if (metricsLoaded) {
-                showMessage('Las métricas ya están cargadas', 'info');
-                return;
-            }
-            
-            const btnLoadMetrics = document.getElementById('btn-load-metrics');
-            
+// CARGA DIFERIDA DE MÉTRICAS
+// ==========================================
+async function cargarMetricas() {
+    // Evitar múltiples cargas
+    if (metricsLoaded) {
+        showMessage('Las métricas ya están cargadas', 'info');
+        return;
+    }
+    
+    const btnLoadMetrics = document.getElementById('btn-load-metrics');
+    
+    try {
+        // Cambiar estado del botón
+        btnLoadMetrics.disabled = true;
+        btnLoadMetrics.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando...';
+        
+        console.log('📊 Cargando métricas según roles del usuario...');
+        
+        for (const metric of METRICS_CONFIG) {
             try {
-                // Cambiar estado del botón
-                btnLoadMetrics.disabled = true;
-                btnLoadMetrics.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando...';
+                // Verificar acceso a métrica
+                const tieneAccesoMetrica = verificarAccesoMetrica(metric, userRoles);
                 
-                console.log('📊 Cargando métricas según roles del usuario...');
+                if (!tieneAccesoMetrica) {
+                    console.log(`⏭️ Métrica ${metric.id} omitida - sin roles requeridos`);
+                    ocultarTarjetaMetrica(metric.id);
+                    continue;
+                }
                 
-                // ... TODO EL CÓDIGO DEL FOR LOOP SE MANTIENE IGUAL ...
+                let value = 0;
                 
-                reorganizarGridMetricas();
+                // Ejecutar query para obtener métrica
+                if (metric.query) {
+                    const data = await supabaseRequest(metric.query);
+                    
+                    // Si tiene customCount, contar registros únicos por el campo correcto
+                    if (metric.customCount && Array.isArray(data)) {
+                        // Determinar qué campo usar para contar
+                        let countField = 'worker_id'; // por defecto
+                        
+                        if (metric.id === 'metric-students') {
+                            countField = 'student_id';
+                        }
+                        
+                        const uniqueIds = [...new Set(data.map(item => item[countField]))];
+                        value = uniqueIds.length;
+                    }
+                    // Manejar respuesta con count
+                    else if (Array.isArray(data) && data.length > 0 && data[0].count !== undefined) {
+                        value = data[0].count;
+                    } else if (Array.isArray(data)) {
+                        value = data.length;
+                    } else {
+                        value = data || 0;
+                    }
+                }
                 
-                metricsLoaded = true;
-                
-                // Actualizar botón a modo "Actualizar"
-                btnLoadMetrics.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Actualizar Métricas';
-                btnLoadMetrics.disabled = false;
-                
-                console.log('✅ Métricas cargadas exitosamente');
-                showMessage('Métricas cargadas correctamente', 'success');
+                // Formatear y mostrar valor
+                const formattedValue = formatearValorMetrica(value, metric.format);
+                const elemento = document.getElementById(metric.id + '-value');
+                if (elemento) {
+                    elemento.innerHTML = formattedValue;
+                }
                 
             } catch (error) {
-                console.error('❌ Error general cargando métricas:', error);
-                btnLoadMetrics.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error al cargar';
-                btnLoadMetrics.disabled = false;
-                showMessage('Error al cargar métricas: ' + error.message, 'danger');
+                console.error(`❌ Error cargando métrica ${metric.id}:`, error);
+                const elemento = document.getElementById(metric.id + '-value');
+                if (elemento) {
+                    elemento.innerHTML = '<span class="text-danger">Error</span>';
+                }
             }
         }
+        
+        reorganizarGridMetricas();
+        
+        metricsLoaded = true;
+        
+        // Actualizar botón a modo "Actualizar"
+        btnLoadMetrics.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Actualizar Métricas';
+        btnLoadMetrics.disabled = false;
+        
+        console.log('✅ Métricas cargadas exitosamente');
+        showMessage('Métricas cargadas correctamente', 'success');
+        
+    } catch (error) {
+        console.error('❌ Error general cargando métricas:', error);
+        btnLoadMetrics.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Error al cargar';
+        btnLoadMetrics.disabled = false;
+        showMessage('Error al cargar métricas: ' + error.message, 'danger');
+    }
+}
 
+        
         
         
         // ==========================================
