@@ -170,10 +170,16 @@ const APP_CONFIG = {
             icon: 'bi-clipboard-check',
             path: '/modules/follow-ups/',
             status: 'planned'
-        }
+        },
 
-        
-        
+        {
+            id: 'admissions',
+            name: 'Admisiones',
+            description: 'Gestión de aspirantes y proceso de admisión',
+            icon: 'bi-person-plus-fill',
+            path: '/modules/admissions/',
+            status: 'active'
+        }       
     ],
     
     // Configuración de UI
@@ -700,7 +706,19 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/manage-unescalated-issues.html': 'Gestionar asuntos no escalados',
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
-    '/modules/follow-ups/general-queries.html': 'Consultas'
+    '/modules/follow-ups/general-queries.html': 'Consultas',
+    / Módulo Admisiones (Atraer y Atrapar)
+    '/modules/admissions/kindergartens.html': 'Jardines infantiles',
+    '/modules/admissions/process-states.html': 'Estados del proceso',
+    '/modules/admissions/loss-reasons.html': 'Razones de pérdida',
+    '/modules/admissions/process-steps.html': 'Pasos del proceso',
+    '/modules/admissions/fairs.html': 'Ferias de preescolares',
+    '/modules/admissions/applicants.html': 'Aspirantes',
+    '/modules/admissions/applicant-detail.html': 'Ficha individual del aspirante',
+    '/modules/admissions/applicant-steps.html': 'Gestión de pasos por aspirante',
+    '/modules/admissions/applicant-process.html': 'Vista de seguimiento del proceso',
+    '/modules/admissions/dashboard.html': 'Dashboard',
+    '/modules/admissions/reports.html': 'Reportes'
 };
 
 // Función principal de validación
