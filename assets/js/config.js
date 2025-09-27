@@ -707,7 +707,7 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
     '/modules/follow-ups/general-queries.html': 'Consultas',
-    / Módulo Admisiones (Atraer y Atrapar)
+    // Módulo Admisiones (Atraer y Atrapar)
     '/modules/admissions/kindergartens.html': 'Jardines infantiles',
     '/modules/admissions/process-states.html': 'Estados del proceso',
     '/modules/admissions/loss-reasons.html': 'Razones de pérdida',
