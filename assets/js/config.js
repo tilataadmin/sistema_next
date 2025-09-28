@@ -1049,6 +1049,8 @@ function toggleNotifications(enabled) {
     console.log('Notificaciones', enabled ? 'habilitadas' : 'deshabilitadas');
 }
 
+console.log('🟢 HOLA MUNDO desde config.js - Archivo cargado correctamente');
+
 // Hacer funciones disponibles globalmente
 window.sendNotification = sendNotification;
 window.notifyBudgetOverrun = notifyBudgetOverrun;
