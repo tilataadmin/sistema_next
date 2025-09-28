@@ -173,14 +173,13 @@ const APP_CONFIG = {
         },
 
         {
-            id: 'early-alerts',
-            name: 'Alertas Tempranas',
-            description: 'Sistema de alertas tempranas y seguimiento preventivo',
-            icon: 'bi-exclamation-triangle',
-            path: '/modules/early-alerts/',
+            id: 'admissions',
+            name: 'Admisiones',
+            description: 'Gestión de aspirantes y proceso de admisión',
+            icon: 'bi-person-plus-fill',
+            path: '/modules/admissions/',
             status: 'active'
-        }
-      
+        }       
     ],
     
     // Configuración de UI
@@ -708,12 +707,18 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
     '/modules/follow-ups/general-queries.html': 'Consultas',
-    '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',
-    '/modules/early-alerts/register-alerts.html': 'Registro de alertas',
-    '/modules/early-alerts/manage-alerts.html': 'Gestión de alertas tempranas',
-    '/modules/early-alerts/assigned-actions.html': 'Atender gestiones asignadas',
-    '/modules/early-alerts/alerts-dashboard.html': 'Tablero de control de alertas tempranas' 
-    
+    // Módulo Admisiones (Atraer y Atrapar)
+    '/modules/admissions/kindergartens.html': 'Jardines infantiles',
+    '/modules/admissions/process-states.html': 'Estados del proceso',
+    '/modules/admissions/loss-reasons.html': 'Razones de pérdida',
+    '/modules/admissions/process-steps.html': 'Pasos del proceso',
+    '/modules/admissions/fairs.html': 'Ferias de preescolares',
+    '/modules/admissions/applicants.html': 'Aspirantes',
+    '/modules/admissions/applicant-detail.html': 'Ficha individual del aspirante',
+    '/modules/admissions/applicant-steps.html': 'Gestión de pasos por aspirante',
+    '/modules/admissions/applicant-process.html': 'Vista de seguimiento del proceso',
+    '/modules/admissions/dashboard.html': 'Dashboard',
+    '/modules/admissions/reports.html': 'Reportes'
 };
 
 // Función principal de validación
@@ -775,7 +780,9 @@ function detectRequiredPermission() {
 }
 
 // Verificar si usuario tiene permiso específico
-// Verificar si usuario tiene permiso específico
+// ==========================================
+// VERIFICAR SI USUARIO TIENE PERMISO ESPECÍFICO - CORREGIDO
+// ==========================================
 async function checkUserPermission(userId, permissionName) {
     try {
         // Primero verificar si es super admin usando la relación correcta
@@ -822,7 +829,6 @@ async function checkUserPermission(userId, permissionName) {
         return false;
     }
 }
-
 // Mostrar página de acceso denegado
 function showAccessDenied(requiredPermission) {
     document.body.innerHTML = `
@@ -1042,6 +1048,8 @@ function toggleNotifications(enabled) {
     NOTIFICATION_CONFIG.enabled = enabled;
     console.log('Notificaciones', enabled ? 'habilitadas' : 'deshabilitadas');
 }
+
+console.log('🟢 HOLA MUNDO desde config.js - Archivo cargado correctamente');
 
 // Hacer funciones disponibles globalmente
 window.sendNotification = sendNotification;
