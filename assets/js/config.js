@@ -780,7 +780,9 @@ function detectRequiredPermission() {
 }
 
 // Verificar si usuario tiene permiso específico
-// Verificar si usuario tiene permiso específico
+// ==========================================
+// VERIFICAR SI USUARIO TIENE PERMISO ESPECÍFICO - CORREGIDO
+// ==========================================
 async function checkUserPermission(userId, permissionName) {
     try {
         // Primero verificar si es super admin usando la relación correcta
@@ -827,7 +829,6 @@ async function checkUserPermission(userId, permissionName) {
         return false;
     }
 }
-
 // Mostrar página de acceso denegado
 function showAccessDenied(requiredPermission) {
     document.body.innerHTML = `
