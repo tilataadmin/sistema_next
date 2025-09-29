@@ -473,8 +473,8 @@
                     <div id="mensajeCargaAsuntos" class="alert alert-info" style="display: none;">
                         <i class="bi bi-hourglass-split me-2"></i>Cargando asuntos del estudiante...
                     </div>
-
-                    <!-- Tabla de asuntos SOLO LECTURA - 3 columnas -->
+    
+                    <!-- Tabla de asuntos SOLO LECTURA - 4 columnas -->
                     <div id="tablaAsuntosContainer" style="display: none;">
                         <div class="table-responsive">
                             <table class="table table-sm">
@@ -482,6 +482,7 @@
                                     <tr>
                                         <th style="width: 150px;">Categoría</th>
                                         <th style="width: 120px;">Fecha</th>
+                                        <th style="width: 180px;">Registrado por</th>
                                         <th>Descripción</th>
                                     </tr>
                                 </thead>
@@ -491,7 +492,7 @@
                             </table>
                         </div>
                     </div>
-
+    
                     <!-- Mensaje cuando no hay asuntos -->
                     <div id="noDataAsuntos" class="no-data" style="display: none;">
                         <div class="alert alert-info">
@@ -505,8 +506,7 @@
                 </div>
             </div>
         </div>
-    </div>
-    
+    </div>    
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Config JS -->
@@ -866,7 +866,8 @@
                 document.getElementById('mensajeCargaAsuntos').style.display = 'block';
                 limpiarTablaAsuntos();
                 
-                const asuntos = await supabaseRequest(`/stm_students_topics?select=topic_id,student_id,topic_date,topic_description,is_escalable,is_open,stm_students_topics_categories(stm_category(category_name))&student_id=eq.${studentId}&is_open=eq.SI&is_escalable=eq.SI&order=topic_date.desc`);
+                // Query actualizada para incluir el email del trabajador
+                const asuntos = await supabaseRequest(`/stm_students_topics?select=topic_id,student_id,topic_date,topic_description,email,is_escalable,is_open,stm_students_topics_categories(stm_category(category_name))&student_id=eq.${studentId}&is_open=eq.SI&is_escalable=eq.SI&order=topic_date.desc`);
                 
                 document.getElementById('mensajeCargaAsuntos').style.display = 'none';
                 
@@ -875,12 +876,27 @@
                     return;
                 }
                 
+                // Obtener emails únicos para hacer una sola consulta a workers
+                const emailsUnicos = [...new Set(asuntos.map(a => a.email).filter(e => e))];
+                
+                // Consultar todos los trabajadores de una sola vez
+                const workers = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emailsUnicos.map(e => `"${e}"`).join(',')})`);
+                
+                // Crear mapa de email -> nombre completo
+                const workersMap = {};
+                workers.forEach(worker => {
+                    const nombreCompleto = `${worker.worker_first_name} ${worker.worker_last_name_1}${worker.worker_last_name_2 ? ' ' + worker.worker_last_name_2 : ''}`;
+                    workersMap[worker.email] = nombreCompleto;
+                });
+                
+                // Procesar asuntos con categorías
                 const asuntosConCategorias = {};
                 asuntos.forEach(asunto => {
                     if (!asuntosConCategorias[asunto.topic_id]) {
                         asuntosConCategorias[asunto.topic_id] = {
                             ...asunto,
-                            categorias: []
+                            categorias: [],
+                            trabajadorNombre: workersMap[asunto.email] || 'No especificado'
                         };
                     }
                     if (asunto.stm_students_topics_categories?.stm_category?.category_name) {
@@ -908,16 +924,25 @@
             asuntos.forEach(asunto => {
                 const tr = document.createElement('tr');
                 
+                // Columna: Categoría
                 const tdCategoria = document.createElement('td');
                 tdCategoria.className = 'categoria-cell';
                 tdCategoria.textContent = asunto.categorias.join(', ') || 'Sin categoría';
                 tr.appendChild(tdCategoria);
                 
+                // Columna: Fecha
                 const tdFecha = document.createElement('td');
                 tdFecha.className = 'fecha-cell';
                 tdFecha.textContent = formatDate(asunto.topic_date);
                 tr.appendChild(tdFecha);
                 
+                // Columna: Registrado por (NUEVA)
+                const tdTrabajador = document.createElement('td');
+                tdTrabajador.className = 'trabajador-cell';
+                tdTrabajador.textContent = asunto.trabajadorNombre || 'No especificado';
+                tr.appendChild(tdTrabajador);
+                
+                // Columna: Descripción
                 const tdDescripcion = document.createElement('td');
                 const divDescripcion = document.createElement('div');
                 divDescripcion.className = 'asunto-description-rich';
@@ -931,6 +956,7 @@
             tablaAsuntos.appendChild(fragment);
             tablaContainer.style.display = 'block';
         }
+
 
         // ==========================================
         // MODAL DE EAE
