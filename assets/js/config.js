@@ -724,7 +724,6 @@ const URL_PERMISSIONS = {
     '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',
     '/modules/early-alerts/register-alerts.html': 'Registro de alertas',
     '/modules/early-alerts/manage-alerts.html': 'Gestión de alertas tempranas',
-    '/modules/early-alerts/assigned-actions.html': 'Atender gestiones asignadas',
     '/modules/early-alerts/alerts-dashboard.html': 'Tablero de control de alertas tempranas',
     // Módulo Admisiones (Atraer y Atrapar)
     '/modules/admissions/kindergartens.html': 'Jardines infantiles',
