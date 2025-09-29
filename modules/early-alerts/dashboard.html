@@ -747,34 +747,34 @@
         }
 
         // ==========================================
-        // CARGAR DATOS DEL DASHBOARD
+        // CARGAR DATOS DEL DASHBOARD - CORREGIDO
         // ==========================================
         async function cargarDatosDashboard() {
             try {
                 console.log('📊 Cargando datos del dashboard...');
-
-                // Cargar métricas principales
+        
+                // Cargar métricas principales y datos en paralelo
                 await Promise.all([
                     cargarMetricasPrincipales(),
                     cargarTopCausas(),
                     cargarAlertasRecientes(),
-                    cargarEstadisticasTrabajadores()
-                ]);
-
-                // Cargar gráficos
-                await Promise.all([
+                    cargarEstadisticasTrabajadores(),
                     actualizarGraficoTendencia(),
                     actualizarGraficoSecciones(),
                     actualizarGraficoEvolucion()
                 ]);
-
-                console.log('✅ Datos del dashboard cargados');
-
+        
+                console.log('✅ Datos del dashboard cargados con datos reales');
+        
             } catch (error) {
                 console.error('❌ Error cargando datos del dashboard:', error);
                 throw error;
             }
         }
+
+
+
+        
       // ==========================================
         // CARGAR MÉTRICAS PRINCIPALES
         // ==========================================
@@ -1028,76 +1028,128 @@
         }
 
         // ==========================================
-        // ACTUALIZAR GRÁFICOS
+        // ACTUALIZAR GRÁFICO DE TENDENCIAS - DATOS REALES
         // ==========================================
         async function actualizarGraficoTendencia() {
             try {
                 const fechaFin = new Date();
                 const fechaInicio = new Date();
                 fechaInicio.setDate(fechaFin.getDate() - filtrosActuales.periodo);
-
-                // Generar datos por día
+        
+                // Generar etiquetas por semana
                 const labels = [];
                 const dataRed = [];
                 const dataYellow = [];
                 const dataGreen = [];
-
+        
+                // Crear intervalos semanales
                 for (let d = new Date(fechaInicio); d <= fechaFin; d.setDate(d.getDate() + 7)) {
-                    const fechaStr = d.toISOString().split('T')[0];
-                    labels.push(formatearFecha(fechaStr));
+                    const fechaInicioSemana = new Date(d);
+                    const fechaFinSemana = new Date(d);
+                    fechaFinSemana.setDate(fechaFinSemana.getDate() + 6);
                     
-                    // Aquí deberías hacer queries específicas por fecha y estado
-                    // Por simplicidad, usando datos de ejemplo
-                    dataRed.push(Math.floor(Math.random() * 10));
-                    dataYellow.push(Math.floor(Math.random() * 5));
-                    dataGreen.push(Math.floor(Math.random() * 3));
+                    const label = `${fechaInicioSemana.getDate()}/${fechaInicioSemana.getMonth() + 1}`;
+                    labels.push(label);
+        
+                    // Consultar datos reales para cada estado en esta semana
+                    const fechaInicioStr = fechaInicioSemana.toISOString();
+                    const fechaFinStr = fechaFinSemana.toISOString();
+        
+                    const [alertasRojas, alertasAmarillas, alertasVerdes] = await Promise.all([
+                        supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.red&created_at=gte.${fechaInicioStr}&created_at=lte.${fechaFinStr}`),
+                        supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.yellow&created_at=gte.${fechaInicioStr}&created_at=lte.${fechaFinStr}`),
+                        supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.green&created_at=gte.${fechaInicioStr}&created_at=lte.${fechaFinStr}`)
+                    ]);
+        
+                    dataRed.push(alertasRojas.length);
+                    dataYellow.push(alertasAmarillas.length);
+                    dataGreen.push(alertasVerdes.length);
                 }
-
+        
                 chartsInstances.tendencias.data.labels = labels;
                 chartsInstances.tendencias.data.datasets[0].data = dataRed;
                 chartsInstances.tendencias.data.datasets[1].data = dataYellow;
                 chartsInstances.tendencias.data.datasets[2].data = dataGreen;
                 chartsInstances.tendencias.update();
-
+        
             } catch (error) {
                 console.error('Error actualizando gráfico de tendencias:', error);
             }
         }
-
+        
+        // ==========================================
+        // ACTUALIZAR GRÁFICO DE SECCIONES - DATOS REALES
+        // ==========================================
         async function actualizarGraficoSecciones() {
             try {
                 if (!cacheData.secciones) return;
-
-                const labels = cacheData.secciones.map(s => s.section_name);
-                const data = await Promise.all(cacheData.secciones.map(async seccion => {
-                    // Aquí calcularías las alertas por sección
-                    return Math.floor(Math.random() * 20) + 1;
-                }));
-
+        
+                const fechaLimite = new Date();
+                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
+                const fechaLimiteStr = fechaLimite.toISOString();
+        
+                // Obtener todas las alertas del período
+                const todasLasAlertas = await supabaseRequest(`/early_alert_logs?select=family_code&created_at=gte.${fechaLimiteStr}`);
+        
+                const labels = [];
+                const data = [];
+        
+                for (const seccion of cacheData.secciones) {
+                    labels.push(seccion.section_name);
+                    
+                    // Filtrar alertas de esta sección
+                    const alertasSeccion = await filtrarAlertasPorSeccion(todasLasAlertas, seccion.section_id);
+                    data.push(alertasSeccion.length);
+                }
+        
                 chartsInstances.secciones.data.labels = labels;
                 chartsInstances.secciones.data.datasets[0].data = data;
                 chartsInstances.secciones.update();
-
+        
             } catch (error) {
                 console.error('Error actualizando gráfico de secciones:', error);
             }
         }
 
+        // ==========================================
+        // ACTUALIZAR GRÁFICO DE EVOLUCIÓN - DATOS REALES
+        // ==========================================
         async function actualizarGraficoEvolucion() {
             try {
-                // Datos de ejemplo para evolución de estados
-                const abiertas = [15, 8, 3];
-                const cerradas = [5, 12, 7];
-
+                const fechaLimite = new Date();
+                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
+                const fechaLimiteStr = fechaLimite.toISOString();
+        
+                // Consultar alertas abiertas y cerradas por estado
+                const [
+                    rojasAbiertas,
+                    rojasCerradas,
+                    amarillasAbiertas,
+                    amarillasCerradas,
+                    verdesAbiertas,
+                    verdesCerradas
+                ] = await Promise.all([
+                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.red&is_closed=eq.false&created_at=gte.${fechaLimiteStr}`),
+                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.red&is_closed=eq.true&created_at=gte.${fechaLimiteStr}`),
+                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.yellow&is_closed=eq.false&created_at=gte.${fechaLimiteStr}`),
+                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.yellow&is_closed=eq.true&created_at=gte.${fechaLimiteStr}`),
+                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.green&is_closed=eq.false&created_at=gte.${fechaLimiteStr}`),
+                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.green&is_closed=eq.true&created_at=gte.${fechaLimiteStr}`)
+                ]);
+        
+                const abiertas = [rojasAbiertas.length, amarillasAbiertas.length, verdesAbiertas.length];
+                const cerradas = [rojasCerradas.length, amarillasCerradas.length, verdesCerradas.length];
+        
                 chartsInstances.evolucion.data.datasets[0].data = abiertas;
                 chartsInstances.evolucion.data.datasets[1].data = cerradas;
                 chartsInstances.evolucion.update();
-
+        
             } catch (error) {
                 console.error('Error actualizando gráfico de evolución:', error);
             }
         }
 
+     
         // ==========================================
         // APLICAR FILTROS
         // ==========================================
