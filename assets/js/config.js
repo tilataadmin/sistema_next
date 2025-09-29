@@ -750,10 +750,10 @@ const URL_PERMISSIONS = {
     '/modules/tte/categories.html': 'Gestionar categorías TTE',
     '/modules/tte/priorities.html': 'Gestionar prioridades TTE',
     '/modules/tte/manage-requests.html': 'Gestionar solicitudes TTE',
+    '/modules/tte/respond-requests.html': 'Responder solicitudes TTE',
     '/modules/tte/dashboard.html': 'Dashboard TTE'
 };
-    
-// Función principal de validación
+
 // Función principal de validación
 async function validatePageAccess(requiredPermission = null) {
     try {
