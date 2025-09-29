@@ -188,6 +188,14 @@ const APP_CONFIG = {
             icon: 'bi-person-plus-fill',
             path: '/modules/admissions/',
             status: 'active'
+        },
+        {
+            id: 'tte',
+            name: 'Tilatá te Escucha',
+            description: 'Sistema de gestión de PQR y comunicación institucional',
+            icon: 'bi-chat-heart',
+            path: '/modules/tte/',
+            status: 'active'
         }       
     ],
     
@@ -414,12 +422,12 @@ function getModuleFolder(moduleName) {
         'Gestión de Estudiantes Nuevos': 'new-students',
         'Seguimientos': 'follow-ups',
         'Alertas Tempranas': 'early-alerts',
-        'Admisiones': 'admissions'
+        'Admisiones': 'admissions',
+        'Tilatá te Escucha': 'tte'
     };
     
     return moduleMap[moduleName] || moduleName.toLowerCase();
 }
-
 
 
 // Función para generar breadcrumbs consistentes
@@ -736,10 +744,16 @@ const URL_PERMISSIONS = {
     '/modules/admissions/applicant-steps.html': 'Gestión de pasos por aspirante',
     '/modules/admissions/applicant-process.html': 'Vista de seguimiento del proceso',
     '/modules/admissions/dashboard.html': 'Dashboard',
-    '/modules/admissions/reports.html': 'Reportes'
+    '/modules/admissions/reports.html': 'Reportes',
+    
+    // Módulo Tilatá te Escucha (TTE)
+    '/modules/tte/categories.html': 'Gestionar categorías TTE',
+    '/modules/tte/priorities.html': 'Gestionar prioridades TTE',
+    '/modules/tte/manage-requests.html': 'Gestionar solicitudes TTE',
+    '/modules/tte/respond-requests.html': 'Responder solicitudes TTE',
+    '/modules/tte/dashboard.html': 'Dashboard TTE'
 };
 
-// Función principal de validación
 // Función principal de validación
 async function validatePageAccess(requiredPermission = null) {
     try {
