@@ -173,6 +173,15 @@ const APP_CONFIG = {
         },
 
         {
+            id: 'early-alerts',
+            name: 'Alertas Tempranas',
+            description: 'Sistema de alertas tempranas familiares',
+            icon: 'bi-exclamation-triangle',
+            path: '/modules/early-alerts/',
+            status: 'active'
+        },
+
+        {
             id: 'admissions',
             name: 'Admisiones',
             description: 'Gestión de aspirantes y proceso de admisión',
@@ -395,19 +404,23 @@ function validateForm(formId, rules = {}) {
     return isValid;
 }
 
-
-// Función auxiliar para mapear nombres de módulos a carpetas
 function getModuleFolder(moduleName) {
     const moduleMap = {
         'Seguridad': 'security',
         'Configuración': 'config',
         'Talento Humano': 'hr',
         'Indicadores': 'indicators',
-        'Presupuesto': 'budget'
+        'Presupuesto': 'budget',
+        'Gestión de Estudiantes Nuevos': 'new-students',
+        'Seguimientos': 'follow-ups',
+        'Alertas Tempranas': 'early-alerts',
+        'Admisiones': 'admissions'
     };
     
     return moduleMap[moduleName] || moduleName.toLowerCase();
 }
+
+
 
 // Función para generar breadcrumbs consistentes
 function generateBreadcrumbs(moduleName, pageName) {
@@ -707,6 +720,12 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
     '/modules/follow-ups/general-queries.html': 'Consultas',
+    // Módulo Alertas Tempranas
+    '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',
+    '/modules/early-alerts/register-alerts.html': 'Registro de alertas',
+    '/modules/early-alerts/manage-alerts.html': 'Gestión de alertas tempranas',
+    '/modules/early-alerts/assigned-actions.html': 'Atender gestiones asignadas',
+    '/modules/early-alerts/alerts-dashboard.html': 'Tablero de control de alertas tempranas'
     // Módulo Admisiones (Atraer y Atrapar)
     '/modules/admissions/kindergartens.html': 'Jardines infantiles',
     '/modules/admissions/process-states.html': 'Estados del proceso',
