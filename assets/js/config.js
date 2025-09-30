@@ -763,13 +763,14 @@ const URL_PERMISSIONS = {
 
     // Módulo Encuestas (surveys)
     '/modules/surveys/scales.html': 'Gestionar escalas',
-    '/modules/surveys/masters.html': 'Crear encuestas',
-    '/modules/surveys/sections.html': 'Gestionar secciones',
-    '/modules/surveys/questions.html': 'Gestionar preguntas',
-    '/modules/surveys/applications.html': 'Gestionar aplicaciones',
-    '/modules/surveys/results.html': 'Ver resultados',
-    '/modules/surveys/comparison.html': 'Comparar aplicaciones',
-    '/modules/surveys/dashboard.html': 'Dashboard de encuestas',
+'/modules/surveys/masters.html': 'Crear encuestas',
+'/modules/surveys/master-segments.html': 'Asociar segmentaciones',
+'/modules/surveys/sections.html': 'Gestionar secciones',
+'/modules/surveys/questions.html': 'Gestionar preguntas',
+'/modules/surveys/applications.html': 'Gestionar aplicaciones',
+'/modules/surveys/results.html': 'Ver resultados',
+'/modules/surveys/comparison.html': 'Comparar aplicaciones',
+'/modules/surveys/dashboard.html': 'Dashboard de encuestas'
     // NOTA: respond.html NO está aquí porque es público
 };
 
