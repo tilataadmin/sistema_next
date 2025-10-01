@@ -667,7 +667,7 @@
                 ocultarLoading();
             }
         }
-        
+
         // ==========================================
         // CARGAR ESTRUCTURA DE LA ENCUESTA
         // ==========================================
@@ -675,8 +675,9 @@
             try {
                 console.log('📡 Cargando estructura de la encuesta...');
                 
+                // Cargar maestro con secciones, preguntas, escalas Y SEGMENTOS
                 const masterData = await supabaseRequest(
-                    `/survey_masters?select=*,survey_sections(*,survey_questions(*),survey_scales(*,survey_scale_options(*)))&survey_master_id=eq.${selectedApplication.survey_master_id}`
+                    `/survey_masters?select=*,survey_sections(*,survey_questions(*),survey_scales(*,survey_scale_options(*))),survey_master_segments(*,segments(segment_name,segment_options(*)))&survey_master_id=eq.${selectedApplication.survey_master_id}`
                 );
                 
                 if (!masterData || masterData.length === 0) {
@@ -698,6 +699,7 @@
                 });
                 
                 console.log('✅ Estructura cargada:', surveyMaster.survey_name);
+                console.log('✅ Segmentos configurados:', surveyMaster.survey_master_segments?.length || 0);
                 
             } catch (error) {
                 console.error('❌ Error cargando estructura:', error);
@@ -705,6 +707,8 @@
             }
         }
 
+        
+        
         // ==========================================
         // CARGAR PERFILES Y RESPUESTAS
         // ==========================================
@@ -739,55 +743,51 @@
         // ANALIZAR SEGMENTOS DISPONIBLES
         // ==========================================
         function analyzeAvailableSegments() {
-            console.log('🔍 Analizando segmentos disponibles...');
+            console.log('🔍 Analizando segmentos configurados para esta encuesta...');
             
             availableSegments = {};
             
-            // Mapeo de campos con sus etiquetas
-            const segmentFieldsMap = {
-                'student_course_name': 'Curso',
-                'student_gender': 'Género',
-                'family_children_courses': 'Cursos de los Hijos',
-                'family_parent_type': 'Tipo (Padre/Madre)',
-                'family_age_range': 'Rango de Edad',
-                'worker_area': 'Área',
-                'worker_role': 'Rol/Cargo',
-                'worker_age_range': 'Rango de Edad',
-                'worker_gender': 'Género'
-            };
+            // Obtener segmentos configurados desde survey_master_segments
+            const configuredSegments = surveyMaster.survey_master_segments || [];
             
-            allProfiles.forEach(profile => {
-                Object.entries(segmentFieldsMap).forEach(([field, label]) => {
-                    const value = profile[field];
-                    
-                    if (value !== null && value !== undefined && value !== '') {
-                        if (!availableSegments[field]) {
-                            availableSegments[field] = {
-                                label: label,
-                                values: new Set()
-                            };
-                        }
-                        
-                        if (Array.isArray(value)) {
-                            value.forEach(v => {
-                                if (v) availableSegments[field].values.add(v);
-                            });
-                        } else {
-                            availableSegments[field].values.add(value);
+            if (configuredSegments.length === 0) {
+                console.log('ℹ️ Esta encuesta no tiene segmentos configurados');
+                return;
+            }
+            
+            console.log('📊 Segmentos configurados:', configuredSegments.map(s => s.segments.segment_name));
+            
+            // Para cada segmento configurado, extraer valores del segment_data
+            configuredSegments.forEach(segmentAssignment => {
+                const segment = segmentAssignment.segments;
+                const segmentId = segment.segment_id;
+                const segmentName = segment.segment_name;
+                
+                availableSegments[segmentId] = {
+                    label: segmentName,
+                    values: new Set(),
+                    options: segment.segment_options || []
+                };
+                
+                // Extraer valores de segment_data de todos los perfiles
+                allProfiles.forEach(profile => {
+                    if (profile.segment_data && profile.segment_data[segmentId]) {
+                        const value = profile.segment_data[segmentId];
+                        if (value) {
+                            availableSegments[segmentId].values.add(value);
                         }
                     }
                 });
+                
+                // Convertir Set a Array
+                availableSegments[segmentId].values = Array.from(availableSegments[segmentId].values).sort();
             });
             
-            // Convertir Sets a Arrays
-            Object.keys(availableSegments).forEach(field => {
-                availableSegments[field].values = Array.from(availableSegments[field].values).sort();
-            });
-            
-            console.log('✅ Segmentos encontrados:', Object.keys(availableSegments));
+            console.log('✅ Segmentos analizados:', Object.keys(availableSegments).length);
             console.log('📊 Detalle:', availableSegments);
         }
 
+        
         
         
          
@@ -809,20 +809,17 @@
             
             return labels[field] || field;
         }
-        
-        // ==========================================
-        // APLICAR FILTROS
-        // ==========================================
+
         function applyFilters() {
             try {
                 console.log('🔍 Aplicando filtros...');
                 
                 activeFilters = {};
                 
-                Object.keys(availableSegments).forEach(field => {
-                    const select = document.getElementById(`filter_${field}`);
+                Object.keys(availableSegments).forEach(segmentId => {
+                    const select = document.getElementById(`filter_${segmentId}`);
                     if (select && select.value) {
-                        activeFilters[field] = select.value;
+                        activeFilters[segmentId] = select.value;
                     }
                 });
                 
@@ -830,26 +827,22 @@
                     filteredProfiles = [...allProfiles];
                 } else {
                     filteredProfiles = allProfiles.filter(profile => {
-                        return Object.entries(activeFilters).every(([field, value]) => {
-                            const profileValue = profile[field];
-                            
-                            if (Array.isArray(profileValue)) {
-                                return profileValue.includes(value);
+                        return Object.entries(activeFilters).every(([segmentId, value]) => {
+                            // Buscar en segment_data
+                            if (profile.segment_data && profile.segment_data[segmentId]) {
+                                return profile.segment_data[segmentId] === value;
                             }
-                            
-                            return profileValue === value;
+                            return false;
                         });
                     });
                 }
                 
                 console.log(`✅ ${filteredProfiles.length} respuestas después de filtrar`);
                 
-                // Actualizar UI
                 updateActiveFiltersIndicator();
                 renderStats();
                 renderResults();
                 
-                // Mostrar botón de vista comparativa si hay filtros
                 const hasFilters = Object.keys(activeFilters).length > 0;
                 document.getElementById('viewModeSelector').style.display = hasFilters ? 'block' : 'none';
                 
@@ -864,6 +857,7 @@
                 showMessage('Error al aplicar filtros: ' + error.message, 'danger');
             }
         }
+        
         
         // ==========================================
         // LIMPIAR FILTROS
