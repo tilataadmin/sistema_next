@@ -711,9 +711,6 @@ const URL_PERMISSIONS = {
     '/modules/budget/budget-overview.html': 'Vista particular del presupuesto',
     '/modules/budget/budget-queries.html': 'Consultas de presupuesto',
 
-    // Agregar estas líneas al objeto URL_PERMISSIONS en config.js
-    // Después de los permisos de Presupuesto y antes del cierre del objeto
-
     // Módulo Gestión de estudiantes nuevos
     '/modules/new-students/activities.html': 'Actividades',
     '/modules/new-students/actors.html': 'Actores', 
@@ -763,14 +760,14 @@ const URL_PERMISSIONS = {
 
     // Módulo Encuestas (surveys)
     '/modules/surveys/scales.html': 'Gestionar escalas',
-'/modules/surveys/masters.html': 'Crear encuestas',
-'/modules/surveys/master-segments.html': 'Asociar segmentaciones',
-'/modules/surveys/sections.html': 'Gestionar secciones',
-'/modules/surveys/questions.html': 'Gestionar preguntas',
-'/modules/surveys/applications.html': 'Gestionar aplicaciones',
-'/modules/surveys/results.html': 'Ver resultados',
-'/modules/surveys/comparison.html': 'Comparar aplicaciones',
-'/modules/surveys/dashboard.html': 'Dashboard de encuestas'
+    '/modules/surveys/masters.html': 'Crear encuestas',
+    '/modules/surveys/master-segments.html': 'Asociar segmentaciones',
+    '/modules/surveys/sections.html': 'Gestionar secciones',
+    '/modules/surveys/questions.html': 'Gestionar preguntas',
+    '/modules/surveys/applications.html': 'Gestionar aplicaciones',
+    '/modules/surveys/results.html': 'Ver resultados',
+    '/modules/surveys/comparison.html': 'Comparar aplicaciones',
+    '/modules/surveys/dashboard.html': 'Dashboard de encuestas'
     // NOTA: respond.html NO está aquí porque es público
 };
 
