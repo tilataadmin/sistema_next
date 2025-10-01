@@ -762,7 +762,7 @@ const URL_PERMISSIONS = {
     '/modules/surveys/scales.html': 'Gestionar escalas',
     '/modules/surveys/masters.html': 'Crear encuestas',
     '/modules/surveys/master-segments.html': 'Asociar segmentaciones',
-    '/modules/surveys/sections.html': 'Gestionar secciones',
+    '/modules/surveys/sections.html': 'Gestionar secciones de encuestas',
     '/modules/surveys/questions.html': 'Gestionar preguntas',
     '/modules/surveys/applications.html': 'Gestionar aplicaciones',
     '/modules/surveys/results.html': 'Ver resultados',
