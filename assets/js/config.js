@@ -431,7 +431,8 @@ function getModuleFolder(moduleName) {
         'Seguimientos': 'follow-ups',
         'Alertas Tempranas': 'early-alerts',
         'Admisiones': 'admissions',
-        'Tilatá te Escucha': 'tte'
+        'Tilatá te Escucha': 'tte',
+        'Encuestas': 'surveys'
     };
     
     return moduleMap[moduleName] || moduleName.toLowerCase();
@@ -642,12 +643,6 @@ function getStoredSession() {
 // ==========================================
 
 // Mapeo de URLs a permisos requeridos
-// ==========================================
-// SISTEMA DE VALIDACIÓN DE PERMISOS POR URL
-// ==========================================
-
-// Mapeo de URLs a permisos requeridos
-// Mapeo de URLs a permisos requeridos
 const URL_PERMISSIONS = {
     // Módulo Seguridad
     '/modules/security/users.html': 'Gestión de usuarios',
@@ -733,11 +728,13 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
     '/modules/follow-ups/general-queries.html': 'Consultas',
+
     // Módulo Alertas Tempranas
     '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',
     '/modules/early-alerts/register-alerts.html': 'Registro de alertas',
     '/modules/early-alerts/manage-alerts.html': 'Gestión de alertas tempranas',
     '/modules/early-alerts/alerts-dashboard.html': 'Tablero de control de alertas tempranas',
+    
     // Módulo Admisiones (Atraer y Atrapar)
     '/modules/admissions/kindergartens.html': 'Jardines infantiles',
     '/modules/admissions/process-states.html': 'Estados del proceso',
