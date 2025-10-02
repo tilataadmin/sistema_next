@@ -649,8 +649,10 @@
                 
                 // EJECUTAR TODAS LAS QUERIES EN PARALELO
                 const [eaeData, asuntosData, tareasData, docsData, estrategiasData] = await Promise.all([
-                    supabaseRequest(`/stm_eae_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI`),
-                    supabaseRequest(`/stm_students_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI&is_escalable=eq.SI`),
+                    // CAMBIO CRÍTICO: Ahora cuenta desde stm_students_topics con is_eae=true
+                    supabaseRequest(`/stm_students_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI&is_eae=eq.true`),
+                    // CAMBIO CRÍTICO: Ahora filtra is_eae=false para asuntos normales
+                    supabaseRequest(`/stm_students_topics?select=student_id&student_id=in.(${studentIds.join(',')})&is_open=eq.SI&is_escalable=eq.SI&or=(is_eae.eq.false,is_eae.is.null)`),
                     supabaseRequest(`/tasks?select=student_id&student_id=in.(${studentIds.join(',')})&task_state=in.(Asignada,En proceso)`),
                     supabaseRequest(`/stm_docs?select=student_id&student_id=in.(${studentIds.join(',')})`),
                     supabaseRequest(`/stm_strategies?select=student_id&student_id=in.(${studentIds.join(',')})`)
@@ -866,8 +868,8 @@
                 document.getElementById('mensajeCargaAsuntos').style.display = 'block';
                 limpiarTablaAsuntos();
                 
-                // Query actualizada para incluir el email del trabajador
-                const asuntos = await supabaseRequest(`/stm_students_topics?select=topic_id,student_id,topic_date,topic_description,email,is_escalable,is_open,stm_students_topics_categories(stm_category(category_name))&student_id=eq.${studentId}&is_open=eq.SI&is_escalable=eq.SI&order=topic_date.desc`);
+                // CAMBIO CRÍTICO: Ahora filtra asuntos NO EAE (is_eae=false o null)
+                const asuntos = await supabaseRequest(`/stm_students_topics?select=topic_id,student_id,topic_date,topic_description,email,is_escalable,is_open,stm_students_topics_categories(stm_category(category_name))&student_id=eq.${studentId}&is_open=eq.SI&is_escalable=eq.SI&or=(is_eae.eq.false,is_eae.is.null)&order=topic_date.desc`);
                 
                 document.getElementById('mensajeCargaAsuntos').style.display = 'none';
                 
@@ -915,6 +917,7 @@
             }
         }
 
+        
         function mostrarAsuntos(asuntos) {
             const tablaContainer = document.getElementById('tablaAsuntosContainer');
             const tablaAsuntos = document.getElementById('tablaAsuntos');
@@ -986,10 +989,10 @@
                                         <table class="table table-sm">
                                             <thead class="table-light">
                                                 <tr>
+                                                    <th style="width: 150px;">Categoría</th>
                                                     <th style="width: 120px;">Fecha</th>
-                                                    <th style="width: 220px;">Apoyo</th>
-                                                    <th style="width: 220px;">Acciones</th>
-                                                    <th>Recomendaciones</th>
+                                                    <th style="width: 180px;">Registrado por</th>
+                                                    <th>Descripción</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="tablaEAE"></tbody>
@@ -1025,8 +1028,12 @@
         async function cargarAsuntosEAE(studentId) {
             try {
                 document.getElementById('mensajeCargaEAE').style.display = 'block';
+                document.getElementById('tablaEAEContainer').style.display = 'none';
+                document.getElementById('noDataEAE').style.display = 'none';
+                document.getElementById('tablaEAE').innerHTML = '';
                 
-                const asuntosEAE = await supabaseRequest(`/stm_eae_topics?select=eae_topic_id,student_id,topic_date,topic_description,supports,actions,recommendations,followup,topic_conclusion,topic_strategy,is_open&student_id=eq.${studentId}&is_open=eq.SI&order=topic_date.desc`);
+                // CAMBIO CRÍTICO: Ahora consulta stm_students_topics con is_eae=true
+                const asuntosEAE = await supabaseRequest(`/stm_students_topics?select=topic_id,student_id,topic_date,topic_description,email,is_eae,is_open,stm_students_topics_categories(stm_category(category_name))&student_id=eq.${studentId}&is_open=eq.SI&is_eae=eq.true&order=topic_date.desc`);
                 
                 document.getElementById('mensajeCargaEAE').style.display = 'none';
                 
@@ -1035,7 +1042,37 @@
                     return;
                 }
                 
-                mostrarAsuntosEAE(asuntosEAE);
+                // Obtener emails únicos para hacer una sola consulta a workers
+                const emailsUnicos = [...new Set(asuntosEAE.map(a => a.email).filter(e => e))];
+                
+                // Consultar todos los trabajadores de una sola vez
+                const workers = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emailsUnicos.map(e => `"${e}"`).join(',')})`);
+                
+                // Crear mapa de email -> nombre completo
+                const workersMap = {};
+                workers.forEach(worker => {
+                    const nombreCompleto = `${worker.worker_first_name} ${worker.worker_last_name_1}${worker.worker_last_name_2 ? ' ' + worker.worker_last_name_2 : ''}`;
+                    workersMap[worker.email] = nombreCompleto;
+                });
+                
+                // Procesar asuntos con categorías
+                const asuntosConCategorias = {};
+                asuntosEAE.forEach(asunto => {
+                    if (!asuntosConCategorias[asunto.topic_id]) {
+                        asuntosConCategorias[asunto.topic_id] = {
+                            ...asunto,
+                            categorias: [],
+                            trabajadorNombre: workersMap[asunto.email] || 'No especificado'
+                        };
+                    }
+                    if (asunto.stm_students_topics_categories?.stm_category?.category_name) {
+                        asuntosConCategorias[asunto.topic_id].categorias.push(
+                            asunto.stm_students_topics_categories.stm_category.category_name
+                        );
+                    }
+                });
+                
+                mostrarAsuntosEAE(Object.values(asuntosConCategorias));
                 
             } catch (error) {
                 document.getElementById('mensajeCargaEAE').style.display = 'none';
@@ -1051,31 +1088,31 @@
             asuntosEAE.forEach(asuntoEAE => {
                 const tr = document.createElement('tr');
                 
+                // Columna: Categoría
+                const tdCategoria = document.createElement('td');
+                tdCategoria.className = 'categoria-cell';
+                tdCategoria.textContent = asuntoEAE.categorias.join(', ') || 'Sin categoría';
+                tr.appendChild(tdCategoria);
+                
+                // Columna: Fecha
                 const tdFecha = document.createElement('td');
                 tdFecha.className = 'fecha-cell';
                 tdFecha.textContent = formatDate(asuntoEAE.topic_date);
                 tr.appendChild(tdFecha);
                 
-                const tdApoyo = document.createElement('td');
-                const divApoyo = document.createElement('div');
-                divApoyo.className = 'asunto-description';
-                divApoyo.textContent = asuntoEAE.supports || '';
-                tdApoyo.appendChild(divApoyo);
-                tr.appendChild(tdApoyo);
+                // Columna: Registrado por
+                const tdTrabajador = document.createElement('td');
+                tdTrabajador.className = 'trabajador-cell';
+                tdTrabajador.textContent = asuntoEAE.trabajadorNombre || 'No especificado';
+                tr.appendChild(tdTrabajador);
                 
-                const tdAcciones = document.createElement('td');
-                const divAcciones = document.createElement('div');
-                divAcciones.className = 'asunto-description';
-                divAcciones.textContent = asuntoEAE.actions || '';
-                tdAcciones.appendChild(divAcciones);
-                tr.appendChild(tdAcciones);
-                
-                const tdRecomendaciones = document.createElement('td');
-                const divRecomendaciones = document.createElement('div');
-                divRecomendaciones.className = 'asunto-description';
-                divRecomendaciones.textContent = asuntoEAE.recommendations || '';
-                tdRecomendaciones.appendChild(divRecomendaciones);
-                tr.appendChild(tdRecomendaciones);
+                // Columna: Descripción
+                const tdDescripcion = document.createElement('td');
+                const divDescripcion = document.createElement('div');
+                divDescripcion.className = 'asunto-description-rich';
+                divDescripcion.innerHTML = asuntoEAE.topic_description || '<em>Sin descripción</em>';
+                tdDescripcion.appendChild(divDescripcion);
+                tr.appendChild(tdDescripcion);
                 
                 fragment.appendChild(tr);
             });
@@ -1084,6 +1121,7 @@
             document.getElementById('tablaEAEContainer').style.display = 'block';
         }
 
+      
         // ==========================================
         // MODAL DE TAREAS
         // ==========================================
