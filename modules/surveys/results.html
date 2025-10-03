@@ -1913,9 +1913,9 @@
             
             return container;
         }
-        
+
         // ==========================================
-        // RENDERIZAR PREGUNTA ABIERTA
+        // RENDERIZAR PREGUNTA ABIERTA CON ANÁLISIS
         // ==========================================
         function renderOpenQuestionGlobal(question) {
             const container = document.createElement('div');
@@ -1936,13 +1936,118 @@
                 return container;
             }
             
+            // Analizar palabras clave
+            const texts = responses.map(r => r.text);
+            const frequencies = countWordFrequencies(texts);
+            const topWords = getTopWords(frequencies, 20);
+            const sentimentStats = getSentimentStats(responses);
+            
+            // Panel de análisis (colapsable)
+            const analysisPanel = document.createElement('div');
+            analysisPanel.className = 'card border-info mb-3';
+            analysisPanel.innerHTML = `
+                <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center" 
+                     style="cursor: pointer;"
+                     onclick="toggleAnalysisPanel('${question.question_id}')">
+                    <div>
+                        <i class="bi bi-bar-chart-line me-2"></i>
+                        <strong>Análisis de Palabras Clave</strong>
+                        <span class="badge bg-info ms-2">${topWords.length} palabras principales</span>
+                    </div>
+                    <i class="bi bi-chevron-down" id="chevron_${question.question_id}"></i>
+                </div>
+                <div class="collapse" id="analysis_${question.question_id}">
+                    <div class="card-body">
+                        <!-- Indicadores de sentimiento -->
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <h6 class="text-muted mb-2">
+                                    <i class="bi bi-emoji-smile me-1"></i>Análisis de Sentimiento
+                                </h6>
+                                <div class="d-flex gap-3">
+                                    <div class="d-flex align-items-center">
+                                        <span class="badge bg-success me-2" style="width: 60px;">
+                                            ${sentimentStats.positive}
+                                        </span>
+                                        <small class="text-muted">Positivas</small>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <span class="badge bg-secondary me-2" style="width: 60px;">
+                                            ${sentimentStats.neutral}
+                                        </span>
+                                        <small class="text-muted">Neutrales</small>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <span class="badge bg-danger me-2" style="width: 60px;">
+                                            ${sentimentStats.negative}
+                                        </span>
+                                        <small class="text-muted">Negativas</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <!-- Búsqueda rápida -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-search me-1"></i>Buscar en respuestas
+                            </label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="search_${question.question_id}"
+                                   placeholder="Escribe una palabra para buscar..."
+                                   onkeyup="searchInResponses('${question.question_id}')">
+                        </div>
+                        
+                        <!-- Palabras clave -->
+                        <div class="mb-3">
+                            <h6 class="text-muted mb-2">
+                                <i class="bi bi-tag me-1"></i>Palabras más frecuentes
+                            </h6>
+                            <div id="keywords_${question.question_id}" class="d-flex flex-wrap gap-2">
+                                ${renderKeywordBadges(topWords, question.question_id)}
+                            </div>
+                        </div>
+                        
+                        <!-- Indicador de filtro activo -->
+                        <div id="filter_indicator_${question.question_id}" 
+                             class="alert alert-warning" 
+                             style="display: none;">
+                            <i class="bi bi-funnel me-2"></i>
+                            Mostrando respuestas que contienen: 
+                            <strong id="filter_word_${question.question_id}"></strong>
+                            <button class="btn btn-sm btn-outline-warning ms-2" 
+                                    onclick="clearResponseFilter('${question.question_id}')">
+                                <i class="bi bi-x"></i> Limpiar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(analysisPanel);
+            
+            // Título de respuestas
             const titleDiv = document.createElement('div');
-            titleDiv.className = 'mt-3 mb-2 fw-bold';
-            titleDiv.textContent = `${responses.length} respuestas recibidas:`;
+            titleDiv.className = 'mt-3 mb-2 d-flex justify-content-between align-items-center';
+            titleDiv.innerHTML = `
+                <div class="fw-bold">
+                    <span id="response_count_${question.question_id}">${responses.length}</span> 
+                    respuestas recibidas
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" 
+                        onclick="exportResponses('${question.question_id}')">
+                    <i class="bi bi-download me-1"></i>Exportar
+                </button>
+            `;
             container.appendChild(titleDiv);
             
+            // Tabla de respuestas
             const table = document.createElement('table');
             table.className = 'open-responses-table';
+            table.id = `responses_table_${question.question_id}`;
             table.innerHTML = `
                 <thead>
                     <tr>
@@ -1954,9 +2059,11 @@
             `;
             
             const tbody = document.createElement('tbody');
+            tbody.id = `responses_body_${question.question_id}`;
             
             responses.forEach((response, index) => {
                 const row = document.createElement('tr');
+                row.className = 'response-row';
                 row.innerHTML = `
                     <td class="response-number">#${index + 1}</td>
                     <td class="response-text">${escapeHtml(response.text)}</td>
@@ -1968,9 +2075,125 @@
             table.appendChild(tbody);
             container.appendChild(table);
             
+            // Guardar respuestas en el DOM para búsqueda
+            container.dataset.responses = JSON.stringify(responses);
+            container.dataset.questionId = question.question_id;
+            
             return container;
         }
         
+        /**
+         * Renderizar badges de palabras clave
+         */
+        function renderKeywordBadges(topWords, questionId) {
+            if (topWords.length === 0) {
+                return '<span class="text-muted">No hay palabras frecuentes</span>';
+            }
+            
+            // Calcular tamaño de badge según frecuencia
+            const maxCount = topWords[0].count;
+            
+            return topWords.map(item => {
+                const size = item.count === maxCount ? 'fs-6' : 
+                             item.count >= maxCount * 0.7 ? 'fs-7' : 'fs-8';
+                
+                return `
+                    <button class="btn btn-outline-primary btn-sm keyword-badge ${size}"
+                            onclick="filterByKeyword('${questionId}', '${item.word}')"
+                            title="Aparece ${item.count} veces">
+                        ${escapeHtml(item.word)}
+                        <span class="badge bg-primary ms-1">${item.count}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+        
+        /**
+         * Toggle del panel de análisis
+         */
+        function toggleAnalysisPanel(questionId) {
+            const panel = document.getElementById(`analysis_${questionId}`);
+            const chevron = document.getElementById(`chevron_${questionId}`);
+            
+            if (panel.classList.contains('show')) {
+                panel.classList.remove('show');
+                chevron.classList.remove('bi-chevron-up');
+                chevron.classList.add('bi-chevron-down');
+            } else {
+                panel.classList.add('show');
+                chevron.classList.remove('bi-chevron-down');
+                chevron.classList.add('bi-chevron-up');
+            }
+        }
+        
+        /**
+         * Filtrar respuestas por palabra clave
+         */
+        function filterByKeyword(questionId, keyword) {
+            const container = document.querySelector(`[data-question-id="${questionId}"]`);
+            if (!container) return;
+            
+            const responses = JSON.parse(container.dataset.responses);
+            const matchingResponses = findResponsesWithKeyword(responses, keyword);
+            
+            // Actualizar tabla
+            const tbody = document.getElementById(`responses_body_${questionId}`);
+            tbody.innerHTML = '';
+            
+            matchingResponses.forEach((response, index) => {
+                const row = document.createElement('tr');
+                row.className = 'response-row';
+                row.innerHTML = `
+                    <td class="response-number">#${index + 1}</td>
+                    <td class="response-text">${highlightKeyword(response.text, keyword)}</td>
+                    <td class="response-date">${formatDate(response.date)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            // Mostrar indicador de filtro
+            document.getElementById(`filter_indicator_${questionId}`).style.display = 'block';
+            document.getElementById(`filter_word_${questionId}`).textContent = keyword;
+            document.getElementById(`response_count_${questionId}`).textContent = matchingResponses.length;
+        }
+        
+        /**
+         * Limpiar filtro de respuestas
+         */
+        function clearResponseFilter(questionId) {
+            const container = document.querySelector(`[data-question-id="${questionId}"]`);
+            if (!container) return;
+            
+            const responses = JSON.parse(container.dataset.responses);
+            
+            // Restaurar todas las respuestas
+            const tbody = document.getElementById(`responses_body_${questionId}`);
+            tbody.innerHTML = '';
+            
+            responses.forEach((response, index) => {
+                const row = document.createElement('tr');
+                row.className = 'response-row';
+                row.innerHTML = `
+                    <td class="response-number">#${index + 1}</td>
+                    <td class="response-text">${escapeHtml(response.text)}</td>
+                    <td class="response-date">${formatDate(response.date)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            // Ocultar indicador
+            document.getElementById(`filter_indicator_${questionId}`).style.display = 'none';
+            document.getElementById(`response_count_${questionId}`).textContent = responses.length;
+            
+            // Limpiar búsqueda
+            const searchInput = document.getElementById(`search_${questionId}`);
+            if (searchInput) searchInput.value = '';
+        }
+        // Hacer funciones disponibles globalmente
+        window.toggleAnalysisPanel = toggleAnalysisPanel;
+        window.filterByKeyword = filterByKeyword;
+        window.clearResponseFilter = clearResponseFilter;
+     
         // ==========================================
         // UTILIDADES
         // ==========================================
@@ -1991,7 +2214,197 @@
         
         // Hacer función global para onclick
         window.toggleSectionDetail = toggleSectionDetail;
+
+        // ==========================================
+        // ANÁLISIS DE TEXTO - PALABRAS CLAVE
+        // ==========================================
         
+        /**
+         * Lista de palabras vacías en español a excluir del análisis
+         */
+        const STOP_WORDS = new Set([
+            // Artículos
+            'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
+            // Preposiciones
+            'de', 'del', 'a', 'al', 'en', 'por', 'para', 'con', 'sin', 'sobre', 
+            'entre', 'hasta', 'desde', 'hacia', 'bajo', 'tras',
+            // Conjunciones
+            'y', 'e', 'o', 'u', 'pero', 'sino', 'aunque', 'porque', 'como', 'si',
+            'que', 'cual', 'quien', 'cuando', 'donde', 'mientras',
+            // Pronombres
+            'yo', 'tu', 'tú', 'él', 'ella', 'nosotros', 'nosotras', 'vosotros', 
+            'vosotras', 'ellos', 'ellas', 'me', 'te', 'se', 'le', 'les', 'lo', 
+            'la', 'los', 'las', 'mi', 'mis', 'su', 'sus', 'nuestro', 'nuestra',
+            // Verbos comunes
+            'es', 'son', 'está', 'están', 'hay', 'ha', 'han', 'ser', 'estar',
+            'tener', 'hacer', 'haber', 'fue', 'sido', 'ido',
+            // Otros
+            'más', 'muy', 'también', 'tan', 'tanto', 'así', 'ya', 'solo', 'sólo',
+            'aquí', 'allí', 'ahí', 'esto', 'eso', 'aquello', 'este', 'ese', 'aquel',
+            'esta', 'esa', 'aquella', 'estos', 'esos', 'aquellos', 'estas', 'esas',
+            'aquellas', 'todo', 'toda', 'todos', 'todas', 'otro', 'otra', 'otros',
+            'otras', 'mismo', 'misma', 'mismos', 'mismas', 'tal', 'tales'
+        ]);
+        
+        /**
+         * Limpiar y normalizar texto
+         * @param {string} text - Texto a limpiar
+         * @returns {string} Texto limpio
+         */
+        function cleanText(text) {
+            if (!text) return '';
+            
+            return text
+                .toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quitar acentos
+                .replace(/[^\w\s]/g, ' ') // Quitar puntuación
+                .replace(/\s+/g, ' ') // Normalizar espacios
+                .trim();
+        }
+        
+        /**
+         * Extraer palabras de un texto
+         * @param {string} text - Texto a procesar
+         * @returns {Array<string>} Array de palabras limpias
+         */
+        function extractWords(text) {
+            const cleaned = cleanText(text);
+            return cleaned
+                .split(' ')
+                .filter(word => word.length >= 3) // Mínimo 3 caracteres
+                .filter(word => !STOP_WORDS.has(word)) // Excluir palabras vacías
+                .filter(word => !/^\d+$/.test(word)); // Excluir números puros
+        }
+        
+        /**
+         * Contar frecuencia de palabras en múltiples textos
+         * @param {Array<string>} texts - Array de textos
+         * @returns {Object} Objeto con palabras y sus frecuencias
+         */
+        function countWordFrequencies(texts) {
+            const frequencies = {};
+            
+            texts.forEach(text => {
+                const words = extractWords(text);
+                words.forEach(word => {
+                    frequencies[word] = (frequencies[word] || 0) + 1;
+                });
+            });
+            
+            return frequencies;
+        }
+        
+        /**
+         * Obtener top N palabras más frecuentes
+         * @param {Object} frequencies - Objeto de frecuencias
+         * @param {number} limit - Cantidad de palabras a retornar
+         * @returns {Array<Object>} Array de {word, count} ordenado por frecuencia
+         */
+        function getTopWords(frequencies, limit = 20) {
+            return Object.entries(frequencies)
+                .map(([word, count]) => ({ word, count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, limit);
+        }
+        
+        /**
+         * Buscar respuestas que contienen una palabra específica
+         * @param {Array<Object>} responses - Array de respuestas con text
+         * @param {string} keyword - Palabra a buscar
+         * @returns {Array<Object>} Respuestas que contienen la palabra
+         */
+        function findResponsesWithKeyword(responses, keyword) {
+            const cleanKeyword = cleanText(keyword);
+            
+            return responses.filter(response => {
+                const cleanResponse = cleanText(response.text);
+                return cleanResponse.includes(cleanKeyword);
+            });
+        }
+        
+        /**
+         * Resaltar palabra en texto
+         * @param {string} text - Texto original
+         * @param {string} keyword - Palabra a resaltar
+         * @returns {string} HTML con palabra resaltada
+         */
+        function highlightKeyword(text, keyword) {
+            if (!text || !keyword) return escapeHtml(text);
+            
+            const cleanKeyword = cleanText(keyword);
+            const escapedText = escapeHtml(text);
+            
+            // Buscar coincidencias sin importar acentos o mayúsculas
+            const regex = new RegExp(
+                cleanKeyword.split('').map(char => 
+                    `[${char}${char.toUpperCase()}]`
+                ).join('\\s*'),
+                'gi'
+            );
+            
+            return escapedText.replace(regex, match => 
+                `<mark style="background-color: #fff3cd; padding: 2px 4px; border-radius: 3px;">${match}</mark>`
+            );
+        }
+        
+        /**
+         * Analizar sentimiento básico de un texto
+         * @param {string} text - Texto a analizar
+         * @returns {string} 'positive', 'negative', 'neutral'
+         */
+        function analyzeBasicSentiment(text) {
+            const cleaned = cleanText(text);
+            
+            const positiveWords = [
+                'excelente', 'bueno', 'buena', 'mejor', 'genial', 'fantastico', 
+                'maravilloso', 'perfecto', 'satisfecho', 'feliz', 'alegre', 'contento',
+                'agradable', 'positivo', 'favorable', 'bien', 'encantado', 'gusto'
+            ];
+            
+            const negativeWords = [
+                'malo', 'mala', 'peor', 'terrible', 'horrible', 'deficiente',
+                'insatisfecho', 'triste', 'molesto', 'enojado', 'frustrado',
+                'desagradable', 'negativo', 'desfavorable', 'mal', 'problema',
+                'dificultad', 'defecto'
+            ];
+            
+            let positiveCount = 0;
+            let negativeCount = 0;
+            
+            positiveWords.forEach(word => {
+                if (cleaned.includes(word)) positiveCount++;
+            });
+            
+            negativeWords.forEach(word => {
+                if (cleaned.includes(word)) negativeCount++;
+            });
+            
+            if (positiveCount > negativeCount) return 'positive';
+            if (negativeCount > positiveCount) return 'negative';
+            return 'neutral';
+        }
+        
+        /**
+         * Obtener estadísticas de sentimientos para múltiples respuestas
+         * @param {Array<Object>} responses - Array de respuestas
+         * @returns {Object} Estadísticas de sentimientos
+         */
+        function getSentimentStats(responses) {
+            const sentiments = {
+                positive: 0,
+                negative: 0,
+                neutral: 0
+            };
+            
+            responses.forEach(response => {
+                const sentiment = analyzeBasicSentiment(response.text);
+                sentiments[sentiment]++;
+            });
+            
+            return sentiments;
+        }
+
+        console.log('✅ Funciones de análisis de texto cargadas');
         console.log('✅ Módulo de resultados con análisis por secciones cargado correctamente');
     </script>
 </body>
