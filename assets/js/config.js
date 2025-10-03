@@ -1130,3 +1130,562 @@ window.initializePage = initializePage;
 window.applyBrandingAutomatically = applyBrandingAutomatically;window.generateBreadcrumbs = generateBreadcrumbs;
 window.getModuleFolder = getModuleFolder;
 window.getAuditLogs = getAuditLogs;
+
+// ==========================================
+// SISTEMA DE NAVBAR DE USUARIO Y CAMBIO DE CONTRASEÑA
+// Auto-inyectable en todas las páginas
+// ==========================================
+
+// Estilos para el navbar
+const navbarStyles = `
+<style id="schoolnet-navbar-styles">
+    #schoolnet-user-navbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1040;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 0.75rem 0;
+    }
+    
+    #schoolnet-user-navbar .navbar-brand {
+        color: white;
+        font-weight: 600;
+        font-size: 1.25rem;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    #schoolnet-user-navbar .navbar-brand:hover {
+        color: #f8f9fa;
+    }
+    
+    #schoolnet-user-navbar .user-menu {
+        position: relative;
+    }
+    
+    #schoolnet-user-navbar .user-button {
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 25px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+    }
+    
+    #schoolnet-user-navbar .user-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        transform: translateY(-1px);
+    }
+    
+    #schoolnet-user-navbar .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        right: 0;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        min-width: 200px;
+        display: none;
+        padding: 0.5rem 0;
+    }
+    
+    #schoolnet-user-navbar .dropdown-menu.show {
+        display: block;
+    }
+    
+    #schoolnet-user-navbar .dropdown-item {
+        padding: 0.75rem 1.25rem;
+        color: #495057;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+        font-size: 0.9rem;
+    }
+    
+    #schoolnet-user-navbar .dropdown-item:hover {
+        background: #f8f9fa;
+        color: #667eea;
+    }
+    
+    #schoolnet-user-navbar .dropdown-divider {
+        height: 1px;
+        background: #e9ecef;
+        margin: 0.5rem 0;
+    }
+    
+    /* Ajustar contenido para compensar navbar fijo */
+    body {
+        padding-top: 70px;
+    }
+    
+    /* Estilos para el modal de cambio de contraseña */
+    #change-password-modal .modal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    #change-password-modal .modal-header .btn-close {
+        filter: brightness(0) invert(1);
+    }
+    
+    #change-password-modal .form-label {
+        font-weight: 500;
+        color: #495057;
+    }
+    
+    #change-password-modal .password-strength {
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    #change-password-modal .strength-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: #e9ecef;
+        margin-top: 0.25rem;
+        overflow: hidden;
+    }
+    
+    #change-password-modal .strength-fill {
+        height: 100%;
+        transition: all 0.3s;
+        width: 0%;
+    }
+    
+    #change-password-modal .strength-weak .strength-fill {
+        width: 33%;
+        background: #dc3545;
+    }
+    
+    #change-password-modal .strength-medium .strength-fill {
+        width: 66%;
+        background: #ffc107;
+    }
+    
+    #change-password-modal .strength-strong .strength-fill {
+        width: 100%;
+        background: #28a745;
+    }
+</style>
+`;
+
+// HTML del navbar
+function createNavbarHTML() {
+    const session = getStoredSession();
+    const userName = session?.user?.user_display_name || session?.user?.user_name || 'Usuario';
+    
+    return `
+        <nav id="schoolnet-user-navbar">
+            <div class="container-fluid">
+                <div class="d-flex justify-content-between align-items-center">
+                    <a href="/dashboard.html" class="navbar-brand">
+                        <i class="bi bi-mortarboard-fill"></i>
+                        ${APP_CONFIG.name}
+                    </a>
+                    
+                    <div class="user-menu">
+                        <button class="user-button" id="user-menu-button" type="button">
+                            <i class="bi bi-person-circle"></i>
+                            <span>${userName}</span>
+                            <i class="bi bi-chevron-down" style="font-size: 0.75rem;"></i>
+                        </button>
+                        
+                        <div class="dropdown-menu" id="user-dropdown-menu">
+                            <button class="dropdown-item" id="change-password-btn">
+                                <i class="bi bi-key"></i>
+                                Cambiar Contraseña
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <button class="dropdown-item" id="logout-btn">
+                                <i class="bi bi-box-arrow-right"></i>
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    `;
+}
+
+// HTML del modal de cambio de contraseña
+function createChangePasswordModalHTML() {
+    return `
+        <div class="modal fade" id="change-password-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-key me-2"></i>
+                            Cambiar Contraseña
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="change-password-form">
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label for="current-password" class="form-label">
+                                    Contraseña Actual <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <input 
+                                        type="password" 
+                                        class="form-control" 
+                                        id="current-password" 
+                                        required
+                                        autocomplete="current-password"
+                                    >
+                                    <button class="btn btn-outline-secondary" type="button" id="toggle-current">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="new-password" class="form-label">
+                                    Nueva Contraseña <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <input 
+                                        type="password" 
+                                        class="form-control" 
+                                        id="new-password" 
+                                        required
+                                        minlength="6"
+                                        autocomplete="new-password"
+                                    >
+                                    <button class="btn btn-outline-secondary" type="button" id="toggle-new">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="password-strength" id="password-strength">
+                                    <small class="text-muted">Mínimo 6 caracteres</small>
+                                    <div class="strength-bar">
+                                        <div class="strength-fill"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="confirm-password" class="form-label">
+                                    Confirmar Nueva Contraseña <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <input 
+                                        type="password" 
+                                        class="form-control" 
+                                        id="confirm-password" 
+                                        required
+                                        autocomplete="new-password"
+                                    >
+                                    <button class="btn btn-outline-secondary" type="button" id="toggle-confirm">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                                <small class="text-danger d-none" id="password-match-error">
+                                    Las contraseñas no coinciden
+                                </small>
+                            </div>
+                            
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <small>La contraseña debe tener al menos 6 caracteres. Se recomienda usar mayúsculas, minúsculas y números.</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                Cancelar
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-1"></i>
+                                Cambiar Contraseña
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Función para inyectar el navbar automáticamente
+function injectUserNavbar() {
+    // Solo inyectar si hay sesión activa
+    const session = getStoredSession();
+    if (!session || !session.user) {
+        return;
+    }
+    
+    // Verificar que no esté en login.html
+    if (window.location.pathname.includes('login.html')) {
+        return;
+    }
+    
+    // Inyectar estilos
+    if (!document.getElementById('schoolnet-navbar-styles')) {
+        document.head.insertAdjacentHTML('beforeend', navbarStyles);
+    }
+    
+    // Inyectar navbar
+    if (!document.getElementById('schoolnet-user-navbar')) {
+        document.body.insertAdjacentHTML('afterbegin', createNavbarHTML());
+    }
+    
+    // Inyectar modal
+    if (!document.getElementById('change-password-modal')) {
+        document.body.insertAdjacentHTML('beforeend', createChangePasswordModalHTML());
+    }
+    
+    // Configurar event listeners
+    setupNavbarEventListeners();
+    setupChangePasswordModal();
+    
+    console.log('✅ Navbar de usuario inyectado correctamente');
+}
+
+// Configurar event listeners del navbar
+function setupNavbarEventListeners() {
+    const menuButton = document.getElementById('user-menu-button');
+    const dropdownMenu = document.getElementById('user-dropdown-menu');
+    const changePasswordBtn = document.getElementById('change-password-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    
+    if (!menuButton || !dropdownMenu) return;
+    
+    // Toggle del menú
+    menuButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownMenu.classList.toggle('show');
+    });
+    
+    // Cerrar menú al hacer clic fuera
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.user-menu')) {
+            dropdownMenu.classList.remove('show');
+        }
+    });
+    
+    // Abrir modal de cambio de contraseña
+    if (changePasswordBtn) {
+        changePasswordBtn.addEventListener('click', () => {
+            dropdownMenu.classList.remove('show');
+            const modal = new bootstrap.Modal(document.getElementById('change-password-modal'));
+            modal.show();
+        });
+    }
+    
+    // Cerrar sesión
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+                localStorage.removeItem('nextSystemSession');
+                sessionStorage.removeItem('nextSystemSession');
+                window.location.href = '/login.html';
+            }
+        });
+    }
+}
+
+// Configurar modal de cambio de contraseña
+function setupChangePasswordModal() {
+    const form = document.getElementById('change-password-form');
+    const newPasswordInput = document.getElementById('new-password');
+    const confirmPasswordInput = document.getElementById('confirm-password');
+    const strengthContainer = document.getElementById('password-strength');
+    const matchError = document.getElementById('password-match-error');
+    
+    if (!form) return;
+    
+    // Toggles para mostrar/ocultar contraseñas
+    setupPasswordToggles();
+    
+    // Medidor de fortaleza de contraseña
+    if (newPasswordInput) {
+        newPasswordInput.addEventListener('input', () => {
+            const strength = calculatePasswordStrength(newPasswordInput.value);
+            updatePasswordStrength(strength);
+        });
+    }
+    
+    // Validar que las contraseñas coincidan
+    if (confirmPasswordInput) {
+        confirmPasswordInput.addEventListener('input', () => {
+            if (confirmPasswordInput.value && newPasswordInput.value !== confirmPasswordInput.value) {
+                matchError.classList.remove('d-none');
+                confirmPasswordInput.classList.add('is-invalid');
+            } else {
+                matchError.classList.add('d-none');
+                confirmPasswordInput.classList.remove('is-invalid');
+            }
+        });
+    }
+    
+    // Submit del formulario
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await handleChangePassword(form);
+    });
+}
+
+// Configurar botones de mostrar/ocultar contraseña
+function setupPasswordToggles() {
+    const toggles = [
+        { btn: 'toggle-current', input: 'current-password' },
+        { btn: 'toggle-new', input: 'new-password' },
+        { btn: 'toggle-confirm', input: 'confirm-password' }
+    ];
+    
+    toggles.forEach(({ btn, input }) => {
+        const button = document.getElementById(btn);
+        const inputField = document.getElementById(input);
+        
+        if (button && inputField) {
+            button.addEventListener('click', () => {
+                const type = inputField.type === 'password' ? 'text' : 'password';
+                inputField.type = type;
+                const icon = button.querySelector('i');
+                icon.className = type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+            });
+        }
+    });
+}
+
+// Calcular fortaleza de contraseña
+function calculatePasswordStrength(password) {
+    if (!password) return 'none';
+    if (password.length < 6) return 'weak';
+    
+    let strength = 0;
+    if (password.length >= 8) strength++;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+    if (/\d/.test(password)) strength++;
+    if (/[^a-zA-Z0-9]/.test(password)) strength++;
+    
+    if (strength <= 1) return 'weak';
+    if (strength <= 2) return 'medium';
+    return 'strong';
+}
+
+// Actualizar visualización de fortaleza
+function updatePasswordStrength(strength) {
+    const container = document.getElementById('password-strength');
+    if (!container) return;
+    
+    const strengthBar = container.querySelector('.strength-bar');
+    const text = container.querySelector('small');
+    
+    container.className = 'password-strength';
+    
+    switch (strength) {
+        case 'weak':
+            container.classList.add('strength-weak');
+            text.textContent = 'Contraseña débil';
+            text.className = 'text-danger';
+            break;
+        case 'medium':
+            container.classList.add('strength-medium');
+            text.textContent = 'Contraseña moderada';
+            text.className = 'text-warning';
+            break;
+        case 'strong':
+            container.classList.add('strength-strong');
+            text.textContent = 'Contraseña fuerte';
+            text.className = 'text-success';
+            break;
+        default:
+            text.textContent = 'Mínimo 6 caracteres';
+            text.className = 'text-muted';
+    }
+}
+
+// Manejar cambio de contraseña
+async function handleChangePassword(form) {
+    const currentPassword = document.getElementById('current-password').value;
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    
+    // Validaciones
+    if (newPassword !== confirmPassword) {
+        showMessage('Las contraseñas no coinciden', 'danger');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showMessage('La nueva contraseña debe tener al menos 6 caracteres', 'danger');
+        return;
+    }
+    
+    if (currentPassword === newPassword) {
+        showMessage('La nueva contraseña debe ser diferente a la actual', 'warning');
+        return;
+    }
+    
+    try {
+        // Deshabilitar botón
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cambiando...';
+        
+        const session = getStoredSession();
+        if (!session || !session.user) {
+            throw new Error('Sesión no válida');
+        }
+        
+        // Verificar contraseña actual
+        const loginData = await supabaseRequest('/users?select=user_password&user_id=eq.' + session.user.user_id);
+        
+        if (!loginData || loginData.length === 0) {
+            throw new Error('Usuario no encontrado');
+        }
+        
+        if (loginData[0].user_password !== currentPassword) {
+            throw new Error('La contraseña actual es incorrecta');
+        }
+        
+        // Actualizar contraseña
+        await supabaseRequest('/users?user_id=eq.' + session.user.user_id, {
+            method: 'PATCH',
+            body: JSON.stringify({ user_password: newPassword })
+        });
+        
+        showMessage('Contraseña cambiada exitosamente', 'success');
+        
+        // Cerrar modal y limpiar formulario
+        const modal = bootstrap.Modal.getInstance(document.getElementById('change-password-modal'));
+        modal.hide();
+        form.reset();
+        
+    } catch (error) {
+        console.error('Error cambiando contraseña:', error);
+        showMessage('Error: ' + error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Cambiar Contraseña';
+    }
+}
+
+// Auto-inyectar cuando el DOM esté listo
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectUserNavbar);
+} else {
+    injectUserNavbar();
+}
+
+console.log('✅ Sistema de navbar y cambio de contraseña cargado');
