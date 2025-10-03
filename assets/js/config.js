@@ -1145,7 +1145,7 @@ const navbarStyles = `
         left: 0;
         right: 0;
         z-index: 1040;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #1B365D;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         padding: 0.75rem 0;
     }
@@ -1237,7 +1237,7 @@ const navbarStyles = `
     
     /* Estilos para el modal de cambio de contraseña */
     #change-password-modal .modal-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #1B365D;
         color: white;
     }
     
