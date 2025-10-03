@@ -458,24 +458,30 @@
                     const responses = await supabaseRequest('/survey_respondent_profile?select=profile_id&application_id=eq.' + app.application_id);
                     app.responses_count = responses.length;
                     
-                    // CAMBIO CRÍTICO: Solo cerrar automáticamente si:
+                    // LÓGICA DE CIERRE AUTOMÁTICO CORREGIDA
+                    // Solo cerrar si:
                     // 1. Está abierta (status === 'open')
-                    // 2. Pasó la fecha de fin
-                    // 3. NO fue reabierta manualmente (closed_manually !== false o es null)
-                    if (app.status === 'open' && 
-                        new Date(app.end_date) < new Date() && 
-                        app.closed_manually !== false) {
+                    // 2. Pasó COMPLETAMENTE la fecha de fin (día siguiente a las 00:00)
+                    // 3. NO fue reabierta manualmente (closed_manually !== false)
+                    if (app.status === 'open' && app.closed_manually !== false) {
+                        // Crear fecha de fin a las 23:59:59 del día configurado
+                        const endDate = new Date(app.end_date + 'T23:59:59');
+                        const now = new Date();
                         
-                        await supabaseRequest('/survey_applications?application_id=eq.' + app.application_id, {
-                            method: 'PATCH',
-                            body: JSON.stringify({ 
-                                status: 'closed',
-                                closed_manually: null,
-                                closed_by: null,
-                                closed_at: new Date().toISOString()
-                            })
-                        });
-                        app.status = 'closed';
+                        // Solo cerrar si YA pasó completamente el día de fin
+                        if (now > endDate) {
+                            await supabaseRequest('/survey_applications?application_id=eq.' + app.application_id, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ 
+                                    status: 'closed',
+                                    closed_manually: null,
+                                    closed_by: null,
+                                    closed_at: new Date().toISOString()
+                                })
+                            });
+                            app.status = 'closed';
+                            console.log(`Aplicación ${app.application_name} cerrada automáticamente`);
+                        }
                     }
                 }
                 
@@ -802,7 +808,7 @@
         }
 
         // ==========================================
-        // SUBMIT DEL FORMULARIO - CORREGIDO
+        // SUBMIT DEL FORMULARIO - CORREGIDO CON VALIDACIÓN DE FECHAS
         // ==========================================
         async function manejarSubmitFormulario(e) {
             e.preventDefault();
@@ -814,13 +820,30 @@
                 const applicationId = document.getElementById('application_id').value;
                 
                 // Validar fechas
-                const startDate = new Date(formData.get('start_date'));
-                const endDate = new Date(formData.get('end_date'));
+                const startDate = new Date(formData.get('start_date') + 'T00:00:00');
+                const endDate = new Date(formData.get('end_date') + 'T23:59:59');
+                const now = new Date();
                 
+                // Validación 1: Fecha de fin debe ser posterior a fecha de inicio
                 if (endDate <= startDate) {
                     showMessage('La fecha de fin debe ser posterior a la fecha de inicio', 'warning');
                     ocultarLoading();
                     return;
+                }
+                
+                // Validación 2: Advertencia si la fecha de fin ya pasó
+                if (endDate < now) {
+                    const confirmPast = confirm(
+                        'ADVERTENCIA: La fecha de fin que seleccionaste ya pasó.\n\n' +
+                        'Si guardas esta aplicación con estado "Abierta", ' +
+                        'se cerrará automáticamente al cargar la página.\n\n' +
+                        '¿Deseas continuar de todas formas?'
+                    );
+                    
+                    if (!confirmPast) {
+                        ocultarLoading();
+                        return;
+                    }
                 }
                 
                 const datos = {
@@ -837,7 +860,17 @@
                 }
                 
                 if (modoEdicion && applicationId) {
-                    // Actualizar
+                    // Actualizar - Resetear campos de cierre manual si se cambia la fecha
+                    const appOriginal = applicationsCache.find(a => a.application_id === applicationId);
+                    
+                    if (appOriginal && appOriginal.end_date !== datos.end_date) {
+                        // Si se cambió la fecha de fin, resetear flags de cierre manual
+                        datos.closed_manually = null;
+                        datos.closed_by = null;
+                        datos.closed_at = null;
+                        console.log('Fecha de fin modificada - reseteando flags de cierre manual');
+                    }
+                    
                     await supabaseRequest('/survey_applications?application_id=eq.' + applicationId, {
                         method: 'PATCH',
                         body: JSON.stringify(datos)
@@ -873,7 +906,6 @@
                 ocultarLoading();
             }
         }
-        
          
         // ==========================================
         // FUNCIONES DE UTILIDAD
