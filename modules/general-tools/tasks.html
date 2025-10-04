@@ -594,7 +594,8 @@
         async function cargarTrabajadores() {
             try {
                 console.log('📡 Cargando trabajadores activos...');
-                const data = await supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active&order=worker_first_name.asc');
+                // CAMBIO: Ordenar por apellido1, apellido2, nombres
+                const data = await supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active&order=worker_last_name_1.asc,worker_last_name_2.asc,worker_first_name.asc');
                 
                 trabajadoresCache = data || [];
                 
@@ -603,7 +604,8 @@
                 select.innerHTML = '<option value="">Seleccione un trabajador...</option>';
                 
                 trabajadoresCache.forEach(worker => {
-                    const nombreCompleto = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
+                    // CAMBIO: Mostrar en formato Apellido1 Apellido2, Nombres
+                    const nombreCompleto = `${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}, ${worker.worker_first_name}`.trim();
                     const option = document.createElement('option');
                     option.value = worker.email;
                     option.textContent = nombreCompleto;
@@ -619,7 +621,6 @@
                 showMessage('Error al cargar trabajadores: ' + error.message, 'danger');
             }
         }
-        
          
         async function cargarTareas() {
             try {
@@ -841,6 +842,104 @@
             document.getElementById('nueva-fecha-limite').setAttribute('min', today);
             modalNuevaTarea.show();
         }
+
+        // ==========================================
+        // PLANTILLA DE EMAIL PARA ASIGNACIÓN DE TAREAS
+        // ==========================================
+        function getTaskAssignmentEmailTemplate(taskDescription, dueDate, priority, assignedBy) {
+            const priorityColors = {
+                'Alta': '#dc3545',
+                'Normal': '#0d6efd',
+                'Baja': '#6c757d'
+            };
+            
+            const priorityColor = priorityColors[priority] || '#0d6efd';
+            const dueDateFormatted = formatDate(dueDate);
+            
+            return `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                    <div style="background-color: ${priorityColor}; color: white; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+                        <h2 style="margin: 0; font-size: 20px;">📋 Nueva tarea asignada</h2>
+                        <p style="margin: 5px 0 0 0; font-size: 14px;">SchoolNet - Sistema de Gestión Educativa</p>
+                    </div>
+                    
+                    <div style="background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <p style="margin-top: 0;">Se te ha asignado una nueva tarea:</p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid ${priorityColor}; margin: 20px 0;">
+                            <p style="margin: 0; font-size: 16px; font-weight: bold;">${escapeHtml(taskDescription)}</p>
+                        </div>
+                        
+                        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; font-weight: bold; width: 40%;">Prioridad:</td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                                    <span style="background-color: ${priorityColor}; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">
+                                        ${escapeHtml(priority)}
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; font-weight: bold;">Fecha límite:</td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${dueDateFormatted}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; font-weight: bold;">Asignada por:</td>
+                                <td style="padding: 10px;">${escapeHtml(assignedBy)}</td>
+                            </tr>
+                        </table>
+                        
+                        <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; padding: 15px; margin: 20px 0;">
+                            <p style="margin: 0; color: #0c5460;">
+                                <strong>Recuerda:</strong> Ingresa al sistema SchoolNet para gestionar esta tarea y documentar tu progreso.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
+                    <p style="color: #6c757d; font-size: 12px; margin: 0; text-align: center;">
+                        Este correo es generado automáticamente por SchoolNet. Por favor, no responder a este mensaje.<br>
+                        Colegio Tilata - Sistema de Gestión Educativa
+                    </p>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // MODAL NUEVA TAREA
+        // ==========================================
+        
+        // ==========================================
+        // ENVIAR NOTIFICACIÓN DE TAREA POR EMAIL
+        // ==========================================
+        async function enviarNotificacionTarea(workerEmail, taskDescription, dueDate, priority, assignedBy) {
+            try {
+                console.log('📧 Enviando notificación de tarea a:', workerEmail);
+                
+                const subject = 'Nueva tarea asignada';
+                const htmlContent = getTaskAssignmentEmailTemplate(
+                    taskDescription,
+                    dueDate,
+                    priority,
+                    assignedBy
+                );
+                
+                // Usar la función sendNotification de config.js
+                const result = await sendNotification(workerEmail, subject, htmlContent, true);
+                
+                if (result) {
+                    console.log('✅ Notificación enviada exitosamente');
+                    return true;
+                } else {
+                    console.warn('⚠️ No se pudo enviar la notificación');
+                    return false;
+                }
+                
+            } catch (error) {
+                console.error('❌ Error enviando notificación:', error);
+                return false;
+            }
+        }
         
         async function manejarCrearTarea(e) {
             e.preventDefault();
@@ -875,12 +974,28 @@
                     return;
                 }
                 
+                // Crear la tarea
                 await supabaseRequest('/tasks', {
                     method: 'POST',
                     body: JSON.stringify(datos)
                 });
                 
-                showMessage('Tarea creada exitosamente', 'success');
+                // Enviar notificación por email
+                const emailSent = await enviarNotificacionTarea(
+                    datos.assigned_to_mail,
+                    datos.task_description,
+                    datos.due_date,
+                    datos.task_priority,
+                    currentUser.user_display_name || currentUser.user_mail
+                );
+                
+                // Mensaje según resultado del email
+                if (emailSent) {
+                    showMessage('Tarea creada y notificación enviada exitosamente', 'success');
+                } else {
+                    showMessage('Tarea creada, pero no se pudo enviar la notificación por email', 'warning');
+                }
+                
                 modalNuevaTarea.hide();
                 await cargarTareas();
                 
@@ -891,7 +1006,8 @@
                 ocultarLoading();
             }
         }
-      // ==========================================
+
+        // ==========================================
         // EDITAR PROGRESO
         // ==========================================
         function editarProgreso(taskId) {
