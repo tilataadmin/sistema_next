@@ -204,6 +204,14 @@ const APP_CONFIG = {
             icon: 'bi-clipboard-data',
             path: '/modules/surveys/',
             status: 'active'
+        },
+        {
+            id: 'general-tools',
+            name: 'Herramientas Generales',
+            description: 'Gestión de tareas y herramientas transversales del sistema',
+            icon: 'bi-tools',
+            path: '/modules/general-tools/',
+            status: 'active'
         }
     ],
     
@@ -432,7 +440,8 @@ function getModuleFolder(moduleName) {
         'Alertas Tempranas': 'early-alerts',
         'Admisiones': 'admissions',
         'Tilatá te Escucha': 'tte',
-        'Encuestas': 'surveys'
+        'Encuestas': 'surveys',
+        'Herramientas Generales': 'general-tools' 
     };
     
     return moduleMap[moduleName] || moduleName.toLowerCase();
@@ -764,9 +773,12 @@ const URL_PERMISSIONS = {
     '/modules/surveys/applications.html': 'Gestionar aplicaciones',
     '/modules/surveys/results.html': 'Ver resultados',
     '/modules/surveys/comparison.html': 'Comparar aplicaciones',
-    '/modules/surveys/dashboard.html': 'Dashboard de encuestas'
-    // NOTA: respond.html NO está aquí porque es público
-};
+    '/modules/surveys/dashboard.html': 'Dashboard de encuestas',
+
+    // Módulo Herramientas Generales
+    '/modules/general-tools/tasks.html': 'Gestionar tareas',
+    '/modules/general-tools/dashboard.html': 'Dashboard de tareas'
+  };
 
 // Función principal de validación
 async function validatePageAccess(requiredPermission = null) {
