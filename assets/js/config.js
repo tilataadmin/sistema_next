@@ -776,7 +776,8 @@ const URL_PERMISSIONS = {
     '/modules/surveys/dashboard.html': 'Dashboard de encuestas',
 
     // Módulo Herramientas Generales
-    '/modules/general-tools/tasks.html': 'Gestionar tareas'
+    '/modules/general-tools/tasks.html': 'Gestionar tareas',
+    '/modules/general-tools/dashboard.html': 'Dashboard de tareas'
   };
 
 // Función principal de validación
