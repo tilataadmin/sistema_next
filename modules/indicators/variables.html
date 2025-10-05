@@ -967,9 +967,185 @@
         // FUNCIONES NUEVAS
         // ==========================================
         
-        function testQuery() {
-            showMessage('Función de prueba de query en desarrollo', 'info');
-            // TODO: Implementar validación de query con parámetros de ejemplo
+       // ==========================================
+        // PROBAR QUERY
+        // ==========================================
+        
+        async function testQuery() {
+            const queryText = document.getElementById('queryConfig').value.trim();
+            const testBtn = event.target;
+            
+            if (!queryText) {
+                showMessage('Escribe una query primero', 'warning');
+                return;
+            }
+            
+            // Deshabilitar botón
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Probando...';
+            
+            try {
+                // 1. Validar sintaxis básica
+                if (!queryText.toLowerCase().includes('select')) {
+                    throw new Error('La query debe comenzar con SELECT');
+                }
+                
+                // 2. Detectar parámetros de segmentación
+                const segmentParams = queryText.match(/:segment_\w+_id/g) || [];
+                const uniqueParams = [...new Set(segmentParams)];
+                
+                console.log('📝 Parámetros detectados:', uniqueParams);
+                
+                // 3. Obtener valores de ejemplo para cada parámetro
+                let testQuery = queryText;
+                const paramValues = {};
+                
+                for (const param of uniqueParams) {
+                    // Extraer el nombre de la segmentación del parámetro
+                    // :segment_grade_id -> grade
+                    const segmentName = param.replace(':segment_', '').replace('_id', '');
+                    
+                    // Buscar la segmentación correspondiente
+                    const segment = availableSegments.find(s => 
+                        s.segment_name.toLowerCase().includes(segmentName) ||
+                        segmentName.includes(s.segment_name.toLowerCase())
+                    );
+                    
+                    if (!segment || !segment.segment_options || segment.segment_options.length === 0) {
+                        throw new Error(`No se encontró segmentación para parámetro: ${param}`);
+                    }
+                    
+                    // Usar el primer valor de la segmentación como ejemplo
+                    const firstOption = segment.segment_options[0];
+                    const testValue = firstOption.option_value;
+                    
+                    paramValues[param] = {
+                        name: firstOption.option_name,
+                        value: testValue
+                    };
+                    
+                    // Reemplazar en la query
+                    testQuery = testQuery.replace(new RegExp(param.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `'${testValue}'`);
+                }
+                
+                console.log('🔍 Query de prueba:', testQuery);
+                console.log('📊 Valores de prueba:', paramValues);
+                
+                // 4. Ejecutar query usando función RPC de Supabase
+                const startTime = Date.now();
+                
+                // Crear función temporal para ejecutar la query
+                const result = await executeTestQuery(testQuery);
+                
+                const executionTime = Date.now() - startTime;
+                
+                // 5. Validar resultado
+                if (result === null || result === undefined) {
+                    throw new Error('La query no retornó ningún valor');
+                }
+                
+                if (typeof result !== 'number' && isNaN(result)) {
+                    throw new Error('La query debe retornar un número (usa COUNT, SUM, etc.)');
+                }
+                
+                // 6. Mostrar resultado exitoso
+                let resultMessage = `
+                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <h6 class="alert-heading"><i class="bi bi-check-circle me-2"></i>Query válida</h6>
+                        <hr>
+                        <p class="mb-2"><strong>Resultado de prueba:</strong> ${result}</p>
+                        ${uniqueParams.length > 0 ? `
+                            <p class="mb-2"><strong>Parámetros usados:</strong></p>
+                            <ul class="mb-2">
+                                ${uniqueParams.map(p => `<li><code>${p}</code> = "${paramValues[p].name}" (${paramValues[p].value})</li>`).join('')}
+                            </ul>
+                        ` : ''}
+                        <small class="text-muted">Tiempo de ejecución: ${executionTime}ms</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+                
+                document.getElementById('alertContainer').innerHTML = resultMessage;
+                
+                // Guardar en tabla de validaciones
+                await saveQueryValidation(queryText, paramValues, result, executionTime, null);
+                
+            } catch (error) {
+                console.error('❌ Error probando query:', error);
+                
+                let errorMessage = `
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <h6 class="alert-heading"><i class="bi bi-exclamation-triangle me-2"></i>Error en Query</h6>
+                        <hr>
+                        <p class="mb-0"><strong>Error:</strong> ${error.message}</p>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+                
+                document.getElementById('alertContainer').innerHTML = errorMessage;
+                
+                // Guardar error en tabla de validaciones
+                await saveQueryValidation(queryText, {}, null, 0, error.message);
+                
+            } finally {
+                testBtn.disabled = false;
+                testBtn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Probar Query';
+            }
+        }
+        
+        // Función auxiliar para ejecutar query de prueba
+        async function executeTestQuery(query) {
+            try {
+                // Ejecutar usando función RPC personalizada
+                const response = await fetch(`${SUPABASE_CONFIG.apiUrl}/rpc/execute_test_query`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ test_query: query })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error ejecutando query: ${errorText}`);
+                }
+                
+                const result = await response.json();
+                
+                // El resultado debería ser un número
+                return result;
+                
+            } catch (error) {
+                console.error('Error en executeTestQuery:', error);
+                throw error;
+            }
+        }
+        
+        // Guardar validación en base de datos
+        async function saveQueryValidation(query, parameters, result, executionTime, error) {
+            try {
+                if (!currentUser) return;
+                
+                const validation = {
+                    variable_id: currentVariableId, // null si es nueva variable
+                    test_query: query,
+                    test_parameters: parameters,
+                    test_result: result !== null ? { value: result } : null,
+                    test_error: error,
+                    rows_returned: result !== null ? 1 : 0,
+                    execution_time_ms: executionTime,
+                    tested_by: currentUser.user_id
+                };
+                
+                await supabaseRequest('/query_validations', {
+                    method: 'POST',
+                    body: JSON.stringify(validation)
+                });
+                
+                console.log('✅ Validación guardada en BD');
+                
+            } catch (err) {
+                console.error('Error guardando validación:', err);
+                // No interrumpir el flujo si falla el guardado
+            }
         }
         
         // ==========================================
