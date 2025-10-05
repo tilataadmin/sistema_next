@@ -778,6 +778,14 @@
                 
                 const data = await supabaseRequest(query);
                 
+                // CAMBIO: Crear contenedor de preview dentro del modal si no existe
+                let previewContainer = document.getElementById('tablePreviewContainer');
+                if (!previewContainer) {
+                    previewContainer = document.createElement('div');
+                    previewContainer.id = 'tablePreviewContainer';
+                    document.getElementById('linkedTableConfig').appendChild(previewContainer);
+                }
+                
                 let previewHtml = `
                     <div class="alert alert-success alert-dismissible fade show mt-3">
                         <h6 class="alert-heading">Vista Previa (${data.length} registros)</h6>
@@ -797,11 +805,11 @@
                 previewHtml += `
                             </ul>
                         </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <button type="button" class="btn-close" onclick="document.getElementById('tablePreviewContainer').innerHTML=''"></button>
                     </div>
                 `;
                 
-                document.getElementById('alertContainer').innerHTML = previewHtml;
+                previewContainer.innerHTML = previewHtml;
                 
             } catch (error) {
                 console.error('Error en vista previa:', error);
@@ -1059,21 +1067,293 @@
         // FUNCIONES PENDIENTES
         // ==========================================
         
-        function viewSegment(segmentId) {
-            showMessage('Función de ver detalles en desarrollo', 'info');
+        // ==========================================
+        // VER DETALLES DE SEGMENTACIÓN
+        // ==========================================
+        
+        async function viewSegment(segmentId) {
+            try {
+                const segment = allSegments.find(s => s.segment_id === segmentId);
+                if (!segment) {
+                    showMessage('Segmentación no encontrada', 'danger');
+                    return;
+                }
+                
+                const isLinked = segment.is_table_linked === true;
+                
+                let detailsHtml = `
+                    <div class="alert alert-light" role="alert">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h5 class="alert-heading">
+                                    ${segment.segment_name}
+                                    ${isLinked ? '<span class="badge bg-primary ms-2"><i class="bi bi-database"></i> Vinculada</span>' : ''}
+                                </h5>
+                                <hr>
+                                <p><strong>Descripción:</strong> ${segment.segment_description || 'Sin descripción'}</p>
+                                <p><strong>Estado:</strong> <span class="badge ${segment.segment_status === 'active' ? 'bg-success' : 'bg-warning'}">${segment.segment_status}</span></p>
+                `;
+                
+                if (isLinked) {
+                    const tableConfig = LINKABLE_TABLES[segment.source_table];
+                    detailsHtml += `
+                        <hr>
+                        <h6>Configuración de Tabla Vinculada</h6>
+                        <p><strong>Tabla origen:</strong> ${tableConfig?.label || segment.source_table}</p>
+                        <p><strong>Columna ID:</strong> <code>${segment.source_id_column}</code></p>
+                        <p><strong>Columna Nombre:</strong> <code>${segment.source_name_column}</code></p>
+                        ${segment.source_filter_column ? `
+                            <p><strong>Filtro:</strong> <code>${segment.source_filter_column} = ${segment.source_filter_value || 'NULL'}</code></p>
+                        ` : ''}
+                        
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="showLiveData('${segmentId}')">
+                            <i class="bi bi-eye me-1"></i>Ver Datos Actuales
+                        </button>
+                    `;
+                } else {
+                    const optionsCount = segment.segment_options ? segment.segment_options.length : 0;
+                    detailsHtml += `
+                        <hr>
+                        <h6>Opciones (${optionsCount})</h6>
+                    `;
+                    
+                    if (segment.segment_options && segment.segment_options.length > 0) {
+                        detailsHtml += '<div class="options-list">';
+                        segment.segment_options.forEach(opt => {
+                            detailsHtml += `<span class="option-tag">${opt.option_name} <small class="text-muted">(${opt.option_value})</small></span>`;
+                        });
+                        detailsHtml += '</div>';
+                    } else {
+                        detailsHtml += '<p class="text-muted">Sin opciones definidas</p>';
+                    }
+                }
+                
+                detailsHtml += `
+                                <hr>
+                                <small class="text-muted">Creada: ${formatDate(segment.created_at)}</small>
+                            </div>
+                            <button type="button" class="btn-close ms-3" onclick="closeAlert('segmentDetailsAlert')"></button>
+                        </div>
+                    </div>
+                `;
+                
+                const alertContainer = document.getElementById('alertContainer');
+                alertContainer.innerHTML = `<div id="segmentDetailsAlert">${detailsHtml}</div>`;
+                alertContainer.scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Error cargando detalles:', error);
+                showMessage('Error cargando detalles de la segmentación', 'danger');
+            }
         }
         
-        function editSegment(segmentId) {
-            showMessage('Función de edición en desarrollo', 'info');
+        // Función auxiliar para mostrar datos en vivo de tabla vinculada
+        async function showLiveData(segmentId) {
+            try {
+                const segment = allSegments.find(s => s.segment_id === segmentId);
+                const config = LINKABLE_TABLES[segment.source_table];
+                
+                let query = `/${segment.source_table}?select=${segment.source_id_column},${segment.source_name_column}`;
+                
+                if (segment.source_filter_column && segment.source_filter_value) {
+                    query += `&${segment.source_filter_column}=eq.${segment.source_filter_value}`;
+                }
+                
+                query += `&order=${config.order_column || segment.source_name_column}`;
+                
+                const data = await supabaseRequest(query);
+                
+                let dataHtml = `
+                    <div class="alert alert-info mt-2">
+                        <h6>Datos Actuales (${data.length} registros)</h6>
+                        <div style="max-height: 250px; overflow-y: auto;" class="mt-2">
+                            <ul>
+                `;
+                
+                data.forEach(item => {
+                    dataHtml += `<li>${item[segment.source_name_column]}</li>`;
+                });
+                
+                dataHtml += `
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('segmentDetailsAlert').insertAdjacentHTML('beforeend', dataHtml);
+                
+            } catch (error) {
+                console.error('Error cargando datos:', error);
+                showMessage('Error cargando datos de la tabla', 'danger');
+            }
         }
+        
+        // ==========================================
+        // EDITAR SEGMENTACIÓN
+        // ==========================================
+        
+        async function editSegment(segmentId) {
+            try {
+                const segment = allSegments.find(s => s.segment_id === segmentId);
+                if (!segment) {
+                    showMessage('Segmentación no encontrada', 'danger');
+                    return;
+                }
+                
+                isEditMode = true;
+                currentSegmentId = segmentId;
+                currentSegmentType = segment.is_table_linked ? 'linked' : 'generic';
+                
+                // Configurar modal
+                document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Segmentación';
+                document.getElementById('submitBtn').innerHTML = '<i class="bi bi-check-circle me-1"></i>Actualizar Segmentación';
+                document.getElementById('submitBtn').className = 'btn btn-primary';
+                
+                // Llenar campos básicos
+                document.getElementById('segmentId').value = segment.segment_id;
+                document.getElementById('segmentName').value = segment.segment_name;
+                document.getElementById('segmentDescription').value = segment.segment_description || '';
+                document.getElementById('segmentStatus').value = segment.segment_status;
+                
+                // Configurar tipo
+                if (segment.is_table_linked) {
+                    document.getElementById('typeLinked').checked = true;
+                    document.getElementById('sourceTable').value = segment.source_table;
+                    handleTableChange();
+                    
+                    if (segment.source_filter_value) {
+                        document.getElementById('sourceFilterValue').value = segment.source_filter_value;
+                    }
+                } else {
+                    document.getElementById('typeGeneric').checked = true;
+                    
+                    // Cargar opciones existentes
+                    if (segment.segment_options) {
+                        segmentOptions = segment.segment_options.map(opt => ({
+                            option_id: opt.option_id,
+                            option_name: opt.option_name,
+                            option_value: opt.option_value,
+                            option_order: opt.option_order,
+                            temp_id: opt.option_id
+                        }));
+                        renderOptionsManager();
+                    }
+                }
+                
+                handleSegmentTypeChange();
+                
+                // Mostrar modal
+                document.getElementById('segmentModal').style.display = 'flex';
+                document.getElementById('segmentName').focus();
+                
+            } catch (error) {
+                console.error('Error cargando segmentación:', error);
+                showMessage('Error cargando segmentación: ' + error.message, 'danger');
+            }
+        }
+        
+        // ==========================================
+        // ACTUALIZAR SEGMENTACIÓN
+        // ==========================================
+        
+        async function updateSegment() {
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Actualizando...';
+            
+            try {
+                if (!currentSegmentId) {
+                    throw new Error('ID de segmentación no identificado');
+                }
+                
+                const isLinked = document.getElementById('typeLinked').checked;
+                
+                if (!isLinked && segmentOptions.length === 0) {
+                    throw new Error('Debe agregar al menos una opción a la segmentación');
+                }
+                
+                if (isLinked && !document.getElementById('sourceTable').value) {
+                    throw new Error('Debe seleccionar una tabla origen');
+                }
+                
+                const formData = {
+                    segment_name: document.getElementById('segmentName').value.trim(),
+                    segment_description: document.getElementById('segmentDescription').value.trim() || null,
+                    segment_status: document.getElementById('segmentStatus').value,
+                    is_table_linked: isLinked,
+                    updated_at: new Date().toISOString()
+                };
+                
+                if (isLinked) {
+                    formData.source_table = document.getElementById('sourceTable').value;
+                    formData.source_id_column = document.getElementById('sourceIdColumn').value;
+                    formData.source_name_column = document.getElementById('sourceNameColumn').value;
+                    formData.source_filter_column = document.getElementById('sourceFilterColumn').value || null;
+                    formData.source_filter_value = document.getElementById('sourceFilterValue').value || null;
+                } else {
+                    // Limpiar campos de tabla vinculada si se cambió a genérica
+                    formData.source_table = null;
+                    formData.source_id_column = null;
+                    formData.source_name_column = null;
+                    formData.source_filter_column = null;
+                    formData.source_filter_value = null;
+                }
+                
+                console.log('📝 Actualizando segmentación:', formData);
+                
+                // Actualizar segmentación
+                await supabaseRequest(`/segments?segment_id=eq.${currentSegmentId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(formData)
+                });
+                
+                // Si es genérica, actualizar opciones
+                if (!isLinked) {
+                    // Eliminar opciones actuales
+                    await supabaseRequest(`/segment_options?segment_id=eq.${currentSegmentId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    // Crear nuevas opciones
+                    const optionsToCreate = segmentOptions.map(option => ({
+                        segment_id: currentSegmentId,
+                        option_name: option.option_name,
+                        option_value: option.option_value,
+                        option_order: option.option_order,
+                        option_status: 'active'
+                    }));
+                    
+                    await supabaseRequest('/segment_options', {
+                        method: 'POST',
+                        body: JSON.stringify(optionsToCreate)
+                    });
+                    
+                    console.log(`✅ ${optionsToCreate.length} opciones actualizadas`);
+                } else {
+                    // Si cambió a vinculada, eliminar opciones manuales
+                    await supabaseRequest(`/segment_options?segment_id=eq.${currentSegmentId}`, {
+                        method: 'DELETE'
+                    });
+                }
+                
+                showMessage('Segmentación actualizada exitosamente', 'success');
+                closeSegmentModal();
+                loadSegments();
+                
+            } catch (error) {
+                console.error('❌ Error actualizando segmentación:', error);
+                showMessage(`Error actualizando segmentación: ${error.message}`, 'danger');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Actualizar Segmentación';
+            }
+        }
+        
         
         function manageOptions(segmentId) {
             showMessage('Gestión avanzada de opciones en desarrollo', 'info');
         }
         
-        function updateSegment() {
-            showMessage('Función de actualización en desarrollo', 'info');
-        }
         
         // ==========================================
         // GLOBALES
