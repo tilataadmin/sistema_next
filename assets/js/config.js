@@ -677,7 +677,9 @@ const URL_PERMISSIONS = {
     '/modules/indicators/data-entry.html': 'Captura de datos',
     '/modules/indicators/variable-assignments.html': 'Asignar variables a usuarios',
     '/modules/indicators/indicators.html': 'Indicadores',
-    
+    '/modules/indicators/dashboard-config.html': 'Configurar mi dashboard',  // NUEVO
+    '/modules/indicators/dashboard.html': 'Ver mi dashboard',                // NUEVO
+        
     // Módulo Talento Humano
     '/modules/hr/divisions.html': 'Divisiones',
     '/modules/hr/cost-centers.html': 'Centros de costos',
