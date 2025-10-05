@@ -371,13 +371,12 @@
         }
 
         // ==========================================
-        // CARGAR ESTRUCTURA DE LA ENCUESTA - CORREGIDO
+        // CARGAR ESTRUCTURA DE LA ENCUESTA - CORREGIDO v2
         // ==========================================
         async function cargarEstructuraEncuesta() {
             try {
                 console.log('📚 Cargando estructura de encuesta...');
                 
-                // CORRECCIÓN: Usar applicationData (no selectedApplication)
                 const masterData = await supabaseRequest(
                     `/survey_masters?select=*,survey_sections(*,survey_questions(*),survey_scales(*,survey_scale_options(*))),survey_master_segments(*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value))&survey_master_id=eq.${applicationData.survey_master_id}`
                 );
@@ -388,30 +387,35 @@
                 
                 surveyMaster = masterData[0];
                 
-                // Cargar segmentaciones configuradas
-                const segments = await supabaseRequest('/survey_master_segments?select=*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value)&survey_master_id=eq.' + masterData.survey_master_id);
+                // CORRECCIÓN: Usar surveyMaster.survey_master_id (no masterData.survey_master_id)
+                const segments = await supabaseRequest('/survey_master_segments?select=*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value)&survey_master_id=eq.' + surveyMaster.survey_master_id);
                 segmentsData = segments || [];
                 
-                // Ordenar secciones
-                surveyMaster.survey_sections.sort((a, b) => a.section_order - b.section_order);
+                // Cargar secciones
+                const sections = await supabaseRequest('/survey_sections?select=*,survey_scales(scale_id,scale_name,survey_scale_options(*))&survey_master_id=eq.' + surveyMaster.survey_master_id + '&order=section_order.asc');
+                sectionsData = sections || [];
                 
-                // Ordenar preguntas y opciones de escala
-                surveyMaster.survey_sections.forEach(section => {
-                    section.survey_questions.sort((a, b) => a.question_order - b.question_order);
-                    
-                    if (section.survey_scales && section.survey_scales.survey_scale_options) {
-                        section.survey_scales.survey_scale_options.sort((a, b) => b.option_value - a.option_value);
-                    }
-                });
+                if (sectionsData.length === 0) {
+                    throw new Error('Esta encuesta no tiene secciones configuradas.');
+                }
+                
+                // Cargar preguntas de todas las secciones
+                const sectionIds = sectionsData.map(s => s.section_id);
+                const questions = await supabaseRequest('/survey_questions?select=*&section_id=in.(' + sectionIds.join(',') + ')&order=question_order.asc');
+                questionsData = questions || [];
+                
+                if (questionsData.length === 0) {
+                    throw new Error('Esta encuesta no tiene preguntas configuradas.');
+                }
                 
                 // Organizar escalas por ID para acceso rápido
-                surveyMaster.survey_sections.forEach(section => {
+                sectionsData.forEach(section => {
                     if (section.survey_scales) {
                         scalesData[section.scale_id] = section.survey_scales;
                     }
                 });
                 
-                console.log(`✅ ${surveyMaster.survey_sections.length} secciones, ${questionsData.length} preguntas, ${segmentsData.length} segmentaciones`);
+                console.log(`✅ ${sectionsData.length} secciones, ${questionsData.length} preguntas, ${segmentsData.length} segmentaciones`);
                 
             } catch (error) {
                 console.error('❌ Error cargando estructura:', error);
