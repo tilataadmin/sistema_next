@@ -369,7 +369,7 @@
                 throw error;
             }
         }
-
+        
         // ==========================================
         // CARGAR ESTRUCTURA DE LA ENCUESTA
         // ==========================================
@@ -377,8 +377,8 @@
             try {
                 console.log('📚 Cargando estructura de encuesta...');
                 
-                // Cargar secciones con preguntas y escalas anidadas (como en el original)
-                const sections = await supabaseRequest('/survey_sections?select=*,survey_scales(scale_id,scale_name,survey_scale_options(*))&survey_master_id=eq.' + applicationData.survey_master_id + '&order=section_order.asc');
+                // Cargar secciones
+                const sections = await supabaseRequest('/survey_sections?select=*,survey_scales(scale_id,scale_name,survey_scale_options(*))&survey_master_id=eq.' + masterData.survey_master_id + '&order=section_order.asc');
                 sectionsData = sections || [];
                 
                 if (sectionsData.length === 0) {
@@ -394,8 +394,8 @@
                     throw new Error('Esta encuesta no tiene preguntas configuradas.');
                 }
                 
-                // Cargar segmentaciones configuradas (CON SOPORTE PARA VINCULADAS)
-                const segments = await supabaseRequest('/survey_master_segments?select=*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value)&survey_master_id=eq.' + applicationData.survey_master_id);
+                // Cargar segmentaciones configuradas
+                const segments = await supabaseRequest('/survey_master_segments?select=*,segments(segment_id,segment_name,segment_description,segment_options(*))&survey_master_id=eq.' + masterData.survey_master_id);
                 segmentsData = segments || [];
                 
                 // Organizar escalas por ID para acceso rápido
@@ -408,64 +408,62 @@
                 console.log(`✅ ${sectionsData.length} secciones, ${questionsData.length} preguntas, ${segmentsData.length} segmentaciones`);
                 
             } catch (error) {
-                console.error('❌ Error cargando estructura:', error);
                 throw error;
             }
         }
-        
+
         // ==========================================
-        // OBTENER OPCIONES DE SEGMENTO (GENÉRICO O VINCULADO)
+        // OBTENER OPCIONES DE SEGMENTO VINCULADO A TABLA
         // ==========================================
-        async function getSegmentOptions(segment) {
+        async function getSegmentOptionsFromTable(segment) {
             try {
-                // Si es segmento vinculado a tabla
-                if (segment.is_table_linked && segment.source_table) {
-                    console.log(`🔗 Obteniendo opciones dinámicas de: ${segment.source_table}`);
-                    
-                    // Construir query
-                    let query = `/${segment.source_table}?select=${segment.source_id_column},${segment.source_name_column}`;
-                    
-                    // Agregar filtro si existe
-                    if (segment.source_filter_column && segment.source_filter_value) {
-                        query += `&${segment.source_filter_column}=eq.${segment.source_filter_value}`;
-                    }
-                    
-                    // Ordenar
-                    query += `&order=${segment.source_name_column}.asc`;
-                    
-                    // Ejecutar query
-                    const data = await supabaseRequest(query);
-                    
-                    if (!data || data.length === 0) {
-                        console.log(`⚠️ No se encontraron opciones para ${segment.segment_name}`);
-                        return [];
-                    }
-                    
-                    // Convertir a formato de opciones
-                    const options = data.map((row, index) => ({
-                        option_id: row[segment.source_id_column],
-                        option_name: row[segment.source_name_column],
-                        option_value: row[segment.source_id_column],
-                        option_order: index + 1
-                    }));
-                    
-                    console.log(`✅ ${options.length} opciones dinámicas obtenidas`);
-                    return options;
-                    
-                } else {
-                    // Es segmento genérico - usar segment_options
-                    console.log(`📋 Usando opciones genéricas para: ${segment.segment_name}`);
-                    return segment.segment_options || [];
+                if (!segment.is_table_linked || !segment.source_table) {
+                    return [];
                 }
                 
+                console.log(`🔍 Obteniendo opciones dinámicas de tabla: ${segment.source_table}`);
+                
+                // Construir query base
+                let query = `/${segment.source_table}?select=${segment.source_id_column},${segment.source_name_column}`;
+                
+                // Agregar filtro si existe
+                if (segment.source_filter_column && segment.source_filter_value) {
+                    query += `&${segment.source_filter_column}=eq.${segment.source_filter_value}`;
+                }
+                
+                // Ordenar por nombre
+                query += `&order=${segment.source_name_column}.asc`;
+                
+                // Ejecutar query
+                const data = await supabaseRequest(query);
+                
+                if (!data || data.length === 0) {
+                    console.log(`⚠️ No se encontraron opciones para ${segment.segment_name}`);
+                    return [];
+                }
+                
+                // Convertir a formato de segment_options
+                const options = data.map((row, index) => ({
+                    option_id: row[segment.source_id_column],
+                    segment_id: segment.segment_id,
+                    option_name: row[segment.source_name_column],
+                    option_value: row[segment.source_id_column],
+                    option_order: index + 1,
+                    option_status: 'active'
+                }));
+                
+                console.log(`✅ ${options.length} opciones obtenidas de ${segment.source_table}`);
+                
+                return options;
+                
             } catch (error) {
-                console.error(`❌ Error obteniendo opciones para ${segment.segment_name}:`, error);
+                console.error(`❌ Error obteniendo opciones de tabla para ${segment.segment_name}:`, error);
                 return [];
             }
         }
 
         // ==========================================
-        // MOSTRAR FORMULARIO DE PERFIL (MEJORADO)
+        // MOSTRAR FORMULARIO DE PERFIL (MEJORADO CON SEGMENTACIONES VINCULADAS)
         // ==========================================
         async function mostrarFormularioPerfil() {
             // Verificar si hay segmentaciones configuradas
@@ -475,72 +473,101 @@
                 return;
             }
             
-            const content = document.getElementById('survey-content');
-            
-            let formHtml = `
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle me-2"></i>
-                    Antes de comenzar, necesitamos algunos datos para contextualizar tus respuestas.
-                </div>
+            try {
+                mostrarLoading();
                 
-                <form id="profile-form">
-            `;
-            
-            // Procesar cada segmentación configurada
-            for (const segmentConfig of segmentsData) {
-                const segment = segmentConfig.segments;
-                const isRequired = segmentConfig.is_required;
-                const requiredMark = isRequired ? '<span class="text-danger">*</span>' : '';
+                // PASO 1: Cargar opciones dinámicas para segmentaciones vinculadas
+                for (let segmentConfig of segmentsData) {
+                    const segment = segmentConfig.segments;
+                    
+                    if (segment.is_table_linked) {
+                        console.log(`🔗 Segmentación vinculada detectada: ${segment.segment_name}`);
+                        segment.segment_options = await getSegmentOptionsFromTable(segment);
+                    } else {
+                        console.log(`📋 Segmentación genérica: ${segment.segment_name}`);
+                    }
+                }
                 
-                formHtml += `
-                    <div class="mb-3">
-                        <label class="form-label">
-                            <strong>${escapeHtml(segment.segment_name)}</strong> ${requiredMark}
-                        </label>
+                ocultarLoading();
+                
+                // PASO 2: Construir formulario con opciones actualizadas
+                const content = document.getElementById('survey-content');
+                
+                let formHtml = `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Antes de comenzar, necesitamos algunos datos para contextualizar tus respuestas.
+                    </div>
+                    
+                    <form id="profile-form">
                 `;
                 
-                if (segment.segment_description) {
-                    formHtml += `<div class="form-text mb-2">${escapeHtml(segment.segment_description)}</div>`;
-                }
-                
-                // CAMBIO CLAVE: Obtener opciones dinámicas
-                const options = await getSegmentOptions(segment);
-                
-                if (options.length > 0) {
-                    formHtml += `<select class="form-select" name="segment_${segment.segment_id}" ${isRequired ? 'required' : ''}>
-                        <option value="">Selecciona...</option>`;
+                // Agregar campos según segmentaciones configuradas
+                segmentsData.forEach(segmentConfig => {
+                    const segment = segmentConfig.segments;
+                    const isRequired = segmentConfig.is_required;
+                    const requiredMark = isRequired ? '<span class="text-danger">*</span>' : '';
                     
-                    // Ordenar opciones
-                    const sortedOptions = options.sort((a, b) => a.option_order - b.option_order);
+                    formHtml += `
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <strong>${escapeHtml(segment.segment_name)}</strong> ${requiredMark}
+                    `;
                     
-                    sortedOptions.forEach(opt => {
-                        formHtml += `<option value="${escapeHtml(opt.option_value)}">${escapeHtml(opt.option_name)}</option>`;
-                    });
+                    // Mostrar badge de tipo (opcional, para debugging)
+                    if (segment.is_table_linked) {
+                        formHtml += ` <span class="badge bg-info ms-1" style="font-size: 0.7rem;">Vinculada</span>`;
+                    }
                     
-                    formHtml += `</select>`;
-                } else {
-                    // Sin opciones disponibles - campo de texto libre
-                    formHtml += `<input type="text" class="form-control" name="segment_${segment.segment_id}" ${isRequired ? 'required' : ''} placeholder="Escribe tu respuesta">`;
-                }
+                    formHtml += `
+                            </label>
+                    `;
+                    
+                    if (segment.segment_description) {
+                        formHtml += `<div class="form-text mb-2">${escapeHtml(segment.segment_description)}</div>`;
+                    }
+                    
+                    // Ordenar opciones por option_order
+                    const options = segment.segment_options ? segment.segment_options.sort((a, b) => a.option_order - b.option_order) : [];
+                    
+                    if (options.length > 0) {
+                        formHtml += `<select class="form-select" name="segment_${segment.segment_id}" ${isRequired ? 'required' : ''}>
+                            <option value="">Selecciona...</option>`;
+                        
+                        options.forEach(opt => {
+                            formHtml += `<option value="${escapeHtml(opt.option_value)}">${escapeHtml(opt.option_name)}</option>`;
+                        });
+                        
+                        formHtml += `</select>`;
+                    } else {
+                        // Si no hay opciones disponibles, permitir entrada de texto
+                        formHtml += `<input type="text" class="form-control" name="segment_${segment.segment_id}" ${isRequired ? 'required' : ''} placeholder="Escribe tu respuesta">`;
+                    }
+                    
+                    formHtml += `</div>`;
+                });
                 
-                formHtml += `</div>`;
+                formHtml += `
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-arrow-right me-2"></i>Comenzar Encuesta
+                            </button>
+                        </div>
+                    </form>
+                `;
+                
+                content.innerHTML = formHtml;
+                
+                // Event listener para el formulario
+                document.getElementById('profile-form').addEventListener('submit', manejarSubmitPerfil);
+                
+            } catch (error) {
+                console.error('Error cargando formulario de perfil:', error);
+                mostrarError('Error', 'No se pudo cargar el formulario de perfil. Por favor, intenta de nuevo.');
+                ocultarLoading();
             }
-            
-            formHtml += `
-                    <div class="d-grid gap-2 mt-4">
-                        <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="bi bi-arrow-right me-2"></i>Comenzar Encuesta
-                        </button>
-                    </div>
-                </form>
-            `;
-            
-            content.innerHTML = formHtml;
-            
-            // Event listener para el formulario
-            document.getElementById('profile-form').addEventListener('submit', manejarSubmitPerfil);
         }
-        
+
         // ==========================================
         // CREAR PERFIL BÁSICO Y COMENZAR (SIN SEGMENTACIONES)
         // ==========================================
@@ -731,7 +758,6 @@
             // Scroll al inicio
             window.scrollTo(0, 0);
         }
-        
       // ==========================================
         // RENDERIZAR PREGUNTA
         // ==========================================
