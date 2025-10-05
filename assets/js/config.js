@@ -777,7 +777,8 @@ const URL_PERMISSIONS = {
 
     // Módulo Herramientas Generales
     '/modules/general-tools/tasks.html': 'Gestionar tareas',
-    '/modules/general-tools/dashboard.html': 'Dashboard de tareas'
+    '/modules/general-tools/dashboard.html': 'Dashboard de tareas',
+    '/modules/general-tools/community-query.html': 'Consulta de la comunidad' 
   };
 
 // Función principal de validación
