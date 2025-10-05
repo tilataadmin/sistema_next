@@ -402,23 +402,87 @@
             }
         }
         
-        // ==========================================
-        // CARGAR TODOS LOS SEGMENTOS DISPONIBLES
+         // ==========================================
+        // CARGAR TODOS LOS SEGMENTOS DISPONIBLES - MEJORADO
         // ==========================================
         async function cargarSegmentos() {
             try {
                 console.log('📡 Cargando segmentos...');
                 
                 const data = await supabaseRequest('/segments?select=*,segment_options(*)&segment_status=eq.active&order=segment_name.asc');
+                
+                // Procesar cada segmento para obtener sus opciones
+                for (let segment of data) {
+                    if (segment.is_table_linked) {
+                        // Es segmento vinculado - obtener opciones dinámicamente
+                        console.log(`🔗 Segmento vinculado detectado: ${segment.segment_name}`);
+                        segment.segment_options = await getSegmentOptionsFromTable(segment);
+                    } else {
+                        // Es segmento genérico - ya tiene segment_options
+                        console.log(`📋 Segmento genérico: ${segment.segment_name}`);
+                    }
+                }
+                
                 segmentsCache = data || [];
                 
-                console.log(`✅ ${segmentsCache.length} segmentos cargados`);
+                console.log(`✅ ${segmentsCache.length} segmentos cargados (con opciones dinámicas)`);
                 
             } catch (error) {
                 console.error('❌ Error cargando segmentos:', error);
                 showMessage('Error al cargar segmentos: ' + error.message, 'danger');
             }
         }
+        
+        // ==========================================
+        // OBTENER OPCIONES DE SEGMENTO VINCULADO A TABLA
+        // ==========================================
+        async function getSegmentOptionsFromTable(segment) {
+            try {
+                if (!segment.is_table_linked || !segment.source_table) {
+                    return [];
+                }
+                
+                console.log(`🔍 Obteniendo opciones dinámicas de tabla: ${segment.source_table}`);
+                
+                // Construir query base
+                let query = `/${segment.source_table}?select=${segment.source_id_column},${segment.source_name_column}`;
+                
+                // Agregar filtro si existe
+                if (segment.source_filter_column && segment.source_filter_value) {
+                    query += `&${segment.source_filter_column}=eq.${segment.source_filter_value}`;
+                }
+                
+                // Ordenar por nombre
+                query += `&order=${segment.source_name_column}.asc`;
+                
+                // Ejecutar query
+                const data = await supabaseRequest(query);
+                
+                if (!data || data.length === 0) {
+                    console.log(`⚠️ No se encontraron opciones para ${segment.segment_name}`);
+                    return [];
+                }
+                
+                // Convertir a formato de segment_options
+                const options = data.map((row, index) => ({
+                    option_id: row[segment.source_id_column], // Usar ID real de la tabla
+                    segment_id: segment.segment_id,
+                    option_name: row[segment.source_name_column],
+                    option_value: row[segment.source_id_column], // Guardar el ID como valor
+                    option_order: index + 1,
+                    option_status: 'active'
+                }));
+                
+                console.log(`✅ ${options.length} opciones obtenidas de ${segment.source_table}`);
+                
+                return options;
+                
+            } catch (error) {
+                console.error(`❌ Error obteniendo opciones de tabla para ${segment.segment_name}:`, error);
+                return [];
+            }
+        }
+        
       // ==========================================
         // CARGAR SEGMENTACIONES DEL MAESTRO SELECCIONADO
         // ==========================================
@@ -482,7 +546,7 @@
         }
         
         // ==========================================
-        // RENDERIZAR SEGMENTOS DISPONIBLES
+        // RENDERIZAR SEGMENTOS DISPONIBLES - MEJORADO
         // ==========================================
         function renderizarSegmentosDisponibles() {
             const container = document.getElementById('available-segments');
@@ -512,16 +576,42 @@
             }
             
             container.innerHTML = availableSegments.map(segment => {
-                const optionsText = segment.segment_options && segment.segment_options.length > 0
-                    ? segment.segment_options.map(opt => `<span class="segment-option-badge">${escapeHtml(opt.option_name)}</span>`).join('')
-                    : '<span class="text-muted">Sin opciones</span>';
+                // Determinar tipo de segmentación
+                const isLinked = segment.is_table_linked;
+                const typeBadge = isLinked 
+                    ? '<span class="badge bg-info ms-2"><i class="bi bi-link-45deg me-1"></i>Vinculada</span>'
+                    : '<span class="badge bg-secondary ms-2"><i class="bi bi-list-ul me-1"></i>Genérica</span>';
+                
+                // Mostrar origen si es vinculada
+                const sourceInfo = isLinked && segment.source_table
+                    ? `<div class="mt-1"><small class="text-info"><i class="bi bi-table me-1"></i>Origen: ${segment.source_table}</small></div>`
+                    : '';
+                
+                // Renderizar opciones
+                let optionsText = '';
+                if (segment.segment_options && segment.segment_options.length > 0) {
+                    const optionsToShow = segment.segment_options.slice(0, 5); // Mostrar solo primeras 5
+                    optionsText = optionsToShow.map(opt => 
+                        `<span class="segment-option-badge">${escapeHtml(opt.option_name)}</span>`
+                    ).join('');
+                    
+                    if (segment.segment_options.length > 5) {
+                        optionsText += `<span class="segment-option-badge">+${segment.segment_options.length - 5} más</span>`;
+                    }
+                } else {
+                    optionsText = '<span class="text-muted">Sin opciones</span>';
+                }
                 
                 return `
                     <div class="segment-card" onclick="seleccionarSegmento('${segment.segment_id}')">
                         <div class="d-flex justify-content-between align-items-start">
                             <div style="flex: 1;">
-                                <h6 class="mb-1">${escapeHtml(segment.segment_name)}</h6>
+                                <h6 class="mb-1">
+                                    ${escapeHtml(segment.segment_name)}
+                                    ${typeBadge}
+                                </h6>
                                 <small class="text-muted">${escapeHtml(segment.segment_description || '')}</small>
+                                ${sourceInfo}
                                 <div class="segment-options mt-2">
                                     ${optionsText}
                                 </div>
@@ -536,7 +626,7 @@
         }
         
         // ==========================================
-        // RENDERIZAR SEGMENTACIONES ASIGNADAS
+        // RENDERIZAR SEGMENTACIONES ASIGNADAS - MEJORADO
         // ==========================================
         function renderizarSegmentacionesAsignadas(datos) {
             const tbody = document.getElementById('tabla-assigned-body');
@@ -557,11 +647,31 @@
             }
             
             tbody.innerHTML = datos.map(assignment => {
-                const segmentName = assignment.segments?.segment_name || 'Segmento no encontrado';
-                const options = assignment.segments?.segment_options || [];
-                const optionsText = options.length > 0
-                    ? options.map(opt => `<span class="segment-option-badge">${escapeHtml(opt.option_name)}</span>`).join('')
-                    : '<span class="text-muted">Sin opciones</span>';
+                const segment = assignment.segments;
+                const segmentName = segment?.segment_name || 'Segmento no encontrado';
+                
+                // Determinar tipo y badge
+                const isLinked = segment?.is_table_linked;
+                const typeBadge = isLinked 
+                    ? '<span class="badge bg-info me-2"><i class="bi bi-link-45deg me-1"></i>Vinculada</span>'
+                    : '<span class="badge bg-secondary me-2"><i class="bi bi-list-ul me-1"></i>Genérica</span>';
+                
+                // Mostrar opciones
+                const options = segment?.segment_options || [];
+                let optionsText = '';
+                
+                if (options.length > 0) {
+                    const optionsToShow = options.slice(0, 3);
+                    optionsText = optionsToShow.map(opt => 
+                        `<span class="segment-option-badge">${escapeHtml(opt.option_name)}</span>`
+                    ).join('');
+                    
+                    if (options.length > 3) {
+                        optionsText += `<span class="segment-option-badge text-muted">+${options.length - 3}</span>`;
+                    }
+                } else {
+                    optionsText = '<span class="text-muted">Sin opciones</span>';
+                }
                 
                 const requiredIcon = assignment.is_required
                     ? '<i class="bi bi-check-circle-fill text-success" title="Obligatoria"></i>'
@@ -569,7 +679,10 @@
                 
                 return `
                     <tr>
-                        <td><strong>${escapeHtml(segmentName)}</strong></td>
+                        <td>
+                            <strong>${escapeHtml(segmentName)}</strong>
+                            <div class="mt-1">${typeBadge}</div>
+                        </td>
                         <td>
                             <div class="segment-options">
                                 ${optionsText}
@@ -587,6 +700,7 @@
                 `;
             }).join('');
         }
+        
       // ==========================================
         // SELECCIONAR SEGMENTO (VISUAL)
         // ==========================================
@@ -601,7 +715,7 @@
         }
         
         // ==========================================
-        // ABRIR MODAL PARA AGREGAR SEGMENTACIÓN
+        // ABRIR MODAL PARA AGREGAR SEGMENTACIÓN - MEJORADO
         // ==========================================
         function abrirModalAgregar(segmentId) {
             const segment = segmentsCache.find(s => s.segment_id === segmentId);
@@ -614,16 +728,63 @@
             // Configurar modal
             document.getElementById('survey_master_id').value = currentMasterId;
             document.getElementById('segment_id').value = segment.segment_id;
-            document.getElementById('segment-name-display').textContent = segment.segment_name;
             document.getElementById('is_required').checked = true;
             
-            // Mostrar opciones
+            // Determinar tipo y construir mensaje informativo
+            const isLinked = segment.is_table_linked;
+            let segmentInfo = `<strong>${escapeHtml(segment.segment_name)}</strong>`;
+            
+            if (isLinked) {
+                segmentInfo += `
+                    <span class="badge bg-info ms-2">
+                        <i class="bi bi-link-45deg me-1"></i>Vinculada a tabla
+                    </span>
+                `;
+                
+                if (segment.source_table) {
+                    segmentInfo += `
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="bi bi-table me-1"></i>
+                                Origen: <code>${segment.source_table}</code>
+                            </small>
+                        </div>
+                    `;
+                }
+            } else {
+                segmentInfo += `
+                    <span class="badge bg-secondary ms-2">
+                        <i class="bi bi-list-ul me-1"></i>Genérica
+                    </span>
+                `;
+            }
+            
+            document.getElementById('segment-name-display').innerHTML = segmentInfo;
+            
+            // Mostrar opciones disponibles
             const optionsContainer = document.getElementById('segment-options-display');
+            
             if (segment.segment_options && segment.segment_options.length > 0) {
-                optionsContainer.innerHTML = segment.segment_options
+                const totalOptions = segment.segment_options.length;
+                const optionsToShow = segment.segment_options.slice(0, 10); // Primeras 10
+                
+                let optionsHtml = optionsToShow
                     .sort((a, b) => a.option_order - b.option_order)
                     .map(opt => `<span class="segment-option-badge">${escapeHtml(opt.option_name)}</span>`)
                     .join('');
+                
+                if (totalOptions > 10) {
+                    optionsHtml += `
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Mostrando 10 de ${totalOptions} opciones disponibles
+                            </small>
+                        </div>
+                    `;
+                }
+                
+                optionsContainer.innerHTML = optionsHtml;
             } else {
                 optionsContainer.innerHTML = '<span class="text-muted">Sin opciones configuradas</span>';
             }
