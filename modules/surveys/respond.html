@@ -371,59 +371,41 @@
         }
 
         // ==========================================
-        // CARGAR ESTRUCTURA DE LA ENCUESTA - SIMPLIFICADO
+        // CARGAR ESTRUCTURA DE LA ENCUESTA
         // ==========================================
         async function cargarEstructuraEncuesta() {
             try {
                 console.log('📚 Cargando estructura de encuesta...');
                 
-                const masterData = await supabaseRequest(
-                    `/survey_masters?select=*,survey_sections(*,survey_questions(*),survey_scales(*,survey_scale_options(*))),survey_master_segments(*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value))&survey_master_id=eq.${applicationData.survey_master_id}`
-                );
-                
-                if (!masterData || masterData.length === 0) {
-                    throw new Error('No se encontró la estructura de la encuesta');
-                }
-                
-                surveyMaster = masterData[0];
-                
-                // Cargar segmentaciones configuradas (ya viene en surveyMaster.survey_master_segments)
-                segmentsData = surveyMaster.survey_master_segments || [];
-                
-                // Usar secciones que ya vienen con preguntas anidadas
-                sectionsData = surveyMaster.survey_sections || [];
+                // Cargar secciones con preguntas y escalas anidadas (como en el original)
+                const sections = await supabaseRequest('/survey_sections?select=*,survey_scales(scale_id,scale_name,survey_scale_options(*))&survey_master_id=eq.' + applicationData.survey_master_id + '&order=section_order.asc');
+                sectionsData = sections || [];
                 
                 if (sectionsData.length === 0) {
                     throw new Error('Esta encuesta no tiene secciones configuradas.');
                 }
                 
-                // Ordenar secciones
-                sectionsData.sort((a, b) => a.section_order - b.section_order);
+                // Cargar preguntas de todas las secciones
+                const sectionIds = sectionsData.map(s => s.section_id);
+                const questions = await supabaseRequest('/survey_questions?select=*&section_id=in.(' + sectionIds.join(',') + ')&order=question_order.asc');
+                questionsData = questions || [];
                 
-                // Contar preguntas totales y ordenarlas dentro de cada sección
-                let totalQuestions = 0;
+                if (questionsData.length === 0) {
+                    throw new Error('Esta encuesta no tiene preguntas configuradas.');
+                }
+                
+                // Cargar segmentaciones configuradas (CON SOPORTE PARA VINCULADAS)
+                const segments = await supabaseRequest('/survey_master_segments?select=*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value)&survey_master_id=eq.' + applicationData.survey_master_id);
+                segmentsData = segments || [];
+                
+                // Organizar escalas por ID para acceso rápido
                 sectionsData.forEach(section => {
-                    if (section.survey_questions) {
-                        section.survey_questions.sort((a, b) => a.question_order - b.question_order);
-                        totalQuestions += section.survey_questions.length;
-                    }
-                    
-                    // Ordenar opciones de escala si existen
-                    if (section.survey_scales && section.survey_scales.survey_scale_options) {
-                        section.survey_scales.survey_scale_options.sort((a, b) => a.option_order - b.option_order);
-                    }
-                    
-                    // Organizar escalas por ID
                     if (section.survey_scales) {
                         scalesData[section.scale_id] = section.survey_scales;
                     }
                 });
                 
-                if (totalQuestions === 0) {
-                    throw new Error('Esta encuesta no tiene preguntas configuradas.');
-                }
-                
-                console.log(`✅ ${sectionsData.length} secciones, ${totalQuestions} preguntas, ${segmentsData.length} segmentaciones`);
+                console.log(`✅ ${sectionsData.length} secciones, ${questionsData.length} preguntas, ${segmentsData.length} segmentaciones`);
                 
             } catch (error) {
                 console.error('❌ Error cargando estructura:', error);
@@ -669,12 +651,12 @@
         }
         
         // ==========================================
-        // MOSTRAR SECCIÓN - CORREGIDO FINAL
+        // MOSTRAR SECCIÓN
         // ==========================================
         function mostrarSeccion(sectionIndex) {
             const content = document.getElementById('survey-content');
             const section = sectionsData[sectionIndex];
-            const sectionQuestions = section.survey_questions || []; // Usar preguntas anidadas en la sección
+            const sectionQuestions = questionsData.filter(q => q.section_id === section.section_id);
             
             // Barra de progreso
             const progressPercent = Math.round(((sectionIndex) / sectionsData.length) * 100);
@@ -749,7 +731,6 @@
             // Scroll al inicio
             window.scrollTo(0, 0);
         }
-
         
       // ==========================================
         // RENDERIZAR PREGUNTA
