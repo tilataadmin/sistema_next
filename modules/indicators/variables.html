@@ -1151,22 +1151,300 @@
         // ==========================================
         // FUNCIONES PENDIENTES
         // ==========================================
+
+        // ==========================================
+        // VER DETALLES DE VARIABLE
+        // ==========================================
         
-        function viewVariable(variableId) {
-            showMessage('Función de ver detalles en desarrollo', 'info');
+        async function viewVariable(variableId) {
+            try {
+                const variable = allVariables.find(v => v.variable_id === variableId);
+                if (!variable) {
+                    showMessage('Variable no encontrada', 'danger');
+                    return;
+                }
+                
+                // Cargar segmentaciones asociadas
+                const segments = await supabaseRequest(`/variable_segments?select=*,segments(segment_name)&variable_id=eq.${variableId}`);
+                
+                const dataSource = variable.data_source || 'manual';
+                const dataSourceText = dataSource === 'manual' ? 'Manual (digitación)' : 
+                                       dataSource === 'query' ? 'Consulta SQL' : 'API Externa';
+                
+                let configDetails = '';
+                if (variable.data_source_config) {
+                    if (dataSource === 'query') {
+                        configDetails = `
+                            <div class="mt-3">
+                                <strong>Consulta SQL:</strong>
+                                <pre class="bg-light p-2 rounded mt-2" style="font-size: 0.85rem;">${variable.data_source_config.query || 'No definida'}</pre>
+                            </div>
+                        `;
+                    } else if (dataSource === 'api') {
+                        configDetails = `
+                            <div class="mt-3">
+                                <strong>Endpoint:</strong> ${variable.data_source_config.endpoint || 'No definido'}<br>
+                                <strong>Método:</strong> ${variable.data_source_config.method || 'GET'}<br>
+                                <strong>Autenticación:</strong> ${variable.data_source_config.auth_type || 'Ninguna'}
+                            </div>
+                        `;
+                    }
+                }
+                
+                const segmentsList = segments.length > 0 
+                    ? segments.map(s => `<span class="badge bg-info">${s.segments.segment_name}</span>`).join(' ')
+                    : '<span class="text-muted">Sin segmentaciones</span>';
+                
+                const detailsHtml = `
+                    <div class="alert alert-light" role="alert">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h5 class="alert-heading">${variable.variable_name}</h5>
+                                <hr>
+                                <p><strong>Descripción:</strong> ${variable.variable_description || 'Sin descripción'}</p>
+                                <p><strong>Tipo de dato:</strong> <span class="badge bg-secondary">${variable.data_type}</span></p>
+                                <p><strong>Periodicidad:</strong> <span class="badge ${variable.periodicity === 'annual' ? 'bg-warning' : 'bg-info'}">${variable.periodicity === 'annual' ? 'Anual' : 'Mensual'}</span></p>
+                                <p><strong>Fuente de datos:</strong> <span class="badge ${dataSource === 'manual' ? 'bg-secondary' : 'bg-success'}">${dataSourceText}</span></p>
+                                ${configDetails}
+                                <p class="mb-0"><strong>Segmentaciones:</strong> ${segmentsList}</p>
+                                <hr>
+                                <small class="text-muted">Creada: ${formatDate(variable.created_at)}</small>
+                            </div>
+                            <button type="button" class="btn-close ms-3" onclick="closeAlert('variableDetailsAlert')"></button>
+                        </div>
+                    </div>
+                `;
+                
+                const alertContainer = document.getElementById('alertContainer');
+                alertContainer.innerHTML = `<div id="variableDetailsAlert">${detailsHtml}</div>`;
+                alertContainer.scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Error cargando detalles:', error);
+                showMessage('Error cargando detalles de la variable', 'danger');
+            }
         }
         
-        function editVariable(variableId) {
-            showMessage('Función de edición en desarrollo', 'info');
+        // ==========================================
+        // EDITAR VARIABLE
+        // ==========================================
+        
+        async function editVariable(variableId) {
+            try {
+                const variable = allVariables.find(v => v.variable_id === variableId);
+                if (!variable) {
+                    showMessage('Variable no encontrada', 'danger');
+                    return;
+                }
+                
+                // Verificar propiedad
+                if (variable.owner_id !== currentUser.user_id) {
+                    showMessage('Solo puedes editar tus propias variables', 'warning');
+                    return;
+                }
+                
+                // Cargar segmentaciones asociadas
+                const segments = await supabaseRequest(`/variable_segments?select=segment_id&variable_id=eq.${variableId}`);
+                selectedSegments = segments.map(s => s.segment_id);
+                
+                // Configurar modo edición
+                isEditMode = true;
+                currentVariableId = variableId;
+                currentDataSource = variable.data_source || 'manual';
+                
+                // Llenar formulario
+                document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Variable';
+                document.getElementById('submitBtn').innerHTML = '<i class="bi bi-check-circle me-1"></i>Actualizar Variable';
+                document.getElementById('submitBtn').className = 'btn btn-primary';
+                
+                document.getElementById('variableId').value = variable.variable_id;
+                document.getElementById('variableName').value = variable.variable_name;
+                document.getElementById('variableDescription').value = variable.variable_description || '';
+                document.getElementById('dataType').value = variable.data_type;
+                document.getElementById('periodicity').value = variable.periodicity;
+                document.getElementById('variableStatus').value = variable.variable_status;
+                document.getElementById('dataSource').value = currentDataSource;
+                
+                // Configurar campos según data_source
+                if (currentDataSource === 'query' && variable.data_source_config) {
+                    document.getElementById('queryConfig').value = variable.data_source_config.query || '';
+                } else if (currentDataSource === 'api' && variable.data_source_config) {
+                    document.getElementById('apiEndpoint').value = variable.data_source_config.endpoint || '';
+                    document.getElementById('apiMethod').value = variable.data_source_config.method || 'GET';
+                    document.getElementById('apiAuthType').value = variable.data_source_config.auth_type || 'none';
+                }
+                
+                // Actualizar UI según data_source
+                handleDataSourceChange();
+                
+                // Renderizar segmentaciones
+                renderSegmentsSelection();
+                
+                // Mostrar modal
+                document.getElementById('variableModal').style.display = 'flex';
+                document.getElementById('variableName').focus();
+                
+            } catch (error) {
+                console.error('Error cargando variable para edición:', error);
+                showMessage('Error cargando variable: ' + error.message, 'danger');
+            }
         }
         
-        function toggleVariableStatus(variableId, currentStatus) {
-            showMessage('Función de cambio de estado en desarrollo', 'info');
+        // ==========================================
+        // ACTUALIZAR VARIABLE (ya existía pero estaba vacía)
+        // ==========================================
+        
+        async function updateVariable() {
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Actualizando...';
+            
+            try {
+                if (!currentUser || !currentVariableId) {
+                    throw new Error('Error de sesión o variable no identificada');
+                }
+                
+                const dataSource = document.getElementById('dataSource').value;
+                
+                // Validar segmentaciones según tipo de fuente
+                if (dataSource === 'manual' && selectedSegments.length > 1) {
+                    throw new Error('Variables manuales solo pueden tener 1 segmentación');
+                }
+                
+                // Construir data_source_config según el tipo
+                let dataSourceConfig = null;
+                
+                if (dataSource === 'query') {
+                    const query = document.getElementById('queryConfig').value.trim();
+                    if (!query) {
+                        throw new Error('Debe especificar la consulta SQL');
+                    }
+                    dataSourceConfig = {
+                        query: query,
+                        description: 'Consulta automática a base de datos'
+                    };
+                } else if (dataSource === 'api') {
+                    const endpoint = document.getElementById('apiEndpoint').value.trim();
+                    if (!endpoint) {
+                        throw new Error('Debe especificar el endpoint de la API');
+                    }
+                    dataSourceConfig = {
+                        endpoint: endpoint,
+                        method: document.getElementById('apiMethod').value,
+                        auth_type: document.getElementById('apiAuthType').value
+                    };
+                }
+                
+                const formData = {
+                    variable_name: document.getElementById('variableName').value.trim(),
+                    variable_description: document.getElementById('variableDescription').value.trim() || null,
+                    periodicity: document.getElementById('periodicity').value,
+                    data_type: document.getElementById('dataType').value,
+                    variable_status: document.getElementById('variableStatus').value,
+                    data_source: dataSource,
+                    data_source_config: dataSourceConfig,
+                    updated_at: new Date().toISOString()
+                };
+                
+                console.log('📝 Actualizando variable:', formData);
+                
+                // Actualizar variable
+                await supabaseRequest(`/variables?variable_id=eq.${currentVariableId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(formData)
+                });
+                
+                // Actualizar segmentaciones
+                // 1. Eliminar segmentaciones actuales
+                await supabaseRequest(`/variable_segments?variable_id=eq.${currentVariableId}`, {
+                    method: 'DELETE'
+                });
+                
+                // 2. Insertar nuevas segmentaciones
+                if (selectedSegments.length > 0) {
+                    const segmentAssignments = selectedSegments.map(segmentId => ({
+                        variable_id: currentVariableId,
+                        segment_id: segmentId,
+                        is_required: true
+                    }));
+                    
+                    await supabaseRequest('/variable_segments', {
+                        method: 'POST',
+                        body: JSON.stringify(segmentAssignments)
+                    });
+                    
+                    console.log(`✅ ${selectedSegments.length} segmentaciones actualizadas`);
+                }
+                
+                showMessage('Variable actualizada exitosamente', 'success');
+                closeVariableModal();
+                loadVariables();
+                
+            } catch (error) {
+                console.error('❌ Error actualizando variable:', error);
+                showMessage(`Error actualizando variable: ${error.message}`, 'danger');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Actualizar Variable';
+            }
         }
         
-        function updateVariable() {
-            showMessage('Función de actualización en desarrollo', 'info');
-        }
+       // ==========================================
+        // CAMBIAR ESTADO DE VARIABLE (Activar/Desactivar)
+        // ==========================================
+        
+        async function toggleVariableStatus(variableId, currentStatus) {
+            try {
+                const variable = allVariables.find(v => v.variable_id === variableId);
+                if (!variable) {
+                    showMessage('Variable no encontrada', 'danger');
+                    return;
+                }
+                
+                // Verificar propiedad
+                if (variable.owner_id !== currentUser.user_id) {
+                    showMessage('Solo puedes modificar el estado de tus propias variables', 'warning');
+                    return;
+                }
+                
+                const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+                const action = newStatus === 'active' ? 'activar' : 'desactivar';
+                
+                const confirmMessage = `¿Estás seguro de ${action} la variable "${variable.variable_name}"?${
+                    newStatus === 'inactive' 
+                        ? '\n\nLas variables inactivas no se mostrarán en la captura de datos.' 
+                        : ''
+                }`;
+                
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+                
+                // Actualizar estado
+                await supabaseRequest(`/variables?variable_id=eq.${variableId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ 
+                        variable_status: newStatus,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                
+                showMessage(
+                    `Variable "${variable.variable_name}" ${newStatus === 'active' ? 'activada' : 'desactivada'} exitosamente`, 
+                    'success'
+                );
+                
+                // Recargar variables
+                loadVariables();
+                
+            } catch (error) {
+                console.error('Error cambiando estado:', error);
+                showMessage(`Error cambiando estado: ${error.message}`, 'danger');
+            }
+        } 
+       
+        
+       
         
         // ==========================================
         // GLOBALES
