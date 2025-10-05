@@ -371,7 +371,7 @@
         }
 
         // ==========================================
-        // CARGAR ESTRUCTURA DE LA ENCUESTA - CORREGIDO v2
+        // CARGAR ESTRUCTURA DE LA ENCUESTA - SIMPLIFICADO
         // ==========================================
         async function cargarEstructuraEncuesta() {
             try {
@@ -387,35 +387,43 @@
                 
                 surveyMaster = masterData[0];
                 
-                // CORRECCIÓN: Usar surveyMaster.survey_master_id (no masterData.survey_master_id)
-                const segments = await supabaseRequest('/survey_master_segments?select=*,segments(segment_id,segment_name,segment_description,segment_options(*),is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value)&survey_master_id=eq.' + surveyMaster.survey_master_id);
-                segmentsData = segments || [];
+                // Cargar segmentaciones configuradas (ya viene en surveyMaster.survey_master_segments)
+                segmentsData = surveyMaster.survey_master_segments || [];
                 
-                // Cargar secciones
-                const sections = await supabaseRequest('/survey_sections?select=*,survey_scales(scale_id,scale_name,survey_scale_options(*))&survey_master_id=eq.' + surveyMaster.survey_master_id + '&order=section_order.asc');
-                sectionsData = sections || [];
+                // Usar secciones que ya vienen con preguntas anidadas
+                sectionsData = surveyMaster.survey_sections || [];
                 
                 if (sectionsData.length === 0) {
                     throw new Error('Esta encuesta no tiene secciones configuradas.');
                 }
                 
-                // Cargar preguntas de todas las secciones
-                const sectionIds = sectionsData.map(s => s.section_id);
-                const questions = await supabaseRequest('/survey_questions?select=*&section_id=in.(' + sectionIds.join(',') + ')&order=question_order.asc');
-                questionsData = questions || [];
+                // Ordenar secciones
+                sectionsData.sort((a, b) => a.section_order - b.section_order);
                 
-                if (questionsData.length === 0) {
-                    throw new Error('Esta encuesta no tiene preguntas configuradas.');
-                }
-                
-                // Organizar escalas por ID para acceso rápido
+                // Contar preguntas totales y ordenarlas dentro de cada sección
+                let totalQuestions = 0;
                 sectionsData.forEach(section => {
+                    if (section.survey_questions) {
+                        section.survey_questions.sort((a, b) => a.question_order - b.question_order);
+                        totalQuestions += section.survey_questions.length;
+                    }
+                    
+                    // Ordenar opciones de escala si existen
+                    if (section.survey_scales && section.survey_scales.survey_scale_options) {
+                        section.survey_scales.survey_scale_options.sort((a, b) => a.option_order - b.option_order);
+                    }
+                    
+                    // Organizar escalas por ID
                     if (section.survey_scales) {
                         scalesData[section.scale_id] = section.survey_scales;
                     }
                 });
                 
-                console.log(`✅ ${sectionsData.length} secciones, ${questionsData.length} preguntas, ${segmentsData.length} segmentaciones`);
+                if (totalQuestions === 0) {
+                    throw new Error('Esta encuesta no tiene preguntas configuradas.');
+                }
+                
+                console.log(`✅ ${sectionsData.length} secciones, ${totalQuestions} preguntas, ${segmentsData.length} segmentaciones`);
                 
             } catch (error) {
                 console.error('❌ Error cargando estructura:', error);
@@ -661,12 +669,12 @@
         }
         
         // ==========================================
-        // MOSTRAR SECCIÓN - CORREGIDO
+        // MOSTRAR SECCIÓN - CORREGIDO FINAL
         // ==========================================
         function mostrarSeccion(sectionIndex) {
             const content = document.getElementById('survey-content');
-            const section = sectionsData[sectionIndex]; // CAMBIO: usar sectionsData en lugar de surveyMaster.survey_sections
-            const sectionQuestions = questionsData.filter(q => q.section_id === section.section_id);
+            const section = sectionsData[sectionIndex];
+            const sectionQuestions = section.survey_questions || []; // Usar preguntas anidadas en la sección
             
             // Barra de progreso
             const progressPercent = Math.round(((sectionIndex) / sectionsData.length) * 100);
@@ -741,7 +749,6 @@
             // Scroll al inicio
             window.scrollTo(0, 0);
         }
-
 
         
       // ==========================================
