@@ -620,8 +620,50 @@
                 availableSegments = [];
             }
         }
+
+        // ==========================================
+        // OBTENER OPCIONES DE SEGMENTACIÓN (Genérica o Vinculada)
+        // ==========================================
         
-        function renderSegmentsSelection() {
+        async function getSegmentOptions(segmentId) {
+            try {
+                const segment = availableSegments.find(s => s.segment_id === segmentId);
+                if (!segment) return [];
+                
+                // Si es vinculada a tabla, obtener datos dinámicos
+                if (segment.is_table_linked && segment.source_table) {
+                    let query = `/${segment.source_table}?select=${segment.source_id_column},${segment.source_name_column}`;
+                    
+                    // Aplicar filtro si existe
+                    if (segment.source_filter_column && segment.source_filter_value) {
+                        query += `&${segment.source_filter_column}=eq.${segment.source_filter_value}`;
+                    }
+                    
+                    // Orden
+                    query += `&order=${segment.source_name_column}`;
+                    
+                    const data = await supabaseRequest(query);
+                    
+                    // Convertir a formato option_name/option_value
+                    return data.map(item => ({
+                        option_name: item[segment.source_name_column],
+                        option_value: item[segment.source_id_column],
+                        is_dynamic: true
+                    }));
+                }
+                
+                // Si es genérica, devolver segment_options
+                return segment.segment_options || [];
+                
+            } catch (error) {
+                console.error('Error obteniendo opciones de segmentación:', error);
+                return [];
+            }
+        }
+
+
+        
+        async function renderSegmentsSelection() {
             const container = document.getElementById('segmentsContainer');
             
             if (availableSegments.length === 0) {
@@ -635,10 +677,24 @@
             }
             
             let segmentsHtml = '';
-            availableSegments.forEach(segment => {
+            
+            for (const segment of availableSegments) {
                 const isSelected = selectedSegments.includes(segment.segment_id);
-                const optionsCount = segment.segment_options ? segment.segment_options.length : 0;
                 const isDisabled = currentDataSource === 'manual' && selectedSegments.length >= 1 && !isSelected;
+                const isLinked = segment.is_table_linked === true;
+                
+                // Para vinculadas, obtener conteo dinámico
+                let optionsCount = 0;
+                if (isLinked) {
+                    try {
+                        const dynamicOptions = await getSegmentOptions(segment.segment_id);
+                        optionsCount = dynamicOptions.length;
+                    } catch (error) {
+                        optionsCount = '?';
+                    }
+                } else {
+                    optionsCount = segment.segment_options ? segment.segment_options.length : 0;
+                }
                 
                 segmentsHtml += `
                     <div class="segment-item ${isDisabled ? 'disabled' : ''}">
@@ -649,14 +705,17 @@
                                    onchange="toggleSegment('${segment.segment_id}')">
                             <label class="form-check-label" for="segment_${segment.segment_id}">
                                 <strong>${segment.segment_name}</strong>
-                                <span class="badge bg-info ms-2">${optionsCount} opciones</span>
+                                ${isLinked ? 
+                                    `<span class="badge bg-primary ms-2"><i class="bi bi-database"></i> ${optionsCount} dinámicas</span>` :
+                                    `<span class="badge bg-info ms-2">${optionsCount} opciones</span>`
+                                }
                                 <br>
                                 <small class="text-muted">${segment.segment_description || 'Sin descripción'}</small>
                             </label>
                         </div>
                     </div>
                 `;
-            });
+            }
             
             container.innerHTML = segmentsHtml;
         }
@@ -1002,21 +1061,21 @@
                 
                 for (const param of uniqueParams) {
                     // Extraer el nombre de la segmentación del parámetro
-                    // :segment_grade_id -> grade
                     const segmentName = param.replace(':segment_', '').replace('_id', '');
                     
-                    // NUEVO: Mapeo de nombres en inglés a español
+                    // Mapeo de nombres en inglés a español
                     const segmentMapping = {
                         'grade': 'grado',
                         'gender': 'sexo',
                         'section': 'sección',
                         'division': 'división',
-                        'area': 'área'
+                        'area': 'área',
+                        'course': 'curso'
                     };
                     
                     const segmentNameES = segmentMapping[segmentName.toLowerCase()] || segmentName;
                     
-                    // Buscar la segmentación correspondiente (buscar en español e inglés)
+                    // Buscar la segmentación correspondiente
                     const segment = availableSegments.find(s => {
                         const sName = s.segment_name.toLowerCase();
                         return sName.includes(segmentName.toLowerCase()) || 
@@ -1025,17 +1084,26 @@
                                segmentNameES.includes(sName);
                     });
                     
-                    if (!segment || !segment.segment_options || segment.segment_options.length === 0) {
+                    if (!segment) {
                         throw new Error(`No se encontró segmentación para parámetro: ${param}. Segmentaciones disponibles: ${availableSegments.map(s => s.segment_name).join(', ')}`);
                     }
                     
-                    // Usar el primer valor de la segmentación como ejemplo
-                    const firstOption = segment.segment_options[0];
+                    // CAMBIO CRÍTICO: Obtener opciones (genéricas o dinámicas)
+                    const segmentOptions = await getSegmentOptions(segment.segment_id);
+                    
+                    if (!segmentOptions || segmentOptions.length === 0) {
+                        throw new Error(`La segmentación "${segment.segment_name}" no tiene opciones disponibles`);
+                    }
+                    
+                    // Usar el primer valor como ejemplo
+                    const firstOption = segmentOptions[0];
                     const testValue = firstOption.option_value;
                     
                     paramValues[param] = {
                         name: firstOption.option_name,
-                        value: testValue
+                        value: testValue,
+                        segment_name: segment.segment_name,
+                        is_dynamic: firstOption.is_dynamic || false
                     };
                     
                     // Reemplazar en la query
