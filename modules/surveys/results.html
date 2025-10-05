@@ -1111,7 +1111,7 @@
                 await loadAllProfiles();
                 
                 // 3. Analizar segmentos disponibles
-                analyzeAvailableSegments();
+                await analyzeAvailableSegments();
                 
                 // 4. NUEVO: Inicializar secciones seleccionadas (todas por defecto)
                 initializeSelectedSections();
@@ -1146,10 +1146,12 @@
         async function loadSurveyStructure() {
             try {
                 console.log('📡 Cargando estructura de la encuesta...');
-                
+
                 const masterData = await supabaseRequest(
-                    `/survey_masters?select=*,survey_sections(*,survey_questions(*),survey_scales(*,survey_scale_options(*))),survey_master_segments(*,segments(segment_name,segment_options(*)))&survey_master_id=eq.${selectedApplication.survey_master_id}`
+                    `/survey_masters?select=*,survey_sections(*,survey_questions(*),survey_scales(*,survey_scale_options(*))),survey_master_segments(*,segments(segment_name,is_table_linked,source_table,source_id_column,source_name_column,source_filter_column,source_filter_value,segment_options(*)))&survey_master_id=eq.${selectedApplication.survey_master_id}`
                 );
+                                
+               
                 
                 if (!masterData || masterData.length === 0) {
                     throw new Error('No se encontró la estructura de la encuesta');
@@ -1207,9 +1209,63 @@
         }
 
         // ==========================================
+        // OBTENER OPCIONES DE SEGMENTO VINCULADO A TABLA
+        // ==========================================
+        async function getSegmentOptionsFromTable(segment) {
+            try {
+                if (!segment.is_table_linked || !segment.source_table) {
+                    return [];
+                }
+                
+                console.log(`🔍 Obteniendo opciones dinámicas de tabla: ${segment.source_table}`);
+                
+                // Construir query base
+                let query = `/${segment.source_table}?select=${segment.source_id_column},${segment.source_name_column}`;
+                
+                // Agregar filtro si existe
+                if (segment.source_filter_column && segment.source_filter_value) {
+                    query += `&${segment.source_filter_column}=eq.${segment.source_filter_value}`;
+                }
+                
+                // Ordenar - usar campo de orden si existe, sino por nombre
+                if (segment.source_table === 'grades') {
+                    query += '&order=grade_order.asc';
+                } else {
+                    query += `&order=${segment.source_name_column}.asc`;
+                }
+                
+                // Ejecutar query
+                const data = await supabaseRequest(query);
+                
+                if (!data || data.length === 0) {
+                    console.log(`⚠️ No se encontraron opciones para ${segment.segment_name}`);
+                    return [];
+                }
+                
+                // Convertir a formato de segment_options
+                const options = data.map((row, index) => ({
+                    option_id: row[segment.source_id_column],
+                    segment_id: segment.segment_id,
+                    option_name: row[segment.source_name_column],
+                    option_value: row[segment.source_id_column],
+                    option_order: index + 1,
+                    option_status: 'active'
+                }));
+                
+                console.log(`✅ ${options.length} opciones obtenidas de ${segment.source_table}`);
+                
+                return options;
+                
+            } catch (error) {
+                console.error(`❌ Error obteniendo opciones de tabla para ${segment.segment_name}:`, error);
+                return [];
+            }
+        }
+
+        // ==========================================
         // ANALIZAR SEGMENTOS DISPONIBLES
         // ==========================================
-        function analyzeAvailableSegments() {
+        async function analyzeAvailableSegments() {
             console.log('🔍 Analizando segmentos configurados...');
             
             availableSegments = {};
@@ -1221,8 +1277,17 @@
                 return;
             }
             
-            configuredSegments.forEach(segmentAssignment => {
+            // NUEVO: Cargar opciones dinámicas para segmentaciones vinculadas
+            for (let segmentAssignment of configuredSegments) {
                 const segment = segmentAssignment.segments;
+                
+                if (segment.is_table_linked) {
+                    console.log(`🔗 Segmentación vinculada detectada: ${segment.segment_name}`);
+                    segment.segment_options = await getSegmentOptionsFromTable(segment);
+                } else {
+                    console.log(`📋 Segmentación genérica: ${segment.segment_name}`);
+                }
+                
                 const segmentName = segment.segment_name;
                 const options = segment.segment_options || [];
                 
@@ -1232,7 +1297,7 @@
                     label: segmentName,
                     options: sortedOptions
                 };
-            });
+            }
             
             console.log('✅ Segmentos analizados:', availableSegments);
         }
