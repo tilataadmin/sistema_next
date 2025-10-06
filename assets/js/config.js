@@ -212,6 +212,15 @@ const APP_CONFIG = {
             icon: 'bi-tools',
             path: '/modules/general-tools/',
             status: 'active'
+        },
+        // 🆕 NUEVO MÓDULO - GESTIÓN AMBIENTAL
+        {
+            id: 'environmental',
+            name: 'Gestión Ambiental',
+            description: 'Gestión de arbolización, manejo hídrico y sostenibilidad',
+            icon: 'bi-tree',
+            path: '/modules/environmental/',
+            status: 'active'
         }
     ],
     
@@ -785,7 +794,16 @@ const URL_PERMISSIONS = {
     // Módulo Herramientas Generales
     '/modules/general-tools/tasks.html': 'Gestionar tareas',
     '/modules/general-tools/dashboard.html': 'Dashboard de tareas',
-    '/modules/general-tools/community-query.html': 'Consulta de la comunidad' 
+    '/modules/general-tools/community-query.html': 'Consulta de la comunidad',
+
+    // Módulo Gestión Ambiental (environmental)
+    '/modules/environmental/species.html': 'Gestionar especies de árboles',
+    '/modules/environmental/species-documentation.html': 'Documentación de especies',
+    '/modules/environmental/tree-inventory.html': 'Gestionar inventario de árboles',
+    '/modules/environmental/register-tree-care.html': 'Registrar cuidados de árboles',
+    '/modules/environmental/tree-care-history.html': 'Historial de cuidados',
+    '/modules/environmental/tree-map.html': 'Mapa de árboles',
+    '/modules/environmental/reports.html': 'Reportes de arbolización'
   };
 
 // Función principal de validación
