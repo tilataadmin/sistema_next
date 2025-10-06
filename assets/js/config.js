@@ -759,6 +759,9 @@ const URL_PERMISSIONS = {
     '/modules/admissions/applicant-process.html': 'Vista de seguimiento del proceso',
     '/modules/admissions/dashboard.html': 'Dashboard',
     '/modules/admissions/reports.html': 'Reportes',
+    '/modules/admissions/contact-sources.html': 'Fuentes de contacto',
+    '/modules/admissions/referral-types.html': 'Tipos de referidos',
+    '/modules/admissions/form-config.html': 'Configuración del formulario',
     
     // Módulo Tilatá te Escucha (TTE)
     '/modules/tte/categories.html': 'Gestionar categorías TTE',
