@@ -752,12 +752,16 @@ const URL_PERMISSIONS = {
     '/modules/admissions/loss-reasons.html': 'Razones de pérdida',
     '/modules/admissions/process-steps.html': 'Pasos del proceso',
     '/modules/admissions/fairs.html': 'Ferias de preescolares',
+    '/modules/admissions/grade-age-ranges.html': 'Nacimiento - grados',  // NUEVO
     '/modules/admissions/applicants.html': 'Aspirantes',
     '/modules/admissions/applicant-detail.html': 'Ficha individual del aspirante',
     '/modules/admissions/applicant-steps.html': 'Gestión de pasos por aspirante',
     '/modules/admissions/applicant-process.html': 'Vista de seguimiento del proceso',
     '/modules/admissions/dashboard.html': 'Dashboard',
     '/modules/admissions/reports.html': 'Reportes',
+    '/modules/admissions/contact-sources.html': 'Fuentes de contacto',
+    '/modules/admissions/referral-types.html': 'Tipos de referidos',
+    '/modules/admissions/form-config.html': 'Configuración del formulario',
     
     // Módulo Tilatá te Escucha (TTE)
     '/modules/tte/categories.html': 'Gestionar categorías TTE',
