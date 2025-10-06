@@ -752,6 +752,7 @@ const URL_PERMISSIONS = {
     '/modules/admissions/loss-reasons.html': 'Razones de pérdida',
     '/modules/admissions/process-steps.html': 'Pasos del proceso',
     '/modules/admissions/fairs.html': 'Ferias de preescolares',
+    '/modules/admissions/grade-age-ranges.html': 'Nacimiento - grados',  // NUEVO
     '/modules/admissions/applicants.html': 'Aspirantes',
     '/modules/admissions/applicant-detail.html': 'Ficha individual del aspirante',
     '/modules/admissions/applicant-steps.html': 'Gestión de pasos por aspirante',
