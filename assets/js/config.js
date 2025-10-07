@@ -808,6 +808,7 @@ const URL_PERMISSIONS = {
     '/modules/environmental/water-meters.html': 'Gestionar medidores de agua',
     '/modules/environmental/daily-water-readings.html': 'Registrar lecturas diarias de agua',
     '/modules/environmental/monthly-water-readings.html': 'Registrar lecturas mensuales de agua',
+    '/modules/environmental/edit-daily-readings.html': 'Editar lecturas históricas de agua', 
     '/modules/environmental/water-alerts.html': 'Gestionar alertas hídricas',
     '/modules/environmental/extraordinary-water-readings.html': 'Registrar mediciones extraordinarias',
     '/modules/environmental/water-balance-dashboard.html': 'Dashboard de balance hídrico',
