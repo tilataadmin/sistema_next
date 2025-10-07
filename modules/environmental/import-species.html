@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importar Especies desde CSV - SchoolNet</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .loading-overlay.hidden {
+            display: none;
+        }
+        
+        .species-preview {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .species-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .species-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="bg-white p-4 rounded text-center">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <p class="mb-0">Procesando...</p>
+        </div>
+    </div>
+
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0">
+                            <i class="bi bi-cloud-upload me-2"></i>
+                            Importar Especies desde CSV
+                        </h4>
+                    </div>
+                    
+                    <div class="card-body">
+                        <div id="alertContainer"></div>
+                        
+                        <!-- PASO 1: SUBIR ARCHIVO -->
+                        <div id="step-upload">
+                            <h5>Paso 1: Selecciona el archivo CSV</h5>
+                            <p class="text-muted">
+                                El archivo debe contener una columna llamada "ESPECIE" con el formato:<br>
+                                <code>Nombre Común - Nombre Científico</code>
+                            </p>
+                            
+                            <div class="mb-3">
+                                <label for="csv-file" class="form-label">Archivo CSV</label>
+                                <input type="file" 
+                                       class="form-control" 
+                                       id="csv-file" 
+                                       accept=".csv"
+                                       onchange="procesarArchivo()">
+                            </div>
+                        </div>
+                        
+                        <!-- PASO 2: PREVIEW Y CONFIRMACIÓN -->
+                        <div id="step-preview" class="d-none">
+                            <h5>Paso 2: Vista Previa de Especies</h5>
+                            <p class="text-muted">
+                                Se encontraron <strong id="total-especies">0</strong> especies únicas.
+                                Revisa la lista y confirma la importación.
+                            </p>
+                            
+                            <div class="species-preview border rounded p-3 mb-3" id="preview-container">
+                                <!-- Especies se llenarán aquí -->
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-secondary" onclick="reiniciar()">
+                                    <i class="bi bi-arrow-left me-1"></i>Cancelar
+                                </button>
+                                <button class="btn btn-success" onclick="importarEspecies()">
+                                    <i class="bi bi-check-circle me-1"></i>Importar Especies
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- PASO 3: RESULTADOS -->
+                        <div id="step-results" class="d-none">
+                            <h5>Paso 3: Resultados de la Importación</h5>
+                            
+                            <div class="alert alert-success">
+                                <h6><i class="bi bi-check-circle me-2"></i>Importación Completada</h6>
+                                <ul class="mb-0">
+                                    <li>Especies insertadas: <strong id="count-inserted">0</strong></li>
+                                    <li>Especies ya existentes (omitidas): <strong id="count-skipped">0</strong></li>
+                                    <li>Errores: <strong id="count-errors">0</strong></li>
+                                </ul>
+                            </div>
+                            
+                            <div id="error-details" class="d-none">
+                                <h6>Detalles de Errores:</h6>
+                                <div class="alert alert-danger" id="error-list"></div>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" onclick="reiniciar()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Importar Otro Archivo
+                                </button>
+                                <a href="species.html" class="btn btn-outline-primary">
+                                    <i class="bi bi-list-ul me-1"></i>Ver Especies
+                                </a>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <!-- INFO ADICIONAL -->
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <h6><i class="bi bi-info-circle me-2"></i>Información</h6>
+                        <ul class="small mb-0">
+                            <li>El sistema extrae automáticamente nombres comunes y científicos</li>
+                            <li>Se ignoran duplicados (especies ya existentes en la base de datos)</li>
+                            <li>Formato esperado: "Tíbar - Escallonia paniculata"</li>
+                            <li>Las especies importadas quedan con estado "activo"</li>
+                        </ul>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let especiesExtraidas = [];
+        let especiesExistentes = [];
+        
+        // ==========================================
+        // PROCESAR ARCHIVO CSV
+        // ==========================================
+        async function procesarArchivo() {
+            const fileInput = document.getElementById('csv-file');
+            const file = fileInput.files[0];
+            
+            if (!file) return;
+            
+            try {
+                mostrarLoading();
+                
+                // Leer archivo
+                const text = await file.text();
+                
+                // Parsear CSV con Papaparse
+                import('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/+esm').then(async (module) => {
+                    const Papa = module.default;
+                    
+                    const parsed = Papa.parse(text, {
+                        header: true,
+                        skipEmptyLines: true,
+                        transformHeader: (header) => header.trim()
+                    });
+                    
+                    console.log('CSV parseado:', parsed.data.length, 'filas');
+                    console.log('Columnas:', parsed.meta.fields);
+                    
+                    // Extraer especies de columna ESPECIE
+                    const especiesRaw = parsed.data
+                        .map(row => row.ESPECIE || row.especie || row.Especie)
+                        .filter(e => e && e.trim());
+                    
+                    console.log('Especies encontradas:', especiesRaw.length);
+                    
+                    // Parsear formato "Nombre Común - Nombre Científico"
+                    especiesExtraidas = extraerEspecies(especiesRaw);
+                    
+                    // Cargar especies existentes en BD
+                    await cargarEspeciesExistentes();
+                    
+                    // Mostrar preview
+                    mostrarPreview();
+                    
+                    ocultarLoading();
+                });
+                
+            } catch (error) {
+                console.error('Error procesando archivo:', error);
+                showMessage('Error al procesar archivo: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+        
+        // ==========================================
+        // EXTRAER ESPECIES DEL CSV
+        // ==========================================
+        function extraerEspecies(especiesRaw) {
+            const especiesMap = new Map();
+            
+            especiesRaw.forEach(especieStr => {
+                // Parsear formato "Nombre Común - Nombre Científico"
+                const partes = especieStr.split('-').map(p => p.trim());
+                
+                if (partes.length >= 2) {
+                    const nombreComun = partes[0];
+                    const nombreCientifico = partes.slice(1).join(' - '); // Por si hay más guiones
+                    
+                    // Usar nombre común como clave única
+                    const key = nombreComun.toLowerCase();
+                    
+                    if (!especiesMap.has(key)) {
+                        especiesMap.set(key, {
+                            species_name: nombreComun,
+                            scientific_name: nombreCientifico,
+                            species_status: 'active'
+                        });
+                    }
+                } else {
+                    // Si no tiene el formato esperado, guardar solo nombre común
+                    const key = especieStr.toLowerCase();
+                    if (!especiesMap.has(key)) {
+                        especiesMap.set(key, {
+                            species_name: especieStr,
+                            scientific_name: null,
+                            species_status: 'active'
+                        });
+                    }
+                }
+            });
+            
+            return Array.from(especiesMap.values());
+        }
+        
+        // ==========================================
+        // CARGAR ESPECIES EXISTENTES EN BD
+        // ==========================================
+        async function cargarEspeciesExistentes() {
+            try {
+                const datos = await supabaseRequest('/env_tree_species?select=species_name');
+                especiesExistentes = datos.map(e => e.species_name.toLowerCase());
+                console.log('Especies existentes en BD:', especiesExistentes.length);
+            } catch (error) {
+                console.error('Error cargando especies existentes:', error);
+                especiesExistentes = [];
+            }
+        }
+        
+        // ==========================================
+        // MOSTRAR PREVIEW
+        // ==========================================
+        function mostrarPreview() {
+            document.getElementById('step-upload').classList.add('d-none');
+            document.getElementById('step-preview').classList.remove('d-none');
+            
+            const container = document.getElementById('preview-container');
+            const total = especiesExtraidas.length;
+            
+            document.getElementById('total-especies').textContent = total;
+            
+            if (total === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No se encontraron especies válidas</p>';
+                return;
+            }
+            
+            container.innerHTML = especiesExtraidas.map((especie, index) => {
+                const yaExiste = especiesExistentes.includes(especie.species_name.toLowerCase());
+                
+                return `
+                    <div class="species-item d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${index + 1}. ${escapeHtml(especie.species_name)}</strong>
+                            ${especie.scientific_name ? `<br><small class="text-muted"><em>${escapeHtml(especie.scientific_name)}</em></small>` : ''}
+                        </div>
+                        ${yaExiste ? '<span class="badge bg-warning text-dark">Ya existe</span>' : '<span class="badge bg-success">Nueva</span>'}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // ==========================================
+        // IMPORTAR ESPECIES A BD
+        // ==========================================
+        async function importarEspecies() {
+            try {
+                mostrarLoading();
+                
+                let insertadas = 0;
+                let omitidas = 0;
+                let errores = 0;
+                const detallesErrores = [];
+                
+                for (const especie of especiesExtraidas) {
+                    const yaExiste = especiesExistentes.includes(especie.species_name.toLowerCase());
+                    
+                    if (yaExiste) {
+                        omitidas++;
+                        continue;
+                    }
+                    
+                    try {
+                        await supabaseRequest('/env_tree_species', {
+                            method: 'POST',
+                            body: JSON.stringify(especie)
+                        });
+                        insertadas++;
+                    } catch (error) {
+                        errores++;
+                        detallesErrores.push(`${especie.species_name}: ${error.message}`);
+                        console.error('Error insertando:', especie.species_name, error);
+                    }
+                }
+                
+                // Mostrar resultados
+                mostrarResultados(insertadas, omitidas, errores, detallesErrores);
+                
+                ocultarLoading();
+                
+            } catch (error) {
+                console.error('Error en importación:', error);
+                showMessage('Error en la importación: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+        
+        // ==========================================
+        // MOSTRAR RESULTADOS
+        // ==========================================
+        function mostrarResultados(insertadas, omitidas, errores, detallesErrores) {
+            document.getElementById('step-preview').classList.add('d-none');
+            document.getElementById('step-results').classList.remove('d-none');
+            
+            document.getElementById('count-inserted').textContent = insertadas;
+            document.getElementById('count-skipped').textContent = omitidas;
+            document.getElementById('count-errors').textContent = errores;
+            
+            if (errores > 0) {
+                document.getElementById('error-details').classList.remove('d-none');
+                document.getElementById('error-list').innerHTML = detallesErrores.map(e => `<div>• ${escapeHtml(e)}</div>`).join('');
+            }
+            
+            showMessage(`Importación completada: ${insertadas} especies insertadas, ${omitidas} omitidas`, 'success');
+        }
+        
+        // ==========================================
+        // REINICIAR PROCESO
+        // ==========================================
+        function reiniciar() {
+            document.getElementById('step-upload').classList.remove('d-none');
+            document.getElementById('step-preview').classList.add('d-none');
+            document.getElementById('step-results').classList.add('d-none');
+            
+            document.getElementById('csv-file').value = '';
+            especiesExtraidas = [];
+            especiesExistentes = [];
+            
+            document.getElementById('alertContainer').innerHTML = '';
+        }
+        
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function mostrarLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+        
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        console.log('✅ Importador de Especies cargado correctamente');
+    </script>
+</body>
+</html>
