@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importar Inventario desde CSV - SchoolNet</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .loading-overlay.hidden {
+            display: none;
+        }
+        
+        .tree-preview {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .tree-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 0.9rem;
+        }
+        
+        .tree-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="bg-white p-4 rounded text-center">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <p class="mb-0">Procesando...</p>
+        </div>
+    </div>
+
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                
+                <div class="card shadow">
+                    <div class="card-header bg-success text-white">
+                        <h4 class="mb-0">
+                            <i class="bi bi-cloud-upload me-2"></i>
+                            Importar Inventario de Árboles desde CSV
+                        </h4>
+                    </div>
+                    
+                    <div class="card-body">
+                        <div id="alertContainer"></div>
+                        
+                        <!-- PASO 1: SUBIR ARCHIVO -->
+                        <div id="step-upload">
+                            <h5>Paso 1: Selecciona el archivo CSV</h5>
+                            <p class="text-muted">
+                                El archivo debe contener las siguientes columnas:<br>
+                                • <strong>EJEMPLAR</strong> (columna M): Número del árbol<br>
+                                • <strong>ESPECIE</strong> (columna D): Nombre común - Nombre científico<br>
+                                • <strong>CORDENADAS DE UBICACIÓN LATITUD</strong> (columna E)<br>
+                                • <strong>CORDENADAS DE UBICACIÓN LONGITUD</strong> (columna F)<br>
+                                • <strong>ADJUNTAR ARCHIVO O IMAGEN</strong> (columna G): URL de foto
+                            </p>
+                            
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>Importante:</strong> Asegúrate de haber importado primero las especies con el otro importador.
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="csv-file" class="form-label">Archivo CSV</label>
+                                <input type="file" 
+                                       class="form-control" 
+                                       id="csv-file" 
+                                       accept=".csv"
+                                       onchange="procesarArchivo()">
+                            </div>
+                        </div>
+                        
+                        <!-- PASO 2: PREVIEW Y CONFIRMACIÓN -->
+                        <div id="step-preview" class="d-none">
+                            <h5>Paso 2: Vista Previa del Inventario</h5>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h3 class="mb-0" id="total-arboles">0</h3>
+                                            <small class="text-muted">Árboles a importar</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h3 class="mb-0 text-success" id="total-validos">0</h3>
+                                            <small class="text-muted">Válidos</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h3 class="mb-0 text-warning" id="total-warnings">0</h3>
+                                            <small class="text-muted">Con advertencias</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="tree-preview border rounded p-3 mb-3" id="preview-container">
+                                <!-- Árboles se llenarán aquí -->
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-secondary" onclick="reiniciar()">
+                                    <i class="bi bi-arrow-left me-1"></i>Cancelar
+                                </button>
+                                <button class="btn btn-success" onclick="importarArboles()">
+                                    <i class="bi bi-check-circle me-1"></i>Importar Árboles
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- PASO 3: RESULTADOS -->
+                        <div id="step-results" class="d-none">
+                            <h5>Paso 3: Resultados de la Importación</h5>
+                            
+                            <div class="alert alert-success">
+                                <h6><i class="bi bi-check-circle me-2"></i>Importación Completada</h6>
+                                <ul class="mb-0">
+                                    <li>Árboles insertados: <strong id="count-inserted">0</strong></li>
+                                    <li>Árboles omitidos (sin número): <strong id="count-skipped">0</strong></li>
+                                    <li>Errores: <strong id="count-errors">0</strong></li>
+                                </ul>
+                            </div>
+                            
+                            <div id="error-details" class="d-none">
+                                <h6>Detalles de Errores:</h6>
+                                <div class="alert alert-danger small" id="error-list" style="max-height: 300px; overflow-y: auto;"></div>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" onclick="reiniciar()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Importar Otro Archivo
+                                </button>
+                                <a href="tree-inventory.html" class="btn btn-outline-primary">
+                                    <i class="bi bi-clipboard-data me-1"></i>Ver Inventario
+                                </a>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <!-- INFO ADICIONAL -->
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <h6><i class="bi bi-info-circle me-2"></i>Información</h6>
+                        <ul class="small mb-0">
+                            <li>El número del árbol (EJEMPLAR) será usado como tree_number</li>
+                            <li>El sistema buscará automáticamente el species_id por nombre de especie</li>
+                            <li>Los árboles sin coordenadas se importarán sin ubicación GPS</li>
+                            <li>Todos los árboles se marcarán con estado "healthy" por defecto</li>
+                            <li>Se omiten filas sin número de árbol</li>
+                        </ul>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+<script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let arbolesExtraidos = [];
+        let especiesMap = new Map(); // Mapeo nombre -> species_id
+        
+        // ==========================================
+        // PROCESAR ARCHIVO CSV
+        // ==========================================
+        async function procesarArchivo() {
+            const fileInput = document.getElementById('csv-file');
+            const file = fileInput.files[0];
+            
+            if (!file) return;
+            
+            try {
+                mostrarLoading();
+                
+                // Cargar especies existentes primero
+                await cargarEspeciesExistentes();
+                
+                // Leer archivo
+                const text = await file.text();
+                
+                // Parsear CSV con Papaparse
+                import('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/+esm').then(async (module) => {
+                    const Papa = module.default;
+                    
+                    const parsed = Papa.parse(text, {
+                        header: true,
+                        skipEmptyLines: true,
+                        transformHeader: (header) => header.trim()
+                    });
+                    
+                    console.log('CSV parseado:', parsed.data.length, 'filas');
+                    console.log('Columnas:', parsed.meta.fields);
+                    
+                    // Extraer árboles
+                    arbolesExtraidos = extraerArboles(parsed.data);
+                    
+                    console.log('Árboles extraídos:', arbolesExtraidos.length);
+                    
+                    // Mostrar preview
+                    mostrarPreview();
+                    
+                    ocultarLoading();
+                });
+                
+            } catch (error) {
+                console.error('Error procesando archivo:', error);
+                showMessage('Error al procesar archivo: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+        
+        // ==========================================
+        // CARGAR ESPECIES EXISTENTES
+        // ==========================================
+        async function cargarEspeciesExistentes() {
+            try {
+                const datos = await supabaseRequest('/env_tree_species?select=species_id,species_name,scientific_name&species_status=eq.active');
+                
+                especiesMap.clear();
+                datos.forEach(especie => {
+                    // Mapear por nombre común
+                    const key = especie.species_name.toLowerCase().trim();
+                    especiesMap.set(key, especie.species_id);
+                });
+                
+                console.log('Especies cargadas:', especiesMap.size);
+                
+            } catch (error) {
+                console.error('Error cargando especies:', error);
+                throw new Error('No se pudieron cargar las especies. Asegúrate de haberlas importado primero.');
+            }
+        }
+        
+        // ==========================================
+        // EXTRAER ÁRBOLES DEL CSV
+        // ==========================================
+        function extraerArboles(data) {
+            const arboles = [];
+            
+            data.forEach((row, index) => {
+                // Columna M: EJEMPLAR (número del árbol)
+                const treeNumber = parseInt(row.EJEMPLAR || row.ejemplar || row.Ejemplar);
+                
+                // Si no tiene número, omitir
+                if (!treeNumber) {
+                    return;
+                }
+                
+                // Columna D: ESPECIE
+                const especieRaw = row.ESPECIE || row.especie || row.Especie || '';
+                const nombreComun = especieRaw.split('-')[0]?.trim() || '';
+                
+                // Buscar species_id
+                const speciesId = especiesMap.get(nombreComun.toLowerCase());
+                
+                // Columnas E y F: COORDENADAS
+                const latitud = parseFloat((row['CORDENADAS DE UBICACIÓN LATITUD'] || row.LATITUD || '').toString().replace(',', '.'));
+                const longitud = parseFloat((row['CORDENADAS DE UBICACIÓN LONGITUD'] || row.LONGITUD || '').toString().replace(',', '.'));
+                
+                // Columna G: URL FOTO
+                const photoUrl = row['ADJUNTAR ARCHIVO O IMAGEN'] || row.foto || row.FOTO || '';
+                
+                // Columna K: ESTADO ACTUAL
+                const estadoRaw = (row['ESTADO ACTUAL'] || row['ESTADO ACTUAL '] || '').toString().toLowerCase();
+                let treeStatus = 'healthy'; // Default
+                
+                // Mapear estados del CSV a estados de la BD
+                if (estadoRaw.includes('enferm') || estadoRaw.includes('plaga')) {
+                    treeStatus = 'sick';
+                } else if (estadoRaw.includes('riesgo') || estadoRaw.includes('debil')) {
+                    treeStatus = 'at_risk';
+                } else if (estadoRaw.includes('muerto') || estadoRaw.includes('seco')) {
+                    treeStatus = 'dead';
+                }
+                
+                // Crear objeto árbol
+                const arbol = {
+                    tree_number: treeNumber,
+                    species_id: speciesId,
+                    species_name: nombreComun, // Para preview
+                    location_latitude: isNaN(latitud) ? null : latitud,
+                    location_longitude: isNaN(longitud) ? null : longitud,
+                    photo_url: photoUrl || null,
+                    tree_status: treeStatus,
+                    planting_date: null, // No disponible en CSV
+                    location_description: null, // No disponible en CSV
+                    tree_notes: null,
+                    // Metadata para validación
+                    _warnings: [],
+                    _rowIndex: index + 2 // +2 porque Excel empieza en 1 y tiene header
+                };
+                
+                // Validaciones
+                if (!speciesId) {
+                    arbol._warnings.push('Especie no encontrada en BD');
+                }
+                if (!arbol.location_latitude || !arbol.location_longitude) {
+                    arbol._warnings.push('Sin coordenadas GPS');
+                }
+                
+                arboles.push(arbol);
+            });
+            
+            return arboles;
+        }
+  // ==========================================
+        // MOSTRAR PREVIEW
+        // ==========================================
+        function mostrarPreview() {
+            document.getElementById('step-upload').classList.add('d-none');
+            document.getElementById('step-preview').classList.remove('d-none');
+            
+            const total = arbolesExtraidos.length;
+            const validos = arbolesExtraidos.filter(a => a.species_id && a.location_latitude && a.location_longitude).length;
+            const conWarnings = arbolesExtraidos.filter(a => a._warnings.length > 0).length;
+            
+            document.getElementById('total-arboles').textContent = total;
+            document.getElementById('total-validos').textContent = validos;
+            document.getElementById('total-warnings').textContent = conWarnings;
+            
+            const container = document.getElementById('preview-container');
+            
+            if (total === 0) {
+                container.innerHTML = '<p class="text-muted text-center py-4">No se encontraron árboles válidos</p>';
+                return;
+            }
+            
+            container.innerHTML = arbolesExtraidos.map((arbol) => {
+                const hasWarnings = arbol._warnings.length > 0;
+                const bgClass = hasWarnings ? 'bg-warning bg-opacity-10' : '';
+                
+                return `
+                    <div class="tree-item ${bgClass}">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <strong>#${arbol.tree_number}</strong> - ${escapeHtml(arbol.species_name || 'Sin especie')}
+                                ${arbol.location_latitude && arbol.location_longitude 
+                                    ? `<br><small class="text-muted"><i class="bi bi-geo-alt"></i> ${arbol.location_latitude.toFixed(6)}, ${arbol.location_longitude.toFixed(6)}</small>`
+                                    : ''}
+                                ${arbol.photo_url 
+                                    ? '<br><small class="text-muted"><i class="bi bi-image"></i> Con foto</small>'
+                                    : ''}
+                                ${hasWarnings 
+                                    ? `<br><small class="text-warning"><i class="bi bi-exclamation-triangle"></i> ${arbol._warnings.join(', ')}</small>`
+                                    : ''}
+                            </div>
+                            <div>
+                                ${arbol.species_id 
+                                    ? '<span class="badge bg-success">OK</span>' 
+                                    : '<span class="badge bg-danger">Sin especie</span>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // ==========================================
+        // IMPORTAR ÁRBOLES A BD
+        // ==========================================
+        async function importarArboles() {
+            try {
+                mostrarLoading();
+                
+                let insertados = 0;
+                let omitidos = 0;
+                let errores = 0;
+                const detallesErrores = [];
+                
+                for (const arbol of arbolesExtraidos) {
+                    // Omitir si no tiene species_id
+                    if (!arbol.species_id) {
+                        omitidos++;
+                        detallesErrores.push(`Árbol #${arbol.tree_number}: Especie "${arbol.species_name}" no encontrada en BD`);
+                        continue;
+                    }
+                    
+                    try {
+                        // Preparar datos para inserción
+                        const datos = {
+                            tree_number: arbol.tree_number,
+                            species_id: arbol.species_id,
+                            location_latitude: arbol.location_latitude,
+                            location_longitude: arbol.location_longitude,
+                            photo_url: arbol.photo_url,
+                            tree_status: arbol.tree_status,
+                            planting_date: arbol.planting_date,
+                            location_description: arbol.location_description,
+                            tree_notes: arbol.tree_notes
+                        };
+                        
+                        await supabaseRequest('/env_tree_inventory', {
+                            method: 'POST',
+                            body: JSON.stringify(datos)
+                        });
+                        
+                        insertados++;
+                        
+                    } catch (error) {
+                        errores++;
+                        const errorMsg = error.message.includes('duplicate') 
+                            ? 'Número de árbol duplicado'
+                            : error.message;
+                        detallesErrores.push(`Árbol #${arbol.tree_number}: ${errorMsg}`);
+                        console.error('Error insertando árbol:', arbol.tree_number, error);
+                    }
+                }
+                
+                // Mostrar resultados
+                mostrarResultados(insertados, omitidos, errores, detallesErrores);
+                
+                ocultarLoading();
+                
+            } catch (error) {
+                console.error('Error en importación:', error);
+                showMessage('Error en la importación: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+        
+        // ==========================================
+        // MOSTRAR RESULTADOS
+        // ==========================================
+        function mostrarResultados(insertados, omitidos, errores, detallesErrores) {
+            document.getElementById('step-preview').classList.add('d-none');
+            document.getElementById('step-results').classList.remove('d-none');
+            
+            document.getElementById('count-inserted').textContent = insertados;
+            document.getElementById('count-skipped').textContent = omitidos;
+            document.getElementById('count-errors').textContent = errores;
+            
+            if (detallesErrores.length > 0) {
+                document.getElementById('error-details').classList.remove('d-none');
+                document.getElementById('error-list').innerHTML = detallesErrores.map(e => `<div>• ${escapeHtml(e)}</div>`).join('');
+            }
+            
+            if (errores === 0 && omitidos === 0) {
+                showMessage(`¡Importación exitosa! ${insertados} árboles insertados`, 'success');
+            } else {
+                showMessage(`Importación completada con advertencias: ${insertados} insertados, ${omitidos} omitidos, ${errores} errores`, 'warning');
+            }
+        }
+        
+        // ==========================================
+        // REINICIAR PROCESO
+        // ==========================================
+        function reiniciar() {
+            document.getElementById('step-upload').classList.remove('d-none');
+            document.getElementById('step-preview').classList.add('d-none');
+            document.getElementById('step-results').classList.add('d-none');
+            
+            document.getElementById('csv-file').value = '';
+            arbolesExtraidos = [];
+            especiesMap.clear();
+            
+            document.getElementById('alertContainer').innerHTML = '';
+        }
+        
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function mostrarLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+        
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        console.log('✅ Importador de Inventario cargado correctamente');
+    </script>
+</body>
+</html>
