@@ -803,7 +803,15 @@ const URL_PERMISSIONS = {
     '/modules/environmental/register-tree-care.html': 'Registrar cuidados de árboles',
     '/modules/environmental/tree-care-history.html': 'Historial de cuidados',
     '/modules/environmental/tree-map.html': 'Mapa de árboles',
-    '/modules/environmental/reports.html': 'Reportes de arbolización'
+    '/modules/environmental/reports.html': 'Reportes de arbolización',
+    // Módulo Gestión Ambiental - Manejo Hídrico
+    '/modules/environmental/water-meters.html': 'Gestionar medidores de agua',
+    '/modules/environmental/daily-water-readings.html': 'Registrar lecturas diarias de agua',
+    '/modules/environmental/monthly-water-readings.html': 'Registrar lecturas mensuales de agua',
+    '/modules/environmental/water-alerts.html': 'Gestionar alertas hídricas',
+    '/modules/environmental/extraordinary-water-readings.html': 'Registrar mediciones extraordinarias',
+    '/modules/environmental/water-balance-dashboard.html': 'Dashboard de balance hídrico',
+    '/modules/environmental/water-reports.html': 'Reportes de agua',
   };
 
 // Función principal de validación
