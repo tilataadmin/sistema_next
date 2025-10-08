@@ -823,6 +823,7 @@ const URL_PERMISSIONS = {
     '/modules/environmental/water-reports.html': 'Reportes de agua',
 
      // Módulo Formación (training)
+    '/modules/training/generate-paths.html': 'Generar rutas de formación',
     '/modules/training/axes.html': 'Gestionar ejes formativos',
     '/modules/training/skills.html': 'Gestionar habilidades',
     '/modules/training/modalities.html': 'Gestionar modalidades',
