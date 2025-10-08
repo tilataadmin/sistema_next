@@ -221,6 +221,14 @@ const APP_CONFIG = {
             icon: 'bi-tree',
             path: '/modules/environmental/',
             status: 'active'
+        },
+        {
+            id: 'training',
+            name: 'Formación',
+            description: 'Gestión de rutas de formación y desarrollo profesional',
+            icon: 'bi-mortarboard',
+            path: '/modules/training/',
+            status: 'active'
         }
     ],
     
@@ -803,7 +811,37 @@ const URL_PERMISSIONS = {
     '/modules/environmental/register-tree-care.html': 'Registrar cuidados de árboles',
     '/modules/environmental/tree-care-history.html': 'Historial de cuidados',
     '/modules/environmental/tree-map.html': 'Mapa de árboles',
-    '/modules/environmental/reports.html': 'Reportes de arbolización'
+    '/modules/environmental/reports.html': 'Reportes de arbolización',
+    // Módulo Gestión Ambiental - Manejo Hídrico
+    '/modules/environmental/water-meters.html': 'Gestionar medidores de agua',
+    '/modules/environmental/daily-water-readings.html': 'Registrar lecturas diarias de agua',
+    '/modules/environmental/monthly-water-readings.html': 'Registrar lecturas mensuales de agua',
+    '/modules/environmental/edit-daily-readings.html': 'Editar lecturas históricas de agua', 
+    '/modules/environmental/water-alerts.html': 'Gestionar alertas hídricas',
+    '/modules/environmental/extraordinary-water-readings.html': 'Registrar mediciones extraordinarias',
+    '/modules/environmental/water-balance-dashboard.html': 'Dashboard de balance hídrico',
+    '/modules/environmental/water-reports.html': 'Reportes de agua',
+
+     // Módulo Formación (training)
+    '/modules/training/axes.html': 'Gestionar ejes formativos',
+    '/modules/training/skills.html': 'Gestionar habilidades',
+    '/modules/training/modalities.html': 'Gestionar modalidades',
+    '/modules/training/requisition-sources.html': 'Gestionar fuentes de requisición',
+    '/modules/training/facilitators.html': 'Gestionar facilitadores',
+    '/modules/training/modules.html': 'Gestionar unidades formativas',
+    '/modules/training/module-skills.html': 'Asociar habilidades a unidades',
+    '/modules/training/module-facilitators.html': 'Asociar facilitadores a unidades',
+    '/modules/training/module-roles.html': 'Asociar unidades a roles',
+    '/modules/training/module-references.html': 'Gestionar referencias de unidades',
+    '/modules/training/waive-modules.html': 'Eximir cumplimiento de unidades',
+    '/modules/training/register-completion.html': 'Registrar cumplimiento de unidades',
+    '/modules/training/manage-deadlines.html': 'Gestionar fechas tentativas',
+    '/modules/training/dashboard.html': 'Dashboard global de formación',
+    '/modules/training/reports.html': 'Reportes de formación',
+    '/modules/training/path-queries.html': 'Consultas de rutas',
+    '/modules/training/my-path.html': 'Ver mi ruta de formación',
+    '/modules/training/request-modules.html': 'Solicitar unidades por interés',
+    '/modules/training/my-dashboard.html': 'Ver mi dashboard de formación'
   };
 
 // Función principal de validación
