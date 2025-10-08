@@ -939,6 +939,14 @@
                                         onclick="manageWorkerRoles('${worker.worker_id}')">
                                     <i class="bi bi-award"></i>
                                 </button>
+                                ${worker.worker_status === 'active' && (worker.roles && worker.roles.length > 0) ? `
+                                    <button class="btn btn-outline-info" 
+                                            title="Generar ruta de formación" 
+                                            onclick="generarRutaFormacion('${worker.worker_id}', '${escapeHtml(fullName).replace(/'/g, "\\'")}')"
+                                            data-worker-id="${worker.worker_id}">
+                                        <i class="bi bi-diagram-3"></i>
+                                    </button>
+                                ` : ''}
                                 ${worker.worker_status === 'active' ? `
                                     <button class="btn btn-create-user ${worker.hasUser ? 'disabled' : ''}" 
                                             title="${worker.hasUser ? 'Usuario ya creado' : 'Crear como usuario'}" 
@@ -1925,6 +1933,125 @@
         } else {
             setTimeout(() => initializePage('workers', 'Talento Humano'), 100);
         }
+
+        // ==========================================
+        // GENERACIÓN DE RUTA DE FORMACIÓN INDIVIDUAL
+        // ==========================================
+        
+        async function generarRutaFormacion(workerId, workerName) {
+            if (!confirm(`¿Generar/actualizar la ruta de formación para ${workerName}?\n\nEsto agregará las unidades formativas según sus roles asignados.`)) {
+                return;
+            }
+            
+            try {
+                showLoading(true);
+                
+                console.log(`📚 Generando ruta de formación para trabajador: ${workerId}`);
+                
+                // PASO 1: Obtener roles del trabajador
+                const workerRolesData = await supabaseRequest('/worker_job_roles?select=job_role_id&worker_id=eq.' + workerId + '&assignment_status=eq.active');
+                
+                if (!workerRolesData || workerRolesData.length === 0) {
+                    showMessage('Este trabajador no tiene roles asignados. Asigna roles primero.', 'warning');
+                    showLoading(false);
+                    return;
+                }
+                
+                const roleIds = workerRolesData.map(wr => wr.job_role_id);
+                console.log(`👤 Roles del trabajador (${roleIds.length}):`, roleIds);
+                
+                // PASO 2: Obtener unidades formativas asociadas a esos roles
+                const modulesData = await supabaseRequest('/training_module_roles?select=module_id,is_mandatory&job_role_id=in.(' + roleIds.join(',') + ')');
+                
+                if (!modulesData || modulesData.length === 0) {
+                    showMessage('No hay unidades formativas asociadas a los roles de este trabajador.', 'info');
+                    showLoading(false);
+                    return;
+                }
+                
+                console.log(`📚 Unidades encontradas: ${modulesData.length}`);
+                
+                // PASO 3: Eliminar duplicados y determinar obligatoriedad
+                // Si una unidad aparece en múltiples roles, es obligatoria si AL MENOS UNO la requiere como obligatoria
+                const uniqueModules = {};
+                modulesData.forEach(item => {
+                    if (!uniqueModules[item.module_id]) {
+                        uniqueModules[item.module_id] = item.is_mandatory;
+                    } else {
+                        // Si ya existe, mantener como obligatorio si cualquiera lo es
+                        uniqueModules[item.module_id] = uniqueModules[item.module_id] || item.is_mandatory;
+                    }
+                });
+                
+                console.log(`📋 Unidades únicas: ${Object.keys(uniqueModules).length}`);
+                
+                // PASO 4: Verificar cuáles ya existen en la ruta del trabajador
+                const existingPathsData = await supabaseRequest('/worker_training_paths?select=module_id,assignment_type&worker_id=eq.' + workerId);
+                
+                // Solo considerar las que son "Por rol" para no tocar las "Por interés"
+                const existingModuleIds = existingPathsData
+                    .filter(p => p.assignment_type === 'Por rol')
+                    .map(p => p.module_id);
+                
+                console.log(`✅ Unidades ya en ruta (Por rol): ${existingModuleIds.length}`);
+                
+                // PASO 5: Preparar inserciones solo de las que NO existen
+                const pathsToInsert = [];
+                
+                // Obtener usuario actual para asignación
+                const session = getStoredSession();
+                const currentUserId = session?.user?.user_id || null;
+                
+                for (const [moduleId, isMandatory] of Object.entries(uniqueModules)) {
+                    if (!existingModuleIds.includes(moduleId)) {
+                        pathsToInsert.push({
+                            worker_id: workerId,
+                            module_id: moduleId,
+                            assignment_type: 'Por rol',
+                            assigned_by: currentUserId,
+                            assignment_date: new Date().toISOString().split('T')[0],
+                            completion_status: 'Pendiente',
+                            path_status: 'active'
+                        });
+                    }
+                }
+                
+                console.log(`➕ Unidades nuevas a insertar: ${pathsToInsert.length}`);
+                
+                // PASO 6: Insertar en batch si hay nuevas unidades
+                if (pathsToInsert.length > 0) {
+                    await supabaseRequest('/worker_training_paths', {
+                        method: 'POST',
+                        body: JSON.stringify(pathsToInsert)
+                    });
+                    
+                    showMessage(
+                        `✅ Ruta de formación generada exitosamente para ${workerName}\n\n` +
+                        `• ${pathsToInsert.length} unidad(es) agregada(s)\n` +
+                        `• ${existingModuleIds.length} unidad(es) ya existente(s)\n` +
+                        `• Total en ruta: ${Object.keys(uniqueModules).length} unidad(es)`,
+                        'success'
+                    );
+                } else {
+                    showMessage(
+                        `ℹ️ La ruta de formación de ${workerName} ya está actualizada\n\n` +
+                        `• Todas las unidades requeridas (${Object.keys(uniqueModules).length}) ya están asignadas`,
+                        'info'
+                    );
+                }
+                
+                console.log(`✅ Proceso completado para ${workerName}`);
+                
+            } catch (error) {
+                console.error('❌ Error generando ruta de formación:', error);
+                showMessage('Error al generar ruta de formación: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // Hacer función disponible globalmente
+        window.generarRutaFormacion = generarRutaFormacion;
     </script>
 </body>
 </html>
