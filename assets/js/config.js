@@ -229,6 +229,14 @@ const APP_CONFIG = {
             icon: 'bi-mortarboard',
             path: '/modules/training/',
             status: 'active'
+        },
+        {
+            id: 'procedures',
+            name: 'Procedimientos',
+            description: 'Gestión de procedimientos institucionales con flujos definidos',
+            icon: 'bi-diagram-3',
+            path: '/modules/procedures/',
+            status: 'active'
         }
     ],
     
@@ -842,7 +850,18 @@ const URL_PERMISSIONS = {
     '/modules/training/path-queries.html': 'Consultas de rutas',
     '/modules/training/my-path.html': 'Ver mi ruta de formación',
     '/modules/training/request-modules.html': 'Solicitar unidades por interés',
-    '/modules/training/my-dashboard.html': 'Ver mi dashboard de formación'
+    '/modules/training/my-dashboard.html': 'Ver mi dashboard de formación',
+
+    // Módulo Procedimientos (procedures)
+    '/modules/procedures/index.html': 'Acceso al módulo de procedimientos',
+    '/modules/procedures/forms.html': 'Gestionar formularios',
+    '/modules/procedures/procedures.html': 'Gestionar procedimientos',
+    '/modules/procedures/execute.html': 'Ejecutar procedimientos',
+    '/modules/procedures/my-requests.html': 'Ver mis solicitudes',
+    '/modules/procedures/records.html': 'Consultar todos los registros',
+    '/modules/procedures/reports.html': 'Ver reportes de procedimientos'
+
+    
   };
 
 // Función principal de validación
