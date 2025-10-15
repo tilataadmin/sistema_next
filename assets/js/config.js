@@ -859,6 +859,7 @@ const URL_PERMISSIONS = {
     '/modules/procedures/execute.html': 'Ejecutar procedimientos',
     '/modules/procedures/my-requests.html': 'Ver mis solicitudes',
     '/modules/procedures/records.html': 'Consultar todos los registros',
+    '/modules/procedures/dashboard.html': 'Ver dashboard de procedimientos',
     '/modules/procedures/reports.html': 'Ver reportes de procedimientos'
 
     
