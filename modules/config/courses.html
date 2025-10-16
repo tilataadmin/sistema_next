@@ -287,7 +287,6 @@
         // ==========================================
         // FUNCIÓN DE INICIALIZACIÓN
         // ==========================================
-        
         async function inicializarPagina() {
             try {
                 mostrarLoading();
@@ -300,12 +299,19 @@
                 // Configurar event listeners
                 configurarEventos();
                 
-                // Cargar datos
-                await Promise.all([loadCourses(), loadGrades(), loadWorkers()]);
+                // CRÍTICO: Cargar datos en el orden correcto
+                // Primero grados y trabajadores, luego cursos
+                console.log('⏳ Cargando grados y trabajadores...');
+                await Promise.all([loadGrades(), loadWorkers()]);
+                
+                console.log('⏳ Cargando cursos...');
+                await loadCourses();
+                
                 loadStats();
                 
                 ocultarLoading();
                 console.log('✅ Página inicializada correctamente');
+                console.log(`📊 Resumen: ${allGrades.length} grados, ${allWorkers.length} trabajadores, ${allCourses.length} cursos`);
                 
             } catch (error) {
                 console.error('❌ Error inicializando página:', error);
@@ -313,6 +319,7 @@
                 ocultarLoading();
             }
         }
+        
         
         // ==========================================
         // CONFIGURACIÓN DE EVENTOS
@@ -347,12 +354,20 @@
             `;
             
             try {
+                // CRÍTICO: Asegurarse de que los grados estén cargados primero
+                if (allGrades.length === 0) {
+                    console.log('⏳ Esperando a que los grados se carguen...');
+                    await loadGrades();
+                }
+                
                 const courses = await supabaseRequest('/courses?select=*&order=course_order.asc,course_name.asc');
                 allCourses = courses || [];
                 filteredCourses = [...allCourses];
-                renderCoursesGrid();
                 
                 console.log(`✅ ${allCourses.length} cursos cargados`);
+                console.log(`✅ ${allGrades.length} grados disponibles para mapeo`);
+                
+                renderCoursesGrid();
                 
             } catch (error) {
                 console.error('❌ Error cargando cursos:', error);
@@ -422,9 +437,22 @@
         // ==========================================
         // RENDERIZADO
         // ==========================================
-        
         function renderCoursesGrid() {
             const container = document.getElementById('coursesContainer');
+            
+            // Validación de seguridad
+            if (allGrades.length === 0) {
+                console.warn('⚠️ Intentando renderizar cursos sin grados cargados');
+                container.innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                        <div class="mt-2">Cargando información de grados...</div>
+                    </div>
+                `;
+                return;
+            }
             
             if (filteredCourses.length === 0) {
                 container.innerHTML = `
@@ -449,10 +477,17 @@
             filteredCourses.forEach(course => {
                 const statusBadge = course.course_status === 'active' ? 'bg-success' : 'bg-warning';
                 
-                // Buscar el nombre del grado (convertir a string para comparación)
+                // Buscar el nombre del grado con validación mejorada
                 const grade = allGrades.find(g => String(g.grade_id) === String(course.grade_id));
-                const gradeName = grade ? grade.grade_name : 'Grado no encontrado';
-
+                
+                let gradeName;
+                if (!grade) {
+                    console.warn(`⚠️ Grado no encontrado para curso "${course.course_name}" (grade_id: ${course.grade_id})`);
+                    console.warn(`📋 Grados disponibles:`, allGrades.map(g => `${g.grade_id}: ${g.grade_name}`));
+                    gradeName = `<span class="text-danger">Grado no encontrado (ID: ${course.grade_id})</span>`;
+                } else {
+                    gradeName = grade.grade_name;
+                }
                 
                 // Buscar el nombre del director por email
                 const director = allWorkers.find(w => w.email === course.course_director_email);
@@ -471,7 +506,7 @@
                                 
                                 <div class="mb-2">
                                     <small class="text-muted">Grado:</small><br>
-                                    <strong>${escapeHtml(gradeName)}</strong>
+                                    <strong>${gradeName}</strong>
                                 </div>
                                 
                                 <div class="mb-2">
@@ -507,7 +542,10 @@
             
             gridHtml += '</div>';
             container.innerHTML = gridHtml;
+            
+            console.log(`✅ ${filteredCourses.length} cursos renderizados correctamente`);
         }
+        
         
         function escapeHtml(text) {
             if (!text) return '';
