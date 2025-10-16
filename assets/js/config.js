@@ -811,6 +811,7 @@ const URL_PERMISSIONS = {
     '/modules/general-tools/tasks.html': 'Gestionar tareas',
     '/modules/general-tools/dashboard.html': 'Dashboard de tareas',
     '/modules/general-tools/community-query.html': 'Consulta de la comunidad',
+    '/modules/general-tools/family-activities.html': 'Asistencia de familias',
 
     // Módulo Gestión Ambiental (environmental)
     '/modules/environmental/species.html': 'Gestionar especies de árboles',
