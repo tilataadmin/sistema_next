@@ -405,7 +405,6 @@
         // ==========================================
         // VERIFICAR ACCESO AL MÓDULO
         // ==========================================
-        
         async function checkAnyModulePermission() {
             try {
                 const session = getStoredSession();
@@ -413,7 +412,7 @@
                 
                 currentUser = session.user;
                 
-                // Verificar si es super admin
+                // Verificar si es super admin PRIMERO usando la relación correcta
                 const isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
                 if (isSuperAdmin) {
                     console.log('✅ Acceso permitido - es Super Admin');
@@ -421,14 +420,16 @@
                 }
                 
                 // Verificar si tiene AL MENOS UN permiso del módulo
+                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
+                
                 for (const permission of MODULE_CONFIG.modulePermissions) {
-                    const hasPermission = await checkUserPermission(currentUser.user_id, permission);
-                    if (hasPermission) {
+                    if (userPermissions.includes(permission)) {
                         console.log(`✅ Acceso permitido con permiso: ${permission}`);
                         return true;
                     }
                 }
                 
+                console.log('❌ Sin permisos para este módulo');
                 return false;
                 
             } catch (error) {
@@ -437,11 +438,20 @@
             }
         }
         
+        
         async function checkUserIsSuperAdmin(userId) {
             try {
-                const userData = await supabaseRequest(`/user_roles?select=roles(is_super_admin)&user_id=eq.${userId}`);
-                return userData.some(ur => ur.roles?.is_super_admin === true);
+                const userData = await supabaseRequest(`/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(is_super_admin))&user_id=eq.${userId}`);
+                
+                if (!userData || userData.length === 0) {
+                    return false;
+                }
+                
+                return userData[0].user_roles?.some(userRole => 
+                    userRole.roles?.is_super_admin === true
+                );
             } catch (error) {
+                console.error('Error verificando super admin:', error);
                 return false;
             }
         }
@@ -484,13 +494,15 @@
         
         async function inicializarModulo() {
             try {
+                console.log('🔧 Inicializando módulo de Indicadores...');
+                
                 // Configurar funciones según permisos
                 await configurarFunciones();
                 
-                console.log('✅ Módulo inicializado');
+                console.log('✅ Módulo inicializado correctamente');
                 
             } catch (error) {
-                console.error('Error inicializando módulo:', error);
+                console.error('❌ Error inicializando módulo:', error);
                 showMessage('Error al cargar el módulo: ' + error.message, 'danger');
             }
         }
@@ -528,7 +540,7 @@
                 console.error('Error configurando funciones:', error);
             }
         }
-        
+
         async function obtenerTodosLosPermisosUsuario(userId) {
             try {
                 const isSuperAdmin = await checkUserIsSuperAdmin(userId);
@@ -536,7 +548,7 @@
                     return MODULE_CONFIG.modulePermissions;
                 }
                 
-                const data = await supabaseRequest(`/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
+                const data = await supabaseRequest(`/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
                 
                 if (!data || data.length === 0) return [];
                 

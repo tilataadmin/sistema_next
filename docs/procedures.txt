@@ -1,0 +1,2567 @@
+================================================================================
+MODULO DE PROCEDIMIENTOS - SCHOOLNET
+Documento de Diseño y Decisiones
+================================================================================
+
+Fecha de inicio: 15 de Octubre de 2025
+Version: 1.1
+Estado: En diseño
+
+================================================================================
+INDICE
+================================================================================
+
+1. Contexto del Sistema
+2. Objetivo del Módulo
+3. Decisiones de Diseño
+4. Estructura de Datos
+5. Bosquejo de Pantallas
+6. Flujos de Usuario
+7. Integraciones
+8. Pendientes y Futuras Mejoras
+9. Cronograma Sugerido
+10. Referencias y Recursos
+11. Glosario
+
+================================================================================
+1. CONTEXTO DEL SISTEMA
+================================================================================
+
+Sistema Actual: SchoolNet
+
+Stack Tecnológico:
+------------------
+- Frontend: HTML + Bootstrap 5.3.0 + JavaScript vanilla
+- Backend: Supabase (PostgreSQL + API REST)
+- Notificaciones: Google Apps Script + Gmail
+- Storage: Supabase Storage
+- Deployment: Vercel
+- Arquitectura: Módulos independientes con permisos granulares
+
+Módulos Existentes:
+-------------------
+- Seguridad (usuarios, roles, permisos, auditoría)
+- Configuración (años académicos, grados, secciones, estudiantes)
+- Indicadores (variables, segmentaciones, dashboard)
+- Presupuesto (PUC, rubros, asignaciones)
+- Talento Humano (trabajadores, cargos, áreas)
+- Formación (rutas formativas, módulos, habilidades)
+- Ambiental (lecturas de agua, alertas)
+- Herramientas Generales (incluye gestión de tareas)
+
+Sistemas Clave Disponibles:
+----------------------------
+- Sistema de tareas centralizado (tabla tasks)
+- Sistema de notificaciones por email
+- Sistema de validación de permisos por URL
+- Sistema de captcha de Google
+- Sistema de almacenamiento de archivos (Supabase Storage)
+
+================================================================================
+2. OBJETIVO DEL MODULO
+================================================================================
+
+Propósito:
+----------
+Crear un módulo que permita diseñar, configurar y ejecutar procedimientos 
+institucionales con flujos de trabajo definidos, asignación de responsables, 
+seguimiento de pasos y trazabilidad completa.
+
+Casos de Uso:
+-------------
+- Solicitudes de compra
+- Aprobaciones presupuestales
+- Procesos de matrícula
+- Solicitudes de permisos
+- Procesos de contratación
+- Solicitudes ciudadanas/padres de familia
+- Cualquier proceso institucional con pasos secuenciales
+
+Alcance Fase 1:
+---------------
+- Creación de formularios reutilizables
+- Diseño de procedimientos con pasos y bifurcaciones
+- Ejecución de procedimientos (internos y externos)
+- Integración con sistema de tareas existente
+- Notificaciones automáticas por email
+- Adjuntos y comentarios por paso
+- Trazabilidad completa
+
+================================================================================
+3. DECISIONES DE DISEÑO
+================================================================================
+
+3.1 Maestro de Procedimiento
+-----------------------------
+
+Componentes:
+- Encabezado: Nombre del procedimiento
+- Descripción: Explicación del propósito
+- Tipo:
+  * Interno: Requiere autenticación (solo usuarios del sistema)
+  * Externo: No requiere autenticación (público con captcha)
+- Formulario asociado: Se vincula a un formulario previamente creado
+- Creador: Usuario que puede editar el procedimiento
+- Estado: Activo o Inactivo
+
+Reglas:
+- [SI] Estado Activo/Inactivo (sin estado "Borrador")
+- [NO] Sin versionamiento
+- [SI] Si está inactivo, no se puede ejecutar pero sí editar
+- [SI] Solo se pueden editar procedimientos sin registros activos
+
+--------------------------------------------------------------------------------
+
+3.2 Pasos del Procedimiento
+----------------------------
+
+Campos:
+- Secuencia: Número de paso (1, 2, 5...) - flexible para insertar pasos después
+- Nombre del paso: Título descriptivo
+- Descripción: Detalle de lo que debe hacerse
+- Usuario responsable: Worker específico (FK a tabla workers)
+- Tipo de paso: Define el comportamiento del paso
+  * Manual: Requiere acción humana, crea tarea asignada al responsable
+  * Notificación: Solo envía email informativo, avanza automáticamente sin tarea
+  * Automático: (Reservado para futuro) Ejecuta acción sin intervención humana
+- Bifurcación: Indicador booleano si el paso tiene opciones condicionales
+- Opciones de bifurcación: Opción 1, Opción 2... Opción N (ilimitadas)
+- Siguiente paso: ID del paso siguiente (según opción elegida o lineal)
+- Es paso final: Indicador booleano
+- SLA (opcional): Días hábiles estimados para completar el paso
+- Notificación automática: Sí (obligatorio para todos los pasos)
+
+Reglas de Bifurcación:
+- Las bifurcaciones se evalúan manualmente por el responsable del paso
+- Cada opción apunta a un paso siguiente específico
+- Todas las bifurcaciones deben converger eventualmente en un paso final
+- El responsable elige la opción al completar su tarea
+
+SLA:
+- Campo opcional en la configuración del paso
+- Se expresa en días hábiles
+- Genera alertas automáticas si se excede el tiempo
+- Se usa para calcular la fecha límite de la tarea asociada
+
+Tipos de Paso:
+
+Manual (predeterminado):
+  - Crea tarea en tabla tasks asignada al responsable
+  - El responsable debe completar manualmente
+  - Puede agregar comentarios, archivos y elegir bifurcación
+  - Requiere campo "Usuario responsable" obligatorio
+
+Notificación:
+  - NO crea tarea
+  - Envía email automático al solicitante con información del estado
+  - Avanza automáticamente al siguiente paso
+  - Campo "Usuario responsable" es opcional (puede ser "Sistema")
+  - Útil para informar estados intermedios sin requerir acción
+
+Automático (reservado para implementación futura):
+  - Ejecuta validaciones o acciones programadas
+  - Toma decisiones basadas en reglas predefinidas
+  - Avanza automáticamente según resultado
+
+--------------------------------------------------------------------------------
+
+3.3 Registros de Ejecución
+---------------------------
+
+Integración con Sistema de Tareas:
+- Cada paso genera automáticamente una tarea en la tabla tasks
+- Se agregan dos campos nuevos a tasks:
+  * procedure_id (int, nullable, FK)
+  * procedure_step_id (int, nullable, FK)
+- Se agrega nuevo valor a module_type: 'procedures'
+
+Información por Paso:
+- Descripción de lo realizado (campo task_progress en tasks)
+- Fecha de inicio/fin (campos de tasks)
+- Estado: Asignada -> En Progreso -> Terminada
+- Adjuntos (Supabase Storage)
+- Comentarios adicionales
+
+Flujo Automático:
+1. Usuario completa formulario inicial (paso 0)
+2. Sistema crea tarea para el responsable del paso 1
+3. Responsable completa paso 1 y elige opción (si hay bifurcación)
+4. Sistema crea tarea para el siguiente paso según la opción elegida
+5. Se repite hasta llegar al paso final
+6. Al completar paso final -> cierre automático del procedimiento
+
+--------------------------------------------------------------------------------
+
+3.4 Formularios
+---------------
+
+Estructura:
+- Encabezado del formulario: Título, descripción
+- Cuerpo del formulario: Colección de campos
+
+Tipos de Campos Soportados:
+- Texto (corto y largo/textarea)
+- Número
+- Fecha
+- Selección (dropdown/select)
+- Archivo (upload)
+
+Validaciones:
+- Campo obligatorio
+- Formato (email, teléfono, etc.)
+- Rango numérico (mín/máx)
+- Tamaño de archivo
+
+Campos Pre-llenados Automáticamente:
+- Nombre del usuario logueado (cuando aplique)
+- Fecha actual
+- Email del usuario (cuando aplique)
+
+Restricciones:
+- [NO] Sin campos calculados
+- [NO] Sin campos dependientes (condicionales)
+- [NO] Sin firmas digitales (por ahora)
+- [NO] Sin versionamiento
+
+--------------------------------------------------------------------------------
+
+3.5 Sistema de Catálogos y Respuestas Normalizadas
+---------------------------------------------------
+
+Propósito:
+El sistema utiliza un modelo de datos normalizado para almacenar respuestas de 
+formularios, lo que permite realizar consultas, filtros y reportes eficientes 
+sobre grandes volúmenes de información.
+
+Componentes Clave:
+
+1. Catálogo de Opciones (field_option_catalog):
+   - Almacena centralizadamente todas las opciones de campos tipo SELECT
+   - Cada opción tiene un código único (option_id)
+   - Permite activar/desactivar opciones sin perder histórico
+   - Facilita renombrar opciones sin romper referencias históricas
+
+2. Tabla de Respuestas (form_responses):
+   - Almacena cada respuesta de formulario en formato normalizado
+   - Para campos SELECT: guarda el option_id (referencia al catálogo)
+   - Para otros campos: guarda el valor directo (texto, número, fecha, archivo)
+   - Permite consultas SQL directas sobre cualquier campo
+
+3. Respaldo en JSON (form_data):
+   - El campo form_data en procedure_instances se mantiene como respaldo
+   - Contiene el formulario completo tal como fue enviado
+   - Útil para auditoría y recuperación de datos
+
+Beneficios:
+[+] Consultas ultra rápidas (índices en tablas relacionales)
+[+] Filtros dinámicos automáticos por cualquier campo
+[+] Reportes y estadísticas sin procesamiento de JSON
+[+] Integridad referencial garantizada
+[+] Histórico protegido aunque se modifiquen opciones
+[+] Escalabilidad para millones de registros
+
+Ejemplo de Flujo:
+1. Admin crea campo "Estado de ánimo" tipo SELECT
+2. Define opciones: "Triste", "Feliz", "Jubiloso" -> se guardan en catálogo
+3. Usuario llena formulario y selecciona "Feliz"
+4. Sistema guarda:
+   - En form_data (JSON): {"estado_de_animo": "feliz"}
+   - En form_responses: {field_id: 15, selected_option_id: 2}
+5. Más tarde, admin puede:
+   - Agregar opción "Deprimido" sin afectar datos existentes
+   - Desactivar opción "Triste" (oculta en nuevos, mantiene histórico)
+   - Renombrar "Feliz" a "Alegre" (todos los registros se actualizan auto)
+6. Usuarios pueden filtrar y consultar por cualquier campo eficientemente
+
+--------------------------------------------------------------------------------
+
+3.6 Reglas de Negocio
+---------------------
+
+Inicio de Procedimientos:
+
+Procedimientos Internos:
+- Puede iniciarlo cualquier usuario autenticado
+- Requiere login en el sistema
+- Confirmación por email al iniciar
+
+Procedimientos Externos:
+- Puede iniciarlo cualquier persona (público)
+- Requiere captcha de Google (ya implementado en config)
+- Confirmación por email obligatoria
+- No requiere autenticación
+
+Visibilidad y Permisos:
+
+Creador del procedimiento:
+- Ve el historial completo de todos los registros
+- Puede editar el procedimiento (solo si no tiene registros activos)
+- Puede cancelar registros en curso
+
+Solicitante (quien inicia el procedimiento):
+- Ve solo el estado de su solicitud
+- Ve los pasos completados de su procedimiento
+- Recibe notificaciones de avance
+- Recibe notificación al finalizar
+
+Responsables de pasos:
+- Ven solo las tareas asignadas a ellos
+- Pueden documentar progreso y adjuntar archivos
+- Reciben notificaciones automáticas al asignarse tarea
+
+Notificaciones Automáticas:
+
+Al iniciar procedimiento:
+- Email al solicitante confirmando inicio
+- Email al responsable del primer paso
+
+Al completar cada paso:
+- Email al responsable del siguiente paso
+- (Opcional) Email al solicitante informando avance
+
+Al completar procedimiento:
+- Email al solicitante confirmando finalización
+- Email al creador del procedimiento (notificación de cierre)
+
+Alertas de SLA:
+- Email al responsable cuando se aproxima la fecha límite
+- Email al responsable y supervisor si se excede el SLA
+
+Cancelación:
+
+Quién puede cancelar:
+- Solo el creador del procedimiento
+
+Efectos de cancelación:
+- Se cancelan todas las tareas pendientes asociadas
+- Se marca el registro como cancelado
+- Se notifica al solicitante
+- No se puede reabrir (decisión tomada)
+
+Edición de Procedimientos:
+
+Permitido:
+- Editar procedimientos en estado Inactivo
+- Editar procedimientos Activos sin registros en ejecución
+
+No permitido:
+- Editar procedimientos con registros activos/en curso
+- Eliminar pasos que tienen registros históricos
+
+================================================================================
+4. ESTRUCTURA DE DATOS
+================================================================================
+
+NOTA: Ver archivo DataBase.txt en el proyecto para la estructura completa 
+de todas las tablas del sistema, incluyendo:
+
+Tablas específicas del módulo de Procedimientos:
+- forms
+- form_fields
+- field_option_catalog
+- form_responses
+- procedures
+- procedure_steps
+- procedure_step_options
+- procedure_instances
+- procedure_instance_steps
+- procedure_attachments
+
+Tablas modificadas:
+- tasks (se agregan campos procedure_id y procedure_step_id)
+
+================================================================================
+5. BOSQUEJO DE PANTALLAS
+================================================================================
+
+5.1 Índice del Módulo
+----------------------
+Archivo: /modules/procedures/index.html
+
+Secciones:
+- Métricas (cargar métricas dropdown)
+- Configuración:
+  * Gestionar Formularios
+  * Gestionar Procedimientos
+  * Ejecutar Procedimiento
+- Consultas y Reportes:
+  * Mis Solicitudes
+  * Consultar Registros
+  * Reportes
+
+Permisos:
+- "Gestionar formularios" -> Solo config
+- "Gestionar procedimientos" -> Solo config
+- "Ejecutar procedimientos" -> Todos los autenticados
+- "Consultar registros" -> Solo con permiso
+- "Ver mis solicitudes" -> Todos los autenticados
+- "Reportes" -> Solo con permiso
+
+--------------------------------------------------------------------------------
+
+5.2 Gestionar Formularios
+--------------------------
+Archivo: /modules/procedures/forms.html
+
+Funcionalidad:
+- Listado de formularios existentes
+- Crear nuevo formulario
+- Editar formulario existente
+- Ver campos del formulario
+- Eliminar formulario (solo si no está en uso)
+- Filtros: búsqueda por nombre, estado (activo/inactivo)
+
+Información mostrada por formulario:
+- Nombre del formulario
+- Estado (Activo/Inactivo)
+- Número de campos
+- Número de procedimientos que lo usan
+- Fecha de creación
+
+Acciones disponibles:
+- [Ver campos]
+- [Editar]
+- [Eliminar] (solo si no está en uso)
+
+--------------------------------------------------------------------------------
+
+5.3 Modal: Crear/Editar Formulario
+-----------------------------------
+
+Sección 1: Información General
+- Nombre del formulario (obligatorio)
+- Descripción (opcional)
+- Estado: Activo / Inactivo
+
+Sección 2: Campos del Formulario
+- Lista de campos ordenables (drag & drop o botones arriba/abajo)
+- Botón [+ Agregar Campo]
+- Para cada campo se muestra:
+  * Número de orden
+  * Nombre del campo
+  * Tipo
+  * Si es obligatorio
+  * Si está pre-llenado
+  * Validaciones (resumen)
+  * Acciones: [Editar] [Eliminar] [Subir] [Bajar]
+
+Acciones:
+- [Cancelar] - cierra sin guardar
+- [Guardar Formulario] - valida y guarda
+
+--------------------------------------------------------------------------------
+
+5.4 Modal: Agregar/Editar Campo
+--------------------------------
+
+Campos básicos:
+- Nombre del campo (etiqueta visible) - obligatorio
+- Tipo de campo - obligatorio (dropdown):
+  * Texto
+  * Textarea
+  * Número
+  * Fecha
+  * Selección
+  * Archivo
+- Campo obligatorio (checkbox)
+
+Sección: Validaciones (opcional)
+Opciones según tipo de campo:
+
+Para Texto/Textarea:
+- Longitud mínima
+- Longitud máxima
+- Patrón regex
+- Tipo específico: email, teléfono, URL, etc.
+
+Para Número:
+- Valor mínimo
+- Valor máximo
+- Número de decimales
+
+Para Fecha:
+- Fecha mínima
+- Fecha máxima
+
+Para Selección:
+- Lista de opciones (se guardan en field_option_catalog)
+- Cada opción tiene:
+  * Valor técnico (generado automáticamente)
+  * Etiqueta visible (ingresada por usuario)
+  * Orden
+  * Estado activo/inactivo
+- Botón [+ Agregar opción]
+- Para cada opción: [Editar] [Desactivar] [Eliminar] [Subir] [Bajar]
+
+Para Archivo:
+- Tamaño máximo (MB)
+- Tipos de archivo permitidos (checkboxes: PDF, DOC, DOCX, XLS, XLSX, JPG, PNG)
+
+Sección: Pre-llenado Automático
+- Checkbox: Pre-llenar automáticamente
+- Si está marcado, dropdown con opciones:
+  * Nombre del usuario actual
+  * Email del usuario actual
+  * Fecha actual
+
+Acciones:
+- [Cancelar]
+- [Agregar Campo] o [Guardar Cambios]
+
+--------------------------------------------------------------------------------
+
+5.5 Gestionar Procedimientos
+-----------------------------
+Archivo: /modules/procedures/procedures.html
+
+Funcionalidad:
+- Listado de procedimientos
+- Crear nuevo procedimiento
+- Editar procedimiento existente
+- Ver pasos del procedimiento
+- Activar/Desactivar procedimiento
+- Eliminar procedimiento (solo si no tiene registros)
+
+Filtros:
+- Búsqueda por nombre
+- Tipo (Interno/Externo/Todos)
+- Estado (Activo/Inactivo/Todos)
+
+Información mostrada por procedimiento:
+- Nombre
+- Tipo (Interno/Externo)
+- Estado (Activo/Inactivo)
+- Número de pasos configurados
+- Número de registros activos
+- Acciones: [Ver Pasos] [Editar] [Activar/Desactivar] [Eliminar]
+
+--------------------------------------------------------------------------------
+
+5.6 Modal: Crear/Editar Procedimiento
+--------------------------------------
+
+PASO 1 DE 2: Información General
+
+Campos:
+- Nombre del procedimiento (obligatorio)
+- Descripción (opcional, textarea)
+- Tipo de procedimiento (obligatorio, radio):
+  * Interno (Requiere autenticación)
+  * Externo (Público, con captcha)
+- Formulario inicial (obligatorio, dropdown):
+  Lista de formularios activos disponibles
+- Estado inicial (radio):
+  * Activo
+  * Inactivo
+
+Navegación:
+- [Cancelar]
+- [Siguiente: Configurar Pasos ->]
+
+PASO 2 DE 2: Configurar Pasos del Procedimiento
+
+Visualización:
+- Flujo visual del procedimiento mostrando:
+  * [0] Formulario Inicial (nombre del formulario)
+    |
+    v
+  * [1] Primer paso
+    - Nombre
+    - Responsable
+    - SLA
+    - Bifurcación (si tiene)
+    - Acciones: [Editar] [Eliminar] [Subir] [Bajar]
+    |
+    v
+  * [2] Segundo paso
+    ...
+  * [N] Paso final (marcado con estrella)
+
+Botón superior: [+ Agregar Paso]
+
+Navegación:
+- [<- Atrás] - vuelve al paso 1
+- [Cancelar] - cierra sin guardar
+- [Guardar Procedimiento] - valida estructura y guarda
+
+Validaciones al guardar:
+- Debe haber al menos 1 paso
+- Debe haber exactamente 1 paso marcado como final
+- Todas las bifurcaciones deben apuntar a pasos válidos
+- No debe haber pasos huérfanos (sin entrada)
+- Los pasos deben formar un flujo coherente
+
+--------------------------------------------------------------------------------
+
+5.7 Modal: Agregar/Editar Paso
+-------------------------------
+
+Campos básicos:
+- Número de secuencia (obligatorio)
+  Nota: Puede ser no consecutivo (ej: 1,2,5,10) para permitir inserción futura
+- Nombre del paso (obligatorio)
+- Descripción (opcional, textarea)
+- Responsable (obligatorio, dropdown de workers)
+- Tipo de paso (obligatorio, radio):
+  * Manual (requiere acción del responsable)
+  * Notificación (solo informa, avanza automático)
+  * Automático (futuro - ejecución automática)
+- SLA en días hábiles (opcional, número)
+  Nota: Se enviarán alertas si se excede
+
+Sección: Bifurcación
+- Checkbox: Este paso tiene bifurcación (opciones condicionales)
+
+Si tiene bifurcación:
+  Botón: [+ Agregar Opción]
+  
+  Para cada opción:
+  - Nombre de la opción (ej: "Aprobado", "Rechazado")
+  - Siguiente paso (dropdown de pasos disponibles)
+  - Acciones: [Editar] [Eliminar]
+
+Si NO tiene bifurcación:
+  - Siguiente paso (dropdown de pasos disponibles)
+
+Checkbox final:
+- Este es el paso final del procedimiento
+
+Validación:
+- Un paso NO puede ser final Y tener bifurcación
+- Un paso final NO requiere "siguiente paso"
+- Un paso no-final DEBE tener siguiente paso definido
+
+Acciones:
+- [Cancelar]
+- [Guardar Paso]
+
+--------------------------------------------------------------------------------
+
+5.8 Ejecutar Procedimiento
+---------------------------
+Archivo: /modules/procedures/execute.html
+
+Funcionalidad:
+- Muestra procedimientos activos disponibles para el usuario
+- Permite iniciar un nuevo procedimiento
+- Búsqueda por nombre
+
+Para cada procedimiento disponible se muestra:
+- Nombre
+- Tipo (Interno/Externo)
+- Descripción
+- Número de pasos
+- Botón: [Iniciar]
+
+Al hacer clic en [Iniciar]:
+- Se abre modal con el formulario inicial del procedimiento
+
+--------------------------------------------------------------------------------
+
+5.9 Modal: Llenar Formulario Inicial
+-------------------------------------
+
+Título: Nombre del procedimiento
+
+Instrucciones:
+"Complete el siguiente formulario para iniciar el procedimiento"
+
+Campos:
+- Renderiza dinámicamente todos los campos del formulario
+- Campos pre-llenados aparecen deshabilitados con icono de candado
+- Campos obligatorios marcados con asterisco
+- Validaciones en tiempo real
+
+Para campos tipo SELECT:
+- Dropdown con opciones activas del catálogo
+
+Para campos tipo ARCHIVO:
+- Input file con restricciones de tamaño y tipo
+- Muestra: "Tamaño máx: X MB | Tipos: ..."
+
+Acciones:
+- [Cancelar]
+- [Enviar Solicitud]
+
+Al enviar:
+1. Valida todos los campos
+2. Si hay errores: muestra mensajes
+3. Si está correcto:
+   - Crea registro en procedure_instances
+   - Guarda form_data (JSON)
+   - Guarda form_responses (normalizado)
+   - Crea tarea para paso 1
+   - Envía notificaciones
+   - Muestra mensaje de éxito
+   - Redirige a "Mis Solicitudes"
+
+--------------------------------------------------------------------------------
+
+5.10 Mis Solicitudes
+---------------------
+Archivo: /modules/procedures/my-requests.html
+
+Funcionalidad:
+- Muestra todas las solicitudes iniciadas por el usuario actual
+- Filtros: búsqueda, estado, fecha
+- Información por solicitud:
+  * Nombre del procedimiento
+  * Resumen (primeros campos del formulario)
+  * Estado (En progreso/Completado/Cancelado/Rechazado)
+  * Paso actual (si en progreso)
+  * Responsable actual
+  * Fecha de inicio
+  * Acciones: [Ver Detalle] [Cancelar] (si aplica)
+
+Estados visuales:
+- En progreso: Icono amarillo
+- Completado: Icono verde con checkmark
+- Rechazado: Icono rojo
+- Cancelado: Icono gris
+
+--------------------------------------------------------------------------------
+
+5.11 Modal: Ver Detalle de Solicitud
+-------------------------------------
+
+Sección 1: Información General
+- Procedimiento
+- Estado
+- Iniciado por
+- Fecha de inicio
+- Paso actual (si en progreso)
+- Fecha de completado (si aplica)
+
+Sección 2: Datos del Formulario Inicial
+- Muestra todos los campos y sus valores
+- Para archivos: link de descarga
+
+Sección 3: Progreso del Procedimiento
+Timeline visual mostrando:
+
+Para cada paso:
+- Icono de estado:
+  * Checkmark verde: Completado
+  * Circulo amarillo: Actual
+  * Circulo gris: Pendiente
+- Nombre del paso
+- Responsable
+- Para pasos completados:
+  * Fecha de completación
+  * Decisión tomada (si hubo bifurcación)
+  * Comentarios del responsable
+  * Archivos adjuntos (links)
+
+Acciones:
+- [Cerrar]
+- [Cancelar Solicitud] (solo si está en progreso y es el creador)
+
+--------------------------------------------------------------------------------
+
+5.12 Tareas de Procedimientos
+------------------------------
+Archivo: /modules/general-tools/tasks.html (modificado)
+
+Integración:
+- Las tareas de procedimientos aparecen junto a las demás tareas
+- Badge especial: "PROCEDIMIENTOS"
+- Información adicional:
+  * Nombre del procedimiento
+  * Número de paso
+  * Nombre del solicitante
+  * Resumen de la solicitud
+
+Acciones disponibles:
+- [Ver] - abre modal de detalle de solicitud (solo lectura)
+- [Trabajar] - marca tarea como "En progreso"
+- [Completar] - abre modal para completar el paso
+
+--------------------------------------------------------------------------------
+
+5.13 Modal: Completar Paso del Procedimiento
+---------------------------------------------
+
+Sección 1: Información de la Solicitud
+- Resumen de los datos principales
+- Link: [Ver solicitud completa]
+
+Sección 2: Completar Paso
+
+Campos:
+- Comentarios/Observaciones (obligatorio, textarea)
+- Adjuntar archivos (opcional)
+  * Botón de selección de archivos
+  * Lista de archivos seleccionados con opción de remover
+
+Sección 3: Decisión Requerida (solo si el paso tiene bifurcación)
+
+Título: "Este paso requiere que elijas una opción para continuar:"
+
+Radio buttons con las opciones disponibles:
+- Opción 1 (ej: Aprobado) -> Continuar a Paso X
+- Opción 2 (ej: Rechazado) -> Ir a Paso Y
+- Opción N (ej: Requiere más info) -> Volver a Paso Z
+
+Si NO hay bifurcación:
+- Se muestra: "Al completar, continuará automáticamente a: [Nombre Paso X]"
+
+Acciones:
+- [Cancelar]
+- [Completar y Avanzar]
+
+Al completar:
+1. Valida campos obligatorios
+2. Si hay bifurcación y no se seleccionó: error
+3. Si está correcto:
+   - Marca tarea actual como Terminada
+   - Guarda comentarios en task_progress
+   - Sube archivos a Storage
+   - Registra en procedure_attachments
+   - Registra en procedure_instance_steps
+   - Actualiza current_step_id en procedure_instances
+   - Crea tarea del siguiente paso (o marca como completado si es final)
+   - Envía notificaciones
+   - Muestra mensaje de éxito
+   - Cierra modal y actualiza lista de tareas
+
+--------------------------------------------------------------------------------
+
+5.14 Consultar Registros
+-------------------------
+Archivo: /modules/procedures/records.html
+
+Funcionalidad:
+- Vista completa de todos los procedimientos del sistema
+- Solo accesible con permiso "Consultar registros"
+
+Filtros Avanzados:
+- Procedimiento (dropdown de todos los procedimientos)
+- Estado (En progreso/Completado/Cancelado/Rechazado/Todos)
+- Solicitante (búsqueda por nombre o email)
+- Rango de fechas (desde/hasta)
+- Paso actual (dropdown de pasos del procedimiento seleccionado)
+
+Resultados:
+Tabla con:
+- ID de registro
+- Procedimiento
+- Solicitante
+- Estado (con icono)
+- Paso actual (si aplica)
+- Fecha de inicio
+- Acciones: [Ver Detalle] [Ver Historial] [PDF]
+
+Paginación: Muestra N registros por página
+
+Acciones superiores:
+- [Buscar]
+- [Limpiar Filtros]
+- [Exportar a Excel]
+
+--------------------------------------------------------------------------------
+
+5.15 Consultar Registros con Filtros Dinámicos
+-----------------------------------------------
+Archivo: /modules/procedures/records.html?procedure_id=[ID]
+
+NOTA: Esta es una variante de la pantalla anterior, pero con filtros 
+dinámicos generados según los campos del formulario del procedimiento.
+
+URL: /modules/procedures/records.html?procedure_id=5
+
+Funcionamiento:
+
+1. La página recibe el procedure_id desde la URL
+
+2. Sistema consulta qué campos tiene el formulario de ese procedimiento
+
+3. Para cada campo, genera automáticamente el filtro apropiado:
+   - Campos tipo TEXT/TEXTAREA -> Input de búsqueda parcial
+   - Campos tipo NUMBER -> Rango (desde/hasta)
+   - Campos tipo DATE -> Selector de rango de fechas
+   - Campos tipo SELECT -> Dropdown con opciones del catálogo
+   - Campos tipo FILE -> (No se filtran)
+
+4. Al hacer clic en [Buscar], sistema construye query SQL con JOINs:
+   - JOIN a form_responses para cada campo filtrado
+   - JOIN a field_option_catalog para campos SELECT
+   - Aplica condiciones WHERE según valores ingresados
+
+5. Resultados se muestran con paginación
+
+6. Usuario puede exportar a CSV los registros filtrados
+
+Ejemplo de Filtros Dinámicos para "Solicitud de Compra":
+
+┌─ FILTROS DINÁMICOS ─────────────────────────┐
+│                                              │
+│ Nombre del solicitante: [_______________]   │
+│                                              │
+│ Valor estimado:         [____] a [____]     │
+│                                              │
+│ Categoría:              [Todas ▼]           │
+│                         - Material educativo│
+│                         - Equipos           │
+│                         - Servicios         │
+│                         - Otros             │
+│                                              │
+│ Fecha solicitud (desde): [__/__/____]       │
+│ Fecha solicitud (hasta): [__/__/____]       │
+│                                              │
+│ Estado del procedimiento: [Todos ▼]         │
+│                           - En progreso     │
+│                           - Completado      │
+│                           - Cancelado       │
+│                                              │
+│   [Limpiar Filtros]  [Buscar]               │
+└─────────────────────────────────────────────┘
+
+Ventajas del Sistema Dinámico:
+[+] Cada procedimiento tiene filtros personalizados según sus campos
+[+] No requiere programar pantallas nuevas para cada procedimiento
+[+] Consultas optimizadas con índices en base de datos
+[+] Filtros combinables (AND entre todos los criterios)
+[+] Resultados instantáneos incluso con miles de registros
+
+--------------------------------------------------------------------------------
+
+5.16 Reportes
+-------------
+Archivo: /modules/procedures/reports.html
+
+Funcionalidad:
+- Dashboard con métricas y estadísticas
+- Solo accesible con permiso "Reportes de procedimientos"
+
+Parámetros:
+- Rango de fechas (obligatorio)
+- Procedimiento (opcional, filtrar por uno específico)
+- Botones: [Generar Reporte] [Descargar Excel]
+
+Sección 1: Métricas Generales
+- Total iniciados
+- En progreso (número y porcentaje)
+- Completados (número y porcentaje)
+- Cancelados/Rechazados (número y porcentaje)
+- Tiempo promedio de completación
+- Cumplimiento de SLA (porcentaje)
+
+Sección 2: Por Procedimiento
+Lista de procedimientos con:
+- Nombre
+- Barra de progreso visual (cantidad de registros)
+- Tiempo promedio
+- Cumplimiento de SLA
+- Ordenable por cualquier columna
+
+Sección 3: Cuellos de Botella
+- Paso con mayor demora promedio
+- Responsable con más tareas vencidas
+- Procedimientos con menor cumplimiento de SLA
+
+Sección 4: Gráficos
+- Gráfico de tendencia mensual (línea)
+- Gráfico de distribución por estado (dona/pie)
+- Gráfico de tiempo promedio por paso (barras)
+
+Todos los gráficos son interactivos (usando Chart.js o similar)
+
+================================================================================
+6. FLUJOS DE USUARIO
+================================================================================
+
+6.1 Flujo: Crear un Nuevo Procedimiento
+----------------------------------------
+
+Actor: Administrador con permiso "Gestionar procedimientos"
+
+Pasos:
+
+1. Accede a /modules/procedures/procedures.html
+
+2. Clic en [+ Nuevo Procedimiento]
+
+3. PASO 1 - Información General:
+   - Completa nombre del procedimiento
+   - Completa descripción (opcional)
+   - Selecciona tipo: Interno o Externo
+   - Selecciona formulario inicial de lista desplegable
+   - Selecciona estado: Activo o Inactivo
+   - Clic en [Siguiente: Configurar Pasos]
+
+4. PASO 2 - Configurar Pasos:
+   - Clic en [+ Agregar Paso]
+   - Para cada paso:
+     * Define número de secuencia
+     * Ingresa nombre del paso
+     * Ingresa descripción (opcional)
+     * Selecciona responsable (worker) del dropdown
+     * Selecciona tipo de paso (Manual/Notificación/Automático)
+     * Define SLA en días hábiles (opcional)
+     * Si tiene bifurcación:
+       - Marca checkbox "Este paso tiene bifurcación"
+       - Clic en [+ Agregar Opción] por cada opción
+       - Para cada opción:
+         * Ingresa nombre de la opción (ej: "Aprobado")
+         * Selecciona paso siguiente para esa opción
+     * Si no tiene bifurcación:
+       - Selecciona paso siguiente directamente del dropdown
+     * Si es el último paso:
+       - Marca checkbox "Este es el paso final"
+     * Clic en [Guardar Paso]
+   - Repite el proceso para todos los pasos necesarios
+
+5. Revisa el flujo completo visualizado en pantalla
+
+6. Clic en [Guardar Procedimiento]
+
+7. Sistema valida la estructura:
+   - Verifica que haya al menos 1 paso
+   - Verifica que haya exactamente 1 paso final
+   - Verifica que todas las bifurcaciones apunten a pasos válidos
+   - Verifica que no haya pasos huérfanos
+
+8. Si hay errores: muestra mensajes específicos
+
+9. Si está correcto:
+   - Guarda el procedimiento en la base de datos
+   - Muestra mensaje: "Procedimiento creado exitosamente"
+   - Cierra el modal
+   - Actualiza la lista de procedimientos
+
+--------------------------------------------------------------------------------
+
+6.1.1 Flujo: Gestionar Opciones de Campos SELECT
+-------------------------------------------------
+
+Actor: Administrador con permiso "Gestionar formularios"
+
+A) CREAR CAMPO SELECT CON OPCIONES INICIALES:
+
+1. En el modal de crear/editar formulario, clic en [+ Agregar Campo]
+
+2. Completa campos básicos:
+   - Nombre del campo: "Estado de ánimo"
+   - Tipo de campo: Seleccionar "Selección" del dropdown
+   - Marcar si es obligatorio
+
+3. Aparece automáticamente sección "OPCIONES" (solo para tipo Selección)
+
+4. Para cada opción:
+   - Escribe el texto de la opción en el input: "Triste"
+   - Clic en [+ Agregar]
+   - La opción aparece en la lista
+   - Repite para: "Feliz", "Jubiloso"
+
+5. Clic en [Guardar Campo]
+
+6. Sistema guarda:
+   - El campo en tabla form_fields
+   - Cada opción en tabla field_option_catalog con:
+     * option_value = versión normalizada ("triste", "feliz", "jubiloso")
+     * option_label = versión visible ("Triste", "Feliz", "Jubiloso")
+     * option_order = orden de inserción (1, 2, 3)
+     * is_active = true
+
+B) AGREGAR NUEVAS OPCIONES A CAMPO EXISTENTE:
+
+1. En gestión de formularios, clic en [Editar] del formulario
+
+2. Localiza el campo tipo SELECT en la lista
+
+3. Clic en [Editar Campo]
+
+4. En la sección "OPCIONES", ve las opciones actuales
+
+5. Escribe nueva opción en el input: "Deprimido"
+
+6. Clic en [+ Agregar]
+
+7. Sistema inserta nueva opción en field_option_catalog:
+   - Genera option_value automáticamente: "deprimido"
+   - Guarda option_label: "Deprimido"
+   - Asigna option_order siguiente: 4
+   - is_active = true
+
+8. La nueva opción aparece inmediatamente en formularios nuevos
+
+9. Registros históricos NO se afectan
+
+C) DESACTIVAR UNA OPCIÓN:
+
+1. En edición del campo SELECT
+
+2. Localiza la opción a desactivar en la lista (ej: "Triste")
+
+3. Clic en botón [Desactivar] de esa opción
+
+4. Sistema muestra confirmación:
+   "¿Desactivar la opción 'Triste'? 
+    Esta opción dejará de aparecer en nuevos formularios, 
+    pero los registros históricos se mantendrán."
+
+5. Usuario confirma
+
+6. Sistema actualiza en field_option_catalog:
+   - is_active = false
+
+7. Efectos:
+   [+] Formularios nuevos: La opción NO aparece en el dropdown
+   [+] Registros históricos: Mantienen la referencia válida
+   [+] Consultas y reportes: Siguen funcionando con datos antiguos
+   [-] NO se puede reactivar si hay inconsistencias
+
+D) ELIMINAR FÍSICAMENTE UNA OPCIÓN:
+
+REGLA: Solo se puede eliminar si NO tiene ninguna respuesta asociada
+
+1. En edición del campo SELECT
+
+2. Localiza la opción a eliminar
+
+3. Clic en botón [Eliminar]
+
+4. Sistema valida:
+   SELECT COUNT(*) FROM form_responses WHERE selected_option_id = [X]
+
+5. SI hay registros (COUNT > 0):
+   - Muestra error:
+     "No se puede eliminar. Hay X respuestas usando esta opción.
+      Use 'Desactivar' en su lugar."
+   - NO elimina nada
+
+6. SI NO hay registros (COUNT = 0):
+   - Muestra confirmación:
+     "¿Eliminar permanentemente la opción 'Triste'?
+      Esta acción no se puede deshacer."
+   - Usuario confirma
+   - Sistema elimina el registro de field_option_catalog
+
+NOTA IMPORTANTE: Se recomienda SIEMPRE usar "Desactivar" en lugar de 
+"Eliminar" para mantener un histórico limpio y evitar problemas futuros.
+
+--------------------------------------------------------------------------------
+
+6.2 Flujo: Ejecutar Procedimiento Interno
+------------------------------------------
+
+Actor: Usuario autenticado
+
+Pasos:
+
+1. Accede a /modules/procedures/execute.html
+
+2. Ve lista de procedimientos activos tipo "Interno"
+
+3. Puede buscar procedimiento específico usando el buscador
+
+4. Clic en [Iniciar] del procedimiento deseado
+
+5. Se abre modal con el formulario inicial
+
+6. Sistema pre-llena automáticamente los campos configurados:
+   - Nombre del usuario (si aplica)
+   - Email del usuario (si aplica)
+   - Fecha actual (si aplica)
+
+7. Usuario completa los campos restantes:
+   - Ingresa valores en campos de texto, número, fecha
+   - Selecciona opciones en campos SELECT
+   - Adjunta archivos en campos FILE (si aplica)
+
+8. Sistema valida campos en tiempo real
+
+9. Clic en [Enviar Solicitud]
+
+10. Sistema ejecuta las siguientes acciones:
+
+    A) Crea registro en procedure_instances:
+       - initiated_by_user_id = [user_id del usuario autenticado]
+       - initiated_by_email = [email del usuario]
+       - initiated_by_name = [nombre del usuario]
+       - form_data = [JSON completo del formulario como respaldo]
+       - instance_status = 'in_progress'
+       - started_at = [timestamp actual]
+       - procedure_id = [ID del procedimiento]
+       - current_step_id = [ID del paso 1]
+
+    B) Guarda respuestas normalizadas en form_responses:
+       Para cada campo del formulario:
+       - Si es tipo TEXT o TEXTAREA:
+         INSERT {instance_id, field_id, response_text}
+       - Si es tipo NUMBER:
+         INSERT {instance_id, field_id, response_number}
+       - Si es tipo DATE:
+         INSERT {instance_id, field_id, response_date}
+       - Si es tipo SELECT:
+         * Busca el option_id correspondiente al valor seleccionado
+         * INSERT {instance_id, field_id, selected_option_id}
+       - Si es tipo FILE:
+         * Sube archivo a Supabase Storage
+         * INSERT {instance_id, field_id, file_path, file_name}
+       
+       IMPORTANTE: Cada campo genera UN registro en form_responses
+
+    C) Identifica el paso 1 del procedimiento
+
+    D) Crea tarea en tabla tasks:
+       - module_type = 'procedures'
+       - procedure_id = [ID del procedimiento]
+       - procedure_step_id = [ID del paso 1]
+       - task_description = "Paso 1: [nombre_paso] - [nombre_procedimiento]"
+       - assigned_to_mail = [email del responsable del paso 1]
+       - due_date = [fecha_actual + SLA del paso en días hábiles]
+       - task_priority = [calculada según SLA]
+       - task_status = 'Asignada'
+
+    E) Envía notificación al responsable del paso 1:
+       - Asunto: "Nueva tarea asignada - [nombre_paso]"
+       - Cuerpo: Información de la solicitud, link al sistema
+
+    F) Envía confirmación al solicitante:
+       - Asunto: "Solicitud iniciada - [nombre_procedimiento]"
+       - Cuerpo: Número de seguimiento, datos de la solicitud
+
+11. Usuario ve mensaje:
+    "Solicitud enviada exitosamente. 
+     Recibirás notificaciones sobre el avance."
+
+12. Usuario es redirigido a /modules/procedures/my-requests.html
+
+13. En "Mis Solicitudes" puede ver el estado de su solicitud
+
+--------------------------------------------------------------------------------
+
+6.3 Flujo: Ejecutar Procedimiento Externo
+------------------------------------------
+
+Actor: Persona sin cuenta (público)
+
+Pasos:
+
+1. Accede a URL pública:
+   /modules/procedures/execute-public.html?id=[procedure_id]
+
+2. Ve formulario inicial del procedimiento
+
+3. Sistema muestra captcha de Google (reCAPTCHA)
+
+4. Usuario completa todos los campos del formulario:
+   - Ingresa nombre completo
+   - Ingresa email de contacto
+   - Completa demás campos según el formulario
+   - Adjunta archivos si es necesario
+
+5. Usuario resuelve el captcha (marca checkbox "No soy un robot")
+
+6. Clic en [Enviar Solicitud]
+
+7. Sistema valida captcha con Google API
+
+8. Si captcha inválido:
+   - Muestra error: "Por favor verifica el captcha"
+   - No procesa la solicitud
+
+9. Si captcha válido, sistema ejecuta:
+
+   A) Crea registro en procedure_instances:
+      - initiated_by_user_id = NULL (usuario externo)
+      - initiated_by_email = [email capturado del formulario]
+      - initiated_by_name = [nombre capturado del formulario]
+      - form_data = [JSON completo]
+      - instance_status = 'in_progress'
+      - started_at = [timestamp actual]
+
+   B) Guarda respuestas normalizadas en form_responses
+      (mismo proceso que procedimiento interno)
+
+   C) Crea tarea para paso 1 en tabla tasks
+
+   D) Envía confirmación al email del solicitante:
+      - Asunto: "Solicitud recibida - [nombre_procedimiento]"
+      - Cuerpo:
+        * Número de seguimiento: [instance_id]
+        * Link para consultar estado sin login
+        * Resumen de la solicitud
+        * Datos de contacto
+
+   E) Envía notificación al responsable del paso 1
+
+10. Usuario ve mensaje:
+    "Solicitud enviada exitosamente.
+     Revisa tu email para el número de seguimiento."
+
+11. Usuario recibe email con:
+    - Número de seguimiento: #12345
+    - Link: /modules/procedures/track.html?id=12345
+    - Instrucciones para consultar estado
+
+12. Usuario puede usar ese link en cualquier momento para ver estado
+    (sin necesidad de crear cuenta o login)
+
+--------------------------------------------------------------------------------
+
+6.4 Flujo: Completar un Paso del Procedimiento
+-----------------------------------------------
+
+Actor: Responsable del paso (worker asignado)
+
+Pasos:
+
+1. Usuario accede a /modules/general-tools/tasks.html
+
+2. Ve su lista de tareas pendientes
+
+3. Sistema muestra tareas de diferentes módulos, incluyendo procedimientos
+
+4. Identifica tarea de procedimiento por:
+   - Badge "PROCEDIMIENTOS" en color distintivo
+   - Información adicional: nombre del procedimiento, solicitante
+
+5. Puede hacer clic en [Ver] para ver detalle de la solicitud (solo lectura)
+
+6. Hace clic en [Trabajar] o [Completar]
+
+7. Si hace clic en [Trabajar]:
+   - Tarea cambia a estado "En Progreso"
+   - Fecha de inicio se registra
+   - Usuario puede seguir trabajando y completarla después
+
+8. Cuando hace clic en [Completar], se abre modal mostrando:
+
+   Sección 1: INFORMACIÓN DE LA SOLICITUD
+   - Resumen de los datos principales del formulario
+   - Link [Ver solicitud completa] que abre modal de detalle
+
+   Sección 2: COMPLETAR PASO
+   - Campo "Comentarios/Observaciones" (obligatorio, textarea)
+   - Sección "Adjuntar archivos" (opcional)
+     * Botón [Seleccionar archivos]
+     * Lista de archivos seleccionados
+
+   Sección 3: DECISIÓN REQUERIDA (solo si el paso tiene bifurcación)
+   - Texto: "Este paso requiere que elijas una opción para continuar:"
+   - Radio buttons con las opciones disponibles:
+     * Opción 1 (ej: "Aprobado") -> Continuar a Paso 3
+     * Opción 2 (ej: "Rechazado") -> Ir a Paso 5 (Final)
+     * Opción N (ej: "Requiere más info") -> Volver a Paso 1
+
+9. Usuario:
+   - Lee la solicitud completa si es necesario
+   - Escribe sus comentarios/observaciones
+   - Adjunta archivos de soporte (opcional)
+   - Selecciona una opción de bifurcación (si aplica)
+
+10. Clic en [Completar y Avanzar]
+
+11. Sistema valida:
+    - Que los comentarios no estén vacíos
+    - Que se haya seleccionado una opción (si hay bifurcación)
+
+12. Si hay errores: muestra mensajes específicos
+
+13. Si está correcto, sistema ejecuta:
+
+    A) Actualiza tarea actual en tabla tasks:
+       - task_status = 'Terminada'
+       - task_end_date = [timestamp actual]
+       - task_progress = [comentarios ingresados]
+
+    B) Si hay archivos adjuntos:
+       - Sube cada archivo a Supabase Storage
+       - Ruta: procedures/[instance_id]/step_[step_id]/[timestamp]_[filename]
+       - Registra cada archivo en procedure_attachments:
+         * instance_id
+         * step_id
+         * file_name
+         * file_path
+         * file_size
+         * file_type
+         * uploaded_by = [user_id]
+         * uploaded_at = [timestamp]
+
+    C) Registra en procedure_instance_steps:
+       - instance_id
+       - step_id
+       - task_id
+       - selected_option_id (si hubo bifurcación, sino NULL)
+       - step_status = 'completed'
+       - started_at = [cuando se asignó]
+       - completed_at = [timestamp actual]
+       - completed_by = [user_id]
+       - notes = [comentarios del responsable]
+
+    D) Identifica siguiente paso:
+       - Si hubo bifurcación: según la opción elegida
+       - Si no hubo bifurcación: el siguiente paso lineal
+
+    E) Actualiza procedure_instances:
+       - current_step_id = [ID del siguiente paso]
+
+    F) Si el siguiente paso NO es el paso final:
+       - Crea nueva tarea en tasks para el siguiente responsable:
+         * module_type = 'procedures'
+         * procedure_id = [ID]
+         * procedure_step_id = [ID del siguiente paso]
+         * assigned_to_mail = [email del responsable del siguiente paso]
+         * due_date = [fecha_actual + SLA del siguiente paso]
+       - Envía notificación al responsable del siguiente paso
+       - Envía notificación al solicitante informando avance:
+         * "Tu solicitud avanzó al paso [N]: [nombre_paso]"
+         * "Responsable: [nombre_responsable]"
+
+    G) Si el siguiente paso ES el paso final:
+       - Actualiza procedure_instances:
+         * instance_status = 'completed'
+         * completed_at = [timestamp actual]
+       - Envía notificación al solicitante:
+         * "Tu solicitud ha sido completada exitosamente"
+         * Resumen del resultado
+       - Envía notificación al creador del procedimiento:
+         * "El procedimiento [nombre] #[ID] ha sido completado"
+
+14. Usuario ve mensaje: "Paso completado exitosamente"
+
+15. Modal se cierra automáticamente
+
+16. La tarea desaparece de su lista de pendientes
+
+17. Lista de tareas se actualiza mostrando las restantes
+
+--------------------------------------------------------------------------------
+
+6.5 Flujo: Consultar Estado de Mi Solicitud
+--------------------------------------------
+
+CASO A: Usuario autenticado
+
+Actor: Solicitante que inició el procedimiento
+
+Pasos:
+
+1. Accede a /modules/procedures/my-requests.html
+
+2. Ve lista de todas sus solicitudes (procedimientos que ha iniciado)
+
+3. Puede filtrar por:
+   - Búsqueda por nombre
+   - Estado (En progreso/Completado/Cancelado/Rechazado/Todos)
+   - Rango de fechas
+
+4. Localiza la solicitud que desea consultar
+
+5. Clic en [Ver Detalle]
+
+6. Se abre modal mostrando:
+
+   SECCIÓN: Información General
+   - Nombre del procedimiento
+   - Estado con icono visual
+   - Iniciado por (nombre y email)
+   - Fecha de inicio
+   - Paso actual (si en progreso)
+   - Fecha de completado (si aplica)
+
+   SECCIÓN: Datos del Formulario Inicial
+   - Muestra todos los campos y sus valores
+   - Para campos tipo SELECT: muestra la etiqueta visible
+   - Para archivos: muestra link de descarga
+
+   SECCIÓN: Progreso del Procedimiento
+   Timeline visual con todos los pasos:
+
+   Para pasos completados (checkmark verde):
+   - Número y nombre del paso
+   - Responsable que lo completó
+   - Fecha de completación
+   - Decisión tomada (si hubo bifurcación)
+   - Comentarios del responsable
+   - Archivos adjuntos (links de descarga)
+
+   Para paso actual (círculo amarillo):
+   - Número y nombre del paso
+   - Responsable asignado
+   - Fecha de asignación
+   - Fecha límite según SLA
+   - Tiempo transcurrido
+   - Estado: "En progreso" o "Asignado"
+
+   Para pasos pendientes (círculo gris):
+   - Número y nombre del paso
+   - Responsable que lo atenderá
+   - Estado: "Pendiente"
+
+7. Si el procedimiento está en progreso:
+   - Ve botón [Cancelar Solicitud]
+   - Puede hacer clic si necesita cancelar
+
+8. Si hace clic en [Cancelar Solicitud]:
+   - Se abre modal de confirmación
+   - Campo obligatorio: "Motivo de cancelación"
+   - Botón [Confirmar Cancelación]
+
+9. Si confirma cancelación:
+   - Sistema actualiza procedure_instances:
+     * instance_status = 'cancelled'
+     * cancelled_at = [timestamp]
+     * cancelled_by = [user_id del solicitante]
+     * cancellation_reason = [motivo ingresado]
+   - Marca todas las tareas pendientes como "Cancelada"
+   - Envía notificaciones a responsables con tareas pendientes
+   - Muestra mensaje: "Solicitud cancelada"
+   - Actualiza vista mostrando nuevo estado
+
+10. Usuario puede cerrar el modal con [Cerrar]
+
+CASO B: Usuario externo (sin cuenta)
+
+Actor: Persona que inició procedimiento externo
+
+Pasos:
+
+1. Recibió email con número de seguimiento al iniciar la solicitud
+
+2. Accede a /modules/procedures/track.html
+
+3. Ve formulario simple:
+   - Campo: "Número de seguimiento"
+   - Botón: [Consultar]
+
+4. Ingresa su número de seguimiento (ej: #12345)
+
+5. Clic en [Consultar]
+
+6. Sistema valida:
+   - Que el número exista
+   - Que corresponda a un procedimiento externo
+
+7. Si es válido, muestra la misma información que el Caso A:
+   - Información general
+   - Datos del formulario
+   - Timeline de progreso
+
+8. DIFERENCIA con Caso A:
+   - NO puede cancelar la solicitud
+   - Solo puede consultar el estado
+
+9. Puede guardar el link en favoritos para consultar después sin login
+
+--------------------------------------------------------------------------------
+
+6.6 Flujo: Cancelar Procedimiento en Curso
+-------------------------------------------
+
+Actor: Creador del procedimiento (con permiso "Gestionar procedimientos")
+
+Pasos:
+
+1. Accede a /modules/procedures/records.html
+
+2. Usa filtros para buscar el registro que desea cancelar:
+   - Puede filtrar por procedimiento
+   - Por estado (seleccionar "En progreso")
+   - Por solicitante
+   - Por rango de fechas
+
+3. Localiza el registro específico en la tabla de resultados
+
+4. Clic en [Ver Detalle]
+
+5. Se abre modal mostrando toda la información del procedimiento
+
+6. En el modal ve botón [Cancelar Procedimiento] (color rojo)
+
+7. Clic en [Cancelar Procedimiento]
+
+8. Sistema muestra modal de confirmación:
+   - Título: "¿Cancelar este procedimiento?"
+   - Advertencia: "Esta acción no se puede deshacer"
+   - Campo obligatorio: "Motivo de cancelación" (textarea)
+   - Botones: [Volver] [Confirmar Cancelación]
+
+9. Usuario ingresa el motivo de la cancelación (obligatorio)
+
+10. Clic en [Confirmar Cancelación]
+
+11. Sistema valida que el motivo no esté vacío
+
+12. Sistema ejecuta las siguientes acciones:
+
+    A) Actualiza procedure_instances:
+       - instance_status = 'cancelled'
+       - cancelled_at = [timestamp actual]
+       - cancelled_by = [user_id del administrador]
+       - cancellation_reason = [motivo ingresado]
+
+    B) Busca todas las tareas pendientes relacionadas:
+       SELECT * FROM tasks 
+       WHERE procedure_id = [ID] 
+       AND task_status IN ('Asignada', 'En Progreso')
+
+    C) Para cada tarea pendiente:
+       - Actualiza task_status = 'Cancelada'
+       - Registra task_cancellation_reason = [motivo]
+       - Registra task_cancelled_at = [timestamp]
+
+    D) Envía notificación al solicitante:
+       - Asunto: "Tu solicitud fue cancelada - [nombre_procedimiento]"
+       - Cuerpo:
+         * Número de solicitud
+         * Motivo de cancelación
+         * Información de contacto para consultas
+
+    E) Envía notificación a cada responsable con tareas pendientes:
+       - Asunto: "Tarea cancelada - [nombre_paso]"
+       - Cuerpo:
+         * La tarea fue cancelada por un administrador
+         * Motivo de cancelación
+         * Ya no requiere acción
+
+13. Sistema muestra mensaje: "Procedimiento cancelado exitosamente"
+
+14. Modal se cierra automáticamente
+
+15. Vista de registros se actualiza mostrando nuevo estado "Cancelado"
+
+16. El registro queda en el histórico pero marcado como cancelado
+
+17. NO es posible reabrir o reactivar un procedimiento cancelado
+
+NOTA: Los solicitantes pueden cancelar sus propias solicitudes desde 
+"Mis Solicitudes" siguiendo un flujo similar, pero solo pueden cancelar 
+sus propias solicitudes, no las de otros usuarios.
+
+================================================================================
+7. INTEGRACIONES
+================================================================================
+
+7.1 Integración con Sistema de Tareas
+--------------------------------------
+
+Tabla afectada: tasks (existente en /modules/general-tools/)
+
+Modificaciones necesarias:
+
+SQL para agregar columnas:
+
+  ALTER TABLE tasks 
+  ADD COLUMN procedure_id INT REFERENCES procedures(procedure_id);
+
+  ALTER TABLE tasks 
+  ADD COLUMN procedure_step_id INT REFERENCES procedure_steps(step_id);
+
+SQL para índices de optimización:
+
+  CREATE INDEX idx_tasks_procedure ON tasks(procedure_id);
+  CREATE INDEX idx_tasks_procedure_step ON tasks(procedure_step_id);
+
+Nuevo valor para enum/validación:
+- module_type debe aceptar valor: 'procedures'
+
+Creación automática de tareas:
+- Al iniciar procedimiento -> Tarea para paso 1
+- Al completar cada paso -> Tarea para el siguiente paso
+
+Campos calculados al crear tarea:
+- task_description: "Paso [N]: [nombre_paso] - Procedimiento: [nombre_proc]"
+- due_date: fecha_actual + SLA del paso (en días hábiles)
+- task_priority: Derivada del SLA
+  * SLA <= 2 días = Alta
+  * SLA 3-5 días = Normal
+  * SLA > 5 días = Baja
+
+Visualización en tasks.html:
+- Badge especial "PROCEDIMIENTOS" con color distintivo
+- Link directo al detalle del procedimiento
+- Información del solicitante visible
+- Resumen del paso a realizar
+
+--------------------------------------------------------------------------------
+
+7.2 Integración con Sistema de Notificaciones
+----------------------------------------------
+
+Función utilizada: sendNotification() de config.js
+
+Notificaciones a implementar:
+
+A) CONFIRMACIÓN DE INICIO (solicitante)
+
+Cuándo: Al enviar el formulario inicial
+
+Código:
+
+  await sendNotification(
+    solicitante_email,
+    'Solicitud iniciada - ' + procedure_name,
+    templateConfirmacionInicio(instance_id, procedure_name, form_data),
+    false // no silent
+  );
+
+Contenido del email:
+- Número de seguimiento
+- Nombre del procedimiento
+- Resumen de datos ingresados
+- Pasos del procedimiento
+- Responsable del primer paso
+- Link para consultar estado
+
+B) ASIGNACIÓN DE PASO (responsable)
+
+Cuándo: Al crear tarea para un paso
+
+Código:
+
+  await sendNotification(
+    responsable_email,
+    'Nueva tarea asignada - ' + step_name,
+    templateAsignacionPaso(instance_id, step_name, solicitante_name, due_date),
+    false
+  );
+
+Contenido del email:
+- Nombre del paso asignado
+- Nombre del procedimiento
+- Datos del solicitante
+- Fecha límite según SLA
+- Resumen de la solicitud
+- Link directo al sistema para completar
+
+C) AVANCE DE PROCEDIMIENTO (solicitante)
+
+Cuándo: Al completar cada paso (opcional, configurable)
+
+Código:
+
+  await sendNotification(
+    solicitante_email,
+    'Avance en tu solicitud - ' + procedure_name,
+    templateAvanceProcedimiento(instance_id, completed_step_name, current_step_name),
+    true // silent (info)
+  );
+
+Contenido del email:
+- Paso completado
+- Comentarios del responsable (resumen)
+- Paso actual
+- Responsable actual
+- Link para ver detalle completo
+
+D) FINALIZACIÓN (solicitante + creador)
+
+Cuándo: Al completar el paso final
+
+Código:
+
+  // Para solicitante
+  await sendNotification(
+    solicitante_email,
+    'Solicitud completada - ' + procedure_name,
+    templateFinalizacion(instance_id, procedure_name, completion_date),
+    false
+  );
+
+  // Para creador del procedimiento
+  await sendNotification(
+    creator_email,
+    'Procedimiento completado - ' + procedure_name,
+    templateFinalizacionCreador(instance_id, procedure_name, solicitante_name),
+    true
+  );
+
+Contenido del email:
+- Confirmación de finalización
+- Fecha de completación
+- Resumen del resultado
+- Archivos generados (si aplica)
+- Link para descargar documentos
+
+E) ALERTA DE SLA PRÓXIMO A VENCER (responsable)
+
+Cuándo: Ejecución diaria vía cron job o similar
+Disparar: Cuando falten 1-2 días para vencer SLA
+
+Código:
+
+  await sendNotification(
+    responsable_email,
+    'Alerta: Tarea próxima a vencer - ' + step_name,
+    templateAlertaSLA(task_id, step_name, due_date, days_remaining),
+    false
+  );
+
+Contenido del email:
+- Advertencia de proximidad al vencimiento
+- Días restantes
+- Fecha límite
+- Datos de la solicitud
+- Link directo para completar tarea
+
+F) ALERTA DE SLA EXCEDIDO (responsable + supervisor)
+
+Cuándo: Ejecución diaria vía cron job
+Disparar: Cuando la fecha límite fue superada
+
+Código:
+
+  // Para responsable
+  await sendNotification(
+    responsable_email,
+    'Urgente: Tarea vencida - ' + step_name,
+    templateSLAExcedido(task_id, step_name, due_date, days_overdue),
+    false
+  );
+
+  // Para supervisor (si está configurado)
+  await sendNotification(
+    supervisor_email,
+    'Alerta de SLA: Tarea vencida - ' + step_name,
+    templateSLAExcedidoSupervisor(responsable_name, step_name, days_overdue),
+    false
+  );
+
+Contenido del email:
+- Alerta de vencimiento
+- Días de retraso
+- Datos de la solicitud
+- Responsable asignado
+- Impacto en el procedimiento
+- Link para completar urgentemente
+
+G) CANCELACIÓN (solicitante + responsables con tareas pendientes)
+
+Cuándo: Al cancelar un procedimiento
+
+Código:
+
+  // Para solicitante
+  await sendNotification(
+    solicitante_email,
+    'Tu solicitud fue cancelada - ' + procedure_name,
+    templateCancelacion(instance_id, procedure_name, cancellation_reason),
+    false
+  );
+
+  // Para cada responsable con tarea pendiente
+  await sendNotification(
+    responsable_email,
+    'Tarea cancelada - ' + step_name,
+    templateTareaCancelada(task_id, step_name, cancellation_reason),
+    true
+  );
+
+Contenido del email:
+- Notificación de cancelación
+- Motivo de cancelación
+- Persona que canceló
+- Información de contacto para consultas
+
+Templates HTML:
+- Seguir el patrón del template de asignación de tareas existente
+- Mantener diseño consistente con otros módulos del sistema
+- Incluir logo de la institución
+- Footer con información de contacto
+- Botones con links directos al sistema
+- Diseño responsive para móviles
+
+--------------------------------------------------------------------------------
+
+7.3 Integración con Supabase Storage
+-------------------------------------
+
+Propósito: Almacenamiento de archivos adjuntos
+
+Estructura de carpetas sugerida:
+
+  /procedures/
+    /[instance_id]/
+      /initial_form/
+        - archivo1.pdf
+        - archivo2.jpg
+      /step_[step_id]/
+        - documento1.pdf
+        - evidencia1.png
+
+Bucket de Supabase:
+- Nombre: 'procedure-files'
+- Acceso: Privado (requiere autenticación)
+- Tamaño máximo por archivo: 10 MB (configurable)
+
+Funciones JavaScript necesarias:
+
+  // Subir archivo al storage
+  async function uploadProcedureFile(instanceId, stepId, file) {
+    const folder = stepId 
+      ? `procedures/${instanceId}/step_${stepId}` 
+      : `procedures/${instanceId}/initial_form`;
+    
+    const fileName = `${Date.now()}_${file.name}`;
+    const filePath = `${folder}/${fileName}`;
+    
+    // Subir a Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('procedure-files')
+      .upload(filePath, file);
+    
+    if (error) throw error;
+    
+    // Registrar en tabla procedure_attachments
+    await supabaseRequest('/procedure_attachments', {
+      method: 'POST',
+      body: JSON.stringify({
+        instance_id: instanceId,
+        step_id: stepId,
+        file_name: file.name,
+        file_path: filePath,
+        file_size: file.size,
+        file_type: file.type,
+        uploaded_by: currentUser.user_id
+      })
+    });
+    
+    return filePath;
+  }
+
+  // Obtener URL pública del archivo
+  async function getProcedureFileUrl(filePath) {
+    const { data } = await supabase.storage
+      .from('procedure-files')
+      .getPublicUrl(filePath);
+    
+    return data.publicUrl;
+  }
+
+  // Descargar archivo
+  async function downloadProcedureFile(filePath, fileName) {
+    const { data, error } = await supabase.storage
+      .from('procedure-files')
+      .download(filePath);
+    
+    if (error) throw error;
+    
+    // Crear link de descarga
+    const url = window.URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+  }
+
+  // Eliminar archivo (solo si se elimina el procedimiento completo)
+  async function deleteProcedureFile(filePath) {
+    const { error } = await supabase.storage
+      .from('procedure-files')
+      .remove([filePath]);
+    
+    if (error) throw error;
+  }
+
+Validaciones:
+- Tamaño máximo por archivo: 10 MB (configurable por campo)
+- Tipos permitidos: PDF, DOC, DOCX, XLS, XLSX, JPG, PNG (configurable)
+- Límite de archivos por paso: 10 archivos (configurable)
+- Escaneo de virus: Considerar para producción
+
+Políticas de seguridad (RLS en Supabase):
+- Solo usuarios autenticados pueden subir archivos
+- Solo el solicitante y responsables pueden descargar archivos del procedimiento
+- Administradores pueden acceder a todos los archivos
+
+--------------------------------------------------------------------------------
+
+7.4 Integración con Sistema de Permisos
+----------------------------------------
+
+Permisos a agregar en config.js -> URL_PERMISSIONS:
+
+  // Módulo Procedimientos
+  '/modules/procedures/index.html': 'Acceso al módulo de procedimientos',
+  '/modules/procedures/forms.html': 'Gestionar formularios',
+  '/modules/procedures/procedures.html': 'Gestionar procedimientos',
+  '/modules/procedures/execute.html': 'Ejecutar procedimientos',
+  '/modules/procedures/my-requests.html': 'Ver mis solicitudes',
+  '/modules/procedures/records.html': 'Consultar todos los registros',
+  '/modules/procedures/reports.html': 'Ver reportes de procedimientos'
+
+Validación en cada página:
+
+  document.addEventListener('DOMContentLoaded', async function() {
+    const hasAccess = await validatePageAccess('Nombre del permiso');
+    if (!hasAccess) return;
+    
+    // Continuar con inicialización de la página
+    initPage();
+  });
+
+Permisos especiales:
+
+Todos los usuarios autenticados (permisos base):
+- "Ejecutar procedimientos"
+- "Ver mis solicitudes"
+
+Solo administradores del módulo:
+- "Gestionar formularios"
+- "Gestionar procedimientos"
+
+Solo administradores/supervisores:
+- "Consultar todos los registros"
+
+Solo administradores/directivos:
+- "Ver reportes"
+
+Validación adicional por rol:
+- Cancelar procedimientos: Solo creador del procedimiento
+- Editar formularios: Solo si no están en uso
+- Editar procedimientos: Solo si no tienen registros activos
+- Ver detalle de cualquier solicitud: Solo con permiso específico
+
+--------------------------------------------------------------------------------
+
+7.5 Integración con Captcha (Procedimientos Externos)
+------------------------------------------------------
+
+Captcha: reCAPTCHA de Google (ya implementado en config.js)
+
+Uso en formulario público (execute-public.html):
+
+  <!-- Cargar script de reCAPTCHA -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+
+  <!-- Insertar widget de captcha en el formulario -->
+  <div class="g-recaptcha" data-sitekey="[SITE_KEY_FROM_CONFIG]"></div>
+
+Validación en frontend antes de enviar:
+
+  function validateCaptcha() {
+    const captchaResponse = grecaptcha.getResponse();
+    
+    if (!captchaResponse) {
+      showError('Por favor completa el captcha');
+      return false;
+    }
+    
+    return true;
+  }
+
+Validación en backend (via Cloud Function o API):
+
+  async function validateCaptchaBackend(captchaResponse) {
+    const secretKey = '[SECRET_KEY]'; // Desde variables de entorno
+    
+    const response = await fetch(
+      'https://www.google.com/recaptcha/api/siteverify',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `secret=${secretKey}&response=${captchaResponse}`
+      }
+    );
+    
+    const result = await response.json();
+    return result.success;
+  }
+
+Flujo completo:
+1. Usuario completa formulario público
+2. Usuario resuelve captcha
+3. Usuario hace clic en [Enviar]
+4. Frontend valida que captcha esté completo
+5. Envía al backend el captchaResponse
+6. Backend valida con API de Google
+7. Si es válido: procesa la solicitud
+8. Si no es válido: rechaza y pide resolver captcha nuevamente
+
+Configuración de captcha:
+- Tipo: reCAPTCHA v2 (checkbox "No soy un robot")
+- Dominios autorizados: Agregar dominio de producción
+- Threshold de seguridad: Medio (evitar bloqueos innecesarios)
+
+================================================================================
+8. PENDIENTES Y FUTURAS MEJORAS
+================================================================================
+
+8.1 Para Versión Inicial (v1.0)
+--------------------------------
+
+Decisiones pendientes:
+[x] SLA: Implementado, opcional, con alertas
+[x] Bifurcaciones: Opción 1, 2... N
+[x] Campos formulario: Definidos (texto, número, fecha, selección, archivo)
+[x] Firmas digitales: Pospuesto para v2.0
+[x] Sistema de catálogos: Implementado (Opción 3)
+[x] Tipo de pasos: Implementado (Manual, Notificación, Automático)
+[ ] Permisos específicos: Definir lista completa para config.js
+[ ] Templates de email: Diseñar templates HTML
+
+Tareas técnicas:
+[ ] Crear migraciones SQL para todas las tablas
+[ ] Implementar todas las pantallas HTML
+[ ] Implementar lógica JavaScript para cada pantalla
+[ ] Integrar con sistema de tareas
+[ ] Implementar sistema de notificaciones
+[ ] Configurar Supabase Storage
+[ ] Testing completo de flujos
+[ ] Documentación de usuario final
+
+--------------------------------------------------------------------------------
+
+8.2 Mejoras Futuras (v2.0 y posteriores)
+-----------------------------------------
+
+Funcionalidades aplazadas:
+
+1. Firmas digitales
+   - Opción 1: Firma simple (registro de nombre/fecha/IP)
+   - Opción 2: Firma con canvas (dibujo)
+   - Opción 3: Firma con certificado digital
+
+2. Campos calculados en formularios
+   - Ejemplo: Campo "Total" que suma otros campos
+   - Requiere parser de expresiones
+
+3. Campos dependientes
+   - Mostrar/ocultar campos según valores de otros
+   - Ejemplo: Si selecciona "Otro" -> mostrar campo de texto
+
+4. Versionamiento
+   - Versiones de formularios
+   - Versiones de procedimientos
+   - Mantener registros históricos con la versión usada
+
+5. Plantillas de procedimientos
+   - Duplicar procedimientos existentes
+   - Biblioteca de plantillas pre-configuradas
+
+6. Aprobaciones paralelas
+   - Actualmente solo flujos secuenciales
+   - Agregar pasos que requieren aprobación de múltiples personas simultáneamente
+
+7. Delegación de tareas
+   - Permitir que un responsable delegue su tarea a otro usuario
+
+8. Recordatorios personalizados
+   - Configurar frecuencia de recordatorios por paso
+   - Escalar a supervisor si no hay respuesta
+
+9. Integraciones externas
+   - Webhook al completar procedimiento
+   - API REST para iniciar procedimientos desde otros sistemas
+   - Integración con firma electrónica externa (ej: DocuSign)
+
+10. Dashboard ejecutivo
+    - Métricas en tiempo real
+    - Alertas visuales de cuellos de botella
+    - Comparativas periódicas
+
+11. Aplicación móvil / PWA
+    - Notificaciones push
+    - Escaneo de documentos con cámara
+    - Firma en pantalla táctil
+
+12. Campos de formulario avanzados
+    - Ubicación GPS
+    - Firma manuscrita
+    - Código QR
+    - Tabla dinámica (agregar filas)
+
+13. Historial de cambios
+    - Auditoría de modificaciones a procedimientos
+    - Ver quién cambió qué y cuándo
+
+14. Exportación avanzada
+    - Exportar procedimiento completo a PDF
+    - Generar certificados automáticos al finalizar
+    - Exportar reportes a Excel/CSV
+
+--------------------------------------------------------------------------------
+
+8.3 Notas Técnicas Importantes
+-------------------------------
+
+Consideraciones de Performance:
+
+Índices en BD (crear índices en campos frecuentemente consultados):
+- procedure_instances.instance_status
+- procedure_instances.procedure_id
+- procedure_instances.initiated_by_user_id
+- tasks.procedure_id
+- tasks.procedure_step_id
+- form_responses.instance_id
+- form_responses.field_id
+- form_responses.selected_option_id
+- field_option_catalog.field_id
+- field_option_catalog.is_active
+
+Caché (considerar cachear):
+- Lista de procedimientos activos
+- Estructura de pasos por procedimiento
+- Lista de trabajadores (responsables)
+- Opciones de catálogos (cambian poco)
+
+Paginación:
+- Implementar en todas las listas (registros, reportes)
+- Máximo 50 registros por página
+
+Sistema de Catálogos y Respuestas:
+
+Estrategia de Doble Almacenamiento:
+- Siempre guardar AMBOS:
+  1. JSON completo en procedure_instances.form_data (respaldo/auditoría)
+  2. Respuestas normalizadas en form_responses (consultas/filtros)
+- Razón: El JSON es rápido de guardar y útil para debugging, las respuestas
+  normalizadas permiten consultas SQL eficientes
+
+Al Crear Campo SELECT:
+- Generar option_value automáticamente:
+  * Convertir a minúsculas
+  * Reemplazar espacios por guiones bajos
+  * Ejemplo: "Material Educativo" -> "material_educativo"
+- Validar unicidad de option_value dentro del mismo field_id
+- Asignar option_order secuencial (1, 2, 3...)
+
+Al Guardar Respuestas:
+- Usar transacción para garantizar consistencia:
+  BEGIN TRANSACTION
+    1. INSERT en procedure_instances (con form_data completo)
+    2. INSERT múltiple en form_responses (todas las respuestas)
+    3. INSERT en tasks (crear tarea del paso 1)
+  COMMIT
+- Si falla cualquier paso, hacer ROLLBACK completo
+- Para campos SELECT: buscar option_id antes de insertar
+- Validar que el option_id existe y está activo (is_active = true)
+
+Al Construir Filtros Dinámicos:
+- Leer campos del formulario: SELECT * FROM form_fields WHERE form_id = [X]
+- Para cada campo tipo 'select': cargar opciones activas del catálogo
+- Construcción de query con JOINs dinámicos:
+  
+  SELECT pi.*, 
+         fr1.response_text as campo1,
+         fr2.response_number as campo2,
+         foc.option_label as campo3
+  FROM procedure_instances pi
+  LEFT JOIN form_responses fr1 ON pi.instance_id = fr1.instance_id 
+       AND fr1.field_id = [ID_campo_texto]
+  LEFT JOIN form_responses fr2 ON pi.instance_id = fr2.instance_id 
+       AND fr2.field_id = [ID_campo_numero]
+  LEFT JOIN form_responses fr3 ON pi.instance_id = fr3.instance_id 
+       AND fr3.field_id = [ID_campo_select]
+  LEFT JOIN field_option_catalog foc ON fr3.selected_option_id = foc.option_id
+  WHERE pi.procedure_id = [X]
+    [AND condiciones de filtros aplicados]
+
+- IMPORTANTE: Usar LEFT JOIN para incluir registros aunque falten respuestas
+- Agregar índices apropiados mejora rendimiento significativamente
+
+Desactivar vs Eliminar Opciones:
+- SIEMPRE preferir desactivar (is_active = false)
+- Solo eliminar si NO existe ningún registro en form_responses con ese option_id
+- Query de validación antes de eliminar:
+  
+  SELECT COUNT(*) FROM form_responses WHERE selected_option_id = [X]
+  
+  Si COUNT > 0 -> Mostrar error y sugerir desactivar
+
+Migración de Datos Existentes (si aplica):
+- Si ya existen datos con el sistema antiguo (solo JSON):
+  1. Crear script de migración que lea form_data
+  2. Parsear JSON y extraer cada campo
+  3. Insertar en form_responses con los valores correspondientes
+  4. Para campos SELECT: buscar o crear opciones en catálogo
+- Script debe ser idempotente (poder ejecutarse múltiples veces)
+
+Performance Crítico:
+- Índices obligatorios ya creados en tablas:
+  * form_responses(instance_id)
+  * form_responses(field_id)
+  * form_responses(selected_option_id)
+  * field_option_catalog(field_id, is_active)
+- Para consultas con muchos filtros (>5), considerar:
+  * Materializar vistas para reportes frecuentes
+  * Caché de opciones de catálogo (cambian poco)
+- Paginación obligatoria: máximo 50 registros por página
+
+Validaciones del Frontend:
+- Al mostrar formulario: solo opciones con is_active = true
+- Al editar campo SELECT: permitir ver opciones inactivas (para contexto)
+- Al guardar: validar que option_id seleccionado existe y está activo
+- Mensajes de error claros si la opción fue desactivada entre tanto
+
+Exportación de Datos:
+- CSV debe incluir option_label (no option_value ni option_id)
+- Ejemplo correcto: "Feliz" (no "feliz" ni "2")
+- Query para exportar:
+  
+  SELECT 
+    pi.instance_id,
+    fr.response_text as nombre,
+    foc.option_label as estado,
+    pi.started_at
+  FROM procedure_instances pi
+  LEFT JOIN form_responses fr ON ...
+  LEFT JOIN field_option_catalog foc ON ...
+
+Consideraciones de Seguridad:
+- Validación del lado del servidor: Nunca confiar solo en validación de frontend
+- Archivos adjuntos: Validar tipo MIME real, no solo extensión
+- SQL Injection: Usar siempre queries parametrizadas (Supabase automático)
+- XSS: Sanitizar inputs antes de mostrar (usar escapeHtml())
+- CSRF: Validar tokens en operaciones críticas
+- Row Level Security: Configurar políticas en Supabase
+
+Consideraciones de UX:
+- Indicadores de progreso: Mostrar % de avance en procedimientos largos
+- Autoguardado: Guardar borradores de formularios automáticamente
+- Confirmaciones: Siempre confirmar acciones destructivas (cancelar, eliminar)
+- Mensajes claros: Errores específicos, no genéricos
+- Responsive: Todas las pantallas deben funcionar en móvil
+- Accesibilidad: Considerar usuarios con discapacidades
+
+================================================================================
+9. CRONOGRAMA SUGERIDO
+================================================================================
+
+Tiempo total estimado: 14 semanas (3.5 meses)
+
+Fase 1: Fundación (Semana 1-2)
+-------------------------------
+[ ] Crear estructura de tablas en Supabase
+[ ] Configurar permisos en config.js
+[ ] Implementar índice del módulo (index.html)
+[ ] Testing de validación de permisos
+
+Fase 2: Formularios (Semana 3-4)
+---------------------------------
+[ ] Implementar forms.html (CRUD de formularios)
+[ ] Implementar modal de creación/edición de campos
+[ ] Implementar gestión de opciones para campos SELECT
+[ ] Integrar con field_option_catalog
+[ ] Testing completo de formularios
+[ ] Crear al menos 3 formularios de ejemplo
+
+Fase 3: Procedimientos (Semana 5-6)
+------------------------------------
+[ ] Implementar procedures.html (CRUD de procedimientos)
+[ ] Implementar configuración de pasos
+[ ] Implementar configuración de bifurcaciones
+[ ] Implementar tipos de paso (Manual/Notificación/Automático)
+[ ] Testing de creación de procedimientos
+[ ] Crear al menos 2 procedimientos de ejemplo
+
+Fase 4: Ejecución (Semana 7-8)
+-------------------------------
+[ ] Implementar execute.html (iniciar procedimientos internos)
+[ ] Implementar execute-public.html (procedimientos externos)
+[ ] Integrar con sistema de tareas
+[ ] Implementar creación automática de tareas
+[ ] Implementar guardado en form_responses (normalizado)
+[ ] Testing de flujo completo inicio -> fin
+
+Fase 5: Gestión de Tareas (Semana 9)
+-------------------------------------
+[ ] Modificar tasks.html para soportar tareas de procedimientos
+[ ] Implementar modal de completar paso
+[ ] Implementar lógica de avance automático
+[ ] Implementar selección de opciones de bifurcación
+[ ] Implementar pasos tipo "Notificación" (auto-avance)
+[ ] Testing de completar pasos
+
+Fase 6: Consultas y Seguimiento (Semana 10)
+--------------------------------------------
+[ ] Implementar my-requests.html
+[ ] Implementar modal de detalle de solicitud
+[ ] Implementar records.html (consulta completa)
+[ ] Implementar filtros dinámicos por campos del formulario
+[ ] Implementar track.html (seguimiento externo)
+[ ] Testing de consultas
+
+Fase 7: Notificaciones (Semana 11)
+-----------------------------------
+[ ] Diseñar templates HTML de emails
+[ ] Implementar envío de notificaciones en cada evento
+[ ] Configurar alertas de SLA
+[ ] Testing de notificaciones
+
+Fase 8: Reportes (Semana 12)
+-----------------------------
+[ ] Implementar reports.html
+[ ] Implementar queries de métricas
+[ ] Implementar gráficos
+[ ] Implementar exportación a Excel
+[ ] Testing de reportes
+
+Fase 9: Archivos Adjuntos (Semana 13)
+--------------------------------------
+[ ] Configurar bucket en Supabase Storage
+[ ] Implementar upload de archivos en formularios
+[ ] Implementar upload de archivos en pasos
+[ ] Implementar visualización/descarga de archivos
+[ ] Testing de archivos
+
+Fase 10: Testing Final y Documentación (Semana 14)
+---------------------------------------------------
+[ ] Testing integral de todos los flujos
+[ ] Corrección de bugs
+[ ] Optimización de performance
+[ ] Documentación de usuario final
+[ ] Capacitación a usuarios clave
+[ ] Despliegue a producción
+
+================================================================================
+10. REFERENCIAS Y RECURSOS
+================================================================================
+
+Documentación de referencia:
+-----------------------------
+- Sistema de tareas existente: /modules/general-tools/tasks.html
+- Configuración global: /assets/js/config.js
+- Template de índices: Ver "Estructura unificada para Index.txt"
+- Patrón de diseño: Ver "Template base Schoolnet - Patrón exitoso.txt"
+- Estructura de base de datos: Ver DataBase.txt
+
+URLs importantes:
+-----------------
+- Supabase: https://kxrbacayfujmacvigxrl.supabase.co
+- Notificaciones: 
+  https://script.google.com/macros/s/AKfycbzhfLGSk8WYPRTDxMTNwj3IPE_gfhUbkmhnaKT8k-hf2pjjdD1570oncw1t8XLb-yIC/exec
+
+Contactos clave:
+----------------
+- Creador del procedimiento: Definido por usuario
+- Administrador del sistema: Ver tabla users -> rol "Super Admin"
+
+Repositorio:
+------------
+- GitHub: [URL del repositorio]
+- Rama principal: main
+- Documentación: /docs/procedimientos.txt
+
+================================================================================
+11. GLOSARIO
+================================================================================
+
+Procedimiento: 
+  Proceso institucional con pasos definidos y flujo de trabajo estructurado.
+
+Formulario: 
+  Conjunto de campos que capturan información inicial al iniciar un procedimiento.
+
+Paso: 
+  Etapa del procedimiento asignada a un responsable específico.
+
+Bifurcación: 
+  Punto de decisión en un paso que lleva a diferentes caminos según la opción 
+  elegida por el responsable.
+
+Instancia: 
+  Registro de ejecución de un procedimiento. Cada vez que se inicia un 
+  procedimiento se crea una nueva instancia.
+
+SLA (Service Level Agreement): 
+  Tiempo estimado en días hábiles para completar un paso. Genera alertas 
+  automáticas si se excede.
+
+Solicitante: 
+  Persona que inicia el procedimiento (puede ser usuario autenticado o externo).
+
+Responsable: 
+  Worker asignado a completar un paso específico del procedimiento.
+
+Creador: 
+  Usuario que configuró el procedimiento (tiene permisos especiales sobre él).
+
+Paso final: 
+  Último paso del procedimiento que cierra automáticamente la instancia al 
+  completarse.
+
+Catálogo de opciones:
+  Tabla centralizada (field_option_catalog) que almacena todas las opciones 
+  de campos tipo SELECT, permitiendo consultas eficientes e histórico protegido.
+
+Respuestas normalizadas:
+  Almacenamiento estructurado de respuestas de formularios en la tabla 
+  form_responses, permitiendo filtros y consultas SQL directas.
+
+Tipo de paso:
+  Clasificación del paso según su comportamiento: Manual (requiere acción 
+  humana), Notificación (solo informa), Automático (ejecución programada).
+
+================================================================================
+NOTAS DE DESARROLLO
+================================================================================
+
+Convenciones de nombres:
+------------------------
+- Tablas: snake_case (ej: procedure_instances)
+- Campos: snake_case (ej: step_sequence)
+- Funciones JS: camelCase (ej: completarPaso())
+- Constantes: UPPER_SNAKE_CASE (ej: MODULE_CONFIG)
+- IDs HTML: kebab-case (ej: form-nueva-tarea)
+
+Estándares de código:
+----------------------
+- Usar siempre const y let, nunca var
+- Funciones async/await para operaciones asíncronas
+- Try/catch en todas las operaciones críticas
+- Console.log para debug (con emojis para facilitar lectura)
+- Comentarios en español
+- Validación de datos antes de enviar a Supabase
+- Nombres de variables descriptivos en español
+
+Testing checklist:
+------------------
+[ ] Flujo completo inicio -> fin funciona
+[ ] Bifurcaciones funcionan correctamente
+[ ] Notificaciones se envían en cada evento
+[ ] Archivos se suben y descargan correctamente
+[ ] Permisos se validan correctamente
+[ ] Procedimientos externos funcionan sin login
+[ ] Alertas de SLA se generan correctamente
+[ ] Cancelación funciona correctamente
+[ ] Filtros dinámicos generan queries correctos
+[ ] Catálogos de opciones funcionan correctamente
+[ ] Responsive en móvil funciona bien
+[ ] No hay errores en consola del navegador
+[ ] Consultas son eficientes (< 1 segundo)
+[ ] Exportación a CSV/Excel funciona
+
+================================================================================
+CRITERIOS DE ÉXITO
+================================================================================
+
+El módulo será exitoso cuando:
+
+1. [  ] Se puedan crear y configurar procedimientos completos sin errores
+2. [  ] Los usuarios puedan iniciar procedimientos (internos y externos)
+3. [  ] Las tareas se asignen automáticamente a los responsables
+4. [  ] Las notificaciones lleguen en cada evento importante
+5. [  ] Los responsables puedan completar pasos y avanzar el flujo
+6. [  ] Las bifurcaciones funcionen correctamente
+7. [  ] Los archivos adjuntos se manejen sin problemas
+8. [  ] Los solicitantes puedan consultar el estado de sus solicitudes
+9. [  ] Las alertas de SLA se generen oportunamente
+10. [  ] Los reportes muestren métricas precisas y útiles
+11. [  ] Los filtros dinámicos funcionen para cualquier procedimiento
+12. [  ] El sistema de catálogos permita consultas eficientes
+13. [  ] Los pasos tipo "Notificación" avancen automáticamente
+14. [  ] El histórico de opciones se mantenga aunque se desactiven
+
+================================================================================
+CONTACTO Y SOPORTE
+================================================================================
+
+Para preguntas sobre este diseño:
+- Revisar este documento primero
+- Consultar DataBase.txt para estructura de tablas
+- Consultar documentación del proyecto en repositorio
+- Revisar código existente de módulos similares (ej: tasks.html)
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================
+
+Este documento debe actualizarse conforme avance el desarrollo y se tomen 
+nuevas decisiones.
+
+Última actualización: 16 de Octubre de 2025
+Versión: 1.1
