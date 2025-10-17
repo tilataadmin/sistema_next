@@ -812,6 +812,9 @@ const URL_PERMISSIONS = {
     '/modules/general-tools/dashboard.html': 'Dashboard de tareas',
     '/modules/general-tools/community-query.html': 'Consulta de la comunidad',
     '/modules/general-tools/family-activities.html': 'Asistencia de familias',
+    '/modules/general-tools/contract-categories.html': 'Gestionar categorías de contratos',
+    '/modules/general-tools/contract-templates.html': 'Gestionar plantillas de contratos',
+    '/modules/general-tools/contracts-dashboard.html': 'Ver dashboard de contratos',
 
     // Módulo Gestión Ambiental (environmental)
     '/modules/environmental/species.html': 'Gestionar especies de árboles',
