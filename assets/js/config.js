@@ -694,6 +694,7 @@ const URL_PERMISSIONS = {
     '/modules/config/courses.html': 'Gestionar cursos',
     '/modules/config/academic-areas.html': 'Gestionar áreas académicas',
     '/modules/config/programs.html': 'Gestionar programas',
+    '/modules/config/families.html': 'Gestionar familias',
     '/modules/config/students.html': 'Gestionar estudiantes',
     
     // Módulo Indicadores
