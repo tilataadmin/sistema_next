@@ -466,7 +466,10 @@ function getModuleFolder(moduleName) {
         'Admisiones': 'admissions',
         'Tilatá te Escucha': 'tte',
         'Encuestas': 'surveys',
-        'Herramientas Generales': 'general-tools' 
+        'Herramientas Generales': 'general-tools',
+        'Gestión Ambiental': 'environmental',
+        'Formación': 'training',
+        'Procedimientos': 'procedures'
     };
     
     return moduleMap[moduleName] || moduleName.toLowerCase();
