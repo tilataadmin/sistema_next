@@ -768,6 +768,7 @@ const URL_PERMISSIONS = {
     '/modules/follow-ups/tasks.html': 'Gestionar tareas',
     '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
     '/modules/follow-ups/general-queries.html': 'Consultas',
+    '/modules/follow-ups/confidential-notes.html': 'Notas confidenciales',
 
     // Módulo Alertas Tempranas
     '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',

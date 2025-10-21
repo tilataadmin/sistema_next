@@ -388,7 +388,7 @@
                 showLoading();
                 
                 // Cargar cursos
-                const cursos = await supabaseRequest('/courses?select=course_id,course_name,course_order,grades!inner(grade_id,grade_name,grade_order,sections!inner(section_id,section_name,director_email))&order=course_order');
+                const cursos = await supabaseRequest('/courses?select=course_id,course_name,course_order,course_director_email,grades!inner(grade_id,grade_name,grade_order,sections!inner(section_id,section_name,director_email))&order=course_order');
                 todosCursos = cursos || [];
                 
                 // Cargar categorías
@@ -450,6 +450,7 @@
                     option.dataset.gradeName = curso.grades.grade_name;
                     option.dataset.sectionId = curso.grades.sections.section_id;
                     option.setAttribute('data-director-email', curso.grades.sections.director_email || '');
+                    option.setAttribute('data-director-curso-email', curso.course_director_email || '');
                     optgroup.appendChild(option);
                 });
                 
@@ -510,10 +511,11 @@
             cursoSelect.addEventListener('change', function() {
                 const selectedOption = this.options[this.selectedIndex];
                 cursoSeleccionado = selectedOption.value ? {
-                    courseId: parseInt(selectedOption.value),
-                    gradeName: selectedOption.dataset.gradeName,
-                    directorMail: selectedOption.dataset.directorEmail
-                } : null;
+                courseId: parseInt(selectedOption.value),
+                gradeName: selectedOption.dataset.gradeName,
+                directorMail: selectedOption.dataset.directorEmail,
+                directorCursoMail: selectedOption.getAttribute('data-director-curso-email')  // ← NUEVA LÍNEA
+            } : null;
                 validarFormularioCompleto();
             });
             
@@ -724,9 +726,26 @@
                 
                 await Promise.all(categoriaPromises);
                 
-                // Enviar notificación al director si existe
+                // Enviar notificaciones
+                const notificacionesPromises = [];
+                
+                // 1. Notificación al director de sección
                 if (cursoSeleccionado.directorMail) {
-                    await enviarNotificacionDirector(topicId);
+                    notificacionesPromises.push(
+                        enviarNotificacionDirector(topicId, cursoSeleccionado.directorMail, 'Director de Sección')
+                    );
+                }
+                
+                // 2. Notificación al director de curso
+                if (cursoSeleccionado.directorCursoMail && cursoSeleccionado.directorCursoMail !== cursoSeleccionado.directorMail) {
+                    notificacionesPromises.push(
+                        enviarNotificacionDirector(topicId, cursoSeleccionado.directorCursoMail, 'Director de Curso')
+                    );
+                }
+                
+                // Enviar ambas notificaciones en paralelo
+                if (notificacionesPromises.length > 0) {
+                    await Promise.all(notificacionesPromises);
                 }
                 
                 showMessage('Asunto grupal registrado exitosamente', 'success');
@@ -743,37 +762,55 @@
         }
 
         // Enviar notificación al director
-        async function enviarNotificacionDirector(topicId) {
+        async function enviarNotificacionDirector(topicId, emailDestino, tipoDirector) {
             try {
-                const asunto = `Se ha generado un asunto relacionado con ${cursoSeleccionado.gradeName}`;
+                const session = getStoredSession();
+                const nombreCurso = document.getElementById('curso-select').options[document.getElementById('curso-select').selectedIndex].text;
+                
+                const asunto = `Nuevo asunto grupal registrado - ${nombreCurso}`;
                 const descripcion = obtenerContenidoEditor('descripcion-editor');
+                
+                // Obtener nombres de categorías
+                const categoriasNombres = categoriasSeleccionadas.map(catId => {
+                    const cat = todasCategorias.find(c => c.category_id === catId);
+                    return cat ? cat.category_name : '';
+                }).filter(n => n).join(', ');
                 
                 const cuerpoHtml = `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                         <h3 style="color: #1380e2;">Nuevo Asunto Grupal Registrado</h3>
+                        <p>Estimado(a) <strong>${tipoDirector}</strong>,</p>
                         <p>Se ha registrado el siguiente asunto grupal:</p>
                         
                         <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #1380e2; margin: 20px 0;">
+                            <p><strong>Curso:</strong> ${nombreCurso}</p>
                             <p><strong>Promoción:</strong> ${cursoSeleccionado.gradeName}</p>
+                            <p><strong>Categorías:</strong> ${categoriasNombres}</p>
+                            <p><strong>Registrado por:</strong> ${session.user.user_display_name}</p>
+                            <p><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-CO')}</p>
+                            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 15px 0;">
                             <p><strong>Descripción:</strong><br/>
                             ${descripcion}</p>
                         </div>
                         
-                        <p>Recuerda tenerlo en cuenta en los seguimientos.</p>
+                        <p>Por favor tenga en cuenta este asunto en los seguimientos correspondientes.</p>
                         
-                        <p style="font-size: 12px; color: #6c757d;">
-                            <em>Este es un correo enviado de forma automática por SchoolNet. Por favor no responder.</em>
+                        <p style="font-size: 12px; color: #6c757d; margin-top: 30px;">
+                            <em>Este es un correo automático enviado por SchoolNet. Por favor no responder.</em>
                         </p>
                     </div>
                 `;
                 
-                await sendNotification(cursoSeleccionado.directorMail, asunto, cuerpoHtml, true);
+                await sendNotification(emailDestino, asunto, cuerpoHtml, true);
+                
+                console.log(`✅ Notificación enviada a ${tipoDirector}: ${emailDestino}`);
                 
             } catch (error) {
-                console.error('Error enviando notificación (no crítico):', error);
+                console.error(`Error enviando notificación a ${tipoDirector} (no crítico):`, error);
             }
         }
 
+        
         // Restaurar botón guardar
         function restaurarBotonGuardar() {
             const botonGuardar = document.querySelector('button[type="submit"]');
