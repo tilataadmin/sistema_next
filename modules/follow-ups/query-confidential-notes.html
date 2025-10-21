@@ -60,11 +60,38 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     <script>
+        let userEmail = null;
+        let canViewAll = false;
+
         document.addEventListener('DOMContentLoaded', async function() {
             const hasAccess = await validatePageAccess('Consultar notas confidenciales');
             if (!hasAccess) return;
             initializePage('queryConfidentialNotes', 'Seguimientos');
+            
+            const session = getStoredSession();
+            if (session?.user?.user_mail) {
+                userEmail = session.user.user_mail;
+                await verificarPermisos(session.user.user_id);
+            }
         });
+
+        async function verificarPermisos(userId) {
+            try {
+                const roles = await supabaseRequest(`/user_roles?select=roles(role_name,is_super_admin)&user_id=eq.${userId}`);
+                
+                const rolesUsuario = roles.map(r => r.roles.role_name);
+                const esSuperAdmin = roles.some(r => r.roles.is_super_admin === true);
+                
+                canViewAll = esSuperAdmin || 
+                            rolesUsuario.includes('Estrategas') || 
+                            rolesUsuario.includes('Directivos docentes') || 
+                            rolesUsuario.includes('EAE');
+                
+                console.log('Puede ver todas las notas:', canViewAll);
+            } catch (error) {
+                console.error('Error verificando permisos:', error);
+            }
+        }
 
         async function buscarNotas() {
             const search = document.getElementById('searchStudent').value.trim();
@@ -72,6 +99,11 @@
             const to = document.getElementById('dateTo').value;
 
             let query = '/stm_confidential_notes?select=confidential_note_id,confidential_note,created_at,students!inner(student_id,student_first_name,student_last_name_1,student_last_name_2)&order=created_at.desc';
+            
+            // FILTRO POR ROL
+            if (!canViewAll && userEmail) {
+                query += `&email=eq.${userEmail}`;
+            }
             
             if (search) query += `&students.student_first_name.ilike.%${search}%`;
             if (from) query += `&created_at=gte.${from}`;
