@@ -1622,6 +1622,10 @@
                 // PASO 2: Guardar pasos
                 console.log(`💾 Guardando ${currentProcedureSteps.length} pasos...`);
 
+                // Crear un mapa temporal para almacenar los IDs de pasos nuevos
+                const stepIdMap = new Map(); // Mapea step_sequence -> nuevo step_id de BD
+
+                // Primero: Guardar TODOS los pasos sin opciones
                 for (const step of currentProcedureSteps) {
                     const stepData = {
                         procedure_id: procedureId,
@@ -1632,7 +1636,6 @@
                         step_type: step.step_type,
                         sla_days: step.step_sla_days,
                         has_bifurcation: step.has_bifurcation,
-                        next_step_id: step.next_step_id,
                         is_final_step: step.is_final_step
                     };
 
@@ -1640,24 +1643,48 @@
                         method: 'POST',
                         body: JSON.stringify(stepData)
                     });
-                                        
+
                     if (!savedStep || savedStep.length === 0) {
                         throw new Error(`Error guardando paso: ${step.step_name}`);
                     }
 
                     const savedStepId = savedStep[0].step_id;
+                    stepIdMap.set(step.step_sequence, {
+                        newId: savedStepId,
+                        originalData: step
+                    });
+                }
 
-                    // PASO 3: Guardar opciones de bifurcación si las hay
+                // Segundo: Guardar opciones de bifurcación con los IDs correctos
+                for (const [sequence, stepInfo] of stepIdMap.entries()) {
+                    const step = stepInfo.originalData;
+                    const savedStepId = stepInfo.newId;
+
                     if (step.has_bifurcation && step.bifurcation_options && step.bifurcation_options.length > 0) {
-                        console.log(`  💾 Guardando ${step.bifurcation_options.length} opciones de bifurcación...`);
+                        console.log(`  💾 Guardando ${step.bifurcation_options.length} opciones para paso ${sequence}...`);
 
                         for (const option of step.bifurcation_options) {
+                            // Buscar el step_id real del siguiente paso
+                            let nextStepIdReal = null;
+                            
+                            // Si next_step_id es temporal (de memoria), buscar en el mapa
+                            if (option.next_step_id) {
+                                // Buscar por step_id original o por secuencia
+                                for (const [seq, info] of stepIdMap.entries()) {
+                                    if (info.originalData.step_id === option.next_step_id || 
+                                        info.newId === option.next_step_id) {
+                                        nextStepIdReal = info.newId;
+                                        break;
+                                    }
+                                }
+                            }
+
                             await supabaseRequest('/procedure_step_options', {
                                 method: 'POST',
                                 body: JSON.stringify({
                                     step_id: savedStepId,
                                     option_name: option.option_name,
-                                    next_step_id: option.next_step_id,
+                                    next_step_id: nextStepIdReal,
                                     option_order: option.option_order
                                 })
                             });
