@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitud Pública - SchoolNet</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Google reCAPTCHA -->
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    
+    <style>
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .loading-overlay.hidden {
+            display: none;
+        }
+
+        .spinner-border-lg {
+            width: 3rem;
+            height: 3rem;
+        }
+
+        /* Public Page Styling */
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem 0;
+        }
+
+        .public-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .public-header {
+            background: white;
+            border-radius: 12px 12px 0 0;
+            padding: 2rem;
+            text-align: center;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .public-header h1 {
+            color: #2c3e50;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .public-header p {
+            color: #6c757d;
+            margin: 0;
+        }
+
+        .public-content {
+            background: white;
+            border-radius: 0 0 12px 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .form-preview {
+            max-height: 60vh;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .field-container {
+            background: white;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border: 1px solid #dee2e6;
+        }
+
+        .field-label {
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .required-mark {
+            color: #dc3545;
+            margin-left: 3px;
+        }
+
+        .field-help-text {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-top: 0.25rem;
+        }
+
+        .captcha-container {
+            margin: 1.5rem 0;
+            display: flex;
+            justify-content: center;
+        }
+
+        .success-message {
+            text-align: center;
+            padding: 3rem 2rem;
+        }
+
+        .success-message i {
+            font-size: 4rem;
+            color: #28a745;
+            margin-bottom: 1rem;
+        }
+
+        .tracking-number {
+            background: #e7f3ff;
+            border: 2px solid #0d6efd;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            text-align: center;
+        }
+
+        .tracking-number h3 {
+            color: #0d6efd;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .tracking-number .number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="text-center">
+            <div class="spinner-border text-light spinner-border-lg" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <div class="text-light mt-3">Procesando...</div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="public-container">
+        <!-- Header -->
+        <div class="public-header">
+            <h1><i class="bi bi-file-earmark-text me-2"></i>Solicitud en Línea</h1>
+            <p id="procedure-subtitle">Complete el formulario para iniciar su solicitud</p>
+        </div>
+
+        <!-- Content -->
+        <div class="public-content" id="main-content">
+            <!-- Alert Messages -->
+            <div id="alert-container"></div>
+
+            <!-- Formulario -->
+            <div id="form-container">
+                <p class="text-center text-muted">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    Cargando formulario...
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Bundle JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Config.js -->
+    <script src="/config.js"></script>
+    
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let currentProcedure = null;
+        let currentFormFields = [];
+        let uploadedFiles = {};
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🎉 execute-public.html cargado');
+            
+            try {
+                // Obtener procedure_id de la URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const procedureId = urlParams.get('id');
+                
+                if (!procedureId) {
+                    showMessage('Error: No se especificó el procedimiento', 'danger');
+                    document.getElementById('form-container').innerHTML = `
+                        <div class="text-center py-5">
+                            <i class="bi bi-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                            <p class="mt-3 text-muted">URL inválida. Contacte al administrador.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                console.log('📋 Cargando procedimiento ID:', procedureId);
+                await loadProcedure(procedureId);
+                
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                showMessage('Error al cargar el formulario: ' + error.message, 'danger');
+            }
+        });
+
+        // ==========================================
+        // CARGAR PROCEDIMIENTO
+        // ==========================================
+        async function loadProcedure(procedureId) {
+            try {
+                mostrarLoading();
+                
+                // Cargar procedimiento
+                const procedures = await supabaseRequest(
+                    `/procedures?procedure_id=eq.${procedureId}&select=*,forms(form_id,form_name,form_description)`
+                );
+                
+                if (!procedures || procedures.length === 0) {
+                    throw new Error('Procedimiento no encontrado');
+                }
+                
+                currentProcedure = procedures[0];
+                
+                // Verificar que sea externo y esté activo
+                if (currentProcedure.procedure_type !== 'external') {
+                    throw new Error('Este procedimiento no está disponible públicamente');
+                }
+                
+                if (currentProcedure.procedure_status !== 'active') {
+                    throw new Error('Este procedimiento no está activo');
+                }
+                
+                console.log('✅ Procedimiento cargado:', currentProcedure.procedure_name);
+                
+                // Actualizar título
+                document.getElementById('procedure-subtitle').textContent = currentProcedure.procedure_name;
+                
+                // Cargar campos del formulario
+                await loadFormFields(currentProcedure.forms.form_id);
+                
+            } catch (error) {
+                console.error('❌ Error cargando procedimiento:', error);
+                showMessage('Error: ' + error.message, 'danger');
+                document.getElementById('form-container').innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="bi bi-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                        <p class="mt-3 text-muted">${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // CARGAR CAMPOS DEL FORMULARIO
+        // ==========================================
+        async function loadFormFields(formId) {
+            try {
+                console.log('📋 Cargando campos del formulario:', formId);
+                
+                // Obtener campos
+                const fields = await supabaseRequest(
+                    `/form_fields?form_id=eq.${formId}&select=*&order=field_order.asc`
+                );
+                
+                if (!fields || fields.length === 0) {
+                    throw new Error('El formulario no tiene campos configurados');
+                }
+                
+                currentFormFields = fields;
+                
+                // Cargar opciones para campos SELECT
+                for (const field of currentFormFields) {
+                    if (field.field_type === 'select') {
+                        const options = await supabaseRequest(
+                            `/field_option_catalog?field_id=eq.${field.field_id}&is_active=eq.true&order=option_order.asc`
+                        );
+                        field.options = options || [];
+                    }
+                }
+                
+                console.log('✅', currentFormFields.length, 'campos cargados');
+                
+                // Renderizar formulario
+                renderForm();
+                
+            } catch (error) {
+                console.error('❌ Error cargando campos:', error);
+                throw error;
+            }
+        }
+
+        // ==========================================
+        // RENDERIZAR FORMULARIO
+        // ==========================================
+        function renderForm() {
+            const container = document.getElementById('form-container');
+            
+            let html = '<form id="form-execute" onsubmit="enviarSolicitud(event)">';
+            html += '<div class="form-preview">';
+            
+            // Agregar campos especiales para capturar nombre y email del solicitante público
+            html += `
+                <div class="field-container">
+                    <label class="field-label">
+                        Nombre completo <span class="required-mark">*</span>
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="public_name" 
+                           required 
+                           placeholder="Ingrese su nombre completo">
+                    <div class="field-help-text">
+                        <i class="bi bi-info-circle"></i> Este nombre se usará para identificar su solicitud
+                    </div>
+                </div>
+                
+                <div class="field-container">
+                    <label class="field-label">
+                        Correo electrónico <span class="required-mark">*</span>
+                    </label>
+                    <input type="email" 
+                           class="form-control" 
+                           id="public_email" 
+                           required 
+                           placeholder="correo@ejemplo.com">
+                    <div class="field-help-text">
+                        <i class="bi bi-info-circle"></i> Recibirá confirmación y actualizaciones a este correo
+                    </div>
+                </div>
+                
+                <hr class="my-4">
+            `;
+            
+            // Renderizar campos del formulario
+            for (const field of currentFormFields) {
+                html += renderField(field);
+            }
+            
+            html += '</div>'; // Fin form-preview
+            
+            // Captcha
+            html += `
+                <div class="captcha-container">
+                    <div class="g-recaptcha" data-sitekey="${CAPTCHA_CONFIG?.siteKey || ''}"></div>
+                </div>
+            `;
+            
+            // Botón enviar
+            html += `
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-send me-2"></i>Enviar Solicitud
+                    </button>
+                </div>
+            `;
+            
+            html += '</form>';
+            
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // RENDERIZAR CAMPO INDIVIDUAL
+        // ==========================================
+        function renderField(field) {
+            const fieldId = `field_${field.field_id}`;
+            const isRequired = field.is_required;
+            const requiredAttr = isRequired ? 'required' : '';
+            const requiredMark = isRequired ? '<span class="required-mark">*</span>' : '';
+            
+            let html = '<div class="field-container">';
+            html += `<label for="${fieldId}" class="field-label">${escapeHtml(field.field_label)} ${requiredMark}</label>`;
+            
+            switch (field.field_type) {
+                case 'text':
+                    html += `<input type="text" class="form-control" id="${fieldId}" ${requiredAttr}>`;
+                    break;
+                    
+                case 'textarea':
+                    html += `<textarea class="form-control" id="${fieldId}" rows="4" ${requiredAttr}></textarea>`;
+                    break;
+                    
+                case 'number':
+                    html += `<input type="number" class="form-control" id="${fieldId}" ${requiredAttr}>`;
+                    break;
+                    
+                case 'date':
+                    html += `<input type="date" class="form-control" id="${fieldId}" ${requiredAttr}>`;
+                    break;
+                    
+                case 'select':
+                    html += `<select class="form-select" id="${fieldId}" ${requiredAttr}>`;
+                    html += '<option value="">Seleccione una opción</option>';
+                    if (field.options && field.options.length > 0) {
+                        for (const option of field.options) {
+                            html += `<option value="${option.option_id}">${escapeHtml(option.option_label)}</option>`;
+                        }
+                    }
+                    html += '</select>';
+                    break;
+                    
+                case 'file':
+                    html += `
+                        <input type="file" 
+                               class="form-control" 
+                               id="${fieldId}" 
+                               ${requiredAttr}
+                               onchange="handleFileUpload(event, ${field.field_id})">
+                        <div class="field-help-text mt-2">
+                            <i class="bi bi-info-circle"></i> Tamaño máximo: 10MB
+                        </div>
+                    `;
+                    break;
+            }
+            
+            if (field.field_help_text) {
+                html += `<div class="field-help-text">${escapeHtml(field.field_help_text)}</div>`;
+            }
+            
+            html += '</div>';
+            return html;
+        }
+
+        // ==========================================
+        // SUBIDA DE ARCHIVOS
+        // ==========================================
+        async function handleFileUpload(event, fieldId) {
+            const file = event.target.files[0];
+            
+            if (!file) {
+                return;
+            }
+
+            try {
+                mostrarLoading();
+                console.log('📤 Procesando archivo:', file.name);
+
+                // Validar tamaño del archivo (máximo 10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                    throw new Error('El archivo no puede superar los 10MB');
+                }
+
+                console.log('📦 Tamaño del archivo:', (file.size / 1024 / 1024).toFixed(2) + ' MB');
+
+                // Convertir archivo a Base64
+                console.log('🔄 Convirtiendo archivo a Base64...');
+                const base64 = await fileToBase64(file);
+                console.log('✅ Archivo convertido a Base64');
+
+                // Guardar información del archivo en memoria
+                uploadedFiles[fieldId] = {
+                    file_url: base64,
+                    file_name: file.name,
+                    file_size: file.size,
+                    file_type: file.type
+                };
+
+                console.log('✅ Archivo cargado correctamente en memoria');
+                showMessage('✅ Archivo cargado: ' + file.name, 'success');
+
+            } catch (error) {
+                console.error('❌ Error procesando archivo:', error);
+                showMessage('Error al procesar el archivo: ' + error.message, 'danger');
+                event.target.value = '';
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // FUNCIÓN PARA CONVERTIR ARCHIVO A BASE64
+        // ==========================================
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // ==========================================
+        // ENVIAR SOLICITUD
+        // ==========================================
+        async function enviarSolicitud(event) {
+            event.preventDefault();
+            
+            try {
+                mostrarLoading();
+                console.log('💾 Enviando solicitud pública...');
+                
+                const form = document.getElementById('form-execute');
+                
+                // Validar formulario
+                if (!form.checkValidity()) {
+                    form.reportValidity();
+                    ocultarLoading();
+                    return;
+                }
+                
+                // Validar captcha
+                const captchaResponse = grecaptcha.getResponse();
+                if (!captchaResponse) {
+                    throw new Error('Por favor complete el captcha');
+                }
+                
+                // Obtener nombre y email del solicitante
+                const publicName = document.getElementById('public_name').value.trim();
+                const publicEmail = document.getElementById('public_email').value.trim();
+                
+                if (!publicName || !publicEmail) {
+                    throw new Error('Nombre y correo son obligatorios');
+                }
+                
+                // Recopilar datos del formulario para el JSON
+                const formData = {
+                    solicitante_nombre: publicName,
+                    solicitante_email: publicEmail
+                };
+                
+                for (const field of currentFormFields) {
+                    const fieldId = `field_${field.field_id}`;
+                    const element = document.getElementById(fieldId);
+                    
+                    if (element && element.value) {
+                        if (field.field_type === 'select') {
+                            const selectedOption = field.options.find(opt => opt.option_id == element.value);
+                            formData[field.field_name] = selectedOption ? selectedOption.option_label : element.value;
+                        } else if (field.field_type === 'file') {
+                            formData[field.field_name] = uploadedFiles[field.field_id]?.file_name || '';
+                        } else {
+                            formData[field.field_name] = element.value;
+                        }
+                    }
+                }
+                
+                // PASO 1: Crear instancia del procedimiento
+                console.log('📝 Creando instancia de procedimiento público...');
+                
+                const instanceData = {
+                    procedure_id: currentProcedure.procedure_id,
+                    initiated_by_user_id: null, // NULL para solicitudes públicas
+                    initiated_by_email: publicEmail,
+                    initiated_by_name: publicName,
+                    form_data: formData,
+                    instance_status: 'in_progress',
+                    started_at: new Date().toISOString()
+                };
+                
+                const newInstance = await supabaseRequest('/procedure_instances', {
+                    method: 'POST',
+                    body: JSON.stringify(instanceData)
+                });
+                
+                if (!newInstance || newInstance.length === 0) {
+                    throw new Error('No se pudo crear la instancia del procedimiento');
+                }
+                
+                const instanceId = newInstance[0].instance_id;
+                console.log('✅ Instancia creada con ID:', instanceId);
+                
+                // PASO 2: Guardar respuestas normalizadas en form_responses
+                console.log('💾 Guardando respuestas del formulario...');
+                
+                for (const field of currentFormFields) {
+                    const fieldId = `field_${field.field_id}`;
+                    const element = document.getElementById(fieldId);
+                    
+                    if (!element || (element.value === '' && field.field_type !== 'file')) {
+                        continue;
+                    }
+                    
+                    const responseData = {
+                        instance_id: instanceId,
+                        field_id: field.field_id
+                    };
+                    
+                    switch (field.field_type) {
+                        case 'text':
+                        case 'textarea':
+                            if (element.value) {
+                                responseData.response_text = element.value;
+                            }
+                            break;
+                            
+                        case 'number':
+                            if (element.value) {
+                                responseData.response_number = parseFloat(element.value);
+                            }
+                            break;
+                            
+                        case 'date':
+                            if (element.value) {
+                                responseData.response_date = element.value;
+                            }
+                            break;
+                            
+                        case 'select':
+                            if (element.value) {
+                                responseData.selected_option_id = parseInt(element.value);
+                            }
+                            break;
+                            
+                        case 'file':
+                            if (uploadedFiles[field.field_id]) {
+                                responseData.response_text = uploadedFiles[field.field_id].file_url;
+                                responseData.file_name = uploadedFiles[field.field_id].file_name;
+                            }
+                            break;
+                    }
+                    
+                    if (Object.keys(responseData).length > 2) {
+                        await supabaseRequest('/form_responses', {
+                            method: 'POST',
+                            body: JSON.stringify(responseData)
+                        });
+                    }
+                }
+                
+                console.log('✅ Respuestas guardadas correctamente');
+                
+                // PASO 3: Obtener primer paso del procedimiento
+                console.log('🔍 Identificando primer paso...');
+                
+                const firstSteps = await supabaseRequest(
+                    `/procedure_steps?procedure_id=eq.${currentProcedure.procedure_id}&select=*,workers(worker_id,worker_first_name,worker_last_name_1,email)&order=step_sequence.asc&limit=1`
+                );
+                
+                if (!firstSteps || firstSteps.length === 0) {
+                    throw new Error('El procedimiento no tiene pasos configurados');
+                }
+                
+                const firstStep = firstSteps[0];
+                console.log('✅ Primer paso identificado:', firstStep.step_name);
+                
+                // PASO 4: Crear tarea para el responsable del primer paso
+                console.log('📋 Creando tarea para el responsable...');
+                
+                const workerEmail = firstStep.workers?.email || 
+                                   (await getWorkerEmail(firstStep.responsible_worker_id));
+                
+                const dueDate = calculateDueDate(firstStep.sla_days || 5);
+                
+                const taskData = {
+                    task_description: `Paso ${firstStep.step_sequence}: ${firstStep.step_name} - Procedimiento: ${currentProcedure.procedure_name}`,
+                    assigned_to_mail: workerEmail,
+                    due_date: dueDate,
+                    task_state: 'assigned',
+                    task_priority: firstStep.sla_days <= 2 ? 'high' : 'medium',
+                    module_type: 'procedures',
+                    procedure_id: currentProcedure.procedure_id,
+                    procedure_step_id: firstStep.step_id,
+                    created_by: null, // NULL para solicitudes públicas
+                    created_by_name: publicName + ' (Solicitud pública)'
+                };
+                
+                await supabaseRequest('/tasks', {
+                    method: 'POST',
+                    body: JSON.stringify(taskData)
+                });
+                
+                console.log('✅ Tarea creada correctamente');
+                
+                // TODO: Enviar notificaciones por email
+                
+                // Mostrar mensaje de éxito con número de seguimiento
+                mostrarExito(instanceId);
+                
+            } catch (error) {
+                console.error('❌ Error enviando solicitud:', error);
+                showMessage('Error al enviar la solicitud: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // MOSTRAR MENSAJE DE ÉXITO
+        // ==========================================
+        function mostrarExito(instanceId) {
+            const container = document.getElementById('main-content');
+            
+            // Generar número de seguimiento (formato: año-mes-instanceId)
+            const date = new Date();
+            const trackingNumber = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}-${String(instanceId).padStart(6, '0')}`;
+            
+            container.innerHTML = `
+                <div class="success-message">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <h2>¡Solicitud Enviada Exitosamente!</h2>
+                    <p class="text-muted">Su solicitud ha sido recibida y será procesada</p>
+                    
+                    <div class="tracking-number">
+                        <h3>Número de Seguimiento</h3>
+                        <div class="number">${trackingNumber}</div>
+                        <p class="text-muted mt-2 mb-0">
+                            <i class="bi bi-info-circle"></i> Guarde este número para consultar el estado de su solicitud
+                        </p>
+                    </div>
+                    
+                    <div class="alert alert-info mt-4">
+                        <i class="bi bi-envelope me-2"></i>
+                        Recibirá un correo de confirmación con los detalles de su solicitud y el número de seguimiento.
+                    </div>
+                    
+                    <div class="mt-4">
+                        <p class="text-muted">
+                            Si tiene preguntas, puede contactarnos usando su número de seguimiento como referencia.
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // FUNCIONES AUXILIARES
+        // ==========================================
+        async function getWorkerEmail(workerId) {
+            try {
+                const worker = await supabaseRequest(`/workers?worker_id=eq.${workerId}&select=email`);
+                return worker && worker.length > 0 ? worker[0].email : null;
+            } catch (error) {
+                console.error('Error obteniendo email del worker:', error);
+                return null;
+            }
+        }
+
+        function calculateDueDate(slaDays) {
+            const today = new Date();
+            let daysAdded = 0;
+            let currentDate = new Date(today);
+
+            while (daysAdded < slaDays) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                const dayOfWeek = currentDate.getDay();
+                
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    daysAdded++;
+                }
+            }
+
+            return currentDate.toISOString().split('T')[0];
+        }
+
+        // ==========================================
+        // MENSAJES Y UTILIDADES
+        // ==========================================
+        function showMessage(message, type = 'info') {
+            const alertContainer = document.getElementById('alert-container');
+            const alertId = 'alert-' + Date.now();
+            
+            const alertHTML = `
+                <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    <i class="bi bi-${type === 'success' ? 'check-circle' : type === 'danger' ? 'x-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            alertContainer.insertAdjacentHTML('beforeend', alertHTML);
+            
+            setTimeout(() => {
+                const alert = document.getElementById(alertId);
+                if (alert) {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }
+            }, 5000);
+        }
+
+        function mostrarLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        console.log('🎉 execute-public.html cargado correctamente');
+    </script>
+</body>
+</html>
