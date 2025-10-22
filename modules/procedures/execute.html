@@ -602,67 +602,40 @@
 
             try {
                 mostrarLoading();
-                console.log('📤 Subiendo archivo:', file.name);
+                console.log('📤 Procesando archivo:', file.name);
 
-                // Intentar obtener token de sesión (opcional para bucket público)
-                const session = getStoredSession();
-                let authToken = SUPABASE_CONFIG.anonKey; // Default: usar anonKey
-                
-                // Si hay sesión, intentar usar el token del usuario
-                if (session) {
-                    authToken = session.access_token || session.token || SUPABASE_CONFIG.anonKey;
-                    console.log('🔑 Token encontrado:', authToken ? 'Sí' : 'No');
+                // Validar tamaño del archivo (máximo 10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                    throw new Error('El archivo no puede superar los 10MB');
                 }
 
-                // Sanitizar el nombre del archivo
-                const sanitizedFileName = sanitizeFileName(file.name);
-                console.log('🧹 Nombre original:', file.name);
-                console.log('🧹 Nombre sanitizado:', sanitizedFileName);
-                
-                // Generar nombre único
-                const timestamp = Date.now();
-                const fileName = `${timestamp}_${sanitizedFileName}`;
+                console.log('📦 Tamaño del archivo:', (file.size / 1024 / 1024).toFixed(2) + ' MB');
 
-                // Subir a Supabase Storage
-                const uploadResponse = await fetch(
-                    `${SUPABASE_CONFIG.apiUrl.replace('/rest/v1', '')}/storage/v1/object/schoolnet-procedures/${fileName}`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${authToken}`,
-                            'apikey': SUPABASE_CONFIG.anonKey
-                        },
-                        body: file
-                    }
-                );
+                // Convertir archivo a Base64
+                console.log('🔄 Convirtiendo archivo a Base64...');
+                const base64 = await fileToBase64(file);
+                console.log('✅ Archivo convertido a Base64');
 
-                if (!uploadResponse.ok) {
-                    const errorData = await uploadResponse.text();
-                    console.error('❌ Error del Storage API:', errorData);
-                    throw new Error(errorData || 'Error al subir el archivo');
-                }
-
-                const uploadResult = await uploadResponse.json();
-                console.log('✅ Respuesta del servidor:', uploadResult);
-
-                // Guardar información del archivo
+                // Guardar información del archivo en memoria
                 uploadedFiles[fieldId] = {
-                    file_path: `schoolnet-procedures/${fileName}`,
+                    file_url: base64,
                     file_name: file.name,
                     file_size: file.size,
                     file_type: file.type
                 };
 
-                console.log('✅ Archivo subido correctamente');
-                showMessage('Archivo subido correctamente', 'success');
+                console.log('✅ Archivo cargado correctamente en memoria');
+                showMessage('✅ Archivo cargado: ' + file.name, 'success');
 
             } catch (error) {
-                console.error('❌ Error subiendo archivo:', error);
-                showMessage('Error al subir el archivo: ' + error.message, 'danger');
+                console.error('❌ Error procesando archivo:', error);
+                showMessage('Error al procesar el archivo: ' + error.message, 'danger');
                 event.target.value = '';
             } finally {
                 ocultarLoading();
             }
+
+            
         }
 
         // ==========================================
@@ -777,8 +750,10 @@
 
                         case 'file':
                             if (uploadedFiles[field.field_id]) {
-                                responseData.file_path = uploadedFiles[field.field_id].file_path;
+                                responseData.response_text = uploadedFiles[field.field_id].file_url; // Base64
                                 responseData.file_name = uploadedFiles[field.field_id].file_name;
+                                responseData.file_size = uploadedFiles[field.field_id].file_size;
+                                responseData.file_type = uploadedFiles[field.field_id].file_type;
                             }
                             break;
                     }
@@ -858,26 +833,16 @@
         }
 
         // ==========================================
-        // FUNCIÓN PARA SANITIZAR NOMBRES DE ARCHIVO
+        // FUNCIÓN PARA CONVERTIR ARCHIVO A BASE64
         // ==========================================
-        function sanitizeFileName(fileName) {
-            // Separar nombre y extensión
-            const lastDotIndex = fileName.lastIndexOf('.');
-            const name = lastDotIndex > -1 ? fileName.substring(0, lastDotIndex) : fileName;
-            const extension = lastDotIndex > -1 ? fileName.substring(lastDotIndex) : '';
-            
-            // Reemplazar caracteres especiales y acentos
-            let sanitized = name
-                .normalize('NFD')  // Descomponer caracteres acentuados
-                .replace(/[\u0300-\u036f]/g, '')  // Eliminar diacríticos
-                .replace(/[^a-zA-Z0-9._-]/g, '_')  // Reemplazar caracteres especiales con _
-                .replace(/_{2,}/g, '_')  // Reemplazar múltiples _ con uno solo
-                .replace(/^_|_$/g, '');  // Eliminar _ al inicio o final
-            
-            return sanitized + extension;
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
         }
-
-
         
         // ==========================================
         // FUNCIONES AUXILIARES
