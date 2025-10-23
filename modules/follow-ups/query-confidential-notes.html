@@ -97,26 +97,74 @@
             const search = document.getElementById('searchStudent').value.trim();
             const from = document.getElementById('dateFrom').value;
             const to = document.getElementById('dateTo').value;
-
-            let query = '/stm_confidential_notes?select=confidential_note_id,confidential_note,created_at,students!inner(student_id,student_first_name,student_last_name_1,student_last_name_2)&order=created_at.desc';
+        
+            // Mostrar indicador de carga
+            mostrarCargando();
+        
+            // Query base con filtros básicos
+            let query = '/stm_confidential_notes?select=confidential_note_id,confidential_note,created_at,email,students!inner(student_id,student_first_name,student_last_name_1,student_last_name_2)';
             
-            // FILTRO POR ROL
+            // Array para los filtros
+            const filtros = [];
+            
+            // FILTRO POR ROL - Solo ver propias notas si no tiene permiso total
             if (!canViewAll && userEmail) {
-                query += `&email=eq.${userEmail}`;
+                filtros.push(`email=eq.${userEmail}`);
             }
             
-            if (search) query += `&students.student_first_name.ilike.%${search}%`;
-            if (from) query += `&created_at=gte.${from}`;
-            if (to) query += `&created_at=lte.${to}`;
-
+            // FILTRO POR FECHA
+            if (from) {
+                filtros.push(`created_at=gte.${from}T00:00:00`);
+            }
+            if (to) {
+                filtros.push(`created_at=lte.${to}T23:59:59`);
+            }
+            
+            // Agregar filtros al query
+            if (filtros.length > 0) {
+                query += '&' + filtros.join('&');
+            }
+            
+            // Orden
+            query += '&order=created_at.desc';
+        
             try {
-                const data = await supabaseRequest(query);
+                let data = await supabaseRequest(query);
+                
+                // FILTRO POR NOMBRE DEL ESTUDIANTE (aplicado en JavaScript después de obtener los datos)
+                if (search && data && data.length > 0) {
+                    const searchLower = search.toLowerCase();
+                    data = data.filter(nota => {
+                        const nombreCompleto = `${nota.students.student_first_name} ${nota.students.student_last_name_1} ${nota.students.student_last_name_2 || ''}`.toLowerCase();
+                        return nombreCompleto.includes(searchLower);
+                    });
+                }
+                
                 mostrarResultados(data);
             } catch (error) {
+                console.error('Error al buscar notas:', error);
                 showMessage('Error al buscar: ' + error.message, 'danger');
+                document.getElementById('resultados').innerHTML = '';
             }
         }
 
+        function mostrarCargando() {
+            const container = document.getElementById('resultados');
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <div class="spinner-border text-danger mb-3" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <p class="text-muted">Buscando notas confidenciales...</p>
+                </div>
+            `;
+        }
+        
+        function ocultarCargando() {
+            // Se ocultará automáticamente cuando mostrarResultados() reemplace el contenido
+        }
+
+        
         function mostrarResultados(data) {
             const container = document.getElementById('resultados');
             if (!data || data.length === 0) {
