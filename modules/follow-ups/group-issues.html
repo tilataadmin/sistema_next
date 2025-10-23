@@ -360,6 +360,19 @@
         let cursoSeleccionado = null;
         let categoriasSeleccionadas = [];
 
+        // Función auxiliar para verificar sesión
+        function verificarSesionActiva() {
+            const session = getStoredSession();
+            if (!session || !session.user || !session.user.user_mail) {
+                showMessage('No hay una sesión activa. Por favor, inicie sesión nuevamente.', 'danger');
+                setTimeout(() => {
+                    window.location.href = '../../login.html';
+                }, 2000);
+                return false;
+            }
+            return true;
+        }
+
         // Inicialización
         document.addEventListener('DOMContentLoaded', async function() {
             try {
@@ -657,7 +670,7 @@
             if (overlay) overlay.classList.add('hidden');
         }
 
-      // Guardar asunto grupal
+        // Guardar asunto grupal
         async function guardarAsuntoGrupal() {
             if (enviandoFormulario) {
                 showMessage('Por favor espere, el asunto se está guardando...', 'warning');
@@ -677,7 +690,14 @@
             botonGuardar.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Guardando...';
             
             try {
+                // ✅ OBTENER SESIÓN AL INICIO
                 const session = getStoredSession();
+                
+                // ✅ VALIDAR QUE EXISTE LA SESIÓN
+                if (!session || !session.user || !session.user.user_mail) {
+                    throw new Error('No se pudo obtener la sesión del usuario');
+                }
+                
                 const workerData = await supabaseRequest(`/workers?select=worker_id&email=eq.${session.user.user_mail}&limit=1`);
                 
                 if (workerData.length === 0) {
@@ -687,7 +707,6 @@
                 const workerId = workerData[0].worker_id;
                 
                 // Obtener prom del grado
-                
                 const selectedOption = document.getElementById('curso-select').options[document.getElementById('curso-select').selectedIndex];
                 const gradeId = selectedOption.dataset.gradeId;
                 const promData = await supabaseRequest(`/grades?select=promotion_code&grade_id=eq.${gradeId}&limit=1`);
@@ -697,7 +716,7 @@
                 const fechaActual = new Date().toISOString().split('T')[0];
                 
                 const insertData = {
-                    course_id: cursoSeleccionado.courseId,  // ← NUEVO CAMPO
+                    course_id: cursoSeleccionado.courseId,
                     prom_name: promName,
                     topic_date: fechaActual,
                     topic_description: obtenerContenidoEditor('descripcion-editor'),
@@ -705,7 +724,6 @@
                     is_escalable: 'SI',
                     is_open: 'SI'
                 };
-                
                 // Insertar en stm_prom_topics
                 const topicResult = await supabaseRequest('/stm_prom_topics', {
                     method: 'POST',
@@ -727,41 +745,51 @@
                 
                 await Promise.all(categoriaPromises);
                 
-                // Enviar notificaciones
-                const notificacionesPromises = [];
+                // Insertar estudiantes
+                const studentPromises = estudiantesSeleccionados.map(studentId => 
+                    supabaseRequest('/stm_prom_topics_students', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            prom_topic_id: topicId,
+                            student_id: studentId
+                        })
+                    })
+                );
                 
-                // 1. Notificación al director de sección
-                if (cursoSeleccionado.directorMail) {
-                    notificacionesPromises.push(
-                        enviarNotificacionDirector(topicId, cursoSeleccionado.directorMail, 'Director de Sección')
-                    );
-                }
+                await Promise.all(studentPromises);
                 
-                // 2. Notificación al director de curso
-                if (cursoSeleccionado.directorCursoMail && cursoSeleccionado.directorCursoMail !== cursoSeleccionado.directorMail) {
-                    notificacionesPromises.push(
-                        enviarNotificacionDirector(topicId, cursoSeleccionado.directorCursoMail, 'Director de Curso')
-                    );
-                }
+                // Insertar trabajador responsable
+                await supabaseRequest('/stm_prom_topics_workers', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        prom_topic_id: topicId,
+                        worker_id: workerId,
+                        is_responsible: 'SI'
+                    })
+                });
                 
-                // Enviar ambas notificaciones en paralelo
-                if (notificacionesPromises.length > 0) {
-                    await Promise.all(notificacionesPromises);
-                }
+                showMessage('Asunto grupal guardado exitosamente', 'success');
                 
-                showMessage('Asunto grupal registrado exitosamente', 'success');
-                limpiarFormularioSinConfirmar();
+                // Limpiar formulario después de 1.5 segundos
+                setTimeout(() => {
+                    limpiarFormulario();
+                    hideLoading();
+                }, 1500);
                 
             } catch (error) {
-                console.error('Error al guardar:', error);
+                console.error('Error al guardar asunto grupal:', error);
                 showMessage('Error al guardar: ' + error.message, 'danger');
+                hideLoading();
             } finally {
                 enviandoFormulario = false;
-                hideLoading();
-                restaurarBotonGuardar();
+                const botonGuardar = document.querySelector('button[type="submit"]');
+                botonGuardar.disabled = false;
+                botonGuardar.innerHTML = '<i class="bi bi-save me-1"></i>Guardar Asunto Grupal';
             }
         }
 
+
+        
         // Enviar notificación al director
         async function enviarNotificacionDirector(topicId, emailDestino, tipoDirector) {
             try {
