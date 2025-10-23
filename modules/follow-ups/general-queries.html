@@ -391,27 +391,56 @@
                 
                 <!-- Filtros -->
                 <div class="filtros-container">
-                    <div class="filtros-row">
-                        <div class="form-group">
-                            <label for="buscar-estudiante" class="form-label">Buscar Estudiante:</label>
-                            <input type="text" id="buscar-estudiante" class="form-control" placeholder="Nombre, apellido o código..." />
-                        </div>
-                        <div class="form-group">
-                            <label for="fecha-inicio-historia" class="form-label">Fecha Inicio:</label>
-                            <input type="date" id="fecha-inicio-historia" class="form-control" />
-                        </div>
-                        <div class="form-group">
-                            <label for="fecha-fin-historia" class="form-label">Fecha Fin:</label>
-                            <input type="date" id="fecha-fin-historia" class="form-control" />
-                        </div>
-                        <div class="form-group">
-                            <button class="btn btn-primary" onclick="buscarEstudiantesHandler()">
-                                <i class="bi bi-search me-1"></i>Buscar
-                            </button>
+                <!-- NUEVO: Tipo de consulta -->
+                <div class="filtros-row mb-3">
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label"><strong>Tipo de Consulta:</strong></label>
+                        <div style="display: flex; gap: 20px; align-items: center; padding: 10px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="tipo-consulta-promo" value="promocion" checked style="margin-right: 8px;">
+                                <span>Por Promoción (histórico completo)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="radio" name="tipo-consulta-promo" value="curso" style="margin-right: 8px;">
+                                <span>Por Curso (año académico actual)</span>
+                            </label>
                         </div>
                     </div>
                 </div>
-
+            
+                <!-- Filtros principales -->
+                <div class="filtros-row">
+                    <!-- Selector de Promoción (visible por defecto) -->
+                    <div class="form-group" id="group-promocion">
+                        <label for="select-promocion" class="form-label">Promoción:</label>
+                        <select id="select-promocion" class="form-select">
+                            <option value="">Seleccionar promoción...</option>
+                        </select>
+                    </div>
+            
+                    <!-- Selector de Curso (oculto por defecto) -->
+                    <div class="form-group" id="group-curso" style="display: none;">
+                        <label for="select-curso-promo" class="form-label">Curso:</label>
+                        <select id="select-curso-promo" class="form-select">
+                            <option value="">Cargando cursos...</option>
+                        </select>
+                    </div>
+            
+                    <div class="form-group">
+                        <label for="fecha-inicio-promocion" class="form-label">Fecha Inicio:</label>
+                        <input type="date" id="fecha-inicio-promocion" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <label for="fecha-fin-promocion" class="form-label">Fecha Fin:</label>
+                        <input type="date" id="fecha-fin-promocion" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-primary" onclick="consultarAsuntosPromocion()">
+                            <i class="bi bi-file-text me-1"></i>Consultar
+                        </button>
+                    </div>
+                </div>
+            </div>
                 <!-- Resultados de búsqueda de estudiantes -->
                 <div id="estudiantes-container" style="display: none;">
                     <h4>Seleccionar Estudiante:</h4>
@@ -727,6 +756,7 @@
                 // Cargar datos iniciales para selects
                 await Promise.all([
                     cargarPromociones(),
+                    cargarCursosActivos(),
                     cargarUsuariosConTareas()
                 ]);
                 
@@ -762,7 +792,38 @@
                 console.error('Error cargando promociones:', error);
             }
         }
-               
+
+        /**
+         * Carga los cursos activos ordenados por course_order
+         */
+        async function cargarCursosActivos() {
+            try {
+                const cursos = await supabaseRequest('/courses?select=course_id,course_name,course_order,grade_id,grades(promotion_code)&order=course_order');
+                
+                const select = document.getElementById('select-curso-promo');
+                select.innerHTML = '<option value="">Seleccionar curso...</option>';
+                
+                cursos.forEach(curso => {
+                    const option = document.createElement('option');
+                    option.value = curso.course_id;
+                    option.textContent = curso.course_name;
+                    option.dataset.gradeId = curso.grade_id;
+                    option.dataset.promotionCode = curso.grades?.promotion_code || '';
+                    select.appendChild(option);
+                });
+                
+                select.disabled = false;
+                
+            } catch (error) {
+                console.error('Error cargando cursos:', error);
+                const select = document.getElementById('select-curso-promo');
+                select.innerHTML = '<option value="">Error al cargar cursos</option>';
+            }
+        }
+
+
+
+        
         /**
          * Carga los usuarios que tienen tareas asignadas
          */
@@ -853,6 +914,22 @@
                         modal.hide();
                     }
                 }
+            });
+            // Listener para cambio de tipo de consulta de promoción
+            document.querySelectorAll('input[name="tipo-consulta-promo"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const tipoConsulta = this.value;
+                    const groupPromocion = document.getElementById('group-promocion');
+                    const groupCurso = document.getElementById('group-curso');
+                    
+                    if (tipoConsulta === 'promocion') {
+                        groupPromocion.style.display = 'block';
+                        groupCurso.style.display = 'none';
+                    } else {
+                        groupPromocion.style.display = 'none';
+                        groupCurso.style.display = 'block';
+                    }
+                });
             });
         }
 
@@ -1399,7 +1476,86 @@
                 };
             }
         }
-     
+
+        /**
+ * Obtiene asuntos por curso del año académico actual
+ */
+async function obtenerAsuntosPorCurso(cursoId, fechaInicio, fechaFin) {
+    try {
+        if (!cursoId) {
+            return { success: true, data: [] };
+        }
+        
+        // Obtener fechas del año académico actual si no se especifican
+        let queryFechaInicio = fechaInicio;
+        let queryFechaFin = fechaFin;
+        
+        if (!queryFechaInicio || !queryFechaFin) {
+            // Obtener año académico activo
+            const yearData = await supabaseRequest('/system_config?select=academic_year_id,academic_years(year_start,year_end)&limit=1');
+            if (yearData.length > 0 && yearData[0].academic_years) {
+                queryFechaInicio = queryFechaInicio || yearData[0].academic_years.year_start;
+                queryFechaFin = queryFechaFin || yearData[0].academic_years.year_end;
+            }
+        }
+        
+        let query = `/stm_prom_topics?select=prom_topic_id,topic_date,topic_description,topic_strategy,topic_type,is_escalable,is_open,email,course_id,courses(course_name),stm_prom_topics_categories!inner(stm_category!inner(category_name))&course_id=eq.${cursoId}`;
+        
+        if (queryFechaInicio && queryFechaFin) {
+            query += `&topic_date=gte.${queryFechaInicio}&topic_date=lte.${queryFechaFin}`;
+        }
+        
+        query += '&order=topic_date.desc';
+        
+        const asuntos = await supabaseRequest(query);
+        
+        // Obtener emails únicos
+        const emailsUnicos = [...new Set(asuntos.map(a => a.email).filter(e => e))];
+        
+        // Obtener workers por email
+        let workersMap = {};
+        if (emailsUnicos.length > 0) {
+            const workers = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1&email=in.(${emailsUnicos.map(e => `"${e}"`).join(',')})`);
+            workers.forEach(w => {
+                workersMap[w.email] = {
+                    worker_first_name: w.worker_first_name,
+                    worker_last_name_1: w.worker_last_name_1
+                };
+            });
+        }
+        
+        // Procesar asuntos agrupando categorías
+        const asuntosConCategorias = asuntos.map(asunto => {
+            const categorias = asunto.stm_prom_topics_categories?.map(cat => cat.stm_category?.category_name).filter(Boolean).join(', ') || '';
+            const worker = workersMap[asunto.email] || {};
+            
+            return {
+                prom_topic_id: asunto.prom_topic_id,
+                topic_date: asunto.topic_date,
+                topic_description: asunto.topic_description,
+                topic_strategy: asunto.topic_strategy,
+                topic_type: asunto.topic_type,
+                is_escalable: asunto.is_escalable,
+                is_open: asunto.is_open,
+                worker_first_name: worker.worker_first_name || 'No especificado',
+                worker_last_name_1: worker.worker_last_name_1 || '',
+                categorias: categorias
+            };
+        });
+        
+        return {
+            success: true,
+            data: asuntosConCategorias
+        };
+        
+    } catch (error) {
+        console.error('Error obteniendo asuntos por curso:', error);
+        return {
+            success: false,
+            message: 'Error al obtener asuntos por curso: ' + error.message
+        };
+    }
+}
         
         /**
          * Muestra la historia completa del estudiante
@@ -1530,30 +1686,53 @@
          * Consulta asuntos por promoción
          */
         async function consultarAsuntosPromocion() {
-            const promocion = document.getElementById('select-promocion').value;
+            // Detectar tipo de consulta
+            const tipoConsulta = document.querySelector('input[name="tipo-consulta-promo"]:checked').value;
             const fechaInicio = document.getElementById('fecha-inicio-promocion').value;
             const fechaFin = document.getElementById('fecha-fin-promocion').value;
             
-            if (!promocion) {
-                showMessage('Por favor selecciona una promoción', 'warning');
-                return;
+            let promocion = null;
+            let cursoId = null;
+            let cursoNombre = null;
+            
+            if (tipoConsulta === 'promocion') {
+                promocion = document.getElementById('select-promocion').value;
+                if (!promocion) {
+                    showMessage('Por favor selecciona una promoción', 'warning');
+                    return;
+                }
+            } else {
+                cursoId = document.getElementById('select-curso-promo').value;
+                if (!cursoId) {
+                    showMessage('Por favor selecciona un curso', 'warning');
+                    return;
+                }
+                const selectCurso = document.getElementById('select-curso-promo');
+                const selectedOption = selectCurso.options[selectCurso.selectedIndex];
+                cursoNombre = selectedOption.textContent;
+                promocion = selectedOption.dataset.promotionCode;
             }
             
             try {
-                showMessage('Consultando asuntos de promoción...', 'info');
+                showMessage('Consultando asuntos...', 'info');
                 
-                const asuntos = await obtenerAsuntosPromocion(promocion, fechaInicio, fechaFin);
+                let asuntos;
+                if (tipoConsulta === 'promocion') {
+                    asuntos = await obtenerAsuntosPromocion(promocion, fechaInicio, fechaFin);
+                } else {
+                    asuntos = await obtenerAsuntosPorCurso(cursoId, fechaInicio, fechaFin);
+                }
                 
                 if (asuntos.success) {
-                    mostrarAsuntosPromocion(asuntos.data, promocion);
+                    mostrarAsuntosPromocion(asuntos.data, tipoConsulta === 'promocion' ? `Promoción ${promocion}` : cursoNombre);
                     showMessage('Consulta completada', 'success');
                 } else {
                     showMessage('Error: ' + asuntos.message, 'danger');
                 }
                 
             } catch (error) {
-                console.error('Error al consultar promoción:', error);
-                showMessage('Error al consultar asuntos de promoción: ' + error.message, 'danger');
+                console.error('Error al consultar:', error);
+                showMessage('Error al consultar asuntos: ' + error.message, 'danger');
             }
         }
 
