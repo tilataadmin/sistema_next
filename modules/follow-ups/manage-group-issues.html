@@ -626,44 +626,44 @@
                 if (!session || !session.user) {
                     throw new Error('No hay sesión activa');
                 }
-
+        
                 const emailUsuario = session.user.user_mail;
                 
-                // Primero obtener las promociones que dirige el usuario
-                const promocionesQuery = `/courses?select=grades!inner(sections!inner(section_name))&course_director_email=eq.${emailUsuario}`;
-                const cursosData = await supabaseRequest(promocionesQuery);
+                // Obtener los cursos que dirige el usuario con su academic_year_id
+                const cursosQuery = `/courses?select=course_id,course_name,grades!inner(grade_name,academic_year_id)&course_director_email=eq.${emailUsuario}`;
+                const cursosData = await supabaseRequest(cursosQuery);
                 
                 if (cursosData.length === 0) {
                     mostrarNoAutorizado('No apareces con dirección de curso relacionada');
                     return;
                 }
-
-                // Extraer promociones únicas de los cursos
-                const promocionesSet = new Set();
-                cursosData.forEach(curso => {
-                    if (curso.grades && curso.grades.sections) {
-                        promocionesSet.add(curso.grades.sections.section_name);
-                    }
-                });
-                const promociones = Array.from(promocionesSet);
+        
+                // Extraer course_ids y academic_year_ids únicos
+                const courseIds = cursosData.map(curso => curso.course_id);
+                const academicYearIds = [...new Set(cursosData.map(curso => curso.grades.academic_year_id).filter(Boolean))];
                 
-                if (promociones.length === 0) {
-                    mostrarNoAutorizado('No se encontraron promociones asociadas a tus cursos');
+                if (courseIds.length === 0) {
+                    mostrarNoAutorizado('No se encontraron cursos asociados');
                     return;
                 }
-
-                datosGlobales.promociones = promociones;
-
-                // Construir consulta para asuntos grupales
-                const promPlaceholders = promociones.map(p => `prom_name.eq.${encodeURIComponent(p)}`).join(',');
+        
+                // Guardar datos para referencia
+                datosGlobales.cursos = cursosData;
+        
+                // Construir consulta usando course_id Y academic_year_id
+                const courseFilters = courseIds.map(id => `course_id.eq.${id}`).join(',');
+                const yearFilters = academicYearIds.map(id => `academic_year_id.eq.${id}`).join(',');
                 
-                const asuntosQuery = `/stm_prom_topics?select=prom_topic_id,prom_name,topic_date,topic_description,email,topic_strategy,is_escalable,is_open,stm_prom_topics_categories(stm_category(category_name))&is_open=eq.SI&or=(${promPlaceholders})&order=topic_date.desc&limit=150`;  
+                const asuntosQuery = `/stm_prom_topics?select=prom_topic_id,prom_name,course_id,academic_year_id,topic_date,topic_description,email,topic_strategy,is_escalable,is_open,stm_prom_topics_categories(stm_category(category_name))&is_open=eq.SI&course_id=in.(${courseIds.join(',')})&academic_year_id=in.(${academicYearIds.join(',')})&order=topic_date.desc&limit=150`;
+                
                 const asuntos = await supabaseRequest(asuntosQuery);
                 
                 // Procesar categorías de cada asunto
                 const asuntosProcesados = asuntos.map(asunto => ({
                     prom_topic_id: asunto.prom_topic_id,
                     prom_name: asunto.prom_name,
+                    course_id: asunto.course_id,
+                    academic_year_id: asunto.academic_year_id,
                     topic_date: asunto.topic_date,
                     topic_description: asunto.topic_description,
                     email: asunto.email,
@@ -672,9 +672,9 @@
                     is_open: asunto.is_open,
                     category_names: asunto.stm_prom_topics_categories?.map(cat => cat.stm_category?.category_name).filter(Boolean).join(', ') || 'Sin categoría'
                 }));
-
+        
                 datosGlobales.asuntos = asuntosProcesados;
-
+        
                 // Obtener información de trabajadores
                 await cargarTrabajadores();
                 
@@ -687,6 +687,7 @@
             }
         }
 
+        
         /**
          * Cargar información de trabajadores
          */

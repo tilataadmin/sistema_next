@@ -388,7 +388,7 @@
                 showLoading();
                 
                 // Cargar cursos
-                const cursos = await supabaseRequest('/courses?select=course_id,course_name,course_order,course_director_email,grades!inner(grade_id,grade_name,grade_order,sections!inner(section_id,section_name,director_email))&order=course_order');
+                const cursos = await supabaseRequest('/courses?select=course_id,course_name,course_order,course_director_email,grades!inner(grade_id,grade_name,grade_order,academic_year_id,sections!inner(section_id,section_name,director_email))&order=course_order');
                 todosCursos = cursos || [];
                 
                 // Cargar categorías
@@ -449,6 +449,7 @@
                     option.dataset.gradeId = curso.grades.grade_id;
                     option.dataset.gradeName = curso.grades.grade_name;
                     option.dataset.sectionId = curso.grades.sections.section_id;
+                    option.dataset.academicYearId = curso.grades.academic_year_id;
                     option.setAttribute('data-director-email', curso.grades.sections.director_email || '');
                     option.setAttribute('data-director-curso-email', curso.course_director_email || '');
                     optgroup.appendChild(option);
@@ -511,10 +512,11 @@
             cursoSelect.addEventListener('change', function() {
                 const selectedOption = this.options[this.selectedIndex];
                 cursoSeleccionado = selectedOption.value ? {
-                courseId: parseInt(selectedOption.value),
+                courseId: selectedOption.value,
                 gradeName: selectedOption.dataset.gradeName,
+                academicYearId: selectedOption.dataset.academicYearId,
                 directorMail: selectedOption.dataset.directorEmail,
-                directorCursoMail: selectedOption.getAttribute('data-director-curso-email')  // ← NUEVA LÍNEA
+                directorCursoMail: selectedOption.getAttribute('data-director-curso-email')
             } : null;
                 validarFormularioCompleto();
             });
@@ -697,8 +699,9 @@
                 const fechaActual = new Date().toISOString().split('T')[0];
                 
                 const insertData = {
-                    course_id: cursoSeleccionado.courseId,  // ← NUEVO CAMPO
+                    course_id: cursoSeleccionado.courseId,
                     prom_name: promName,
+                    academic_year_id: cursoSeleccionado.academicYearId,
                     topic_date: fechaActual,
                     topic_description: obtenerContenidoEditor('descripcion-editor'),
                     email: session.user.user_mail,
@@ -850,8 +853,20 @@
         
         // Abrir modal de asuntos
         async function abrirModalAsuntos() {
+            console.log('🔍 Abriendo modal...');
             const modal = document.getElementById('modal-asuntos');
+            
+            // Mostrar el modal correctamente
             modal.style.display = 'block';
+            modal.classList.add('show');
+            modal.style.opacity = '1';
+            
+            // Agregar backdrop
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show';
+            backdrop.id = 'modal-backdrop-asuntos';
+            document.body.appendChild(backdrop);
+            document.body.classList.add('modal-open');
             
             document.getElementById('modal-loading').style.display = 'block';
             document.getElementById('contenido-asuntos').style.display = 'none';
@@ -859,70 +874,115 @@
             
             try {
                 await cargarAsuntosUsuario();
+                console.log('✅ Modal abierto y datos cargados');
             } catch (error) {
                 console.error('Error cargando asuntos:', error);
                 showMessage('Error al cargar asuntos: ' + error.message, 'danger');
                 cerrarModalAsuntos();
             }
         }
-
-        // Cerrar modal de asuntos
+        
         function cerrarModalAsuntos() {
-            document.getElementById('modal-asuntos').style.display = 'none';
+            console.log('🔍 Cerrando modal...');
+            const modal = document.getElementById('modal-asuntos');
+            modal.style.display = 'none';
+            modal.classList.remove('show');
+            
+            // Remover backdrop
+            const backdrop = document.getElementById('modal-backdrop-asuntos');
+            if (backdrop) {
+                backdrop.remove();
+            }
+            document.body.classList.remove('modal-open');
+            console.log('✅ Modal cerrado');
         }
 
         // Cargar asuntos del usuario
         async function cargarAsuntosUsuario() {
             try {
+                console.log('🔍 Iniciando cargarAsuntosUsuario');
                 const session = getStoredSession();
+                
+                console.log('🔍 Haciendo petición a la API...');
                 const asuntos = await supabaseRequest(`/stm_prom_topics?select=prom_topic_id,topic_description,topic_date,is_open,prom_name,stm_prom_topics_categories!inner(stm_category!inner(category_name))&email=eq.${session.user.user_mail}&order=topic_date.desc,prom_topic_id.desc`);    
+                
+                console.log('🔍 Ocultando loading...');
                 document.getElementById('modal-loading').style.display = 'none';
                 
                 if (asuntos && asuntos.length > 0) {
+                    console.log('🔍 Hay asuntos, renderizando tabla...');
                     renderizarTablaAsuntos(asuntos);
+                    console.log('🔍 Mostrando contenido...');
                     document.getElementById('contenido-asuntos').style.display = 'block';
+                    console.log('✅ cargarAsuntosUsuario completado');
                 } else {
+                    console.log('🔍 No hay asuntos');
                     document.getElementById('sin-asuntos').style.display = 'block';
                 }
                 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('❌ Error en cargarAsuntosUsuario:', error);
                 throw error;
             }
         }
 
+        // Formatear fecha
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
         // Renderizar tabla de asuntos
         function renderizarTablaAsuntos(asuntos) {
+            console.log('🔍 Iniciando renderizarTablaAsuntos con', asuntos.length, 'asuntos');
+            
             const tbody = document.getElementById('tabla-asuntos-body');
+            if (!tbody) {
+                console.error('❌ No se encontró tabla-asuntos-body');
+                return;
+            }
+            
             const fragment = document.createDocumentFragment();
             
-            asuntos.forEach(asunto => {
-                const categorias = asunto.stm_prom_topics_categories
-                    .map(cat => cat.stm_category.category_name)
-                    .join(', ');
+            asuntos.forEach((asunto, index) => {
+                console.log(`🔍 Procesando asunto ${index + 1}:`, asunto);
                 
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${formatDate(asunto.topic_date)}</td>
-                    <td>${escapeHtml(asunto.prom_name || 'N/A')}</td>
-                    <td><small>${escapeHtml(categorias)}</small></td>
-                    <td>
-                        ${asunto.is_open === 'SI' ? 
-                            `<textarea class="form-control" style="min-height: 80px;" onblur="actualizarDescripcion(${asunto.prom_topic_id}, this.value)">${escapeHtml(asunto.topic_description || '')}</textarea>` :
-                            `<div class="text-muted fst-italic">${escapeHtml(asunto.topic_description || '')}<br><small>Este asunto está cerrado</small></div>`
-                        }
-                    </td>
-                    <td>
-                        <span class="badge ${asunto.is_open === 'SI' ? 'bg-success' : 'bg-secondary'}">
-                            ${asunto.is_open === 'SI' ? 'Abierto' : 'Cerrado'}
-                        </span>
-                    </td>
-                `;
-                fragment.appendChild(tr);
+                try {
+                    const categorias = asunto.stm_prom_topics_categories
+                        .map(cat => cat.stm_category.category_name)
+                        .join(', ');
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${formatDate(asunto.topic_date)}</td>
+                        <td>${escapeHtml(asunto.prom_name || 'N/A')}</td>
+                        <td><small>${escapeHtml(categorias)}</small></td>
+                        <td>
+                            ${asunto.is_open === 'SI' ? 
+                                `<textarea class="form-control" style="min-height: 80px;" data-original-value="${escapeHtml(asunto.topic_description || '')}" onblur="if(this.value !== this.dataset.originalValue) actualizarDescripcion(${asunto.prom_topic_id}, this.value)">${escapeHtml(asunto.topic_description || '')}</textarea>` :
+                                `<div class="text-muted fst-italic">${escapeHtml(asunto.topic_description || '')}<br><small>Este asunto está cerrado</small></div>`
+                            }
+                        </td>
+                        <td>
+                            <span class="badge ${asunto.is_open === 'SI' ? 'bg-success' : 'bg-secondary'}">
+                                ${asunto.is_open === 'SI' ? 'Abierto' : 'Cerrado'}
+                            </span>
+                        </td>
+                    `;
+                    fragment.appendChild(tr);
+                    console.log(`✅ Asunto ${index + 1} procesado correctamente`);
+                } catch (error) {
+                    console.error(`❌ Error procesando asunto ${index + 1}:`, error);
+                }
             });
             
             tbody.innerHTML = '';
             tbody.appendChild(fragment);
+            console.log('✅ Tabla renderizada completamente');
         }
 
         // Actualizar descripción de asunto
