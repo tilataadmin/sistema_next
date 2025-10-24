@@ -1071,27 +1071,49 @@ async function generarPDFFamiliasPorCurso(curso, cursoId, columnasPersonalizadas
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('p', 'mm', 'letter');
 
-   const estudiantes = await supabaseRequest(
-        `/students?select=family_id,student_first_name,student_last_name_1,families!students_family_id_fkey(family_name),student_status!inner(status_description)&course_id=eq.${cursoId}&student_status.status_description=eq.Activo`
+   // PASO 1: Obtener estudiantes activos del curso
+    const estudiantes = await supabaseRequest(
+        `/students?select=student_id,family_id,student_first_name,student_last_name_1,student_status!inner(status_description)&course_id=eq.${cursoId}&student_status.status_description=eq.Activo&order=student_first_name.asc`
     );
     
-    // Ya vienen filtrados por Activo desde la query
-    const estudiantesActivos = estudiantes;
-       
+    if (estudiantes.length === 0) {
+        throw new Error(`No hay estudiantes activos en el curso ${curso.course_name}`);
+    }
+    
+    // PASO 2: Obtener códigos únicos de familias
+    const familyCodesUnicos = [...new Set(estudiantes.map(e => e.family_id))];
+    
+    // PASO 3: Para cada familia, obtener su nombre
     const familiasMap = new Map();
     
-    estudiantesActivos.forEach(est => {
-        const familyKey = est.family_id || 'sin_familia';
-        if (!familiasMap.has(familyKey)) {
-            familiasMap.set(familyKey, {
-                familia: est.families?.family_name || 'Sin familia',
+    for (const familyCode of familyCodesUnicos) {
+        // Obtener datos de la familia
+        const familiaData = await supabaseRequest(
+            `/families?select=family_name&family_code=eq.${familyCode}&limit=1`
+        );
+        
+        const nombreFamilia = familiaData[0]?.family_name || `Familia ${familyCode}`;
+        familiasMap.set(familyCode, nombreFamilia);
+    }
+    
+    // PASO 4: Agrupar estudiantes por familia
+    const familiasConHijosMap = new Map();
+    
+    estudiantes.forEach(est => {
+        const familyCode = est.family_id;
+        const nombreFamilia = familiasMap.get(familyCode) || `Familia ${familyCode}`;
+        
+        if (!familiasConHijosMap.has(familyCode)) {
+            familiasConHijosMap.set(familyCode, {
+                familia: nombreFamilia,
                 hijos: []
             });
         }
-        familiasMap.get(familyKey).hijos.push(`${est.student_first_name} ${est.student_last_name_1}`);
+        
+        familiasConHijosMap.get(familyCode).hijos.push(`${est.student_first_name} ${est.student_last_name_1}`);
     });
     
-    const familiasConHijos = Array.from(familiasMap.values()).map(fam => ({
+    const familiasConHijos = Array.from(familiasConHijosMap.values()).map(fam => ({
         familia: fam.familia,
         hijos: fam.hijos.join(', ')
     }));
