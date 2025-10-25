@@ -112,6 +112,10 @@
             font-size: 3rem;
             margin-bottom: 1rem;
         }
+        .bg-purple {
+            background-color: #6f42c1 !important;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -199,6 +203,7 @@
                             <option value="manual">Manuales</option>
                             <option value="query">Consultas</option>
                             <option value="api">APIs</option>
+                            <option value="survey">Encuestas</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -334,9 +339,10 @@
                             <span class="badge bg-secondary ms-2">Nuevo</span>
                         </label>
                         <select class="form-select" id="dataSource" required onchange="handleDataSourceChange()">
-                            <option value="manual">Manual (digitación directa)</option>
-                            <option value="query">Consulta SQL (automática desde base de datos)</option>
-                            <option value="api">API Externa (automática desde servicio externo)</option>
+                            <option value="manual">Manual</option>
+                            <option value="query">Consulta SQL</option>
+                            <option value="api">API Externa</option>
+                            <option value="survey">Encuesta</option>
                         </select>
                         <small class="form-text">Determina cómo se capturarán los valores de esta variable</small>
                     </div>
@@ -385,6 +391,35 @@
                                     <option value="apikey">API Key</option>
                                 </select>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuración Encuesta -->
+                    <div id="surveyConfigSection" style="display: none;">
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <small>La variable calculará el promedio de todas las preguntas de la sección seleccionada. 
+                            La aplicación específica se seleccionará al momento de capturar los datos.</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="surveyMaster" class="form-label">
+                                Encuesta Maestra <span class="text-danger">*</span>
+                            </label>
+                            <select class="form-select" id="surveyMaster" onchange="loadSurveySections()">
+                                <option value="">Seleccionar encuesta...</option>
+                            </select>
+                            <small class="text-muted">Selecciona la encuesta de la cual tomarás los datos</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="surveySection" class="form-label">
+                                Sección de la Encuesta <span class="text-danger">*</span>
+                            </label>
+                            <select class="form-select" id="surveySection" disabled>
+                                <option value="">Primero selecciona una encuesta...</option>
+                            </select>
+                            <small class="text-muted">Se calculará el promedio de todas las preguntas de esta sección</small>
                         </div>
                     </div>
                     
@@ -530,35 +565,128 @@
             });
         }
 
-        // ==========================================
-        // NUEVO: Manejo de Fuente de Datos
-        // ==========================================
-        
         function handleDataSourceChange() {
             const dataSource = document.getElementById('dataSource').value;
-            currentDataSource = dataSource;
             
-            // Mostrar/ocultar secciones de configuración
-            document.getElementById('queryConfigSection').style.display = dataSource === 'query' ? 'block' : 'none';
-            document.getElementById('apiConfigSection').style.display = dataSource === 'api' ? 'block' : 'none';
+            // Ocultar todas las secciones de configuración
+            document.getElementById('queryConfigSection').style.display = 'none';
+            document.getElementById('apiConfigSection').style.display = 'none';
+            document.getElementById('surveyConfigSection').style.display = 'none';
             
-            // Actualizar badge de límite de segmentaciones
-            const limitBadge = document.getElementById('segmentLimitBadge');
-            const helpText = document.getElementById('segmentHelpText');
-            
-            if (dataSource === 'manual') {
-                limitBadge.textContent = 'Máx: 1 (Manual)';
-                limitBadge.className = 'badge bg-warning';
-                helpText.innerHTML = '<i class="bi bi-info-circle me-1"></i>Variables manuales: máximo 1 segmentación (reduce errores de digitación)';
-            } else {
-                limitBadge.textContent = 'Sin límite (Automática)';
-                limitBadge.className = 'badge bg-success';
-                helpText.innerHTML = '<i class="bi bi-info-circle me-1"></i>Variables automáticas: múltiples segmentaciones permitidas (ejecución automática por combinaciones)';
+            // Mostrar sección correspondiente según el tipo seleccionado
+            if (dataSource === 'query') {
+                document.getElementById('queryConfigSection').style.display = 'block';
+            } else if (dataSource === 'api') {
+                document.getElementById('apiConfigSection').style.display = 'block';
+            } else if (dataSource === 'survey') {
+                document.getElementById('surveyConfigSection').style.display = 'block';
+                loadSurveyMasters(); // Cargar encuestas disponibles
             }
             
-            // Revalidar segmentaciones seleccionadas
-            validateSegmentSelection();
+            // Actualizar restricción de segmentaciones según fuente de datos
+            const segmentsContainer = document.querySelector('.segments-selection');
+            const segmentCheckboxes = segmentsContainer?.querySelectorAll('input[type="checkbox"]');
+            
+            if (dataSource === 'manual') {
+                // Variables manuales: máximo 1 segmentación
+                if (segmentCheckboxes) {
+                    segmentCheckboxes.forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            if (this.checked) {
+                                const checkedCount = document.querySelectorAll('.segments-selection input[type="checkbox"]:checked').length;
+                                if (checkedCount > 1) {
+                                    this.checked = false;
+                                    showMessage('Las variables manuales solo pueden tener 1 segmentación', 'warning');
+                                }
+                            }
+                        });
+                    });
+                }
+            } else {
+                // Query, API y Survey: múltiples segmentaciones permitidas
+                if (segmentCheckboxes) {
+                    segmentCheckboxes.forEach(checkbox => {
+                        // Remover event listeners previos (si existen)
+                        const newCheckbox = checkbox.cloneNode(true);
+                        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+                    });
+                }
+            }
         }
+
+        // ==========================================
+        // CARGAR ENCUESTAS MAESTRAS PARA SELECTOR
+        // ==========================================
+        async function loadSurveyMasters() {
+            try {
+                console.log('📋 Cargando encuestas maestras...');
+                
+                const surveys = await supabaseRequest('/survey_masters?select=survey_master_id,survey_name&is_active=eq.true&order=survey_name.asc');
+                
+                const surveyMasterSelect = document.getElementById('surveyMaster');
+                surveyMasterSelect.innerHTML = '<option value="">Seleccionar encuesta...</option>';
+                
+                if (surveys && surveys.length > 0) {
+                    surveys.forEach(survey => {
+                        const option = document.createElement('option');
+                        option.value = survey.survey_master_id;
+                        option.textContent = survey.survey_name;
+                        surveyMasterSelect.appendChild(option);
+                    });
+                    console.log(`✅ ${surveys.length} encuestas cargadas`);
+                } else {
+                    surveyMasterSelect.innerHTML = '<option value="">No hay encuestas disponibles</option>';
+                    console.log('⚠️ No se encontraron encuestas activas');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error cargando encuestas:', error);
+                showMessage('Error cargando encuestas: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // CARGAR SECCIONES DE ENCUESTA SELECCIONADA
+        // ==========================================
+        async function loadSurveySections() {
+            try {
+                const surveyMasterId = document.getElementById('surveyMaster').value;
+                const surveySectionSelect = document.getElementById('surveySection');
+                
+                if (!surveyMasterId) {
+                    surveySectionSelect.innerHTML = '<option value="">Primero selecciona una encuesta...</option>';
+                    surveySectionSelect.disabled = true;
+                    return;
+                }
+                
+                console.log('📋 Cargando secciones de la encuesta...');
+                
+                const sections = await supabaseRequest(`/survey_sections?select=section_id,section_title&survey_master_id=eq.${surveyMasterId}&order=section_order.asc`);
+                
+                surveySectionSelect.innerHTML = '<option value="">Seleccionar sección...</option>';
+                
+                if (sections && sections.length > 0) {
+                    sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section.section_id;
+                        option.textContent = section.section_title;
+                        surveySectionSelect.appendChild(option);
+                    });
+                    surveySectionSelect.disabled = false;
+                    console.log(`✅ ${sections.length} secciones cargadas`);
+                } else {
+                    surveySectionSelect.innerHTML = '<option value="">No hay secciones disponibles</option>';
+                    surveySectionSelect.disabled = true;
+                    console.log('⚠️ No se encontraron secciones para esta encuesta');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error cargando secciones:', error);
+                showMessage('Error cargando secciones: ' + error.message, 'danger');
+            }
+        }
+
+        
         
         function validateSegmentSelection() {
             if (currentDataSource === 'manual' && selectedSegments.length > 1) {
@@ -850,6 +978,10 @@
                         dataSourceBadge = 'bg-primary';
                         dataSourceIcon = 'cloud';
                         break;
+                    case 'survey':
+                        dataSourceBadge = 'bg-purple';
+                        dataSourceIcon = 'clipboard-data';
+                        break;
                 }
                 
                 gridHtml += `
@@ -868,8 +1000,8 @@
                                 <h6 class="card-title mb-2">${variable.variable_name}</h6>
                                 <div class="mb-2">
                                     <span class="badge bg-secondary">${variable.data_type}</span>
-                                    <span class="badge ${dataSourceBadge}">${dataSource === 'manual' ? 'Manual' : dataSource === 'query' ? 'SQL' : 'API'}</span>
-                                </div>
+                                    <span class="badge ${dataSourceBadge}">${dataSource === 'manual' ? 'Manual' : dataSource === 'query' ? 'SQL' : dataSource === 'api' ? 'API' : 'Encuesta'}</span>
+                                    </div>
                                 
                                 <p class="card-text text-muted small mb-3">
                                     ${variable.variable_description || 'Sin descripción'}
@@ -1002,6 +1134,29 @@
                         endpoint: endpoint,
                         method: document.getElementById('apiMethod').value,
                         auth_type: document.getElementById('apiAuthType').value
+                    };
+                } else if (dataSource === 'survey') {
+                    const surveyMasterId = document.getElementById('surveyMaster').value;
+                    const sectionId = document.getElementById('surveySection').value;
+                    
+                    if (!surveyMasterId) {
+                        throw new Error('Debe seleccionar una encuesta maestra');
+                    }
+                    if (!sectionId) {
+                        throw new Error('Debe seleccionar una sección de la encuesta');
+                    }
+                    
+                    // Obtener nombres para guardar en config
+                    const surveyMasterName = document.getElementById('surveyMaster').selectedOptions[0].text;
+                    const sectionName = document.getElementById('surveySection').selectedOptions[0].text;
+                    
+                    dataSourceConfig = {
+                        survey_master_id: surveyMasterId,
+                        survey_master_name: surveyMasterName,
+                        section_id: sectionId,
+                        section_name: sectionName,
+                        calculation_type: 'average',
+                        description: `Promedio de sección '${sectionName}'`
                     };
                 }
                 
@@ -1434,6 +1589,18 @@
                     document.getElementById('apiEndpoint').value = variable.data_source_config.endpoint || '';
                     document.getElementById('apiMethod').value = variable.data_source_config.method || 'GET';
                     document.getElementById('apiAuthType').value = variable.data_source_config.auth_type || 'none';
+                } else if (currentDataSource === 'survey' && variable.data_source_config) {
+                    // Primero cargar encuestas
+                    await loadSurveyMasters();
+                    
+                    // Seleccionar la encuesta
+                    document.getElementById('surveyMaster').value = variable.data_source_config.survey_master_id || '';
+                    
+                    // Cargar secciones de esa encuesta
+                    await loadSurveySections();
+                    
+                    // Seleccionar la sección
+                    document.getElementById('surveySection').value = variable.data_source_config.section_id || '';
                 }
                 
                 // Actualizar UI según data_source
@@ -1497,6 +1664,29 @@
                         endpoint: endpoint,
                         method: document.getElementById('apiMethod').value,
                         auth_type: document.getElementById('apiAuthType').value
+                    };
+                } else if (dataSource === 'survey') {
+                    const surveyMasterId = document.getElementById('surveyMaster').value;
+                    const sectionId = document.getElementById('surveySection').value;
+                    
+                    if (!surveyMasterId) {
+                        throw new Error('Debe seleccionar una encuesta maestra');
+                    }
+                    if (!sectionId) {
+                        throw new Error('Debe seleccionar una sección de la encuesta');
+                    }
+                    
+                    // Obtener nombres para guardar en config
+                    const surveyMasterName = document.getElementById('surveyMaster').selectedOptions[0].text;
+                    const sectionName = document.getElementById('surveySection').selectedOptions[0].text;
+                    
+                    dataSourceConfig = {
+                        survey_master_id: surveyMasterId,
+                        survey_master_name: surveyMasterName,
+                        section_id: sectionId,
+                        section_name: sectionName,
+                        calculation_type: 'average',
+                        description: `Promedio de sección '${sectionName}'`
                     };
                 }
                 
@@ -1627,6 +1817,8 @@
         window.toggleVariableStatus = toggleVariableStatus;
         window.handleDataSourceChange = handleDataSourceChange;
         window.testQuery = testQuery;
+        window.loadSurveyMasters = loadSurveyMasters;
+        window.loadSurveySections = loadSurveySections;
         
         console.log('🎉 Página de variables cargada correctamente');
     </script>
