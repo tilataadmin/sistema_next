@@ -392,24 +392,40 @@
                                         </select>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label for="selectCentroCosto" class="form-label">Centro de Costos</label>
-                                        <select id="selectCentroCosto" class="form-select" multiple size="3">
-                                            <option value="">Cargando...</option>
+                                    <div class="col-md-6">
+                                        <label for="selectDivision" class="form-label">
+                                            <i class="bi bi-diagram-3 me-1"></i>Filtrar por División <span class="text-danger">*</span>
+                                        </label>
+                                        <select id="selectDivision" class="form-select">
+                                            <option value="">Seleccione una división</option>
+                                        </select>
+                                        <small class="text-muted">Seleccione una división para habilitar los demás filtros</small>
+                                    </div>
+                                    
+                                    <div class="col-md-6">
+                                        <label for="selectCentroCosto" class="form-label">
+                                            <i class="bi bi-building me-1"></i>Filtrar por Centro de Costo
+                                        </label>
+                                        <select id="selectCentroCosto" class="form-select" multiple disabled>
+                                            <option value="">Seleccione primero una división</option>
                                         </select>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label for="selectArea" class="form-label">Área</label>
-                                        <select id="selectArea" class="form-select" multiple size="3">
-                                            <option value="">Seleccione centro de costos primero...</option>
+                                    <div class="col-md-6">
+                                        <label for="selectArea" class="form-label">
+                                            <i class="bi bi-diagram-2 me-1"></i>Filtrar por Área
+                                        </label>
+                                        <select id="selectArea" class="form-select" multiple disabled>
+                                            <option value="">Seleccione primero un centro de costo</option>
                                         </select>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label for="selectSubarea" class="form-label">Subárea</label>
-                                        <select id="selectSubarea" class="form-select" multiple size="3">
-                                            <option value="">Seleccione área primero...</option>
+                                    <div class="col-md-6">
+                                        <label for="selectSubarea" class="form-label">
+                                            <i class="bi bi-diagram-3-fill me-1"></i>Filtrar por Sub-área
+                                        </label>
+                                        <select id="selectSubarea" class="form-select" multiple disabled>
+                                            <option value="">Seleccione primero un área</option>
                                         </select>
                                     </div>
 
@@ -481,6 +497,7 @@ let subareasData = [];
 let rolesData = [];
 let systemConfig = null;
 let currentUser = null;
+let divisionesData = [];
 
 // ==========================================
 // INICIALIZACIÓN
@@ -571,11 +588,47 @@ function configurarEventListeners() {
     document.getElementById('numColumnasTrab').addEventListener('change', function() {
         generarCamposColumnasPersonalizadas('Trab');
     });
+
+    // Event listener para División (controla la cascada)
+    document.getElementById('selectDivision').addEventListener('change', async function() {
+        const divisionId = this.value;
+        const selectCentroCosto = document.getElementById('selectCentroCosto');
+        const selectArea = document.getElementById('selectArea');
+        const selectSubarea = document.getElementById('selectSubarea');
+        
+        // Limpiar y deshabilitar los selects dependientes
+        selectCentroCosto.innerHTML = '<option value="">Seleccione primero una división</option>';
+        selectCentroCosto.disabled = true;
+        selectArea.innerHTML = '<option value="">Seleccione primero un centro de costo</option>';
+        selectArea.disabled = true;
+        selectSubarea.innerHTML = '<option value="">Seleccione primero un área</option>';
+        selectSubarea.disabled = true;
+        
+        if (divisionId) {
+            selectCentroCosto.innerHTML = '<option value="">Cargando...</option>';
+            
+            // Cargar centros de costo de esta división
+            const centros = await supabaseRequest(
+                `/cost_centers?select=cost_center_id,cost_center_name&division_id=eq.${divisionId}&cost_center_status=eq.active&order=cost_center_name.asc`
+            );
+            selectCentroCosto.innerHTML = '<option value="">Todos los centros de costo</option>';
+            centros.forEach(cc => {
+                const option = document.createElement('option');
+                option.value = cc.cost_center_id;
+                option.textContent = cc.cost_center_name;
+                selectCentroCosto.appendChild(option);
+            });
+            selectCentroCosto.disabled = false;
+            console.log(`✅ ${centros.length} centros de costo cargados para la división`);
+        }
+    });
     
+    // Event listener para Centro de Costo
     document.getElementById('selectCentroCosto').addEventListener('change', function() {
         cargarAreas();
     });
     
+    // Event listener para Área
     document.getElementById('selectArea').addEventListener('change', function() {
         cargarSubareas();
     });
@@ -590,6 +643,7 @@ async function cargarDatosIniciales() {
         await cargarCursos();
         await cargarGeneros();
         await cargarCentrosCostos();
+        await cargarDivisiones();
         await cargarRoles();
         
         generarCamposColumnasPersonalizadas('Est');
@@ -681,6 +735,29 @@ async function cargarCentrosCostos() {
     }
 }
 
+async function cargarDivisiones() {
+    try {
+        divisionesData = await supabaseRequest(
+            '/organizational_divisions?select=division_id,division_name&division_status=eq.active&order=division_name.asc'
+        );
+        
+        const select = document.getElementById('selectDivision');
+        select.innerHTML = '<option value="">Seleccione una división</option>';
+        
+        divisionesData.forEach(div => {
+            const option = document.createElement('option');
+            option.value = div.division_id;
+            option.textContent = div.division_name;
+            select.appendChild(option);
+        });
+        
+        console.log(`✅ ${divisionesData.length} divisiones cargadas`);
+        
+    } catch (error) {
+        console.error('❌ Error cargando divisiones:', error);
+    }
+}
+
 async function cargarAreas() {
     try {
         const centrosSeleccionados = Array.from(document.getElementById('selectCentroCosto').selectedOptions)
@@ -688,29 +765,48 @@ async function cargarAreas() {
             .filter(v => v);
         
         const select = document.getElementById('selectArea');
-        select.innerHTML = '<option value="">-- Todos --</option>';
+        const selectSubarea = document.getElementById('selectSubarea');
+        
+        // Limpiar subárea
+        selectSubarea.innerHTML = '<option value="">Seleccione primero un área</option>';
+        selectSubarea.disabled = true;
         
         if (centrosSeleccionados.length === 0) {
-            select.innerHTML = '<option value="">Seleccione centro de costos primero...</option>';
+            select.innerHTML = '<option value="">Seleccione primero un centro de costo</option>';
+            select.disabled = true;
             return;
         }
         
-        const filter = centrosSeleccionados.map(id => `cost_center_id.eq.${id}`).join(',');
-        areasData = await supabaseRequest(`/areas?select=area_id,area_name,cost_center_id&or=(${filter})&order=area_name.asc`);
+        select.innerHTML = '<option value="">Cargando...</option>';
         
+        const areasPromises = centrosSeleccionados.map(ccId => 
+            supabaseRequest(
+                `/organizational_areas?select=area_id,area_name&cost_center_id=eq.${ccId}&area_status=eq.active&order=area_name.asc`
+            )
+        );
+        const areasArrays = await Promise.all(areasPromises);
+        areasData = areasArrays.flat();
+        
+        // Eliminar duplicados
+        areasData = areasData.filter((area, index, self) => 
+            index === self.findIndex(a => a.area_id === area.area_id)
+        );
+        
+        select.innerHTML = '<option value="">Todas las áreas</option>';
         areasData.forEach(area => {
             const option = document.createElement('option');
             option.value = area.area_id;
             option.textContent = area.area_name;
             select.appendChild(option);
         });
+        select.disabled = false;
         
-        document.getElementById('selectSubarea').innerHTML = '<option value="">Seleccione área primero...</option>';
+        console.log(`✅ ${areasData.length} áreas cargadas`);
         
     } catch (error) {
         console.error('❌ Error cargando áreas:', error);
     }
-}
+}    
 
 async function cargarSubareas() {
     try {
@@ -719,28 +815,44 @@ async function cargarSubareas() {
             .filter(v => v);
         
         const select = document.getElementById('selectSubarea');
-        select.innerHTML = '<option value="">-- Todos --</option>';
         
         if (areasSeleccionadas.length === 0) {
-            select.innerHTML = '<option value="">Seleccione área primero...</option>';
+            select.innerHTML = '<option value="">Seleccione primero un área</option>';
+            select.disabled = true;
             return;
         }
         
-        const filter = areasSeleccionadas.map(id => `area_id.eq.${id}`).join(',');
-        subareasData = await supabaseRequest(`/subareas?select=subarea_id,subarea_name,area_id&or=(${filter})&order=subarea_name.asc`);
+        select.innerHTML = '<option value="">Cargando...</option>';
         
-        subareasData.forEach(subarea => {
+        const subareasPromises = areasSeleccionadas.map(areaId => 
+            supabaseRequest(
+                `/organizational_subareas?select=subarea_id,subarea_name&area_id=eq.${areaId}&subarea_status=eq.active&order=subarea_name.asc`
+            )
+        );
+        const subareasArrays = await Promise.all(subareasPromises);
+        subareasData = subareasArrays.flat();
+        
+        // Eliminar duplicados
+        subareasData = subareasData.filter((sub, index, self) => 
+            index === self.findIndex(s => s.subarea_id === sub.subarea_id)
+        );
+        
+        select.innerHTML = '<option value="">Todas las subáreas</option>';
+        subareasData.forEach(sub => {
             const option = document.createElement('option');
-            option.value = subarea.subarea_id;
-            option.textContent = subarea.subarea_name;
+            option.value = sub.subarea_id;
+            option.textContent = sub.subarea_name;
             select.appendChild(option);
         });
+        select.disabled = false;
+        
+        console.log(`✅ ${subareasData.length} subáreas cargadas`);
         
     } catch (error) {
         console.error('❌ Error cargando subáreas:', error);
     }
 }
-
+    
 async function cargarRoles() {
     try {
         rolesData = await supabaseRequest('/job_roles?select=role_id,role_name&order=role_name.asc');
@@ -1239,31 +1351,47 @@ async function generarListaTrabajadores() {
 
 async function obtenerTrabajadoresFiltrados(filtros) {
     try {
-        let query = '/workers?select=worker_id,worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2&worker_status=eq.active';
-        
-        if (filtros.generos.length > 0) {
-            const genFilter = filtros.generos.map(id => `gender_id.eq.${id}`).join(',');
-            query += `&or=(${genFilter})`;
-        }
-        
-        if (filtros.centrosCostos.length > 0) {
-            const ccFilter = filtros.centrosCostos.map(id => `cost_center_id.eq.${id}`).join(',');
-            query += `&or=(${ccFilter})`;
-        }
-        
-        if (filtros.areas.length > 0) {
-            const areaFilter = filtros.areas.map(id => `area_id.eq.${id}`).join(',');
-            query += `&or=(${areaFilter})`;
-        }
-        
-        if (filtros.subareas.length > 0) {
-            const subFilter = filtros.subareas.map(id => `subarea_id.eq.${id}`).join(',');
-            query += `&or=(${subFilter})`;
-        }
+        // Construir query base - SOLO filtrar por worker_status
+        let query = '/workers?select=worker_id,worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,organizational_division_id,organizational_cost_center_id,organizational_area_id,organizational_subarea_id&worker_status=eq.active';
         
         let trabajadores = await supabaseRequest(query);
         
+        // Aplicar filtros en cascada (cliente-side)
+        // Filtro por división (si existe en la interfaz, aunque no esté en filtros)
+        const divisionSeleccionada = document.getElementById('selectDivision').value;
+        if (divisionSeleccionada) {
+            trabajadores = trabajadores.filter(t => t.organizational_division_id === divisionSeleccionada);
+        }
         
+        // Filtro por centros de costo
+        if (filtros.centrosCostos.length > 0) {
+            trabajadores = trabajadores.filter(t => 
+                filtros.centrosCostos.includes(t.organizational_cost_center_id)
+            );
+        }
+        
+        // Filtro por áreas
+        if (filtros.areas.length > 0) {
+            trabajadores = trabajadores.filter(t => 
+                filtros.areas.includes(t.organizational_area_id)
+            );
+        }
+        
+        // Filtro por subáreas
+        if (filtros.subareas.length > 0) {
+            trabajadores = trabajadores.filter(t => 
+                filtros.subareas.includes(t.organizational_subarea_id)
+            );
+        }
+        
+        // Filtro por géneros
+        if (filtros.generos.length > 0) {
+            trabajadores = trabajadores.filter(t => 
+                filtros.generos.includes(t.gender_id)
+            );
+        }
+        
+        // Filtro por roles (requiere consulta adicional)
         if (filtros.roles.length > 0) {
             const trabajadoresConRoles = [];
             
@@ -1283,6 +1411,7 @@ async function obtenerTrabajadoresFiltrados(filtros) {
             trabajadores = trabajadoresConRoles;
         }
         
+        // Mapear y ordenar
         return trabajadores.map(trab => ({
             ...trab,
             nombreCompleto: `${trab.worker_last_name_1} ${trab.worker_last_name_2 || ''} ${trab.worker_first_name}`.trim()
