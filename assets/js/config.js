@@ -703,6 +703,7 @@ const URL_PERMISSIONS = {
     // Módulo Indicadores
     '/modules/indicators/variables.html': 'Variables',
     '/modules/indicators/segments.html': 'Segmentaciones',
+    '/modules/indicators/categories.html': 'Categorías de indicadores',
     '/modules/indicators/data-entry.html': 'Captura de datos',
     '/modules/indicators/variable-assignments.html': 'Asignar variables a usuarios',
     '/modules/indicators/indicators.html': 'Indicadores',
