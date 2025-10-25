@@ -1655,6 +1655,7 @@
         // CREACIÓN DE USUARIOS
         // ==========================================
 
+
         async function attemptAutomaticUserCreation(workerId, workerData) {
             try {
                 if (workerData.organizational_division_id) {
@@ -1671,9 +1672,10 @@
                 
                 const userName = await generateUserName(workerData.worker_first_name, workerData.worker_last_name_1);
                 
+                // CAMBIO 1: Formato Apellido1 Apellido2 Nombres
                 const newUser = {
                     user_name: userName,
-                    user_display_name: `${workerData.worker_first_name} ${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''}`.trim(),
+                    user_display_name: `${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''} ${workerData.worker_first_name}`.trim(),
                     user_mail: workerData.email,
                     user_password: 'TempPass123!',
                     auth_provider: 'local',
@@ -1690,6 +1692,32 @@
                     throw new Error('Error al crear el usuario automáticamente');
                 }
                 
+                const userId = createdUser[0].user_id;
+                
+                // CAMBIO 2: Asignar rol "Usuario base" automáticamente
+                try {
+                    const baseRoleData = await supabaseRequest(`/roles?select=role_id&role_name=eq.Usuario base&role_status=eq.active`);
+                    
+                    if (baseRoleData && baseRoleData.length > 0) {
+                        const baseRoleId = baseRoleData[0].role_id;
+                        
+                        await supabaseRequest('/user_roles', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                user_id: userId,
+                                role_id: baseRoleId
+                            })
+                        });
+                        
+                        console.log('✅ Rol "Usuario base" asignado automáticamente');
+                    } else {
+                        console.warn('⚠️ No se encontró el rol "Usuario base" activo');
+                    }
+                } catch (roleError) {
+                    console.error('⚠️ Error asignando rol base (usuario creado exitosamente):', roleError);
+                    // No lanzar error - el usuario ya fue creado exitosamente
+                }
+                
                 return { success: true, userName: userName, userDisplayName: newUser.user_display_name };
                 
             } catch (error) {
@@ -1704,7 +1732,7 @@
                 return { success: false, error: errorMessage };
             }
         }
-
+        
         async function createUserFromWorker(workerId, workerFullName) {
             try {
                 const confirmed = confirm(

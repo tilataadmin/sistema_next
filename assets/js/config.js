@@ -703,6 +703,7 @@ const URL_PERMISSIONS = {
     // Módulo Indicadores
     '/modules/indicators/variables.html': 'Variables',
     '/modules/indicators/segments.html': 'Segmentaciones',
+    '/modules/indicators/categories.html': 'Categorías de indicadores',
     '/modules/indicators/data-entry.html': 'Captura de datos',
     '/modules/indicators/variable-assignments.html': 'Asignar variables a usuarios',
     '/modules/indicators/indicators.html': 'Indicadores',
@@ -737,7 +738,6 @@ const URL_PERMISSIONS = {
     '/modules/budget/budget-request.html': 'Petición de presupuesto',
     '/modules/budget/assign-requesters.html': 'Designar solicitantes',
     '/modules/budget/execution-request.html': 'Solicitud de ejecución',
-    '/modules/budget/closure-request.html': 'Solicitud de cierre',
     '/modules/budget/request-resolution.html': 'Resolución de solicitudes',
     '/modules/budget/close-overruns.html': 'Cerrar requerimientos sobreejecutados',
     '/modules/budget/budget-transfer.html': 'Iniciar traslado presupuestal',
@@ -1791,6 +1791,53 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', injectUserNavbar);
 } else {
     injectUserNavbar();
+}
+
+// ==========================================
+// FUNCIONES PARA FORMATEAR WORKERS
+// ==========================================
+
+/**
+ * Formatea el nombre completo de un worker
+ * @param {Object} worker - Objeto worker con first_name, last_name_1, last_name_2
+ * @returns {string} - Nombre formateado: "Apellido1 Apellido2 Nombres"
+ */
+function formatWorkerName(worker) {
+    if (!worker) return '';
+    
+    const lastName1 = worker.worker_last_name_1 || '';
+    const lastName2 = worker.worker_last_name_2 || '';
+    const firstName = worker.worker_first_name || '';
+    
+    // Si hay segundo apellido: "García Rodríguez Juan Carlos"
+    // Si no hay segundo apellido: "García Juan Carlos"
+    if (lastName2.trim()) {
+        return `${lastName1} ${lastName2} ${firstName}`.trim();
+    } else {
+        return `${lastName1} ${firstName}`.trim();
+    }
+}
+
+/**
+ * Ordena un array de workers por apellido1, apellido2, nombres
+ * @param {Array} workers - Array de objetos worker
+ * @returns {Array} - Array ordenado
+ */
+function sortWorkersByName(workers) {
+    if (!Array.isArray(workers)) return [];
+    
+    return workers.sort((a, b) => {
+        // Ordenar por apellido1
+        const compareLastName1 = (a.worker_last_name_1 || '').localeCompare(b.worker_last_name_1 || '');
+        if (compareLastName1 !== 0) return compareLastName1;
+        
+        // Si apellido1 es igual, ordenar por apellido2
+        const compareLastName2 = (a.worker_last_name_2 || '').localeCompare(b.worker_last_name_2 || '');
+        if (compareLastName2 !== 0) return compareLastName2;
+        
+        // Si apellido1 y apellido2 son iguales, ordenar por nombres
+        return (a.worker_first_name || '').localeCompare(b.worker_first_name || '');
+    });
 }
 
 console.log('✅ Sistema de navbar y cambio de contraseña cargado');
