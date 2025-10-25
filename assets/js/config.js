@@ -737,7 +737,6 @@ const URL_PERMISSIONS = {
     '/modules/budget/budget-request.html': 'Petición de presupuesto',
     '/modules/budget/assign-requesters.html': 'Designar solicitantes',
     '/modules/budget/execution-request.html': 'Solicitud de ejecución',
-    '/modules/budget/closure-request.html': 'Solicitud de cierre',
     '/modules/budget/request-resolution.html': 'Resolución de solicitudes',
     '/modules/budget/close-overruns.html': 'Cerrar requerimientos sobreejecutados',
     '/modules/budget/budget-transfer.html': 'Iniciar traslado presupuestal',
