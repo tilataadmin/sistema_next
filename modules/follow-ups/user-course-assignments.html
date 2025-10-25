@@ -237,23 +237,23 @@
                 </div>
             </div>
 
-            <!-- Filtro por roles -->
-            <div id="roles-section" class="card mb-4 d-none">
+            <!-- Filtro por centros de costo -->
+            <div id="cost-centers-section" class="card mb-4 d-none">
                 <div class="card-header">
                     <h6 class="mb-0">
                         <i class="bi bi-funnel me-2"></i>
-                        Filtrar trabajadores por roles
+                        Filtrar trabajadores por centro de costos
                     </h6>
                 </div>
                 <div class="card-body">
-                    <div id="roles-container" class="roles-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-                        <!-- Los roles se cargarán aquí -->
+                    <div id="cost-centers-container" class="roles-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                        <!-- Los centros de costo se cargarán aquí -->
                     </div>
                     <div class="btn-group-custom d-flex mt-3">
-                        <button type="button" id="select-all-roles" class="btn btn-outline-secondary btn-sm">
+                        <button type="button" id="select-all-cost-centers" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-check-all me-1"></i>Seleccionar todos
                         </button>
-                        <button type="button" id="clear-roles" class="btn btn-outline-secondary btn-sm">
+                        <button type="button" id="clear-cost-centers" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-x-lg me-1"></i>Limpiar selección
                         </button>
                     </div>
@@ -312,11 +312,11 @@
             isDirector: false,
             sectionInfo: null,
             availableCourses: [],
-            availableRoles: [],
+            availableCostCenters: [],  // CAMBIO: antes era availableRoles
             availableWorkers: [],
             assignedWorkers: [],
             selectedCourse: null,
-            selectedRoles: [],
+            selectedCostCenters: [],   // CAMBIO: antes era selectedRoles
             selectedWorkers: []
         };
 
@@ -353,7 +353,7 @@
                     // Cargar datos en paralelo
                     await Promise.all([
                         loadSectionCourses(),
-                        loadAllRoles()
+                        loadCostCenters()
                     ]);
                     
                     // Mostrar formulario
@@ -368,6 +368,51 @@
             }
         }
 
+        // Función para cargar centros de costo desde la base de datos
+        async function loadCostCenters() {
+            try {
+                const data = await supabaseRequest(
+                    '/cost_centers?select=cost_center_id,cost_center_name,cost_center_order&cost_center_status=eq.active&order=cost_center_order.asc'
+                );
+                
+                appData.availableCostCenters = data;
+                renderCostCenters();
+                
+            } catch (error) {
+                console.error('Error cargando centros de costo:', error);
+                showMessage('Error al cargar centros de costo: ' + error.message, 'danger');
+            }
+        }
+
+        // Función para renderizar los centros de costo como checkboxes
+        function renderCostCenters() {
+            const container = document.getElementById('cost-centers-container');
+            container.innerHTML = '';
+            
+            if (appData.availableCostCenters.length === 0) {
+                container.innerHTML = '<p class="text-muted">No hay centros de costo disponibles</p>';
+                return;
+            }
+            
+            appData.availableCostCenters.forEach(costCenter => {
+                const div = document.createElement('div');
+                div.className = 'role-checkbox';
+                
+                div.innerHTML = `
+                    <input type="checkbox" 
+                           id="cc-${costCenter.cost_center_id}" 
+                           value="${costCenter.cost_center_id}"
+                           onchange="handleCostCenterChange()">
+                    <label for="cc-${costCenter.cost_center_id}">
+                        ${costCenter.cost_center_name}
+                    </label>
+                `;
+                
+                container.appendChild(div);
+            });
+        }
+
+        
         async function validateDirectorSection() {
             try {
                 const session = getStoredSession();
@@ -422,31 +467,6 @@
                 showMessage('Error al cargar cursos de la sección', 'danger');
             }
         }
-
-        async function loadAllRoles() {
-            try {
-                // IDs específicos de los roles que queremos mostrar
-                const rolesPermitidos = [
-                    '229ae13e-1a20-49bb-af81-69a700f3c95a',  // Profesor
-                    'd5e835fb-2585-43c4-bfa3-5c0aed70e69e',  // Profesora asistente
-                    '791e3300-52c0-44d6-8bab-dff6d68b8fa8'   // EAE
-                ];
-                
-                // Crear la lista de IDs para la consulta
-                const idsString = rolesPermitidos.join(',');
-                
-                // Consultar solo los roles específicos
-                const roles = await supabaseRequest(`/job_roles?select=role_id,role_name&role_status=eq.active&role_id=in.(${idsString})&order=role_name`);
-                
-                appData.availableRoles = roles || [];
-                renderRoles();
-                
-            } catch (error) {
-                console.error('Error cargando roles:', error);
-                showMessage('Error al cargar roles de trabajo', 'danger');
-            }
-        }
-
         
         function renderCourseSelect() {
             const select = document.getElementById('course-select');
@@ -498,42 +518,38 @@
             }
         }
 
-        async function loadWorkersByRoles() {
-            if (appData.selectedRoles.length === 0) {
+        // Función para cargar trabajadores filtrados por centros de costo
+        async function loadWorkersByCostCenters() {
+            if (appData.selectedCostCenters.length === 0) {
                 document.getElementById('workers-section').classList.add('d-none');
+                appData.availableWorkers = [];
                 return;
             }
             
             showLoading();
             
             try {
-                // Consultar trabajadores con roles seleccionados
-                const roleIds = appData.selectedRoles.join(',');
-                const workers = await supabaseRequest(`/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,worker_job_roles!inner(job_role_id)&worker_status=eq.active&worker_job_roles.job_role_id=in.(${roleIds})&worker_job_roles.assignment_status=eq.active&order=worker_last_name_1,worker_last_name_2,worker_first_name`);
+                // Construir filtro para centros de costo
+                const costCenterFilter = appData.selectedCostCenters
+                    .map(ccId => `organizational_cost_center_id.eq.${ccId}`)
+                    .join(',');
                 
-                // Eliminar duplicados
-                const uniqueWorkers = [];
-                const seenIds = new Set();
+                // Cargar trabajadores activos que pertenezcan a los centros de costo seleccionados
+                const data = await supabaseRequest(
+                    `/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,organizational_cost_center_id&worker_status=eq.active&or=(${costCenterFilter})&order=worker_last_name_1.asc,worker_first_name.asc`
+                );
                 
-                (workers || []).forEach(worker => {
-                    if (!seenIds.has(worker.worker_id)) {
-                        seenIds.add(worker.worker_id);
-                        uniqueWorkers.push(worker);
-                    }
-                });
+                appData.availableWorkers = data;
                 
-                appData.availableWorkers = uniqueWorkers;
-                renderWorkers();
+                // Mostrar sección de trabajadores
                 document.getElementById('workers-section').classList.remove('d-none');
                 
-                // Limpiar búsqueda
-                document.getElementById('worker-search').value = '';
+                // Renderizar trabajadores
+                renderWorkers();
                 
             } catch (error) {
                 console.error('Error cargando trabajadores:', error);
-                showMessage('Error al cargar trabajadores', 'danger');
-                appData.availableWorkers = [];
-                document.getElementById('workers-section').classList.add('d-none');
+                showMessage('Error al cargar trabajadores: ' + error.message, 'danger');
             } finally {
                 hideLoading();
             }
@@ -598,8 +614,8 @@
         // Event handlers
         function setupEventListeners() {
             document.getElementById('course-select').addEventListener('change', handleCourseChange);
-            document.getElementById('select-all-roles').addEventListener('click', selectAllRoles);
-            document.getElementById('clear-roles').addEventListener('click', clearRoles);
+            document.getElementById('select-all-cost-centers').addEventListener('click', selectAllCostCenters);
+            document.getElementById('clear-cost-centers').addEventListener('click', clearCostCenters);
             document.getElementById('select-all-workers').addEventListener('click', selectAllWorkers);
             document.getElementById('clear-workers').addEventListener('click', clearWorkers);
             document.getElementById('save-assignments').addEventListener('click', saveAssignments);
@@ -611,7 +627,7 @@
             const courseId = select.value;
             
             if (!courseId) {
-                document.getElementById('roles-section').classList.add('d-none');
+                document.getElementById('cost-centers-section').classList.add('d-none');
                 document.getElementById('workers-section').classList.add('d-none');
                 appData.selectedCourse = null;
                 return;
@@ -620,28 +636,28 @@
             appData.selectedCourse = courseId;
             
             // Mostrar sección de roles
-            document.getElementById('roles-section').classList.remove('d-none');
+            document.getElementById('cost-centers-section').classList.remove('d-none');
             
             // Cargar trabajadores asignados
             await loadAssignedWorkers(courseId);
         }
 
-        function handleRoleChange() {
-            // Actualizar roles seleccionados
-            appData.selectedRoles = [];
-            const checkboxes = document.querySelectorAll('#roles-container input[type="checkbox"]:checked');
+        function handleCostCenterChange() {
+            // Actualizar centros de costo seleccionados
+            appData.selectedCostCenters = [];
+            const checkboxes = document.querySelectorAll('#cost-centers-container input[type="checkbox"]:checked');
             checkboxes.forEach(checkbox => {
-                appData.selectedRoles.push(checkbox.value);
+                appData.selectedCostCenters.push(checkbox.value);
             });
             
-            if (appData.selectedRoles.length > 0) {
-                loadWorkersByRoles();
+            if (appData.selectedCostCenters.length > 0) {
+                loadWorkersByCostCenters();
             } else {
                 document.getElementById('workers-section').classList.add('d-none');
                 appData.availableWorkers = [];
             }
         }
-
+        
         function handleWorkerChange() {
             updateSelectedWorkers();
             updateSelectionSummary();
@@ -663,16 +679,16 @@
             });
         }
 
-        function selectAllRoles() {
-            const checkboxes = document.querySelectorAll('#roles-container input[type="checkbox"]');
+        function selectAllCostCenters() {
+            const checkboxes = document.querySelectorAll('#cost-centers-container input[type="checkbox"]');
             checkboxes.forEach(checkbox => checkbox.checked = true);
-            handleRoleChange();
+            handleCostCenterChange();
         }
-
-        function clearRoles() {
-            const checkboxes = document.querySelectorAll('#roles-container input[type="checkbox"]');
+        
+        function clearCostCenters() {
+            const checkboxes = document.querySelectorAll('#cost-centers-container input[type="checkbox"]');
             checkboxes.forEach(checkbox => checkbox.checked = false);
-            handleRoleChange();
+            handleCostCenterChange();
         }
 
         function selectAllWorkers() {
