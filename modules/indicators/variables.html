@@ -213,10 +213,15 @@
                             <option value="monthly">Mensuales</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <select class="form-select" id="filterOwner" onchange="filterVariables()">
                             <option value="">Todos</option>
                             <option value="mine">Mis variables</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select" id="filterCategory" onchange="filterVariables()">
+                            <option value="">Todas las categorías</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -533,6 +538,7 @@
             loadVariables();
             loadSegments();
             loadUsers(); // NUEVO: Cargar usuarios
+            loadCategories(); // NUEVO: Cargar categorías
             setupEventListeners();
         }
         
@@ -730,16 +736,61 @@
                     });
                 }
                 
-                allVariables = variables.map(variable => ({
-                    ...variable,
-                    users: usersMap[variable.owner_id] || null
+                // Obtener categorías heredadas para cada variable
+                const variablesWithCategories = await Promise.all(variables.map(async (variable) => {
+                    try {
+                        const indicators = await supabaseRequest(`/indicators?select=indicator_id,formula_variables&indicator_status=eq.active`);
+                        
+                        const relevantIndicators = indicators.filter(ind => {
+                            if (!ind.formula_variables) return false;
+                            const varIds = Object.keys(ind.formula_variables);
+                            return varIds.includes(variable.variable_id);
+                        });
+                        
+                        if (relevantIndicators.length === 0) {
+                            return {
+                                ...variable,
+                                users: usersMap[variable.owner_id] || null,
+                                categories: []
+                            };
+                        }
+                        
+                        const indicatorIds = relevantIndicators.map(ind => ind.indicator_id);
+                        const categoryAssignments = await supabaseRequest(`/indicator_category_assignments?select=category_id&indicator_id=in.(${indicatorIds.join(',')})`);
+                        
+                        if (!categoryAssignments || categoryAssignments.length === 0) {
+                            return {
+                                ...variable,
+                                users: usersMap[variable.owner_id] || null,
+                                categories: []
+                            };
+                        }
+                        
+                        const uniqueCategoryIds = [...new Set(categoryAssignments.map(ca => ca.category_id))];
+                        const categories = await supabaseRequest(`/indicator_categories?select=*&category_id=in.(${uniqueCategoryIds.join(',')})&is_active=eq.true&order=category_order`);
+                        
+                        return {
+                            ...variable,
+                            users: usersMap[variable.owner_id] || null,
+                            categories: categories || []
+                        };
+                        
+                    } catch (error) {
+                        console.error(`Error obteniendo categorías para variable ${variable.variable_name}:`, error);
+                        return {
+                            ...variable,
+                            users: usersMap[variable.owner_id] || null,
+                            categories: []
+                        };
+                    }
                 }));
                 
+                allVariables = variablesWithCategories;
                 filteredVariables = [...allVariables];
                 renderVariablesGrid();
                 loadStats();
                 
-                console.log(`✅ ${allVariables.length} variables cargadas`);
+                console.log(`✅ ${allVariables.length} variables cargadas con categorías heredadas`);
                 
             } catch (error) {
                 console.error('❌ Error cargando variables:', error);
@@ -779,6 +830,33 @@
             } catch (error) {
                 console.error('❌ Error cargando usuarios:', error);
                 availableUsers = [];
+            }
+        }
+
+        // ==========================================
+        // CARGAR CATEGORÍAS PARA FILTRO
+        // ==========================================
+        
+        async function loadCategories() {
+            try {
+                const categories = await supabaseRequest('/indicator_categories?select=*&is_active=eq.true&order=category_order.asc,category_name.asc');
+                availableCategories = categories || [];
+                
+                // Renderizar opciones en el select de filtro
+                const filterSelect = document.getElementById('filterCategory');
+                if (filterSelect && availableCategories.length > 0) {
+                    availableCategories.forEach(category => {
+                        const option = document.createElement('option');
+                        option.value = category.category_id;
+                        option.textContent = category.category_name;
+                        filterSelect.appendChild(option);
+                    });
+                }
+                
+                console.log(`✅ ${availableCategories.length} categorías cargadas para filtro`);
+            } catch (error) {
+                console.error('❌ Error cargando categorías:', error);
+                availableCategories = [];
             }
         }
 
@@ -1013,6 +1091,23 @@
                                     ${isOwner ? '<span class="badge bg-primary ms-1">Tuya</span>' : ''}
                                 </div>
                                 
+                                ${variable.categories && variable.categories.length > 0 ? `
+                                <div class="mb-3">
+                                    <small class="text-muted d-block mb-1">Categorías:</small>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        ${variable.categories.map(cat => `
+                                            <span class="badge" style="background-color: ${cat.category_color || '#6c757d'}; font-size: 0.7rem;">
+                                                <i class="bi bi-${cat.category_icon || 'folder'} me-1"></i>${cat.category_name}
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                ` : `
+                                <div class="mb-3">
+                                    <small class="text-muted fst-italic">Sin categorías asignadas</small>
+                                </div>
+                                `}
+                                
                                 <div class="d-flex justify-content-between align-items-center">
                                     <small class="text-muted">Creada: ${createdDate}</small>
                                     
@@ -1219,6 +1314,7 @@
             const dataSourceFilter = document.getElementById('filterDataSource').value;
             const periodicityFilter = document.getElementById('filterPeriodicity').value;
             const ownerFilter = document.getElementById('filterOwner').value;
+            const categoryFilter = document.getElementById('filterCategory').value;
             
             filteredVariables = allVariables.filter(variable => {
                 const matchesSearch = !searchTerm || 
@@ -1228,11 +1324,14 @@
                 const matchesDataSource = !dataSourceFilter || (variable.data_source || 'manual') === dataSourceFilter;
                 const matchesPeriodicity = !periodicityFilter || variable.periodicity === periodicityFilter;
                 const matchesOwner = !ownerFilter || (ownerFilter === 'mine' && currentUser && variable.owner_id === currentUser.user_id);
+                const matchesCategory = !categoryFilter || 
+                    (variable.categories && variable.categories.some(cat => cat.category_id === categoryFilter));
                 
-                return matchesSearch && matchesDataSource && matchesPeriodicity && matchesOwner;
+                return matchesSearch && matchesDataSource && matchesPeriodicity && matchesOwner && matchesCategory;
             });
             
             renderVariablesGrid();
+            console.log(`🔍 Filtrado: ${filteredVariables.length} de ${allVariables.length} variables`);
         }
         
         function clearFilters() {
@@ -1240,6 +1339,7 @@
             document.getElementById('filterDataSource').value = '';
             document.getElementById('filterPeriodicity').value = '';
             document.getElementById('filterOwner').value = '';
+            document.getElementById('filterCategory').value = '';
             filteredVariables = [...allVariables];
             renderVariablesGrid();
         }
