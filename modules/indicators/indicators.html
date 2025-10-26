@@ -116,6 +116,32 @@
             font-size: 3rem;
             margin-bottom: 1rem;
         }
+        
+        .category-checkbox-item {
+            padding: 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .category-checkbox-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .category-checkbox-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+        
+        .category-icon-badge {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -332,6 +358,25 @@
                                     <option value="testing">En Pruebas</option>
                                 </select>
                             </div>
+                            
+                            <!-- Categorías -->
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    Categorías <span class="text-muted">(Opcional)</span>
+                                </label>
+                                <div id="categoriesContainer" class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                                    <div class="text-center text-muted py-2">
+                                        <small>Cargando categorías...</small>
+                                    </div>
+                                </div>
+                                <small class="form-text text-muted">
+                                    Selecciona una o más categorías para organizar este indicador
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Fórmula -->
+                        <div class="mb-4">
                         </div>
                         
                         <!-- Fórmula -->
@@ -445,6 +490,7 @@
         let availableUsers = [];
         let availableVariables = [];
         let availableYears = [];
+        let allCategories = [];
         let currentUser = null;
         let isEditMode = false;
         let currentIndicatorId = null;
@@ -464,11 +510,13 @@
                 modalInstance = new bootstrap.Modal(document.getElementById('indicatorModal'));
                 
                 // Cargar datos en paralelo
+                // Cargar datos en paralelo
                 await Promise.all([
                     loadIndicators(),
                     loadUsers(),
                     loadVariables(),
-                    loadAcademicYears()
+                    loadAcademicYears(),
+                    loadCategories()
                 ]);
                 
                 setupEventListeners();
@@ -544,6 +592,63 @@
             }
         }
 
+        // ==========================================
+        // CARGAR CATEGORÍAS DISPONIBLES
+        // ==========================================
+        async function loadCategories() {
+            try {
+                const categories = await supabaseRequest('/indicator_categories?select=*&is_active=eq.true&order=category_order.asc,category_name.asc');
+                allCategories = categories || [];
+                console.log(`✅ ${allCategories.length} categorías cargadas`);
+            } catch (error) {
+                console.error('Error cargando categorías:', error);
+                allCategories = [];
+            }
+        }
+        
+        // ==========================================
+        // RENDERIZAR SELECTOR DE CATEGORÍAS
+        // ==========================================
+        function renderCategoriesSelector(selectedCategoryIds = []) {
+            const container = document.getElementById('categoriesContainer');
+            
+            if (allCategories.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-2">
+                        <small>No hay categorías disponibles</small>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            allCategories.forEach(category => {
+                const isChecked = selectedCategoryIds.includes(category.category_id);
+                html += `
+                    <div class="category-checkbox-item mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" 
+                                   id="cat_${category.category_id}" 
+                                   value="${category.category_id}"
+                                   ${isChecked ? 'checked' : ''}>
+                            <label class="form-check-label d-flex align-items-center" 
+                                   for="cat_${category.category_id}">
+                                <span class="category-icon-badge me-2" 
+                                      style="background-color: ${category.category_color};">
+                                    <i class="bi bi-${category.category_icon}"></i>
+                                </span>
+                                <span class="fw-semibold">${category.category_name}</span>
+                                ${category.category_description ? 
+                                    `<span class="text-muted ms-2 small">- ${category.category_description}</span>` : ''}
+                            </label>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
         function populateOwnerFilter() {
             const filter = document.getElementById('filterOwner');
             filter.innerHTML = '<option value="">Todos los propietarios</option>';
@@ -604,9 +709,16 @@
             `;
             
             try {
-                // ✅ CORRECTO
+                // Cargar indicadores con categorías
                 const indicators = await supabaseRequest('/indicators?select=*,users!indicators_owner_id_fkey(user_name,user_display_name)&order=indicator_name');
                 allIndicators = indicators || [];
+                
+                // Cargar categorías de cada indicador
+                for (let indicator of allIndicators) {
+                    const assignments = await supabaseRequest(`/indicator_category_assignments?select=indicator_categories(*)&indicator_id=eq.${indicator.indicator_id}`);
+                    indicator.categories = assignments ? assignments.map(a => a.indicator_categories) : [];
+                }
+                
                 filteredIndicators = [...allIndicators];
                 renderIndicatorsGrid();
                 loadStats();
@@ -686,6 +798,19 @@
                                     <small class="text-muted">Propietario: <strong>${ownerName}</strong></small>
                                 </div>
                                 
+                                ${indicator.categories && indicator.categories.length > 0 ? `
+                                    <div class="mb-3">
+                                        <small class="text-muted d-block mb-1">Categorías:</small>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            ${indicator.categories.map(cat => `
+                                                <span class="badge" style="background-color: ${cat.category_color};">
+                                                    <i class="bi bi-${cat.category_icon} me-1"></i>${cat.category_name}
+                                                </span>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                
                                 <div class="d-flex gap-1">
                                     <button class="btn btn-sm btn-outline-primary flex-fill" 
                                             onclick="editIndicator('${indicator.indicator_id}')" 
@@ -760,6 +885,9 @@
             document.getElementById('resultFormat').value = 'decimal';
             document.getElementById('goalsContainer').innerHTML = '<p class="text-center text-muted mb-0"><small>No hay metas configuradas.</small></p>';
             document.getElementById('formulaValidationResult').innerHTML = '';
+            
+            // Renderizar categorías sin selección
+            renderCategoriesSelector([]);
             
             modalInstance.show();
             document.getElementById('indicatorName').focus();
@@ -928,6 +1056,9 @@
                     });
                 }
                 
+                // Guardar categorías seleccionadas
+                await saveIndicatorCategories(newIndicator.indicator_id);
+                
                 showMessage(`Indicador "${newIndicator.indicator_name}" creado exitosamente`, 'success');
                 modalInstance.hide();
                 loadIndicators();
@@ -968,6 +1099,9 @@
                 
                 // Cargar metas existentes
                 await loadIndicatorGoals(indicatorId);
+                
+                // Cargar categorías asignadas
+                await loadIndicatorCategories(indicatorId);
                 
                 modalInstance.show();
                 
@@ -1025,6 +1159,21 @@
                 console.error('Error cargando metas:', error);
             }
         }
+
+        // ==========================================
+        // CARGAR CATEGORÍAS DEL INDICADOR
+        // ==========================================
+        async function loadIndicatorCategories(indicatorId) {
+            try {
+                const assignments = await supabaseRequest(`/indicator_category_assignments?select=category_id&indicator_id=eq.${indicatorId}`);
+                const selectedCategoryIds = assignments ? assignments.map(a => a.category_id) : [];
+                renderCategoriesSelector(selectedCategoryIds);
+            } catch (error) {
+                console.error('Error cargando categorías del indicador:', error);
+                renderCategoriesSelector([]);
+            }
+        }
+
         
         // ==========================================
         // ACTUALIZAR INDICADOR
@@ -1077,6 +1226,9 @@
                     });
                 }
                 
+                // Actualizar categorías
+                await saveIndicatorCategories(currentIndicatorId);
+                
                 showMessage('Indicador actualizado exitosamente', 'success');
                 modalInstance.hide();
                 loadIndicators();
@@ -1087,6 +1239,41 @@
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Actualizar Indicador';
+            }
+        }
+
+        // ==========================================
+        // GUARDAR CATEGORÍAS DEL INDICADOR
+        // ==========================================
+        async function saveIndicatorCategories(indicatorId) {
+            try {
+                // Obtener categorías seleccionadas
+                const checkboxes = document.querySelectorAll('#categoriesContainer input[type="checkbox"]:checked');
+                const selectedCategoryIds = Array.from(checkboxes).map(cb => cb.value);
+                
+                // Eliminar asignaciones actuales
+                await supabaseRequest(`/indicator_category_assignments?indicator_id=eq.${indicatorId}`, {
+                    method: 'DELETE'
+                });
+                
+                // Insertar nuevas asignaciones
+                if (selectedCategoryIds.length > 0) {
+                    const assignments = selectedCategoryIds.map(categoryId => ({
+                        indicator_id: indicatorId,
+                        category_id: categoryId,
+                        assigned_at: new Date().toISOString()
+                    }));
+                    
+                    await supabaseRequest('/indicator_category_assignments', {
+                        method: 'POST',
+                        body: JSON.stringify(assignments)
+                    });
+                }
+                
+                console.log(`✅ Categorías guardadas para indicador ${indicatorId}`);
+            } catch (error) {
+                console.error('Error guardando categorías:', error);
+                throw error;
             }
         }
         
