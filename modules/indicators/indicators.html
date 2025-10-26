@@ -404,6 +404,12 @@
                             
                             <div class="mb-3">
                                 <label class="form-label">Variables Disponibles</label>
+                                <div class="mb-2">
+                                    <select class="form-select form-select-sm" id="filterVariablesCategory" onchange="filterAvailableVariables()">
+                                        <option value="">📁 Todas las variables</option>
+                                    </select>
+                                    <small class="form-text text-muted">Filtra variables por categoría para encontrarlas más fácil</small>
+                                </div>
                                 <div id="availableVariables" class="p-2 border rounded bg-light" 
                                      style="max-height: 150px; overflow-y: auto;">
                                     <small class="text-muted">Cargando variables...</small>
@@ -470,6 +476,8 @@
         let filteredIndicators = [];
         let availableUsers = [];
         let availableVariables = [];
+        let availableVariablesWithCategories = [];
+        let filteredAvailableVariables = [];
         let availableYears = [];
         let allCategories = [];
         let currentUser = null;
@@ -564,11 +572,70 @@
             try {
                 const variables = await supabaseRequest('/variables?select=*&variable_status=eq.active&order=variable_name');
                 availableVariables = variables || [];
+                
+                // Obtener categorías heredadas para cada variable
+                availableVariablesWithCategories = await Promise.all(availableVariables.map(async (variable) => {
+                    try {
+                        // Buscar indicadores que usan esta variable
+                        const indicators = await supabaseRequest(`/indicators?select=indicator_id,formula_variables&indicator_status=eq.active`);
+                        
+                        // Filtrar indicadores que tienen esta variable en formula_variables
+                        const relevantIndicators = indicators.filter(ind => {
+                            if (!ind.formula_variables) return false;
+                            const varIds = Object.keys(ind.formula_variables);
+                            return varIds.includes(variable.variable_id);
+                        });
+                        
+                        if (relevantIndicators.length === 0) {
+                            return {
+                                ...variable,
+                                categories: []
+                            };
+                        }
+                        
+                        // Obtener IDs de indicadores relevantes
+                        const indicatorIds = relevantIndicators.map(ind => ind.indicator_id);
+                        
+                        // Buscar categorías asociadas a estos indicadores
+                        const categoryAssignments = await supabaseRequest(`/indicator_category_assignments?select=category_id&indicator_id=in.(${indicatorIds.join(',')})`);
+                        
+                        if (!categoryAssignments || categoryAssignments.length === 0) {
+                            return {
+                                ...variable,
+                                categories: []
+                            };
+                        }
+                        
+                        // Obtener IDs únicos de categorías
+                        const uniqueCategoryIds = [...new Set(categoryAssignments.map(ca => ca.category_id))];
+                        
+                        // Obtener información completa de las categorías
+                        const categories = await supabaseRequest(`/indicator_categories?select=*&category_id=in.(${uniqueCategoryIds.join(',')})&is_active=eq.true&order=category_order`);
+                        
+                        return {
+                            ...variable,
+                            categories: categories || []
+                        };
+                        
+                    } catch (error) {
+                        console.error(`Error obteniendo categorías para variable ${variable.variable_name}:`, error);
+                        return {
+                            ...variable,
+                            categories: []
+                        };
+                    }
+                }));
+                
+                filteredAvailableVariables = [...availableVariablesWithCategories];
                 renderAvailableVariables();
-                console.log(`✅ ${availableVariables.length} variables cargadas`);
+                populateVariablesCategoryFilter();
+                
+                console.log(`✅ ${availableVariables.length} variables cargadas con categorías`);
             } catch (error) {
                 console.error('❌ Error cargando variables:', error);
                 availableVariables = [];
+                availableVariablesWithCategories = [];
+                filteredAvailableVariables = [];
             }
         }
         
@@ -641,6 +708,42 @@
         }
 
         // ==========================================
+        // POPULAR FILTRO DE CATEGORÍAS EN SELECTOR DE VARIABLES
+        // ==========================================
+        function populateVariablesCategoryFilter() {
+            const filter = document.getElementById('filterVariablesCategory');
+            if (!filter) return;
+            
+            filter.innerHTML = '<option value="">📁 Todas las variables</option>';
+            
+            allCategories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.category_id;
+                option.textContent = `${category.category_name}`;
+                filter.appendChild(option);
+            });
+        }
+
+        // ==========================================
+        // FILTRAR VARIABLES DISPONIBLES POR CATEGORÍA
+        // ==========================================
+        function filterAvailableVariables() {
+            const categoryFilter = document.getElementById('filterVariablesCategory').value;
+            
+            if (!categoryFilter) {
+                filteredAvailableVariables = [...availableVariablesWithCategories];
+            } else {
+                filteredAvailableVariables = availableVariablesWithCategories.filter(variable => {
+                    return variable.categories && variable.categories.some(cat => cat.category_id === categoryFilter);
+                });
+            }
+            
+            renderAvailableVariables();
+            
+            console.log(`🔍 Variables filtradas: ${filteredAvailableVariables.length} de ${availableVariablesWithCategories.length}`);
+        }
+
+        // ==========================================
         // POPULAR FILTRO DE CATEGORÍAS
         // ==========================================
         function populateCategoryFilter() {
@@ -672,17 +775,22 @@
         function renderAvailableVariables() {
             const container = document.getElementById('availableVariables');
             
-            if (availableVariables.length === 0) {
-                container.innerHTML = '<small class="text-muted">No hay variables disponibles</small>';
+            if (filteredAvailableVariables.length === 0) {
+                container.innerHTML = '<small class="text-muted">No hay variables disponibles con los filtros seleccionados</small>';
                 return;
             }
             
             let html = '';
-            availableVariables.forEach(variable => {
+            filteredAvailableVariables.forEach(variable => {
+                // Mostrar badge de categorías si tiene
+                const categoriesBadge = variable.categories && variable.categories.length > 0 
+                    ? `<span class="badge bg-secondary" style="font-size: 0.6rem; margin-left: 4px;">${variable.categories.length} cat.</span>`
+                    : '';
+                
                 html += `
                     <span class="variable-tag" onclick="insertVariable('VAR_${variable.variable_name.replace(/\s+/g, '_')}')" 
-                          title="${variable.data_type} - ${variable.periodicity}">
-                        VAR_${variable.variable_name.replace(/\s+/g, '_')}
+                          title="${variable.data_type} - ${variable.periodicity}${variable.categories.length > 0 ? '\nCategorías: ' + variable.categories.map(c => c.category_name).join(', ') : ''}">
+                        VAR_${variable.variable_name.replace(/\s+/g, '_')}${categoriesBadge}
                     </span>
                 `;
             });
@@ -901,7 +1009,9 @@
             // Renderizar categorías sin selección
             renderCategoriesSelector([]);
             
-            // Renderizar variables disponibles
+            // Limpiar filtro de variables y renderizar todas
+            document.getElementById('filterVariablesCategory').value = '';
+            filteredAvailableVariables = [...availableVariablesWithCategories];
             renderAvailableVariables();
             
             modalInstance.show();
@@ -1149,6 +1259,9 @@
                 document.getElementById('resultFormat').value = indicator.result_format;
                 document.getElementById('indicatorStatus').value = indicator.indicator_status;
                 
+                // Limpiar filtro de variables y renderizar todas
+                document.getElementById('filterVariablesCategory').value = '';
+                filteredAvailableVariables = [...availableVariablesWithCategories];
                 renderAvailableVariables();
                 validateFormula();
                 
@@ -1418,6 +1531,7 @@
         window.validateFormula = validateFormula;
         window.addGoal = addGoal;
         window.removeGoal = removeGoal;
+        window.filterAvailableVariables = filterAvailableVariables;
         
         console.log('🎉 Página de indicadores cargada correctamente');
     </script>
