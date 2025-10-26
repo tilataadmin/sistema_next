@@ -195,10 +195,17 @@
                         </div>
                     </div>
                     <div class="card-body">
-                        <!-- Búsqueda -->
-                        <div class="mb-3">
-                            <input type="text" class="form-control" id="searchIndicators" 
-                                   placeholder="Buscar indicadores..." onkeyup="filterIndicators()">
+                        <!-- Búsqueda y Filtro de Categorías -->
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <input type="text" class="form-control" id="searchIndicators" 
+                                       placeholder="Buscar indicadores..." onkeyup="filterIndicators()">
+                            </div>
+                            <div class="col-md-4">
+                                <select class="form-select" id="filterCategory" onchange="filterIndicators()">
+                                    <option value="">Todas las categorías</option>
+                                </select>
+                            </div>
                         </div>
                         
                         <!-- Filtros rápidos -->
@@ -314,6 +321,7 @@
         let allIndicators = [];
         let filteredIndicators = [];
         let selectedIndicators = new Set(); // IDs de indicadores seleccionados
+        let availableCategories = [];
         let currentUser = null;
         
         // ==========================================
@@ -325,6 +333,7 @@
             
             try {
                 getCurrentUser();
+                await loadCategories();
                 await loadIndicators();
                 
                 console.log('✅ Página inicializada');
@@ -350,6 +359,33 @@
         }
         
         // ==========================================
+        // CARGAR CATEGORÍAS
+        // ==========================================
+        
+        async function loadCategories() {
+            try {
+                const categories = await supabaseRequest('/indicator_categories?select=*&is_active=eq.true&order=category_order.asc,category_name.asc');
+                availableCategories = categories || [];
+                
+                // Llenar el select de categorías
+                const filterSelect = document.getElementById('filterCategory');
+                if (filterSelect && availableCategories.length > 0) {
+                    availableCategories.forEach(category => {
+                        const option = document.createElement('option');
+                        option.value = category.category_id;
+                        option.textContent = category.category_name;
+                        filterSelect.appendChild(option);
+                    });
+                }
+                
+                console.log(`✅ ${availableCategories.length} categorías cargadas`);
+            } catch (error) {
+                console.error('❌ Error cargando categorías:', error);
+                availableCategories = [];
+            }
+        }
+        
+        // ==========================================
         // CARGAR INDICADORES Y SELECCIÓN
         // ==========================================
         
@@ -368,6 +404,12 @@
                 const indicators = await supabaseRequest('/indicators?select=*,users!indicators_owner_id_fkey(user_display_name,user_name)&indicator_status=eq.active&order=indicator_name');
                 allIndicators = indicators || [];
                 
+                // Cargar categorías de cada indicador
+                for (let indicator of allIndicators) {
+                    const assignments = await supabaseRequest(`/indicator_category_assignments?select=indicator_categories(*)&indicator_id=eq.${indicator.indicator_id}`);
+                    indicator.categories = assignments ? assignments.map(a => a.indicator_categories) : [];
+                }
+                
                 // Cargar selección actual del usuario
                 if (currentUser) {
                     const userSelection = await supabaseRequest(`/user_dashboard_indicators?select=indicator_id&user_id=eq.${currentUser.user_id}`);
@@ -381,7 +423,7 @@
                 renderIndicators();
                 updateCounts();
                 
-                console.log(`✅ ${allIndicators.length} indicadores cargados`);
+                console.log(`✅ ${allIndicators.length} indicadores cargados con categorías`);
                 console.log(`✅ ${selectedIndicators.size} indicadores seleccionados`);
                 
             } catch (error) {
@@ -455,6 +497,19 @@
                                 <div class="formula-preview">
                                     ${escapeHtml(indicator.formula_expression)}
                                 </div>
+                                
+                                ${indicator.categories && indicator.categories.length > 0 ? `
+                                <div class="mt-2 mb-2">
+                                    <small class="text-muted d-block mb-1">Categorías:</small>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        ${indicator.categories.map(cat => `
+                                            <span class="badge" style="background-color: ${cat.category_color || '#6c757d'}; font-size: 0.7rem;">
+                                                <i class="bi bi-${cat.category_icon || 'folder'} me-1"></i>${cat.category_name}
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                ` : ''}
                                 
                                 <div class="mt-2">
                                     <small class="text-muted">
@@ -531,6 +586,7 @@
         function filterIndicators() {
             const searchTerm = document.getElementById('searchIndicators').value.toLowerCase();
             const filterType = document.querySelector('input[name="filterType"]:checked').value;
+            const categoryFilter = document.getElementById('filterCategory').value;
             
             filteredIndicators = allIndicators.filter(indicator => {
                 // Filtro de búsqueda
@@ -540,6 +596,12 @@
                     indicator.formula_expression.toLowerCase().includes(searchTerm);
                 
                 if (!matchesSearch) return false;
+                
+                // Filtro de categoría
+                const matchesCategory = !categoryFilter || 
+                    (indicator.categories && indicator.categories.some(cat => cat.category_id === categoryFilter));
+                
+                if (!matchesCategory) return false;
                 
                 // Filtro de tipo
                 const isSelected = selectedIndicators.has(indicator.indicator_id);
@@ -556,10 +618,12 @@
             });
             
             renderIndicators();
+            console.log(`🔍 Filtrado: ${filteredIndicators.length} de ${allIndicators.length} indicadores`);
         }
         
         function clearFilters() {
             document.getElementById('searchIndicators').value = '';
+            document.getElementById('filterCategory').value = '';
             document.getElementById('filterAll').checked = true;
             filteredIndicators = [...allIndicators];
             renderIndicators();
