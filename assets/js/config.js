@@ -66,6 +66,69 @@ console.log(`🔧 Debug Mode: ${ENV_CONFIG.features.debugMode}`);
 console.log(`🔒 RLS Enabled: ${ENV_CONFIG.features.rlsEnabled}`);
 
 // ==========================================
+// SISTEMA DE VERSIONAMIENTO POR PÁGINA
+// ==========================================
+
+/**
+ * Renderiza un badge discreto con la versión de la página individual
+ * Lee el meta tag: <meta name="page-version" content="YY.MM.DD.HH.MM">
+ * Si no existe el meta tag, no muestra nada (retrocompatible)
+ */
+function renderPageVersion() {
+    // Buscar el meta tag de versión
+    const versionMeta = document.querySelector('meta[name="page-version"]');
+    
+    if (!versionMeta) return; // Si no tiene versión, no mostrar nada (retrocompatible)
+    
+    const version = versionMeta.content;
+    const envLabel = CURRENT_ENVIRONMENT === 'development' ? ' [DEV]' : '';
+    
+    // Crear badge discreto en esquina inferior derecha
+    const badge = document.createElement('div');
+    badge.id = 'page-version-badge';
+    badge.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-family: 'Courier New', monospace;
+        z-index: 9999;
+        backdrop-filter: blur(5px);
+        cursor: help;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    `;
+    
+    badge.textContent = `v${version}${envLabel}`;
+    badge.title = `Última modificación: ${version}\nAmbiente: ${CURRENT_ENVIRONMENT}`;
+    
+    // Hover effect
+    badge.addEventListener('mouseenter', () => {
+        badge.style.background = 'rgba(0, 0, 0, 0.9)';
+        badge.style.transform = 'scale(1.05)';
+    });
+    
+    badge.addEventListener('mouseleave', () => {
+        badge.style.background = 'rgba(0, 0, 0, 0.7)';
+        badge.style.transform = 'scale(1)';
+    });
+    
+    document.body.appendChild(badge);
+    console.log(`📌 Versión de página: v${version}`);
+}
+
+// Auto-ejecutar cuando el DOM esté listo
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderPageVersion);
+} else {
+    renderPageVersion();
+}
+
+// ==========================================
 // CONFIGURACIÓN DE SUPABASE UNIFICADA
 // ==========================================
 
@@ -818,6 +881,8 @@ const URL_PERMISSIONS = {
     '/modules/general-tools/dashboard.html': 'Dashboard de tareas',
     '/modules/general-tools/community-query.html': 'Consulta de la comunidad',
     '/modules/general-tools/family-activities.html': 'Asistencia de familias',
+    '/modules/general-tools/attendance.html': 'Registrar asistencia',
+    '/modules/general-tools/attendance-reports.html': 'Reportes de asistencia',
     '/modules/general-tools/contract-categories.html': 'Gestionar categorías de contratos',
     '/modules/general-tools/contract-templates.html': 'Gestionar plantillas de contratos',
     '/modules/general-tools/contracts-dashboard.html': 'Ver dashboard de contratos',
