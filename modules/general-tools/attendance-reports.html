@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.10.29.09.32">
+    <meta name="page-version" content="25.10.29.09.43">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -735,8 +735,16 @@
         // ==========================================
         let currentUser = null;
         let selectedPersonHistory = null;
-        let punctualityReferenceTimeStudents = '08:20:00';
-        let punctualityReferenceTimeWorkers = '07:00:00';
+        let punctualityReferenceTimeStudents = null;
+        let punctualityReferenceTimeWorkers = null;
+        
+        // ✅ NUEVO: Cache de nombres para evitar consultas repetidas
+        let nombresCache = {
+            students: {},
+            workers: {}
+        };
+
+        
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
@@ -774,10 +782,12 @@
         async function inicializarPagina() {
             try {
                 mostrarLoading();
-
+        
+                // ✅ NUEVO: Cargar cache de nombres PRIMERO
+                await cargarCacheNombres();
+        
                 // Cargar hora de puntualidad desde system_config
                 await cargarHoraPuntualidad();
-
                 // Configurar fechas por defecto (hoy)
                 const today = new Date().toISOString().split('T')[0];
                 const historyStartElement = document.getElementById('history-date-start');
@@ -811,6 +821,41 @@
                 console.error('❌ Error inicializando página:', error);
                 showMessage('Error al cargar la página: ' + error.message, 'danger');
                 ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // CARGAR CACHE DE NOMBRES
+        // ==========================================
+        async function cargarCacheNombres() {
+            try {
+                console.log('📝 Cargando cache de nombres...');
+                
+                // Cargar TODOS los estudiantes de una vez
+                const estudiantes = await supabaseRequest('/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2');
+                if (estudiantes) {
+                    estudiantes.forEach(e => {
+                        if (e.student_id_document) {
+                            nombresCache.students[e.student_id_document] = 
+                                `${e.student_last_name_1} ${e.student_last_name_2 || ''} ${e.student_first_name}`.trim();
+                        }
+                    });
+                }
+                
+                // Cargar TODOS los trabajadores de una vez
+                const trabajadores = await supabaseRequest('/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2');
+                if (trabajadores) {
+                    trabajadores.forEach(t => {
+                        if (t.worker_id_doc) {
+                            nombresCache.workers[t.worker_id_doc] = 
+                                `${t.worker_last_name_1} ${t.worker_last_name_2 || ''} ${t.worker_first_name}`.trim();
+                        }
+                    });
+                }
+                
+                console.log(`✅ Cache cargado: ${Object.keys(nombresCache.students).length} estudiantes, ${Object.keys(nombresCache.workers).length} trabajadores`);
+            } catch (error) {
+                console.error('❌ Error cargando cache de nombres:', error);
             }
         }
 
@@ -1351,28 +1396,16 @@
         // ==========================================
         // OBTENER NOMBRE DE PERSONA
         // ==========================================
-        async function obtenerNombrePersona(documento, tipo) {
-            try {
-                if (tipo === 'student') {
-                    const estudiante = await supabaseRequest(`/students?select=student_first_name,student_last_name_1,student_last_name_2&student_id_document=eq.${documento}`);
-                    if (estudiante && estudiante.length > 0) {
-                        const e = estudiante[0];
-                        return `${e.student_last_name_1} ${e.student_last_name_2 || ''} ${e.student_first_name}`.trim();
-                    }
-                } else if (tipo === 'worker') {
-                    const trabajador = await supabaseRequest(`/workers?select=worker_first_name,worker_last_name_1,worker_last_name_2&worker_id_doc=eq.${documento}`);
-                    if (trabajador && trabajador.length > 0) {
-                        const t = trabajador[0];
-                        return `${t.worker_last_name_1} ${t.worker_last_name_2 || ''} ${t.worker_first_name}`.trim();
-                    }
-                }
-                return 'Desconocido';
-            } catch (error) {
-                console.error('Error obteniendo nombre:', error);
-                return 'Error';
+        // ✅ OPTIMIZADO: Usa cache en lugar de consultar BD cada vez
+        function obtenerNombrePersona(documento, tipo) {
+            if (tipo === 'student') {
+                return nombresCache.students[documento] || 'Desconocido';
+            } else if (tipo === 'worker') {
+                return nombresCache.workers[documento] || 'Desconocido';
             }
+            return 'Desconocido';
         }
-
+        
         // ==========================================
         // BUSCAR PERSONA PARA HISTORIAL
         // ==========================================
