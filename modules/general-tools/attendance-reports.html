@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.10.28.01.00">
+    <meta name="page-version" content="25.10.28.02.00">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -846,16 +846,15 @@
         async function cargarFiltros() {
             try {
                 // Cargar cursos únicos para filtro de ausentes
-                const courses = await supabaseRequest('/students?select=student_course&order=student_course.asc');
+                const courses = await supabaseRequest('/courses?select=course_id,course_name&course_status=eq.active&order=course_name.asc');
                 if (courses) {
-                    const uniqueCourses = [...new Set(courses.map(c => c.student_course).filter(c => c))];
                     const courseSelect = document.getElementById('filter-course-absent');
                     const gradeSelect = document.getElementById('filter-grade-course');
                     
-                    uniqueCourses.forEach(course => {
+                    courses.forEach(course => {
                         const option = document.createElement('option');
-                        option.value = course;
-                        option.textContent = course;
+                        option.value = course.course_id;
+                        option.textContent = course.course_name;
                         if (courseSelect) courseSelect.appendChild(option);
                         
                         if (gradeSelect) {
@@ -866,16 +865,15 @@
                 }
 
                 // Cargar divisiones para filtro de trabajadores ausentes
-                const divisions = await supabaseRequest('/workers?select=worker_division&order=worker_division.asc');
+                const divisions = await supabaseRequest('/organizational_divisions?select=division_id,division_name&division_status=eq.active&order=division_name.asc');
                 if (divisions) {
-                    const uniqueDivisions = [...new Set(divisions.map(d => d.worker_division).filter(d => d))];
                     const divisionSelect = document.getElementById('filter-area-absent');
                     const divisionSelect2 = document.getElementById('filter-division');
                     
-                    uniqueDivisions.forEach(division => {
+                    divisions.forEach(division => {
                         const option = document.createElement('option');
-                        option.value = division;
-                        option.textContent = division;
+                        option.value = division.division_id;
+                        option.textContent = division.division_name;
                         if (divisionSelect) divisionSelect.appendChild(option);
                         
                         if (divisionSelect2) {
@@ -952,8 +950,16 @@
                 });
 
                 // Obtener total de personas (estudiantes + trabajadores activos)
-                const totalStudents = await supabaseRequest('/students?select=student_id_document&student_status=eq.Activo');
-                const totalWorkers = await supabaseRequest('/workers?select=worker_id_doc&worker_status=eq.Activo');
+                // Para students: buscar el status_id que corresponde a "Activo"
+                const activeStatus = await supabaseRequest('/student_status?select=status_id&status_description=eq.Activo&limit=1');
+                const activeStatusId = activeStatus && activeStatus.length > 0 ? activeStatus[0].status_id : null;
+                
+                let totalStudents = { length: 0 };
+                if (activeStatusId) {
+                    totalStudents = await supabaseRequest(`/students?select=student_id_document&status_id=eq.${activeStatusId}`);
+                }
+                
+                const totalWorkers = await supabaseRequest('/workers?select=worker_id_doc&worker_status=eq.active');
                 const totalPersonas = (totalStudents?.length || 0) + (totalWorkers?.length || 0);
                 
                 const ausentes = totalPersonas - Object.keys(personasConRegistro).length;
@@ -1099,17 +1105,24 @@
                 const cursoFiltro = document.getElementById('filter-course-absent').value;
                 const areaFiltro = document.getElementById('filter-area-absent').value;
 
-                // Obtener todos los estudiantes activos
-                let queryStudents = '/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_course&student_status=eq.Activo';
+                // Obtener status "Activo" para estudiantes
+                const activeStatus = await supabaseRequest('/student_status?select=status_id&status_description=eq.Activo&limit=1');
+                const activeStatusId = activeStatus && activeStatus.length > 0 ? activeStatus[0].status_id : null;
+
+                // Obtener todos los estudiantes activos con JOIN a courses
+                let queryStudents = '/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,course_id,courses(course_name)';
+                if (activeStatusId) {
+                    queryStudents += `&status_id=eq.${activeStatusId}`;
+                }
                 if (cursoFiltro) {
-                    queryStudents += `&student_course=eq.${cursoFiltro}`;
+                    queryStudents += `&course_id=eq.${cursoFiltro}`;
                 }
                 const todosEstudiantes = await supabaseRequest(queryStudents);
 
-                // Obtener todos los trabajadores activos
-                let queryWorkers = '/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,worker_division&worker_status=eq.Activo';
+                // Obtener todos los trabajadores activos con JOIN a organizational_divisions
+                let queryWorkers = '/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,organizational_division_id,organizational_divisions(division_name)&worker_status=eq.active';
                 if (areaFiltro) {
-                    queryWorkers += `&worker_division=eq.${areaFiltro}`;
+                    queryWorkers += `&organizational_division_id=eq.${areaFiltro}`;
                 }
                 const todosTrabajadores = await supabaseRequest(queryWorkers);
 
@@ -1159,10 +1172,10 @@
                 
                 if (tipo === 'student') {
                     nombre = `${persona.student_last_name_1} ${persona.student_last_name_2 || ''} ${persona.student_first_name}`.trim();
-                    info = persona.student_course || '';
+                    info = persona.courses?.course_name || '';
                 } else {
                     nombre = `${persona.worker_last_name_1} ${persona.worker_last_name_2 || ''} ${persona.worker_first_name}`.trim();
-                    info = persona.worker_division || '';
+                    info = persona.organizational_divisions?.division_name || '';
                 }
                 
                 html += `
@@ -1368,8 +1381,8 @@
 
                 let resultados = [];
 
-                // Buscar en estudiantes
-                const estudiantes = await supabaseRequest(`/students?select=student_id_document,student_code,student_first_name,student_last_name_1,student_last_name_2,student_course`);
+                // Buscar en estudiantes con JOIN a courses
+                const estudiantes = await supabaseRequest(`/students?select=student_id_document,student_code,student_first_name,student_last_name_1,student_last_name_2,course_id,courses(course_name)`);
                 if (estudiantes) {
                     estudiantes.forEach(e => {
                         const nombreCompleto = `${e.student_last_name_1} ${e.student_last_name_2 || ''} ${e.student_first_name}`.toLowerCase();
@@ -1380,15 +1393,15 @@
                                 tipo: 'student',
                                 documento: e.student_id_document,
                                 codigo: e.student_code,
-                                curso: e.student_course,
+                                curso: e.courses?.course_name || '',
                                 nombre: `${e.student_last_name_1} ${e.student_last_name_2 || ''} ${e.student_first_name}`.trim()
                             });
                         }
                     });
                 }
 
-                // Buscar en trabajadores
-                const trabajadores = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,worker_division`);
+                // Buscar en trabajadores con JOIN a organizational_divisions
+                const trabajadores = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,organizational_division_id,organizational_divisions(division_name)`);
                 if (trabajadores) {
                     trabajadores.forEach(t => {
                         const nombreCompleto = `${t.worker_last_name_1} ${t.worker_last_name_2 || ''} ${t.worker_first_name}`.toLowerCase();
@@ -1398,7 +1411,7 @@
                             resultados.push({
                                 tipo: 'worker',
                                 documento: t.worker_id_doc,
-                                division: t.worker_division,
+                                division: t.organizational_divisions?.division_name || '',
                                 nombre: `${t.worker_last_name_1} ${t.worker_last_name_2 || ''} ${t.worker_first_name}`.trim()
                             });
                         }
@@ -1577,10 +1590,17 @@
                     return;
                 }
 
-                // Obtener todos los estudiantes activos
-                let queryStudents = '/students?select=student_id_document,student_course&student_status=eq.Activo';
+                // Obtener status "Activo" para estudiantes
+                const activeStatus = await supabaseRequest('/student_status?select=status_id&status_description=eq.Activo&limit=1');
+                const activeStatusId = activeStatus && activeStatus.length > 0 ? activeStatus[0].status_id : null;
+
+                // Obtener todos los estudiantes activos con JOIN a courses
+                let queryStudents = '/students?select=student_id_document,course_id,courses(course_name)';
+                if (activeStatusId) {
+                    queryStudents += `&status_id=eq.${activeStatusId}`;
+                }
                 if (gradoFiltro) {
-                    queryStudents += `&student_course=eq.${gradoFiltro}`;
+                    queryStudents += `&course_id=eq.${gradoFiltro}`;
                 }
                 const estudiantes = await supabaseRequest(queryStudents);
 
@@ -1591,13 +1611,13 @@
                 // Agrupar por curso
                 const cursos = {};
                 estudiantes?.forEach(e => {
-                    const curso = e.student_course || 'Sin curso';
-                    if (!cursos[curso]) {
-                        cursos[curso] = { total: 0, presentes: 0 };
+                    const cursoNombre = e.courses?.course_name || 'Sin curso';
+                    if (!cursos[cursoNombre]) {
+                        cursos[cursoNombre] = { total: 0, presentes: 0 };
                     }
-                    cursos[curso].total++;
+                    cursos[cursoNombre].total++;
                     if (documentosConRegistro.has(e.student_id_document)) {
-                        cursos[curso].presentes++;
+                        cursos[cursoNombre].presentes++;
                     }
                 });
 
@@ -1655,10 +1675,10 @@
                     return;
                 }
 
-                // Obtener todos los trabajadores activos
-                let queryWorkers = '/workers?select=worker_id_doc,worker_area,worker_division&worker_status=eq.Activo';
+                // Obtener todos los trabajadores activos con JOINs
+                let queryWorkers = '/workers?select=worker_id_doc,organizational_area_id,organizational_division_id,organizational_areas(area_name),organizational_divisions(division_name)&worker_status=eq.active';
                 if (divisionFiltro) {
-                    queryWorkers += `&worker_division=eq.${divisionFiltro}`;
+                    queryWorkers += `&organizational_division_id=eq.${divisionFiltro}`;
                 }
                 const trabajadores = await supabaseRequest(queryWorkers);
 
@@ -1669,8 +1689,8 @@
                 // Agrupar por área y división
                 const areas = {};
                 trabajadores?.forEach(t => {
-                    const area = t.worker_area || 'Sin área';
-                    const division = t.worker_division || 'Sin división';
+                    const area = t.organizational_areas?.area_name || 'Sin área';
+                    const division = t.organizational_divisions?.division_name || 'Sin división';
                     const key = `${area}|${division}`;
                     
                     if (!areas[key]) {
