@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.10.29.09.43">
+    <meta name="page-version" content="25.10.29.09.55">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -356,6 +356,13 @@
                                 <span class="badge bg-light text-success" id="count-students-present">0</span>
                             </div>
                             <div class="card-body p-0">
+                                <!-- ✅ NUEVO: Filtro por curso -->
+                                <div class="filter-section mx-3 mt-3">
+                                    <label class="form-label fw-bold">Filtrar por curso:</label>
+                                    <select class="form-select form-select-sm" id="filter-course-present" onchange="cargarPresenciaActual()">
+                                        <option value="">Todos los cursos</option>
+                                    </select>
+                                </div>
                                 <div id="students-present-list" style="max-height: 500px; overflow-y: auto;">
                                     <div class="empty-state">
                                         <i class="bi bi-inbox"></i>
@@ -896,12 +903,13 @@
         // ==========================================
         // CARGAR FILTROS
         // ==========================================
-        async function cargarFiltros() {
+       async function cargarFiltros() {
             try {
                 // Cargar cursos únicos para filtro de ausentes
                 const courses = await supabaseRequest('/courses?select=course_id,course_name&course_status=eq.active&order=course_name.asc');
                 if (courses) {
                     const courseSelect = document.getElementById('filter-course-absent');
+                    const coursePresentSelect = document.getElementById('filter-course-present'); // ✅ NUEVO
                     const gradeSelect = document.getElementById('filter-grade-course');
                     
                     courses.forEach(course => {
@@ -910,9 +918,15 @@
                         option.textContent = course.course_name;
                         if (courseSelect) courseSelect.appendChild(option);
                         
-                        if (gradeSelect) {
+                        // ✅ NUEVO: Agregar al filtro de presentes
+                        if (coursePresentSelect) {
                             const option2 = option.cloneNode(true);
-                            gradeSelect.appendChild(option2);
+                            coursePresentSelect.appendChild(option2);
+                        }
+                        
+                        if (gradeSelect) {
+                            const option3 = option.cloneNode(true);
+                            gradeSelect.appendChild(option3);
                         }
                     });
                 }
@@ -1065,16 +1079,31 @@
                     personasConRegistro[key].registros.push(reg);
                 });
 
+                // ✅ NUEVO: Obtener filtro de curso
+                const cursoFiltro = document.getElementById('filter-course-present')?.value || '';
+                
+                // ✅ NUEVO: Si hay filtro, obtener estudiantes de ese curso para filtrar
+                let estudiantesDelCurso = null;
+                if (cursoFiltro) {
+                    estudiantesDelCurso = await supabaseRequest(`/students?select=student_id_document&course_id=eq.${cursoFiltro}`);
+                    estudiantesDelCurso = new Set(estudiantesDelCurso?.map(e => e.student_id_document) || []);
+                }
+                
                 // Filtrar solo presentes (número impar de registros = última fue entrada)
                 const estudiantesPresentes = [];
                 const trabajadoresPresentes = [];
-
+                
                 for (const [doc, data] of Object.entries(personasConRegistro)) {
                     if (data.registros.length % 2 === 1) {
                         // Está presente (última fue entrada)
                         const primerRegistro = data.registros[data.registros.length - 1]; // El más antiguo (entrada)
                         
                         if (data.tipo === 'student') {
+                            // ✅ NUEVO: Aplicar filtro de curso si existe
+                            if (cursoFiltro && estudiantesDelCurso && !estudiantesDelCurso.has(doc)) {
+                                continue; // Saltar si no está en el curso filtrado
+                            }
+                            
                             estudiantesPresentes.push({
                                 documento: doc,
                                 entrada: primerRegistro.attendance_time,
@@ -1089,7 +1118,6 @@
                         }
                     }
                 }
-
                 // Obtener nombres y mostrar
                 await mostrarListaPresentes(estudiantesPresentes, 'student');
                 await mostrarListaPresentes(trabajadoresPresentes, 'worker');
