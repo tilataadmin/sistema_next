@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.10.29.06.40">
+    <meta name="page-version" content="25.10.29.07.21">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -720,11 +720,19 @@
             });
 
             // Mantener foco en campo RFID cuando está en modo RFID
-            document.addEventListener('click', function() {
+            // CORRECCIÓN: No enfocar si el modal está abierto
+            document.addEventListener('click', function(e) {
                 if (currentMode === 'rfid') {
-                    setTimeout(() => {
-                        document.getElementById('rfid-input').focus();
-                    }, 100);
+                    // Verificar si el modal de registro manual está abierto
+                    const modalElement = document.getElementById('manual-registration-modal');
+                    const isModalOpen = modalElement && modalElement.classList.contains('show');
+                    
+                    // No reenfocar RFID si el modal está abierto o si se hizo clic dentro del modal
+                    if (!isModalOpen && !e.target.closest('.modal')) {
+                        setTimeout(() => {
+                            document.getElementById('rfid-input').focus();
+                        }, 100);
+                    }
                 }
             });
         }
@@ -1165,12 +1173,25 @@
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
+                // CORRECCIÓN: Buscar worker_id si es registro manual
+                let registeredByWorkerId = null;
+                if (metodo === 'manual') {
+                    try {
+                        const workerData = await supabaseRequest(`/workers?select=worker_id&user_id=eq.${currentUser.user_id}&limit=1`);
+                        if (workerData && workerData.length > 0) {
+                            registeredByWorkerId = workerData[0].worker_id;
+                        }
+                    } catch (error) {
+                        console.warn('Usuario no tiene registro como trabajador');
+                    }
+                }
+
                 // Insertar registro con fecha/hora de Colombia
                 const nuevoRegistro = {
                     person_id_document: documento,
                     person_type: tipoPersona,
                     registration_method: metodo,
-                    registered_by_worker_id: metodo === 'manual' ? currentUser.user_id : null,
+                    registered_by_worker_id: registeredByWorkerId,
                     attendance_date: today,
                     attendance_time: hora,
                     attendance_timestamp: timestamp
@@ -1210,13 +1231,27 @@
             // Detener scanner si está activo
             detenerScanner();
             
+            // CORRECCIÓN: Pausar temporalmente el modo RFID
+            const previousMode = currentMode;
+            if (currentMode === 'rfid') {
+                console.log('⏸️ Pausando modo RFID temporalmente para registro manual');
+            }
+            
             // Limpiar formulario
             limpiarBusqueda();
             
             // Mostrar modal
             manualRegistrationModal.show();
+            
+            // CORRECCIÓN: Restaurar foco en campos del modal
+            setTimeout(() => {
+                const searchDocField = document.getElementById('search-document');
+                if (searchDocField && searchDocField.offsetParent !== null) {
+                    searchDocField.focus();
+                }
+            }, 300);
         }
-
+        
         // ==========================================
         // BUSCAR PERSONA
         // ==========================================
@@ -1392,17 +1427,29 @@
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${selectedPerson.documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
+                // CORRECCIÓN: Buscar worker_id del usuario actual si existe
+                let registeredByWorkerId = null;
+                try {
+                    const workerData = await supabaseRequest(`/workers?select=worker_id&user_id=eq.${currentUser.user_id}&limit=1`);
+                    if (workerData && workerData.length > 0) {
+                        registeredByWorkerId = workerData[0].worker_id;
+                    }
+                } catch (error) {
+                    console.warn('Usuario no tiene registro como trabajador, se guardará sin registered_by');
+                }
+
                 // Insertar registro con fecha/hora de Colombia
                 const nuevoRegistro = {
                     person_id_document: selectedPerson.documento,
                     person_type: selectedPerson.tipo,
                     registration_method: 'manual',
                     observations: observaciones || null,
-                    registered_by_worker_id: currentUser.user_id,
+                    registered_by_worker_id: registeredByWorkerId, // Ahora puede ser null si el usuario no es trabajador
                     attendance_date: today,
                     attendance_time: hora,
                     attendance_timestamp: timestamp
                 };
+        
                 await supabaseRequest('/attendance', {
                     method: 'POST',
                     body: JSON.stringify(nuevoRegistro)
@@ -1441,6 +1488,19 @@
             document.getElementById('observations').value = '';
             selectedPerson = null;
         }
+
+        // ==========================================
+        // EVENTO: Al cerrar el modal, restaurar modo RFID si corresponde
+        // ==========================================
+        document.getElementById('manual-registration-modal').addEventListener('hidden.bs.modal', function() {
+            // Restaurar foco en RFID si estaba en ese modo
+            if (currentMode === 'rfid') {
+                setTimeout(() => {
+                    document.getElementById('rfid-input').focus();
+                    console.log('✅ Modo RFID reactivado');
+                }, 100);
+            }
+        });
 
         // ==========================================
         // MOSTRAR/OCULTAR FEEDBACK
