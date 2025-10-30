@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.18.20">
+    <meta name="page-version" content="25.10.30.18.31">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -327,23 +327,30 @@
         let userIndicators = [];
         let availableYears = [];
         let availableMonths = [];
-        let calculatedResults = [];
+        let variablesCache = {}; // Cache para evitar consultas duplicadas
         
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
-        
         async function initializePage() {
             console.log('🔧 Inicializando dashboard de indicadores');
             
             try {
                 getCurrentUser();
                 
-                // Cargar indicadores primero para saber si hay configuración
-                await loadUserIndicators();
+                // OPTIMIZACIÓN: Cargar en paralelo
+                const [userIndicatorsResult] = await Promise.all([
+                    loadUserIndicators(),
+                    loadAcademicYears()
+                ]);
                 
-                // Luego cargar años (puede auto-calcular si hay año vigente)
-                await loadAcademicYears();
+                // Si hay año vigente e indicadores, calcular automáticamente
+                if (userIndicators.length > 0) {
+                    const yearSelect = document.getElementById('filterYear');
+                    if (yearSelect.value) {
+                        setTimeout(() => calculateIndicators(), 300);
+                    }
+                }
                 
                 console.log('✅ Página inicializada');
                 
@@ -400,16 +407,7 @@
                 });
                 
                 console.log(`✅ ${availableYears.length} años académicos cargados`);
-                
-                // Si se seleccionó un año vigente automáticamente, calcular indicadores
-                if (currentYearId && userIndicators.length > 0) {
-                    console.log('🔄 Calculando indicadores para año vigente...');
-                    // Pequeño delay para asegurar que el DOM se actualizó
-                    setTimeout(() => {
-                        calculateIndicators();
-                    }, 500);
-                }
-                
+        
             } catch (error) {
                 console.error('❌ Error cargando años:', error);
             }
@@ -526,22 +524,18 @@
             calculatedResults = [];
             
             try {
-                console.log(`📊 Calculando ${userIndicators.length} indicadores...`);
+                console.log(`📊 Calculando ${userIndicators.length} indicadores en paralelo...`);
                 
-                let calculatedCount = 0;
+                updateCalculationProgress(`Calculando ${userIndicators.length} indicadores...`);
                 
-                for (let i = 0; i < userIndicators.length; i++) {
-                    const indicator = userIndicators[i];
-                    updateCalculationProgress(`Calculando ${i + 1} de ${userIndicators.length}: ${indicator.indicator_name}`);
-                    
-                    const result = await calculateSingleIndicator(indicator, yearId, monthNumber);
-                    calculatedResults.push(result);
-                    
-                    if (result.calculated) {
-                        calculatedCount++;
-                    }
-                }
+                // OPTIMIZACIÓN: Calcular todos en paralelo
+                const promises = userIndicators.map(indicator => 
+                    calculateSingleIndicator(indicator, yearId, monthNumber)
+                );
                 
+                calculatedResults = await Promise.all(promises);
+                
+                const calculatedCount = calculatedResults.filter(r => r.calculated).length;
                 console.log(`✅ ${calculatedCount} de ${userIndicators.length} indicadores calculados`);
                 
                 renderResults();
@@ -648,9 +642,16 @@
                 // Limpiar nombre de variable (remover VAR_ prefix)
                 const cleanName = variableName.replace('VAR_', '').replace(/_/g, ' ');
                 
+                // OPTIMIZACIÓN: Usar cache para variables
+                const cacheKey = `${cleanName}_${yearId}_${monthNumber || 'annual'}`;
+                
+                if (variablesCache[cacheKey] !== undefined) {
+                    return variablesCache[cacheKey];
+                }
+                
                 // Buscar variable por nombre
                 const variables = await supabaseRequest(`/variables?select=variable_id,periodicity&variable_name=eq.${cleanName}&variable_status=eq.active&limit=1`);
-                
+                        
                 if (!variables || variables.length === 0) {
                     console.warn(`Variable no encontrada: ${variableName}`);
                     return null;
@@ -671,7 +672,9 @@
                         if (!values || values.length === 0) return null;
                         
                         const sum = values.reduce((acc, v) => acc + (v.value_numeric || 0), 0);
-                        return sum / values.length;
+                        const average = sum / values.length;
+                        variablesCache[cacheKey] = average;
+                        return average;
                     }
                 }
                 
@@ -679,13 +682,17 @@
                 const values = await supabaseRequest(query + '&limit=1');
                 
                 if (!values || values.length === 0) {
+                    variablesCache[cacheKey] = null;
                     return null;
                 }
                 
-                return values[0].value_numeric;
+                const value = values[0].value_numeric;
+                variablesCache[cacheKey] = value;
+                return value;
                 
             } catch (error) {
                 console.error(`Error obteniendo valor de ${variableName}:`, error);
+                variablesCache[cacheKey] = null;
                 return null;
             }
         }
