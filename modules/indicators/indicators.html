@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.17.15">
+    <meta name="page-version" content="25.10.30.18.34">
     <title>Indicadores - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -507,19 +507,17 @@
                 // Inicializar modal
                 modalInstance = new bootstrap.Modal(document.getElementById('indicatorModal'));
                 
-                // Cargar usuarios y otros datos primero
+                // OPTIMIZACIÓN: Cargar todo en paralelo incluyendo indicadores
                 await Promise.all([
                     loadUsers(),
                     loadVariables(),
                     loadAcademicYears(),
-                    loadCategories()
+                    loadCategories(),
+                    loadIndicators() // Mover aquí para cargar en paralelo
                 ]);
                 
                 // Cargar opciones de categorías en el filtro
                 populateCategoryFilter();
-                
-                // Cargar indicadores
-                await loadIndicators();
                 
                 // Aplicar filtro del usuario actual DESPUÉS de cargar los indicadores
                 if (currentUser && currentUser.user_id) {
@@ -606,64 +604,63 @@
             }
         }
 
-        
         async function loadVariables() {
             try {
                 const variables = await supabaseRequest('/variables?select=*&variable_status=eq.active&order=variable_name');
                 availableVariables = variables || [];
                 
-                // Obtener categorías heredadas para cada variable
-                availableVariablesWithCategories = await Promise.all(availableVariables.map(async (variable) => {
-                    try {
-                        // Buscar indicadores que usan esta variable
-                        const indicators = await supabaseRequest(`/indicators?select=indicator_id,formula_variables&indicator_status=eq.active`);
-                        
-                        // Filtrar indicadores que tienen esta variable en formula_variables
-                        const relevantIndicators = indicators.filter(ind => {
-                            if (!ind.formula_variables) return false;
-                            const varIds = Object.keys(ind.formula_variables);
-                            return varIds.includes(variable.variable_id);
-                        });
-                        
-                        if (relevantIndicators.length === 0) {
-                            return {
-                                ...variable,
-                                categories: []
-                            };
-                        }
-                        
-                        // Obtener IDs de indicadores relevantes
-                        const indicatorIds = relevantIndicators.map(ind => ind.indicator_id);
-                        
-                        // Buscar categorías asociadas a estos indicadores
-                        const categoryAssignments = await supabaseRequest(`/indicator_category_assignments?select=category_id&indicator_id=in.(${indicatorIds.join(',')})`);
-                        
-                        if (!categoryAssignments || categoryAssignments.length === 0) {
-                            return {
-                                ...variable,
-                                categories: []
-                            };
-                        }
-                        
-                        // Obtener IDs únicos de categorías
-                        const uniqueCategoryIds = [...new Set(categoryAssignments.map(ca => ca.category_id))];
-                        
-                        // Obtener información completa de las categorías
-                        const categories = await supabaseRequest(`/indicator_categories?select=*&category_id=in.(${uniqueCategoryIds.join(',')})&is_active=eq.true&order=category_order`);
-                        
-                        return {
-                            ...variable,
-                            categories: categories || []
-                        };
-                        
-                    } catch (error) {
-                        console.error(`Error obteniendo categorías para variable ${variable.variable_name}:`, error);
+                // OPTIMIZACIÓN: Cargar todos los indicadores y asignaciones UNA SOLA VEZ
+                const [indicators, allCategoryAssignments, allCategories] = await Promise.all([
+                    supabaseRequest(`/indicators?select=indicator_id,formula_variables&indicator_status=eq.active`),
+                    supabaseRequest(`/indicator_category_assignments?select=indicator_id,category_id`),
+                    supabaseRequest(`/indicator_categories?select=*&is_active=eq.true&order=category_order`)
+                ]);
+                
+                // Crear mapas para búsqueda rápida
+                const categoryMap = {};
+                (allCategories || []).forEach(cat => {
+                    categoryMap[cat.category_id] = cat;
+                });
+                
+                const indicatorCategoriesMap = {};
+                (allCategoryAssignments || []).forEach(assignment => {
+                    if (!indicatorCategoriesMap[assignment.indicator_id]) {
+                        indicatorCategoriesMap[assignment.indicator_id] = [];
+                    }
+                    if (categoryMap[assignment.category_id]) {
+                        indicatorCategoriesMap[assignment.indicator_id].push(categoryMap[assignment.category_id]);
+                    }
+                });
+                
+                // Asignar categorías a cada variable
+                availableVariablesWithCategories = availableVariables.map(variable => {
+                    const relevantIndicators = (indicators || []).filter(ind => {
+                        if (!ind.formula_variables) return false;
+                        const varIds = Object.keys(ind.formula_variables);
+                        return varIds.includes(variable.variable_id);
+                    });
+                    
+                    if (relevantIndicators.length === 0) {
                         return {
                             ...variable,
                             categories: []
                         };
                     }
-                }));
+                    
+                    // Obtener categorías únicas de todos los indicadores relevantes
+                    const categoriesSet = new Set();
+                    relevantIndicators.forEach(ind => {
+                        const cats = indicatorCategoriesMap[ind.indicator_id] || [];
+                        cats.forEach(cat => categoriesSet.add(JSON.stringify(cat)));
+                    });
+                    
+                    const uniqueCategories = Array.from(categoriesSet).map(cat => JSON.parse(cat));
+                    
+                    return {
+                        ...variable,
+                        categories: uniqueCategories
+                    };
+                });
                 
                 filteredAvailableVariables = [...availableVariablesWithCategories];
                 renderAvailableVariables();
@@ -677,6 +674,7 @@
                 filteredAvailableVariables = [];
             }
         }
+
         
         async function loadAcademicYears() {
             try {
@@ -870,15 +868,29 @@
             `;
             
             try {
-                // Cargar indicadores con categorías
-                const indicators = await supabaseRequest('/indicators?select=*,users!indicators_owner_id_fkey(user_name,user_display_name)&order=indicator_name');
+                // OPTIMIZACIÓN: Cargar indicadores y todas las asignaciones en paralelo
+                const [indicators, allAssignments] = await Promise.all([
+                    supabaseRequest('/indicators?select=*,users!indicators_owner_id_fkey(user_name,user_display_name)&order=indicator_name'),
+                    supabaseRequest('/indicator_category_assignments?select=indicator_id,indicator_categories(*)')
+                ]);
+                
                 allIndicators = indicators || [];
                 
-                // Cargar categorías de cada indicador
-                for (let indicator of allIndicators) {
-                    const assignments = await supabaseRequest(`/indicator_category_assignments?select=indicator_categories(*)&indicator_id=eq.${indicator.indicator_id}`);
-                    indicator.categories = assignments ? assignments.map(a => a.indicator_categories) : [];
-                }
+                // Crear mapa de asignaciones por indicador
+                const assignmentMap = {};
+                (allAssignments || []).forEach(assignment => {
+                    if (!assignmentMap[assignment.indicator_id]) {
+                        assignmentMap[assignment.indicator_id] = [];
+                    }
+                    if (assignment.indicator_categories) {
+                        assignmentMap[assignment.indicator_id].push(assignment.indicator_categories);
+                    }
+                });
+                
+                // Asignar categorías a cada indicador
+                allIndicators.forEach(indicator => {
+                    indicator.categories = assignmentMap[indicator.indicator_id] || [];
+                });
                 
                 filteredIndicators = [...allIndicators];
                 renderIndicatorsGrid();
