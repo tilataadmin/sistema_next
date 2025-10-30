@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.10.30.17.48">
     <title>Variables - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -219,10 +220,31 @@
                             <option value="mine">Mis variables</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
-                        <select class="form-select" id="filterCategory" onchange="filterVariables()">
-                            <option value="">Todas las categorías</option>
-                        </select>
+                    <div class="col-md-3">
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" 
+                                    id="categoryFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-funnel me-2"></i>
+                                <span id="categoryFilterLabel">Todas las categorías</span>
+                            </button>
+                            <div class="dropdown-menu p-3" style="min-width: 300px; max-height: 400px; overflow-y: auto;" 
+                                 onclick="event.stopPropagation();">
+                                <div class="mb-2">
+                                    <button class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="selectAllCategories()">
+                                        <i class="bi bi-check-all me-1"></i>Seleccionar todas
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary w-100" onclick="clearCategoryFilter()">
+                                        <i class="bi bi-x-circle me-1"></i>Limpiar selección
+                                    </button>
+                                </div>
+                                <hr>
+                                <div id="categoryFilterOptions">
+                                    <div class="text-center text-muted py-2">
+                                        <small>Cargando categorías...</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="col-md-2">
                         <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
@@ -527,6 +549,7 @@
         let currentVariableId = null;
         let currentDataSource = 'manual'; // Nuevo
         let availableUsers = []; // NUEVO: Lista de usuarios para responsables
+        let selectedCategoryFilters = []; // Categorías seleccionadas para filtro
         
         // ==========================================
         // INICIALIZACIÓN
@@ -842,22 +865,134 @@
                 const categories = await supabaseRequest('/indicator_categories?select=*&is_active=eq.true&order=category_order.asc,category_name.asc');
                 availableCategories = categories || [];
                 
-                // Renderizar opciones en el select de filtro
-                const filterSelect = document.getElementById('filterCategory');
-                if (filterSelect && availableCategories.length > 0) {
-                    availableCategories.forEach(category => {
-                        const option = document.createElement('option');
-                        option.value = category.category_id;
-                        option.textContent = category.category_name;
-                        filterSelect.appendChild(option);
-                    });
+                // Cargar selección guardada de localStorage
+                const savedFilters = localStorage.getItem('variablesCategoryFilters');
+                if (savedFilters) {
+                    try {
+                        selectedCategoryFilters = JSON.parse(savedFilters);
+                    } catch (e) {
+                        selectedCategoryFilters = [];
+                    }
                 }
+                
+                // Renderizar opciones en el dropdown de filtro
+                renderCategoryFilterOptions();
+                updateCategoryFilterLabel();
                 
                 console.log(`✅ ${availableCategories.length} categorías cargadas para filtro`);
             } catch (error) {
                 console.error('❌ Error cargando categorías:', error);
                 availableCategories = [];
             }
+        }
+
+        // ==========================================
+        // RENDERIZAR OPCIONES DE FILTRO DE CATEGORÍAS
+        // ==========================================
+        
+        function renderCategoryFilterOptions() {
+            const container = document.getElementById('categoryFilterOptions');
+            
+            if (!container) {
+                console.error('Contenedor de opciones de categorías no encontrado');
+                return;
+            }
+            
+            if (availableCategories.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-2">
+                        <small>No hay categorías disponibles</small>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            availableCategories.forEach(category => {
+                const isChecked = selectedCategoryFilters.includes(category.category_id);
+                html += `
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" 
+                               id="catFilter_${category.category_id}" 
+                               value="${category.category_id}"
+                               ${isChecked ? 'checked' : ''}
+                               onchange="toggleCategoryFilter('${category.category_id}')">
+                        <label class="form-check-label d-flex align-items-center" 
+                               for="catFilter_${category.category_id}">
+                            <span class="badge me-2" 
+                                  style="background-color: ${category.category_color}; width: 20px; height: 20px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                                <i class="bi bi-${category.category_icon}" style="font-size: 0.7rem;"></i>
+                            </span>
+                            <span>${category.category_name}</span>
+                        </label>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // ==========================================
+        // TOGGLE CATEGORÍA EN FILTRO
+        // ==========================================
+        
+        function toggleCategoryFilter(categoryId) {
+            const index = selectedCategoryFilters.indexOf(categoryId);
+            
+            if (index > -1) {
+                selectedCategoryFilters.splice(index, 1);
+            } else {
+                selectedCategoryFilters.push(categoryId);
+            }
+            
+            // Guardar en localStorage
+            localStorage.setItem('variablesCategoryFilters', JSON.stringify(selectedCategoryFilters));
+            
+            updateCategoryFilterLabel();
+            filterVariables();
+        }
+        
+        // ==========================================
+        // ACTUALIZAR LABEL DEL FILTRO DE CATEGORÍAS
+        // ==========================================
+        
+        function updateCategoryFilterLabel() {
+            const label = document.getElementById('categoryFilterLabel');
+            
+            if (!label) return;
+            
+            if (selectedCategoryFilters.length === 0) {
+                label.innerHTML = 'Todas las categorías';
+            } else if (selectedCategoryFilters.length === 1) {
+                const category = availableCategories.find(c => c.category_id === selectedCategoryFilters[0]);
+                label.innerHTML = category ? category.category_name : '1 categoría';
+            } else {
+                label.innerHTML = `${selectedCategoryFilters.length} categorías`;
+            }
+        }
+        
+        // ==========================================
+        // SELECCIONAR TODAS LAS CATEGORÍAS
+        // ==========================================
+        
+        function selectAllCategories() {
+            selectedCategoryFilters = availableCategories.map(c => c.category_id);
+            localStorage.setItem('variablesCategoryFilters', JSON.stringify(selectedCategoryFilters));
+            renderCategoryFilterOptions();
+            updateCategoryFilterLabel();
+            filterVariables();
+        }
+        
+        // ==========================================
+        // LIMPIAR FILTRO DE CATEGORÍAS
+        // ==========================================
+        
+        function clearCategoryFilter() {
+            selectedCategoryFilters = [];
+            localStorage.removeItem('variablesCategoryFilters');
+            renderCategoryFilterOptions();
+            updateCategoryFilterLabel();
+            filterVariables();
         }
 
         
@@ -1314,7 +1449,6 @@
             const dataSourceFilter = document.getElementById('filterDataSource').value;
             const periodicityFilter = document.getElementById('filterPeriodicity').value;
             const ownerFilter = document.getElementById('filterOwner').value;
-            const categoryFilter = document.getElementById('filterCategory').value;
             
             filteredVariables = allVariables.filter(variable => {
                 const matchesSearch = !searchTerm || 
@@ -1324,8 +1458,10 @@
                 const matchesDataSource = !dataSourceFilter || (variable.data_source || 'manual') === dataSourceFilter;
                 const matchesPeriodicity = !periodicityFilter || variable.periodicity === periodicityFilter;
                 const matchesOwner = !ownerFilter || (ownerFilter === 'mine' && currentUser && variable.owner_id === currentUser.user_id);
-                const matchesCategory = !categoryFilter || 
-                    (variable.categories && variable.categories.some(cat => cat.category_id === categoryFilter));
+                
+                // Filtro de categorías múltiple (OR lógico - al menos una categoría coincide)
+                const matchesCategory = selectedCategoryFilters.length === 0 || 
+                    (variable.categories && variable.categories.some(cat => selectedCategoryFilters.includes(cat.category_id)));
                 
                 return matchesSearch && matchesDataSource && matchesPeriodicity && matchesOwner && matchesCategory;
             });
@@ -1339,7 +1475,10 @@
             document.getElementById('filterDataSource').value = '';
             document.getElementById('filterPeriodicity').value = '';
             document.getElementById('filterOwner').value = '';
-            document.getElementById('filterCategory').value = '';
+            
+            // Limpiar filtro de categorías
+            clearCategoryFilter();
+            
             filteredVariables = [...allVariables];
             renderVariablesGrid();
         }
@@ -1919,6 +2058,9 @@
         window.testQuery = testQuery;
         window.loadSurveyMasters = loadSurveyMasters;
         window.loadSurveySections = loadSurveySections;
+        window.toggleCategoryFilter = toggleCategoryFilter;
+        window.selectAllCategories = selectAllCategories;
+        window.clearCategoryFilter = clearCategoryFilter;
         
         console.log('🎉 Página de variables cargada correctamente');
     </script>
