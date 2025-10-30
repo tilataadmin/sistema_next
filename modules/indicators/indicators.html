@@ -507,9 +507,9 @@
                 modalInstance = new bootstrap.Modal(document.getElementById('indicatorModal'));
                 
                 // Cargar datos en paralelo
+                // Cargar datos en paralelo
                 await Promise.all([
-                    loadIndicators(),
-                    loadUsers(),
+                    loadUsers(), // Cargar usuarios primero
                     loadVariables(),
                     loadAcademicYears(),
                     loadCategories()
@@ -517,6 +517,9 @@
                 
                 // Cargar opciones de categorías en el filtro
                 populateCategoryFilter();
+                
+                // Cargar indicadores después para que el filtro de usuario ya esté configurado
+                await loadIndicators();
                 
                 setupEventListeners();
                 
@@ -558,8 +561,19 @@
         
         async function loadUsers() {
             try {
-                const users = await supabaseRequest('/users?select=user_id,user_name,user_display_name&user_status=eq.active&order=user_name');
-                availableUsers = users || [];
+                const users = await supabaseRequest('/users?select=user_id,user_name,user_display_name,workers(worker_last_name_1,worker_last_name_2,worker_first_name)&user_status=eq.active&order=user_name');
+                
+                // Ordenar usuarios por apellido1 + apellido2 + nombre
+                availableUsers = (users || []).sort((a, b) => {
+                    const nameA = a.workers ? 
+                        `${a.workers.worker_last_name_1 || ''} ${a.workers.worker_last_name_2 || ''} ${a.workers.worker_first_name || ''}`.trim().toLowerCase() :
+                        (a.user_display_name || a.user_name || '').toLowerCase();
+                    const nameB = b.workers ? 
+                        `${b.workers.worker_last_name_1 || ''} ${b.workers.worker_last_name_2 || ''} ${b.workers.worker_first_name || ''}`.trim().toLowerCase() :
+                        (b.user_display_name || b.user_name || '').toLowerCase();
+                    return nameA.localeCompare(nameB);
+                });
+                
                 populateOwnerFilter();
                 console.log(`✅ ${availableUsers.length} usuarios cargados`);
             } catch (error) {
@@ -765,9 +779,24 @@
             availableUsers.forEach(user => {
                 const option = document.createElement('option');
                 option.value = user.user_id;
-                option.textContent = user.user_display_name || user.user_name;
+                
+                // Mostrar apellidos + nombre si están disponibles, sino user_display_name
+                if (user.workers) {
+                    const fullName = `${user.workers.worker_last_name_1 || ''} ${user.workers.worker_last_name_2 || ''} ${user.workers.worker_first_name || ''}`.trim();
+                    option.textContent = fullName || user.user_display_name || user.user_name;
+                } else {
+                    option.textContent = user.user_display_name || user.user_name;
+                }
+                
                 filter.appendChild(option);
             });
+            
+            // Establecer el filtro al usuario actual
+            if (currentUser && currentUser.user_id) {
+                filter.value = currentUser.user_id;
+                // Disparar el filtrado automáticamente
+                filterIndicators();
+            }
         }
 
 
