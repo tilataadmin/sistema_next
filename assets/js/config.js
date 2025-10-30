@@ -768,7 +768,6 @@ const URL_PERMISSIONS = {
     '/modules/indicators/segments.html': 'Segmentaciones',
     '/modules/indicators/categories.html': 'Categorías de indicadores',
     '/modules/indicators/data-entry.html': 'Captura de datos',
-    '/modules/indicators/variable-assignments.html': 'Asignar variables a usuarios',
     '/modules/indicators/indicators.html': 'Indicadores',
     '/modules/indicators/dashboard-config.html': 'Configurar mi dashboard',  // NUEVO
     '/modules/indicators/dashboard.html': 'Ver mi dashboard',                // NUEVO
