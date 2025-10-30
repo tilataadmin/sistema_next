@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.10.30.10.55">
+
+    
     <title>Gestionar Estudiantes - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -140,18 +143,24 @@
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-3 align-items-end">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label for="searchInput" class="form-label">Buscar estudiante</label>
                         <input type="text" id="searchInput" class="form-control" 
                                placeholder="Busque por nombre o apellido...">
                     </div>
                     <div class="col-md-3">
-                        <button id="btnNewStudent" class="btn btn-primary">
-                            <i class="bi bi-plus-circle me-1"></i>Nuevo Estudiante
+                        <label for="statusFilter" class="form-label">Estado</label>
+                        <select id="statusFilter" class="form-select">
+                            <option value="">Todos los estados</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="btnNewStudent" class="btn btn-primary w-100">
+                            <i class="bi bi-plus-circle me-1"></i>Nuevo
                         </button>
                     </div>
                     <div class="col-md-3">
-                        <button id="btnRefresh" class="btn btn-outline-secondary">
+                        <button id="btnRefresh" class="btn btn-outline-secondary w-100">
                             <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
                         </button>
                     </div>
@@ -332,6 +341,7 @@
         let courses = [];
         let statuses = [];
         let genders = [];
+        let currentStatusFilter = '1'; 
         let isEditing = false;
         let currentStudentId = null;
         let searchTimeout = null;
@@ -404,7 +414,7 @@
                 const [familiesData, coursesData, statusesData, gendersData] = await Promise.all([
                     supabaseRequest('/families?select=family_code,family_name&order=family_name.asc'),
                     supabaseRequest('/courses?select=course_id,course_name,course_order&course_status=eq.active&order=course_order.asc'),
-                    supabaseRequest('/student_status?select=status_id,status_description&order=status_description.asc'),
+                    supabaseRequest('/student_status?select=status_id,status_code,status_description&order=status_code.asc'),
                     supabaseRequest('/genders?select=gender_id,gender_name&order=gender_name.asc')
                 ]);
                 
@@ -422,7 +432,7 @@
                 throw error;
             }
         }
-        
+
         function populateDropdowns() {
             // Families
             const familySelect = document.getElementById('familyCode');
@@ -438,11 +448,19 @@
                 courseSelect.innerHTML += `<option value="${course.course_id}">${course.course_name}</option>`;
             });
             
-            // Statuses
+            // Statuses (para el modal)
             const statusSelect = document.getElementById('statusId');
             statusSelect.innerHTML = '<option value="">Seleccione un estado...</option>';
             statuses.forEach(status => {
                 statusSelect.innerHTML += `<option value="${status.status_id}">${status.status_description}</option>`;
+            });
+            
+            // Status Filter (para el filtro principal)
+            const statusFilter = document.getElementById('statusFilter');
+            statusFilter.innerHTML = '<option value="">Todos los estados</option>';
+            statuses.forEach(status => {
+                const selected = status.status_code === 1 ? 'selected' : '';
+                statusFilter.innerHTML += `<option value="${status.status_code}" ${selected}>${status.status_description}</option>`;
             });
             
             // Genders
@@ -452,14 +470,27 @@
                 genderSelect.innerHTML += `<option value="${gender.gender_id}">${gender.gender_name}</option>`;
             });
         }
+        
+
+        
         async function loadStudents(search = '', page = 1) {
             try {
                 showLoading();
                 
                 let query = '/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,family_id,course_id,status_id';
                 
+                // Si hay búsqueda por nombre, ignorar filtro de estado
                 if (search.trim()) {
                     query += `&or=(student_first_name.ilike.*${search}*,student_last_name_1.ilike.*${search}*,student_last_name_2.ilike.*${search}*)`;
+                } else {
+                    // Si NO hay búsqueda, aplicar filtro de estado
+                    if (currentStatusFilter) {
+                        // Buscar el status_id correspondiente al status_code seleccionado
+                        const selectedStatus = statuses.find(s => s.status_code.toString() === currentStatusFilter.toString());
+                        if (selectedStatus) {
+                            query += `&status_id=eq.${selectedStatus.status_id}`;
+                        }
+                    }
                 }
                 
                 const limit = 30;
@@ -493,9 +524,17 @@
                     students = [];
                 }
                 
+                // Contar total con los mismos filtros
                 let countQuery = '/students?select=student_id';
                 if (search.trim()) {
                     countQuery += `&or=(student_first_name.ilike.*${search}*,student_last_name_1.ilike.*${search}*,student_last_name_2.ilike.*${search}*)`;
+                } else {
+                    if (currentStatusFilter) {
+                        const selectedStatus = statuses.find(s => s.status_code.toString() === currentStatusFilter.toString());
+                        if (selectedStatus) {
+                            countQuery += `&status_id=eq.${selectedStatus.status_id}`;
+                        }
+                    }
                 }
                 const countData = await supabaseRequest(countQuery);
                 totalStudents = countData ? countData.length : 0;
@@ -603,6 +642,14 @@
                     currentPage = 1;
                     loadStudents(e.target.value);
                 }, 500);
+            });
+
+            // Filtro de estado
+            document.getElementById('statusFilter').addEventListener('change', function(e) {
+                currentStatusFilter = e.target.value;
+                currentPage = 1;
+                const searchValue = document.getElementById('searchInput').value;
+                loadStudents(searchValue, 1);
             });
             
             // Botones
