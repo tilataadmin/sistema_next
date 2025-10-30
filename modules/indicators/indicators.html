@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.15.05">
+    <meta name="page-version" content="25.10.30.17.15">
     <title>Indicadores - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -973,21 +973,32 @@
                                 ` : ''}
                                 
                                 <div class="d-flex gap-1">
-                                    <button class="btn btn-sm btn-outline-primary flex-fill" 
-                                            onclick="editIndicator('${indicator.indicator_id}')" 
-                                            title="Editar">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-warning flex-fill" 
-                                            onclick="manageGoals('${indicator.indicator_id}')" 
-                                            title="Metas">
-                                        <i class="bi bi-bullseye"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-${indicator.indicator_status === 'active' ? 'secondary' : 'success'} flex-fill" 
-                                            onclick="toggleIndicatorStatus('${indicator.indicator_id}', '${indicator.indicator_status}')" 
-                                            title="${indicator.indicator_status === 'active' ? 'Desactivar' : 'Activar'}">
-                                        <i class="bi bi-${indicator.indicator_status === 'active' ? 'pause' : 'play'}"></i>
-                                    </button>
+                                    ${currentUser && indicator.owner_id === currentUser.user_id ? `
+                                        <button class="btn btn-sm btn-outline-primary flex-fill" 
+                                                onclick="editIndicator('${indicator.indicator_id}')" 
+                                                title="Editar">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-warning flex-fill" 
+                                                onclick="manageGoals('${indicator.indicator_id}')" 
+                                                title="Metas">
+                                            <i class="bi bi-bullseye"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-${indicator.indicator_status === 'active' ? 'secondary' : 'success'} flex-fill" 
+                                                onclick="toggleIndicatorStatus('${indicator.indicator_id}', '${indicator.indicator_status}')" 
+                                                title="${indicator.indicator_status === 'active' ? 'Desactivar' : 'Activar'}">
+                                            <i class="bi bi-${indicator.indicator_status === 'active' ? 'pause' : 'play'}"></i>
+                                        </button>
+                                    ` : `
+                                        <button class="btn btn-sm btn-outline-info flex-fill" 
+                                                onclick="viewIndicatorDetails('${indicator.indicator_id}')" 
+                                                title="Ver detalles">
+                                            <i class="bi bi-eye"></i> Ver
+                                        </button>
+                                        <span class="text-muted small flex-fill text-center align-self-center">
+                                            <i class="bi bi-lock me-1"></i>Solo lectura
+                                        </span>
+                                    `}
                                 </div>
                             </div>
                         </div>
@@ -1308,6 +1319,12 @@
                     showMessage('Indicador no encontrado', 'danger');
                     return;
                 }
+
+                // Verificar que el usuario sea el propietario
+                if (!currentUser || indicator.owner_id !== currentUser.user_id) {
+                    showMessage('Solo puedes editar tus propios indicadores', 'warning');
+                    return;
+                }
                 
                 document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Indicador';
                 document.getElementById('submitBtn').innerHTML = '<i class="bi bi-check-circle me-1"></i>Actualizar Indicador';
@@ -1514,6 +1531,12 @@
             try {
                 const indicator = allIndicators.find(i => i.indicator_id === indicatorId);
                 if (!indicator) return;
+
+                // Verificar que el usuario sea el propietario
+                if (!currentUser || indicator.owner_id !== currentUser.user_id) {
+                    showMessage('Solo puedes cambiar el estado de tus propios indicadores', 'warning');
+                    return;
+                }
                 
                 const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
                 const action = newStatus === 'active' ? 'activar' : 'desactivar';
@@ -1538,6 +1561,102 @@
                 showMessage('Error cambiando estado: ' + error.message, 'danger');
             }
         }
+
+        // ==========================================
+        // VER DETALLES DE INDICADOR (SOLO LECTURA)
+        // ==========================================
+        
+        async function viewIndicatorDetails(indicatorId) {
+            try {
+                const indicator = allIndicators.find(i => i.indicator_id === indicatorId);
+                if (!indicator) {
+                    showMessage('Indicador no encontrado', 'danger');
+                    return;
+                }
+                
+                // Cargar metas del indicador
+                const goals = await supabaseRequest(`/indicator_goals?select=*,academic_years(year_name)&indicator_id=eq.${indicatorId}`);
+                
+                const ownerName = indicator.users ? 
+                    (indicator.users.user_display_name || indicator.users.user_name) : 'Usuario desconocido';
+                
+                const statusText = indicator.indicator_status === 'active' ? 'Activo' : 
+                                  indicator.indicator_status === 'testing' ? 'En Pruebas' : 'Inactivo';
+                
+                const categoriesList = indicator.categories && indicator.categories.length > 0 
+                    ? indicator.categories.map(cat => `
+                        <span class="badge" style="background-color: ${cat.category_color};">
+                            <i class="bi bi-${cat.category_icon} me-1"></i>${cat.category_name}
+                        </span>
+                      `).join(' ')
+                    : '<span class="text-muted">Sin categorías</span>';
+                
+                const goalsList = goals && goals.length > 0
+                    ? goals.map(goal => `
+                        <li class="mb-2">
+                            <strong>${goal.academic_years.year_name}:</strong> ${goal.goal_value}
+                            ${goal.goal_description ? `<br><small class="text-muted">${goal.goal_description}</small>` : ''}
+                        </li>
+                      `).join('')
+                    : '<li class="text-muted">Sin metas configuradas</li>';
+                
+                const detailsHtml = `
+                    <div class="alert alert-light" role="alert">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <h5 class="alert-heading mb-0">${escapeHtml(indicator.indicator_name)}</h5>
+                                    <span class="badge bg-info">Solo lectura</span>
+                                </div>
+                                <hr>
+                                
+                                <p><strong>Descripción:</strong> ${escapeHtml(indicator.indicator_description) || 'Sin descripción'}</p>
+                                
+                                <p><strong>Propietario:</strong> ${ownerName}</p>
+                                
+                                <p><strong>Estado:</strong> <span class="badge ${indicator.indicator_status === 'active' ? 'bg-success' : indicator.indicator_status === 'testing' ? 'bg-warning' : 'bg-secondary'}">${statusText}</span></p>
+                                
+                                <p><strong>Formato del resultado:</strong> <span class="result-format-badge format-${indicator.result_format}">${indicator.result_format.toUpperCase()}</span></p>
+                                
+                                <p><strong>Fórmula:</strong></p>
+                                <div class="formula-badge mb-3">
+                                    ${escapeHtml(indicator.formula_expression)}
+                                </div>
+                                
+                                <p><strong>Categorías:</strong> ${categoriesList}</p>
+                                
+                                <p><strong>Metas configuradas:</strong></p>
+                                <ul>${goalsList}</ul>
+                                
+                                <hr>
+                                <small class="text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Solo el propietario puede editar este indicador
+                                </small>
+                            </div>
+                            <button type="button" class="btn-close ms-3" onclick="closeAlert('indicatorDetailsAlert')"></button>
+                        </div>
+                    </div>
+                `;
+                
+                const alertContainer = document.getElementById('alertContainer');
+                alertContainer.innerHTML = `<div id="indicatorDetailsAlert">${detailsHtml}</div>`;
+                alertContainer.scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Error cargando detalles:', error);
+                showMessage('Error cargando detalles del indicador', 'danger');
+            }
+        }
+        
+        // Función auxiliar para cerrar alertas
+        function closeAlert(alertId) {
+            const alert = document.getElementById(alertId);
+            if (alert) {
+                alert.remove();
+            }
+        }
+
         
         // ==========================================
         // ESTADÍSTICAS
@@ -1592,6 +1711,8 @@
         window.addGoal = addGoal;
         window.removeGoal = removeGoal;
         window.filterAvailableVariables = filterAvailableVariables;
+        window.viewIndicatorDetails = viewIndicatorDetails;
+        window.closeAlert = closeAlert;
         
         console.log('🎉 Página de indicadores cargada correctamente');
     </script>

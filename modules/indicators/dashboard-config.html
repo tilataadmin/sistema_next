@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.18.00">
+    <meta name="page-version" content="25.10.30.18.08">
     <title>Configurar Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -200,7 +200,7 @@
                         <div class="row mb-3">
                             <div class="col-md-8">
                                 <input type="text" class="form-control" id="searchIndicators" 
-                                       placeholder="Buscar indicadores..." onkeyup="filterIndicators()">
+                                       placeholder="Buscar indicadores..." onkeyup="handleFilterChange()">
                             </div>
                             <div class="col-md-4">
                                 <div class="dropdown">
@@ -440,7 +440,7 @@
                                id="catFilter_${category.category_id}" 
                                value="${category.category_id}"
                                ${isChecked ? 'checked' : ''}
-                               onchange="toggleCategoryFilter('${category.category_id}')">
+                               onchange="handleCategoryToggle('${category.category_id}')">
                         <label class="form-check-label d-flex align-items-center" 
                                for="catFilter_${category.category_id}">
                             <span class="badge me-2" 
@@ -473,7 +473,7 @@
             localStorage.setItem('dashboardCategoryFilters', JSON.stringify(selectedCategoryFilters));
             
             updateCategoryFilterLabel();
-            filterIndicators();
+            // NO llamar filterIndicators aquí, se llama desde handleCategoryToggle
         }
         
         // ==========================================
@@ -499,30 +499,25 @@
         // SELECCIONAR TODAS LAS CATEGORÍAS
         // ==========================================
         
-        function selectAllCategories() {
+        async function selectAllCategories() {
             selectedCategoryFilters = availableCategories.map(c => c.category_id);
             localStorage.setItem('dashboardCategoryFilters', JSON.stringify(selectedCategoryFilters));
             renderCategoryFilterOptions();
             updateCategoryFilterLabel();
-            filterIndicators();
+            await filterIndicators();
         }
         
-        // ==========================================
-        // LIMPIAR FILTRO DE CATEGORÍAS
-        // ==========================================
-        
-        function clearCategoryFilter() {
+        async function clearCategoryFilter() {
             selectedCategoryFilters = [];
             localStorage.removeItem('dashboardCategoryFilters');
             renderCategoryFilterOptions();
             updateCategoryFilterLabel();
-            filterIndicators();
+            await filterIndicators();
         }
         
         // ==========================================
         // CARGAR INDICADORES Y SELECCIÓN
         // ==========================================
-        
         async function loadIndicators() {
             const container = document.getElementById('indicatorsContainer');
             container.innerHTML = `
@@ -533,9 +528,9 @@
             `;
             
             try {
-                // Cargar indicadores activos
+                // CARGA RÁPIDA INICIAL: Solo indicadores del usuario
                 // ✅ CORRECTO - Especificar la relación owner_id
-                const indicators = await supabaseRequest('/indicators?select=*,users!indicators_owner_id_fkey(user_display_name,user_name)&indicator_status=eq.active&order=indicator_name');
+                const indicators = await supabaseRequest(`/indicators?select=*,users!indicators_owner_id_fkey(user_display_name,user_name)&indicator_status=eq.active&owner_id=eq.${currentUser.user_id}&order=indicator_name`);
                 allIndicators = indicators || [];
                 
                 // Cargar categorías de cada indicador
@@ -557,7 +552,7 @@
                 renderIndicators();
                 updateCounts();
                 
-                console.log(`✅ ${allIndicators.length} indicadores cargados con categorías`);
+                console.log(`✅ ${allIndicators.length} indicadores del usuario cargados (carga rápida)`);
                 console.log(`✅ ${selectedIndicators.size} indicadores seleccionados`);
                 
             } catch (error) {
@@ -572,6 +567,41 @@
                         </button>
                     </div>
                 `;
+            }
+        }
+
+        // ==========================================
+        // CARGAR TODOS LOS INDICADORES (bajo demanda)
+        // ==========================================
+        
+        let allIndicatorsLoaded = false; // Bandera para saber si ya se cargaron todos
+        
+        async function loadAllIndicators() {
+            if (allIndicatorsLoaded) {
+                return; // Ya están cargados, no hacer nada
+            }
+            
+            try {
+                console.log('📥 Cargando TODOS los indicadores...');
+                
+                // Cargar TODOS los indicadores activos (sin filtro de owner)
+                const indicators = await supabaseRequest('/indicators?select=*,users!indicators_owner_id_fkey(user_display_name,user_name)&indicator_status=eq.active&order=indicator_name');
+                allIndicators = indicators || [];
+                
+                // Cargar categorías de cada indicador
+                for (let indicator of allIndicators) {
+                    const assignments = await supabaseRequest(`/indicator_category_assignments?select=indicator_categories(*)&indicator_id=eq.${indicator.indicator_id}`);
+                    indicator.categories = assignments ? assignments.map(a => a.indicator_categories) : [];
+                }
+                
+                allIndicatorsLoaded = true;
+                filteredIndicators = [...allIndicators];
+                
+                console.log(`✅ ${allIndicators.length} indicadores totales cargados`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando todos los indicadores:', error);
+                throw error;
             }
         }
         
@@ -717,9 +747,23 @@
         // ==========================================
         // FILTRADO
         // ==========================================
-        function filterIndicators() {
+        async function filterIndicators() {
+            // Si hay algún filtro activo y no se han cargado todos, cargarlos
             const searchTerm = document.getElementById('searchIndicators').value.toLowerCase();
             const filterType = document.querySelector('input[name="filterType"]:checked').value;
+            const hasActiveFilters = searchTerm || selectedCategoryFilters.length > 0;
+            
+            if (hasActiveFilters && !allIndicatorsLoaded) {
+                mostrarLoading();
+                try {
+                    await loadAllIndicators();
+                } catch (error) {
+                    ocultarLoading();
+                    showMessage('Error cargando indicadores: ' + error.message, 'danger');
+                    return;
+                }
+                ocultarLoading();
+            }
             
             filteredIndicators = allIndicators.filter(indicator => {
                 // Filtro de búsqueda
@@ -860,6 +904,23 @@
         
         function ocultarLoading() {
             document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        // ==========================================
+        // WRAPPERS PARA MANEJAR ASYNC EN EVENT HANDLERS
+        // ==========================================
+        
+        function handleFilterChange() {
+            filterIndicators().catch(error => {
+                console.error('Error en filtro:', error);
+            });
+        }
+        
+        function handleCategoryToggle(categoryId) {
+            toggleCategoryFilter(categoryId);
+            filterIndicators().catch(error => {
+                console.error('Error en filtro:', error);
+            });
         }
         
         // ==========================================
