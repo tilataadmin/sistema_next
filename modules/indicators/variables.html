@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.18.58">
+    <meta name="page-version" content="25.10.30.19.11">
     <title>Variables - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1282,7 +1282,6 @@
                                 
                                 <div class="d-flex justify-content-between align-items-center">
                                     <small class="text-muted">Creada: ${createdDate}</small>
-                                    
                                     <div class="btn-group btn-group-sm">
                                         <button class="btn btn-outline-primary" onclick="viewVariable('${variable.variable_id}')" title="Ver detalles">
                                             <i class="bi bi-eye"></i>
@@ -1294,8 +1293,12 @@
                                             <button class="btn btn-outline-warning" onclick="toggleVariableStatus('${variable.variable_id}', '${variable.variable_status}')" title="Desactivar">
                                                 <i class="bi bi-pause"></i>
                                             </button>
+                                            <button class="btn btn-outline-danger" onclick="deleteVariable('${variable.variable_id}')" title="Eliminar permanentemente">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         ` : ''}
                                     </div>
+                                    
                                 </div>
                             </div>
                         </div>
@@ -2075,7 +2078,141 @@
             }
         } 
        
+        // ==========================================
+        // ELIMINAR VARIABLE (BORRADO DURO)
+        // ==========================================
         
+        async function deleteVariable(variableId) {
+            try {
+                const variable = allVariables.find(v => v.variable_id === variableId);
+                if (!variable) {
+                    showMessage('Variable no encontrada', 'danger');
+                    return;
+                }
+                
+                // 1. Verificar propiedad
+                if (variable.owner_id !== currentUser.user_id) {
+                    showMessage('Solo puedes eliminar tus propias variables', 'warning');
+                    return;
+                }
+                
+                // 2. Confirmar intención inicial
+                const confirmDelete = confirm(
+                    `⚠️ ADVERTENCIA: Borrado permanente\n\n` +
+                    `¿Deseas eliminar la variable "${variable.variable_name}"?\n\n` +
+                    `Esta acción es irreversible. Se verificará que no tenga datos capturados ni esté siendo usada en indicadores.`
+                );
+                
+                if (!confirmDelete) {
+                    return;
+                }
+                
+                // Mostrar indicador de validación
+                showMessage('Validando dependencias de la variable...', 'info');
+                
+                // 3. VALIDACIÓN CRÍTICA: Verificar si tiene datos capturados
+                console.log('🔍 Validando variable_values...');
+                const valueRecords = await supabaseRequest(
+                    `/variable_values?select=value_id&variable_id=eq.${variableId}&limit=1`
+                );
+                
+                if (valueRecords && valueRecords.length > 0) {
+                    showMessage(
+                        `❌ No se puede eliminar la variable "${variable.variable_name}".\n\n` +
+                        `Esta variable tiene datos capturados. Solo puedes desactivarla.`,
+                        'danger'
+                    );
+                    return;
+                }
+                
+                // 4. VALIDACIÓN: Verificar si está siendo usada en indicadores
+                console.log('🔍 Validando uso en indicadores...');
+                const indicators = await supabaseRequest(
+                    `/indicators?select=indicator_id,indicator_name,formula_variables&indicator_status=eq.active`
+                );
+                
+                const usedInIndicators = indicators?.filter(ind => {
+                    if (!ind.formula_variables) return false;
+                    const varIds = Object.keys(ind.formula_variables);
+                    return varIds.includes(variableId);
+                }) || [];
+                
+                if (usedInIndicators.length > 0) {
+                    const indicatorNames = usedInIndicators.map(i => `• ${i.indicator_name}`).join('\n');
+                    showMessage(
+                        `❌ No se puede eliminar la variable "${variable.variable_name}".\n\n` +
+                        `Está siendo usada en ${usedInIndicators.length} indicador(es):\n${indicatorNames}\n\n` +
+                        `Primero debes eliminar o modificar estos indicadores.`,
+                        'danger'
+                    );
+                    return;
+                }
+                
+                // 5. Confirmación final después de validaciones exitosas
+                const finalConfirm = confirm(
+                    `✅ Validación exitosa\n\n` +
+                    `La variable "${variable.variable_name}" NO tiene:\n` +
+                    `• Datos capturados\n` +
+                    `• Uso en indicadores activos\n\n` +
+                    `¿Confirmas la eliminación PERMANENTE?\n\n` +
+                    `Se eliminarán también:\n` +
+                    `• Segmentaciones asignadas\n` +
+                    `• Permisos asociados\n` +
+                    `• Validaciones de queries`
+                );
+                
+                if (!finalConfirm) {
+                    showMessage('Eliminación cancelada', 'info');
+                    return;
+                }
+                
+                // 6. PROCEDER CON EL BORRADO EN CASCADA
+                console.log('🗑️ Iniciando borrado de variable:', variableId);
+                
+                // 6.1. Eliminar variable_segments
+                console.log('🗑️ Eliminando segmentaciones...');
+                await supabaseRequest(`/variable_segments?variable_id=eq.${variableId}`, {
+                    method: 'DELETE'
+                });
+                
+                // 6.2. Eliminar variable_permissions
+                console.log('🗑️ Eliminando permisos...');
+                await supabaseRequest(`/variable_permissions?variable_id=eq.${variableId}`, {
+                    method: 'DELETE'
+                });
+                
+                // 6.3. Eliminar query_validations
+                console.log('🗑️ Eliminando validaciones de queries...');
+                await supabaseRequest(`/query_validations?variable_id=eq.${variableId}`, {
+                    method: 'DELETE'
+                });
+                
+                // 6.4. ELIMINAR LA VARIABLE (borrado duro)
+                console.log('🗑️ Eliminando variable principal...');
+                await supabaseRequest(`/variables?variable_id=eq.${variableId}`, {
+                    method: 'DELETE'
+                });
+                
+                // 7. Éxito
+                showMessage(
+                    `✅ Variable "${variable.variable_name}" eliminada permanentemente del sistema`,
+                    'success'
+                );
+                
+                console.log('✅ Variable eliminada exitosamente');
+                
+                // 8. Recargar lista de variables
+                loadVariables();
+                
+            } catch (error) {
+                console.error('❌ Error eliminando variable:', error);
+                showMessage(
+                    `Error eliminando variable: ${error.message}\n\n` +
+                    `Si el problema persiste, contacta al administrador del sistema.`,
+                    'danger'
+                );
+            }
+        }
        
         
         // ==========================================
@@ -2099,6 +2236,7 @@
         window.selectAllCategories = selectAllCategories;
         window.clearCategoryFilter = clearCategoryFilter;
         window.clearAllSegments = clearAllSegments;
+        window.deleteVariable = deleteVariable;
         
         console.log('🎉 Página de variables cargada correctamente');
     </script>
