@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.10.30.19.23">
     <title>Aplicaciones de Encuestas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -108,6 +109,44 @@
             font-size: 0.85rem;
             color: #6c757d;
         }
+
+        /* Estilos para aplicaciones vencidas */
+        .status-expired {
+            background-color: #ff6b6b;
+            animation: pulse-expired 2s infinite;
+        }
+        
+        @keyframes pulse-expired {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .badge-vencida {
+            background-color: #ff9800;
+            color: white;
+            font-weight: bold;
+            animation: blink 1.5s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .row-vencida {
+            background-color: #fff3cd !important;
+            border-left: 4px solid #ff9800;
+        }
+        
+        .btn-close-expired {
+            animation: shake 0.5s infinite;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            75% { transform: translateX(2px); }
+        }
     </style>
 </head>
 
@@ -161,10 +200,20 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <i class="bi bi-list me-2"></i>Listado de Aplicaciones
+                    <span id="badge-vencidas" class="badge bg-warning ms-2" style="display: none;">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <span id="count-vencidas">0</span> vencidas
+                    </span>
                 </h5>
-                <button class="btn btn-primary" onclick="abrirModalCrear()" id="btnCrear">
-                    <i class="bi bi-plus-circle me-1"></i>Nueva Aplicación
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-warning" onclick="cerrarTodasVencidas()" 
+                            id="btnCerrarVencidas" style="display: none;">
+                        <i class="bi bi-lock-fill me-1"></i>Cerrar Vencidas
+                    </button>
+                    <button class="btn btn-primary" onclick="abrirModalCrear()" id="btnCrear">
+                        <i class="bi bi-plus-circle me-1"></i>Nueva Aplicación
+                    </button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -433,7 +482,7 @@
         }
 
         // ==========================================
-        // CARGA DE APLICACIONES
+        // CARGA DE APLICACIONES CON CIERRE AUTOMÁTICO MEJORADO
         // ==========================================
         async function cargarAplicaciones() {
             try {
@@ -445,6 +494,7 @@
                 if (masterIds.length === 0) {
                     applicationsCache = [];
                     renderizarTabla([]);
+                    actualizarContadorVencidas();
                     return;
                 }
                 
@@ -453,16 +503,14 @@
                 const data = await supabaseRequest(query);
                 applicationsCache = data || [];
                 
-                // Contar respuestas para cada aplicación
+                let cerradasAutomaticamente = 0;
+                
+                // Contar respuestas y procesar cierre automático
                 for (let app of applicationsCache) {
                     const responses = await supabaseRequest('/survey_respondent_profile?select=profile_id&application_id=eq.' + app.application_id);
                     app.responses_count = responses.length;
                     
-                    // LÓGICA DE CIERRE AUTOMÁTICO CORREGIDA
-                    // Solo cerrar si:
-                    // 1. Está abierta (status === 'open')
-                    // 2. Pasó COMPLETAMENTE la fecha de fin (día siguiente a las 00:00)
-                    // 3. NO fue reabierta manualmente (closed_manually !== false)
+                    // LÓGICA DE CIERRE AUTOMÁTICO MEJORADA
                     if (app.status === 'open' && app.closed_manually !== false) {
                         // Crear fecha de fin a las 23:59:59 del día configurado
                         const endDate = new Date(app.end_date + 'T23:59:59');
@@ -470,24 +518,43 @@
                         
                         // Solo cerrar si YA pasó completamente el día de fin
                         if (now > endDate) {
-                            await supabaseRequest('/survey_applications?application_id=eq.' + app.application_id, {
-                                method: 'PATCH',
-                                body: JSON.stringify({ 
-                                    status: 'closed',
-                                    closed_manually: null,
-                                    closed_by: null,
-                                    closed_at: new Date().toISOString()
-                                })
-                            });
-                            app.status = 'closed';
-                            console.log(`Aplicación ${app.application_name} cerrada automáticamente`);
+                            try {
+                                await supabaseRequest('/survey_applications?application_id=eq.' + app.application_id, {
+                                    method: 'PATCH',
+                                    body: JSON.stringify({ 
+                                        status: 'closed',
+                                        closed_manually: null,
+                                        closed_by: null,
+                                        closed_at: new Date().toISOString()
+                                    })
+                                });
+                                app.status = 'closed';
+                                cerradasAutomaticamente++;
+                                console.log(`✅ Aplicación "${app.application_name}" cerrada automáticamente`);
+                            } catch (error) {
+                                console.error(`❌ Error cerrando aplicación ${app.application_name}:`, error);
+                            }
                         }
                     }
+                    
+                    // Marcar como vencida si está abierta pero pasó la fecha
+                    app.isExpired = (app.status === 'open' || app.status === 'draft') && 
+                                    new Date(app.end_date + 'T23:59:59') < new Date();
+                }
+                
+                // Mostrar notificación si se cerraron aplicaciones
+                if (cerradasAutomaticamente > 0) {
+                    showMessage(
+                        `✅ Se cerraron automáticamente ${cerradasAutomaticamente} aplicación(es) vencida(s). Ahora puedes ver sus resultados.`,
+                        'success',
+                        5000
+                    );
                 }
                 
                 renderizarTabla(applicationsCache);
+                actualizarContadorVencidas();
                 
-                console.log(`✅ ${applicationsCache.length} aplicaciones cargadas`);
+                console.log(`✅ ${applicationsCache.length} aplicaciones cargadas (${cerradasAutomaticamente} cerradas automáticamente)`);
                 
             } catch (error) {
                 console.error('❌ Error cargando aplicaciones:', error);
@@ -504,10 +571,8 @@
             }
         }
         
-
-        
         // ==========================================
-        // RENDERIZADO DE TABLA
+        // RENDERIZADO DE TABLA CON INDICADORES VISUALES DE VENCIDAS
         // ==========================================
         function renderizarTabla(datos) {
             const tbody = document.getElementById('tabla-body');
@@ -533,6 +598,10 @@
                     'closed': 'Cerrada'
                 }[app.status] || app.status;
                 
+                // Determinar si está vencida
+                const isExpired = app.isExpired || false;
+                const rowClass = isExpired ? 'row-vencida' : '';
+                
                 const dateRange = `
                     <div class="date-range">
                         <i class="bi bi-calendar-event me-1"></i>
@@ -541,6 +610,12 @@
                 `;
                 
                 const publicUrl = `${window.location.origin}/modules/surveys/respond.html?app=${app.unique_url_code}`;
+                
+                // Badge de estado con indicador de vencida
+                let statusBadge = `<span class="badge badge-status ${statusClass}">${statusLabel}</span>`;
+                if (isExpired && app.status !== 'closed') {
+                    statusBadge += ` <span class="badge badge-vencida ms-1">VENCIDA</span>`;
+                }
                 
                 // Botones de acción según estado
                 let actionButtons = `
@@ -553,10 +628,13 @@
                 
                 // Permitir cerrar desde cualquier estado excepto 'closed'
                 if (app.status !== 'closed') {
+                    const btnClass = isExpired ? 'btn-warning btn-close-expired' : 'btn-outline-warning';
+                    const btnTitle = isExpired ? '⚠️ CERRAR AHORA - Aplicación vencida' : 'Cerrar ahora';
+                    
                     actionButtons += `
-                        <button class="btn btn-outline-warning btn-sm" 
+                        <button class="btn ${btnClass} btn-sm" 
                                 onclick="cerrarAplicacion('${app.application_id}')" 
-                                title="Cerrar ahora">
+                                title="${btnTitle}">
                             <i class="bi bi-lock"></i>
                         </button>
                     `;
@@ -580,16 +658,17 @@
                 `;
                 
                 return `
-                    <tr>
+                    <tr class="${rowClass}">
                         <td class="text-center">
                             <div class="application-number">#${app.application_number}</div>
                         </td>
-                        <td><strong>${escapeHtml(app.application_name)}</strong></td>
+                        <td>
+                            <strong>${escapeHtml(app.application_name)}</strong>
+                            ${isExpired && app.status !== 'closed' ? '<br><small class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Cerrar para ver resultados</small>' : ''}
+                        </td>
                         <td>${escapeHtml(masterName)}</td>
                         <td>${dateRange}</td>
-                        <td>
-                            <span class="badge badge-status ${statusClass}">${statusLabel}</span>
-                        </td>
+                        <td>${statusBadge}</td>
                         <td class="text-center">
                             <span class="badge bg-info">${app.responses_count}</span>
                         </td>
@@ -611,6 +690,92 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        // ==========================================
+        // ACTUALIZAR CONTADOR DE APLICACIONES VENCIDAS
+        // ==========================================
+        function actualizarContadorVencidas() {
+            const vencidas = applicationsCache.filter(app => 
+                app.isExpired && app.status !== 'closed'
+            );
+            
+            const badgeVencidas = document.getElementById('badge-vencidas');
+            const countVencidas = document.getElementById('count-vencidas');
+            const btnCerrarVencidas = document.getElementById('btnCerrarVencidas');
+            
+            if (vencidas.length > 0) {
+                countVencidas.textContent = vencidas.length;
+                badgeVencidas.style.display = 'inline-block';
+                btnCerrarVencidas.style.display = 'block';
+            } else {
+                badgeVencidas.style.display = 'none';
+                btnCerrarVencidas.style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // CERRAR TODAS LAS APLICACIONES VENCIDAS
+        // ==========================================
+        async function cerrarTodasVencidas() {
+            try {
+                const vencidas = applicationsCache.filter(app => 
+                    app.isExpired && app.status !== 'closed'
+                );
+                
+                if (vencidas.length === 0) {
+                    showMessage('No hay aplicaciones vencidas para cerrar', 'info');
+                    return;
+                }
+                
+                const nombres = vencidas.map(app => `• ${app.application_name}`).join('\n');
+                
+                if (!confirm(
+                    `¿Cerrar ${vencidas.length} aplicación(es) vencida(s)?\n\n${nombres}\n\n` +
+                    `Después de cerrarlas podrás ver los resultados.`
+                )) {
+                    return;
+                }
+                
+                mostrarLoading();
+                
+                let cerradas = 0;
+                let errores = 0;
+                
+                for (const app of vencidas) {
+                    try {
+                        await supabaseRequest('/survey_applications?application_id=eq.' + app.application_id, {
+                            method: 'PATCH',
+                            body: JSON.stringify({
+                                status: 'closed',
+                                closed_manually: true,
+                                closed_by: currentUser.user_id,
+                                closed_at: new Date().toISOString()
+                            })
+                        });
+                        cerradas++;
+                        console.log(`✅ Cerrada: ${app.application_name}`);
+                    } catch (error) {
+                        errores++;
+                        console.error(`❌ Error cerrando ${app.application_name}:`, error);
+                    }
+                }
+                
+                if (cerradas > 0) {
+                    showMessage(
+                        `✅ Se cerraron ${cerradas} aplicación(es) exitosamente.${errores > 0 ? ` (${errores} con errores)` : ''}`,
+                        cerradas === vencidas.length ? 'success' : 'warning'
+                    );
+                }
+                
+                await cargarAplicaciones();
+                
+            } catch (error) {
+                console.error('Error en cierre masivo:', error);
+                showMessage('Error al cerrar aplicaciones: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
         }
         
         // ==========================================
@@ -935,6 +1100,7 @@
         window.copiarURL = copiarURL;
         window.calcularNumeroAplicacion = calcularNumeroAplicacion;
         window.reabrirAplicacion = reabrirAplicacion;
+        window.cerrarTodasVencidas = cerrarTodasVencidas;
         
         
         console.log('🎉 applications.html cargado correctamente');
