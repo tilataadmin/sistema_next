@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.11.01.16.50">
     <title>Logs de Auditoría - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -44,6 +45,7 @@
         .json-string { color: #009900; }
         .json-number { color: #cc6600; }
         .json-null { color: #999999; font-style: italic; }
+        .json-boolean { color: #cc0066; }
         
         .filter-section {
             background: #f8f9fa;
@@ -115,6 +117,38 @@
         .export-btn:hover {
             background: linear-gradient(45deg, #218838, #1ea085);
             color: white;
+        }
+        
+        .change-summary {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .change-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            margin-right: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .change-added {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .change-modified {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .change-removed {
+            background: #f8d7da;
+            color: #721c24;
         }
     </style>
 </head>
@@ -201,7 +235,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card bg-danger text-white">
                     <div class="card-body text-center">
                         <i class="bi bi-trash" style="font-size: 2rem;"></i>
@@ -276,6 +310,7 @@
             </div>
         </div>
     </div>
+
     <!-- Modal para ver detalles del cambio -->
     <div class="modal fade" id="auditDetailModal" tabindex="-1" data-bs-backdrop="static">
         <div class="modal-dialog modal-xl">
@@ -384,19 +419,23 @@
 
         async function loadInitialData() {
             try {
-                // Cargar tablas disponibles
-                const tables = await supabaseRequest('/audit_log?select=table_name&order=table_name.asc');
-                const uniqueTables = [...new Set(tables?.map(t => t.table_name) || [])];
+                // Cargar TODAS las tablas que tienen auditoría (sin filtro de fecha)
+                const allTables = await supabaseRequest('/audit_log?select=table_name');
+                const uniqueTables = [...new Set(allTables?.map(t => t.table_name) || [])];
                 
                 const tableSelect = document.getElementById('tableFilter');
                 tableSelect.innerHTML = '<option value="">Todas las tablas</option>' +
-                    uniqueTables.map(table => `<option value="${table}">${table}</option>`).join('');
+                    uniqueTables.sort().map(table => `<option value="${table}">${table}</option>`).join('');
+                
+                console.log(`✅ ${uniqueTables.length} tablas con auditoría cargadas`);
                 
                 // Cargar usuarios disponibles
                 const users = await supabaseRequest('/users?select=user_id,user_display_name&order=user_display_name.asc');
                 const userSelect = document.getElementById('userFilter');
                 userSelect.innerHTML = '<option value="">Todos los usuarios</option>' +
                     (users?.map(user => `<option value="${user.user_id}">${user.user_display_name}</option>`).join('') || '');
+                
+                console.log(`✅ ${users?.length || 0} usuarios cargados`);
                 
             } catch (error) {
                 console.error('❌ Error cargando datos iniciales:', error);
@@ -461,12 +500,15 @@
                 const operationClass = `operation-${log.operation.toLowerCase()}`;
                 const operationBadgeClass = `operation-badge-${log.operation.toLowerCase()}`;
                 
+                // Generar resumen de cambios
+                const changeSummary = generateChangeSummary(log);
+                
                 return `
                     <div class="timeline-item mb-4">
                         <div class="card audit-card ${operationClass}">
                             <div class="card-body">
                                 <div class="row">
-                                    <div class="col-md-8">
+                                    <div class="col-md-9">
                                         <div class="d-flex align-items-center mb-2">
                                             <span class="badge ${operationBadgeClass} me-2">
                                                 <i class="bi bi-${getOperationIcon(log.operation)} me-1"></i>
@@ -483,12 +525,13 @@
                                                 ${log.user_display_name || 'Sistema'}
                                             </span>
                                         </div>
-                                        <div class="text-muted">
+                                        <div class="text-muted mb-2">
                                             <i class="bi bi-clock me-1"></i>
                                             ${formatDateTime(log.changed_at)}
                                         </div>
+                                        ${changeSummary ? `<div class="change-summary">${changeSummary}</div>` : ''}
                                     </div>
-                                    <div class="col-md-4 text-end">
+                                    <div class="col-md-3 text-end">
                                         <button class="btn btn-outline-primary btn-sm" 
                                                 onclick="showAuditDetail('${log.audit_id}')">
                                             <i class="bi bi-eye me-1"></i>
@@ -503,6 +546,44 @@
             }).join('');
             
             container.innerHTML = timeline;
+        }
+
+        function generateChangeSummary(log) {
+            if (log.operation === 'INSERT') {
+                return '<span class="change-badge change-added"><i class="bi bi-plus-circle me-1"></i>Registro nuevo creado</span>';
+            }
+            
+            if (log.operation === 'DELETE') {
+                return '<span class="change-badge change-removed"><i class="bi bi-trash me-1"></i>Registro eliminado</span>';
+            }
+            
+            if (log.operation === 'UPDATE' && log.old_values && log.new_values) {
+                const changes = [];
+                const oldVal = log.old_values;
+                const newVal = log.new_values;
+                
+                // Comparar campos y mostrar los que cambiaron
+                for (const key in newVal) {
+                    if (oldVal[key] !== newVal[key]) {
+                        // Omitir campos técnicos
+                        if (!['updated_at', 'created_at'].includes(key)) {
+                            changes.push(key);
+                        }
+                    }
+                }
+                
+                if (changes.length > 0) {
+                    const summary = changes.slice(0, 3).map(field => 
+                        `<span class="change-badge change-modified"><i class="bi bi-pencil me-1"></i>${field}</span>`
+                    ).join('');
+                    
+                    const more = changes.length > 3 ? ` <span class="text-muted">+${changes.length - 3} más</span>` : '';
+                    
+                    return summary + more;
+                }
+            }
+            
+            return '';
         }
 
         function updateStatistics(logs) {
@@ -554,6 +635,7 @@
                         <div class="col-md-6">
                             <strong>ID del Registro:</strong> ${log.row_id}<br>
                             <strong>Usuario:</strong> ${log.user_display_name || 'Sistema'}<br>
+                            <strong>ID Usuario:</strong> ${log.changed_by || 'N/A'}<br>
                             <strong>Fecha/Hora:</strong> ${formatDateTime(log.changed_at)}
                         </div>
                         <div class="col-md-6">
@@ -621,6 +703,7 @@
                     'Operación',
                     'ID Registro',
                     'Usuario',
+                    'ID Usuario',
                     'Valores Anteriores',
                     'Valores Nuevos'
                 ];
@@ -631,6 +714,7 @@
                     log.operation,
                     log.row_id,
                     log.user_display_name || 'Sistema',
+                    log.changed_by || '',
                     log.old_values ? JSON.stringify(log.old_values) : '',
                     log.new_values ? JSON.stringify(log.new_values) : ''
                 ]);
@@ -639,7 +723,7 @@
                     .map(row => row.map(field => `"${field?.toString().replace(/"/g, '""') || ''}"`).join(','))
                     .join('\n');
                 
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
                 

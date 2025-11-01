@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.10.55">
-
+    <meta name="page-version" content="25.11.01.06.10">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -232,6 +231,16 @@
                                 <input type="number" class="form-control" id="studentCode" 
                                        name="student_code" required>
                             </div>
+
+                            <div class="col-md-6">
+                                <label for="studentIdDocument" class="form-label">
+                                    Documento de identidad
+                                </label>
+                                <input type="text" class="form-control" id="studentIdDocument" 
+                                       name="student_id_document" maxlength="50"
+                                       placeholder="Ej: 1234567890">
+                                <small class="text-muted">Cédula, TI, pasaporte, etc.</small>
+                            </div>
                             
                             <!-- Familia -->
                             <div class="col-md-6">
@@ -346,6 +355,46 @@
         let currentStudentId = null;
         let searchTimeout = null;
         let modalInstance = null;
+
+        // ==========================================
+        // UTILIDAD PARA MANEJO CORRECTO DE FECHAS
+        // ==========================================
+        
+        /**
+         * Convierte una fecha del input date a formato YYYY-MM-DD sin afectación de timezone
+         * @param {string} dateString - Fecha en formato YYYY-MM-DD del input
+         * @returns {string} - Fecha en formato YYYY-MM-DD garantizada
+         */
+        function formatDateForDatabase(dateString) {
+            if (!dateString) return null;
+            
+            // Si ya viene en formato correcto, verificar que no tenga timezone
+            if (dateString.includes('T')) {
+                return dateString.split('T')[0];
+            }
+            
+            // Para fechas del input type="date", retornar tal cual
+            // porque ya están en formato YYYY-MM-DD local
+            return dateString;
+        }
+        
+        /**
+         * Obtiene la fecha actual en timezone de Colombia (UTC-5) en formato YYYY-MM-DD
+         * @returns {string} - Fecha actual en formato YYYY-MM-DD
+         */
+        function getCurrentDateColombia() {
+            // Crear fecha en timezone de Colombia
+            const now = new Date();
+            const colombiaOffset = -5 * 60; // UTC-5 en minutos
+            const localOffset = now.getTimezoneOffset(); // Offset del navegador
+            const colombiaTime = new Date(now.getTime() + (localOffset + colombiaOffset) * 60000);
+            
+            const year = colombiaTime.getFullYear();
+            const month = String(colombiaTime.getMonth() + 1).padStart(2, '0');
+            const day = String(colombiaTime.getDate()).padStart(2, '0');
+            
+            return `${year}-${month}-${day}`;
+        }
         
         // ==========================================
         // INICIALIZACIÓN - PATRÓN OBLIGATORIO
@@ -724,6 +773,7 @@
                 document.getElementById('lastName2').value = student.student_last_name_2 || '';
                 document.getElementById('birthDate').value = student.student_birthday || '';
                 document.getElementById('entryDate').value = student.student_entry_date || '';
+                document.getElementById('studentIdDocument').value = student.student_id_document || '';
                 
                 setTimeout(() => {
                     document.getElementById('familyCode').value = student.family_id || '';
@@ -749,7 +799,8 @@
                 hideLoading();
             }
         }
-        
+
+        // ✅ CÓDIGO CORREGIDO
         async function handleSubmit(e) {
             e.preventDefault();
             
@@ -758,6 +809,14 @@
                 
                 const formData = new FormData(e.target);
                 const studentData = Object.fromEntries(formData.entries());
+                
+                // ⭐ CORRECCIÓN: Formatear fechas antes de enviar
+                if (studentData.student_birthday) {
+                    studentData.student_birthday = formatDateForDatabase(studentData.student_birthday);
+                }
+                if (studentData.student_entry_date) {
+                    studentData.student_entry_date = formatDateForDatabase(studentData.student_entry_date);
+                }
                 
                 if (!isEditing) {
                     try {
@@ -780,6 +839,7 @@
                     }
                 });
                 
+                // Validaciones...
                 if (!studentData.student_code || studentData.student_code.trim() === '') {
                     throw new Error('El código del estudiante es obligatorio');
                 }
@@ -800,6 +860,30 @@
                 }
                 if (!studentData.gender_id || studentData.gender_id.trim() === '') {
                     throw new Error('El género es obligatorio');
+                }
+
+                // Validar que si hay documento, no esté duplicado
+                if (studentData.student_id_document && studentData.student_id_document.trim()) {
+                    try {
+                        let checkQuery = `/students?select=student_id&student_id_document=eq.${encodeURIComponent(studentData.student_id_document.trim())}`;
+                        
+                        // Si estamos editando, excluir el estudiante actual
+                        if (isEditing) {
+                            checkQuery += `&student_id=neq.${currentStudentId}`;
+                        }
+                        
+                        const existingStudent = await supabaseRequest(checkQuery);
+                        
+                        if (existingStudent && existingStudent.length > 0) {
+                            throw new Error('Ya existe un estudiante con ese documento de identidad');
+                        }
+                    } catch (error) {
+                        if (error.message.includes('Ya existe')) {
+                            throw error;
+                        }
+                        console.warn('Error verificando documento:', error);
+                        // Continuar si falla la verificación (no bloquear por error de red)
+                    }
                 }
                 
                 let result;
@@ -830,6 +914,7 @@
                 hideLoading();
             }
         }
+        
         // ==========================================
         // UTILIDADES
         // ==========================================
