@@ -368,24 +368,37 @@ function getHeaders(options = {}) {
 // Función para hacer requests a Supabase con logging condicional
 // Función mejorada para hacer requests a Supabase
 async function supabaseRequest(endpoint, options = {}) {
-    const url = `${SUPABASE_CONFIG.apiUrl}${endpoint}`;
+    const url = `${SUPABASE_URL}/rest/v1${endpoint}`;
     
-    // Establecer usuario en sesión si existe
-    await setCurrentUserInSession();
+    // Obtener sesión actual
+    const session = getSession();
+    const userId = session?.user?.user_id;
     
     const config = {
-        headers: getHeaders(options.headers),
-        ...options
+        method: options.method || 'GET',
+        headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+            ...options.headers
+        }
     };
     
+    // Agregar user_id al contexto si existe
+    if (userId && (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE')) {
+        config.headers['X-User-Id'] = userId;
+    }
+    
+    if (options.body) {
+        config.body = JSON.stringify(options.body);
+    }
+    
     try {
-        console.log(`📡 API Request: ${options.method || 'GET'} ${endpoint}`);
-        
         const response = await fetch(url, config);
         
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ API Error: ${response.status} - ${errorText}`);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
