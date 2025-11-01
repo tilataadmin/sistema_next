@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.10.30.19.11">
+    <meta name="page-version" content="25.11.01.11.26">
     <title>Variables - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1466,10 +1466,24 @@
                     
                     console.log(`✅ ${selectedSegments.length} segmentaciones asignadas`);
                 }
+
+                // NUEVO: Enviar correo al responsable
+                if (formData.capture_responsible_id) {
+                    await sendResponsibleNotification(
+                        formData.capture_responsible_id,
+                        newVariable.variable_name,
+                        formData.variable_description,
+                        formData.periodicity,
+                        formData.data_type,
+                        formData.data_source,
+                        'created'
+                    );
+                }
                 
                 showMessage(`Variable "${newVariable.variable_name}" creada exitosamente`, 'success');
                 closeVariableModal();
                 loadVariables();
+                
                 
             } catch (error) {
                 console.error('❌ Error creando variable:', error);
@@ -2011,6 +2025,24 @@
                     console.log(`✅ ${selectedSegments.length} segmentaciones actualizadas`);
                 }
                 
+                // NUEVO: Verificar si cambió el responsable
+                const oldVariable = allVariables.find(v => v.variable_id === currentVariableId);
+                const responsibleChanged = oldVariable && 
+                    oldVariable.capture_responsible_id !== formData.capture_responsible_id;
+                
+                // Enviar correo si cambió el responsable
+                if (responsibleChanged && formData.capture_responsible_id) {
+                    await sendResponsibleNotification(
+                        formData.capture_responsible_id,
+                        formData.variable_name,
+                        formData.variable_description,
+                        formData.periodicity,
+                        formData.data_type,
+                        formData.data_source,
+                        'reassigned'
+                    );
+                }
+                
                 showMessage('Variable actualizada exitosamente', 'success');
                 closeVariableModal();
                 loadVariables();
@@ -2213,7 +2245,193 @@
                 );
             }
         }
-       
+
+        // ==========================================
+        // ENVIAR NOTIFICACIÓN AL RESPONSABLE
+        // ==========================================
+        
+        async function sendResponsibleNotification(
+            responsibleUserId, 
+            variableName, 
+            variableDescription, 
+            periodicity, 
+            dataType, 
+            dataSource,
+            action // 'created' o 'reassigned'
+        ) {
+            try {
+                console.log('📧 Enviando notificación al responsable:', responsibleUserId);
+                
+                // 1. Obtener datos del usuario responsable
+                const responsibleUser = availableUsers.find(u => u.user_id === responsibleUserId);
+                
+                if (!responsibleUser || !responsibleUser.user_mail) {
+                    console.warn('⚠️ Usuario responsable sin email:', responsibleUserId);
+                    return;
+                }
+                
+                // 2. Obtener nombre del creador
+                const creatorName = currentUser.user_display_name || currentUser.user_name;
+                
+                // 3. Determinar texto según periodicidad
+                const periodicityText = periodicity === 'annual' ? 
+                    'una vez al año' : 
+                    'mensualmente (12 veces al año)';
+                
+                // 4. Determinar texto según fuente de datos
+                let dataSourceText = '';
+                switch(dataSource) {
+                    case 'manual':
+                        dataSourceText = 'Los datos se capturan manualmente en el sistema.';
+                        break;
+                    case 'query':
+                        dataSourceText = 'Los datos se obtienen automáticamente mediante consulta SQL.';
+                        break;
+                    case 'api':
+                        dataSourceText = 'Los datos se obtienen desde una API externa.';
+                        break;
+                    case 'survey':
+                        dataSourceText = 'Los datos se calculan automáticamente desde encuestas.';
+                        break;
+                }
+                
+                // 5. Determinar título según acción
+                const actionText = action === 'created' ? 
+                    'asignado como responsable' : 
+                    'reasignado como nuevo responsable';
+                
+                // 6. Construir URL de captura de datos
+                const dataEntryUrl = `${window.location.origin}/modules/indicators/data-entry.html`;
+                
+                // 7. Construir cuerpo del correo
+                const emailBody = `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                        <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            
+                            <!-- Header -->
+                            <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #667eea;">
+                                <h2 style="color: #1B365D; margin: 0;">
+                                    📊 Sistema de Indicadores
+                                </h2>
+                            </div>
+                            
+                            <!-- Saludo -->
+                            <p style="font-size: 16px; color: #333;">
+                                Hola <strong>${responsibleUser.user_display_name || responsibleUser.user_name}</strong>,
+                            </p>
+                            
+                            <p style="font-size: 16px; color: #333; background-color: #e3f2fd; padding: 15px; border-radius: 6px; border-left: 4px solid #2196f3;">
+                                Has sido <strong>${actionText}</strong> de capturar los datos de la siguiente variable:
+                            </p>
+                            
+                            <!-- Detalles de la Variable -->
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+                                <h3 style="color: #667eea; margin-top: 0;">
+                                    ${variableName}
+                                </h3>
+                                
+                                ${variableDescription ? `
+                                    <p style="color: #555; margin: 10px 0;">
+                                        <strong>📝 Descripción:</strong><br>
+                                        ${variableDescription}
+                                    </p>
+                                ` : ''}
+                                
+                                <p style="color: #555; margin: 10px 0;">
+                                    <strong>⏰ Periodicidad:</strong> 
+                                    <span style="background-color: ${periodicity === 'annual' ? '#fff3cd' : '#d1ecf1'}; padding: 4px 10px; border-radius: 12px;">
+                                        ${periodicity === 'annual' ? 'Anual' : 'Mensual'}
+                                    </span>
+                                </p>
+                                
+                                <p style="color: #555; margin: 10px 0;">
+                                    <strong>🔢 Tipo de dato:</strong> ${dataType}
+                                </p>
+                                
+                                <p style="color: #555; margin: 10px 0;">
+                                    <strong>📍 Fuente de datos:</strong> 
+                                    ${dataSource === 'manual' ? 'Manual' : dataSource === 'query' ? 'Consulta SQL' : dataSource === 'api' ? 'API Externa' : 'Encuesta'}
+                                </p>
+                            </div>
+                            
+                            <!-- Responsabilidades -->
+                            <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; border-left: 4px solid #ffc107; margin: 20px 0;">
+                                <h4 style="color: #856404; margin-top: 0;">
+                                    🎯 Tu responsabilidad:
+                                </h4>
+                                <ul style="color: #856404; margin: 10px 0; padding-left: 20px;">
+                                    ${dataSource === 'manual' ? `
+                                        <li>Capturar los datos de esta variable ${periodicityText}</li>
+                                        <li>Ingresar al módulo de "Captura de Datos"</li>
+                                        <li>Registrar los valores correspondientes</li>
+                                    ` : `
+                                        <li>Supervisar que los datos se obtengan correctamente</li>
+                                        <li>Verificar la calidad de los datos ${periodicityText}</li>
+                                        <li>Reportar cualquier inconsistencia</li>
+                                    `}
+                                </ul>
+                                <p style="color: #856404; margin: 10px 0; font-size: 14px;">
+                                    ${dataSourceText}
+                                </p>
+                            </div>
+                            
+                            <!-- Información adicional -->
+                            <div style="margin: 20px 0; padding: 15px; background-color: #e8f5e9; border-radius: 6px;">
+                                <p style="margin: 5px 0; color: #555;">
+                                    <strong>👤 Asignado por:</strong> ${creatorName}
+                                </p>
+                                <p style="margin: 5px 0; color: #555;">
+                                    <strong>📅 Fecha:</strong> ${new Date().toLocaleDateString('es-CO', { 
+                                        weekday: 'long', 
+                                        year: 'numeric', 
+                                        month: 'long', 
+                                        day: 'numeric' 
+                                    })}
+                                </p>
+                            </div>
+                            
+                            ${dataSource === 'manual' ? `
+                                <!-- Botón de acción -->
+                                <div style="text-align: center; margin: 30px 0;">
+                                    <a href="${dataEntryUrl}" 
+                                       style="display: inline-block; background-color: #667eea; color: white; padding: 15px 40px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                                        📝 Ir a Captura de Datos
+                                    </a>
+                                </div>
+                            ` : ''}
+                            
+                            <!-- Footer -->
+                            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center;">
+                                <p style="color: #999; font-size: 12px; margin: 5px 0;">
+                                    Este es un correo automático del Sistema de Indicadores
+                                </p>
+                                <p style="color: #999; font-size: 12px; margin: 5px 0;">
+                                    ${APP_CONFIG?.institution?.name || 'Institución'}
+                                </p>
+                            </div>
+                            
+                        </div>
+                    </div>
+                `;
+                
+                // 8. Enviar correo usando función de config.js
+                const emailSent = await sendEmail(
+                    responsibleUser.user_mail,
+                    `Has sido ${actionText} de captura - ${variableName}`,
+                    emailBody
+                );
+                
+                if (emailSent) {
+                    console.log('✅ Notificación enviada exitosamente a:', responsibleUser.user_mail);
+                } else {
+                    console.warn('⚠️ No se pudo enviar la notificación');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error enviando notificación:', error);
+                // No interrumpir el flujo si falla el envío del correo
+            }
+        }
         
         // ==========================================
         // GLOBALES
