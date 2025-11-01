@@ -366,13 +366,8 @@ function getHeaders(options = {}) {
 // ==========================================
 
 // Función para hacer requests a Supabase con logging condicional
-// Función mejorada para hacer requests a Supabase
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_URL}/rest/v1${endpoint}`;
-    
-    // Obtener sesión actual
-    const session = getSession();
-    const userId = session?.user?.user_id;
     
     const config = {
         method: options.method || 'GET',
@@ -385,9 +380,15 @@ async function supabaseRequest(endpoint, options = {}) {
         }
     };
     
-    // Agregar user_id al contexto si existe
-    if (userId && (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE')) {
-        config.headers['X-User-Id'] = userId;
+    // Solo intentar agregar user_id si hay una sesión válida
+    try {
+        const session = getSession();
+        if (session && session.user_id && (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE')) {
+            config.headers['X-User-Id'] = session.user_id;
+        }
+    } catch (error) {
+        // Ignorar error si no hay sesión (caso de login)
+        console.log('Sin sesión activa');
     }
     
     if (options.body) {
