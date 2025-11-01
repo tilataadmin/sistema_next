@@ -774,6 +774,7 @@ const URL_PERMISSIONS = {
     '/modules/indicators/dashboard.html': 'Ver mi dashboard',                // NUEVO
     '/modules/indicators/improvement.html': 'Gestión de mejora',
     '/modules/indicators/improvement-dashboard.html': 'Tablero de mejora',
+    '/modules/indicators/correlations.html': 'Análisis global de correlaciones',
         
     // Módulo Talento Humano
     '/modules/hr/divisions.html': 'Divisiones',
