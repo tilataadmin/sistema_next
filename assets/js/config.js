@@ -751,6 +751,7 @@ const URL_PERMISSIONS = {
     '/modules/security/user-roles.html': 'Asignar roles',
     '/modules/security/role-permissions.html': 'Configurar permisos',
     '/modules/security/audit-log.html': 'Logs de auditoría',
+    '/modules/security/id-cards.html': 'Gestión de carnets',
     
     // Módulo Configuración
     '/modules/config/config.html': 'Configuración general',
