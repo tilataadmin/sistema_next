@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.02.18.38">
+    <meta name="page-version" content="25.11.02.18.42">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -440,32 +440,50 @@
             showLoading(true);
             
             try {
-                // Obtener sesión
-                const sessionData = localStorage.getItem('nextSystemSession') || sessionStorage.getItem('nextSystemSession');
+                // Obtener email del usuario autenticado desde Supabase Auth
+                const { data: { user } } = await supabase.auth.getUser();
                 
-                if (!sessionData) {
-                    throw new Error('No hay sesión activa');
+                if (!user || !user.email) {
+                    throw new Error('No hay sesión de usuario activa');
                 }
                 
-                currentSession = JSON.parse(sessionData);
+                const userEmail = user.email;
+                console.log('📧 Email usuario autenticado:', userEmail);
                 
-                console.log('👤 Usuario:', currentSession.user_name);
-                console.log('📧 Email:', currentSession.user_mail);
+                // Obtener datos del usuario desde la tabla users
+                const userData = await supabaseRequest('/users?user_mail=eq.' + userEmail + '&select=user_id,user_name,user_mail');
                 
-                // Obtener worker_id a partir del email del usuario
-                const workerData = await supabaseRequest('/workers?email=eq.' + currentSession.user_mail + '&select=worker_id,worker_first_name,worker_last_name_1,section_id');
+                if (!userData || userData.length === 0) {
+                    throw new Error('No se encontró información del usuario en la base de datos');
+                }
+                
+                console.log('✅ Usuario encontrado:', userData[0].user_name);
+                
+                // Obtener worker_id a partir del email
+                const workerData = await supabaseRequest('/workers?email=eq.' + userEmail + '&select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,section_id');
                 
                 if (!workerData || workerData.length === 0) {
                     throw new Error('No se encontró registro de trabajador asociado a este usuario. Solo los trabajadores pueden solicitar ausencias.');
                 }
                 
-                // Agregar worker_id a la sesión
-                currentSession.worker_id = workerData[0].worker_id;
-                currentSession.worker_name = `${workerData[0].worker_first_name} ${workerData[0].worker_last_name_1}`;
-                currentSession.section_id = workerData[0].section_id;
+                console.log('✅ Trabajador encontrado:', workerData[0].worker_first_name, workerData[0].worker_last_name_1);
                 
-                console.log('🆔 Worker ID:', currentSession.worker_id);
+                // Construir sesión completa
+                currentSession = {
+                    user_id: userData[0].user_id,
+                    user_name: userData[0].user_name,
+                    user_mail: userData[0].user_mail,
+                    worker_id: workerData[0].worker_id,
+                    worker_first_name: workerData[0].worker_first_name,
+                    worker_last_name_1: workerData[0].worker_last_name_1,
+                    worker_last_name_2: workerData[0].worker_last_name_2,
+                    worker_name: `${workerData[0].worker_first_name} ${workerData[0].worker_last_name_1}`,
+                    section_id: workerData[0].section_id
+                };
+                
+                console.log('✅ Sesión construida correctamente');
                 console.log('👤 Trabajador:', currentSession.worker_name);
+                console.log('🆔 Worker ID:', currentSession.worker_id);
                 
                 // Cargar datos en paralelo
                 await Promise.all([
@@ -479,14 +497,12 @@
                 console.log('✅ Página inicializada correctamente');
                 
             } catch (error) {
-                console.error('❌ Error:', error);
+                console.error('❌ Error al inicializar:', error);
                 showMessage('Error al inicializar: ' + error.message, 'danger');
             } finally {
                 showLoading(false);
             }
-        }
-
-        
+        }     
 
         
         // ==========================================
