@@ -856,6 +856,16 @@ const URL_PERMISSIONS = {
     '/modules/hr/workers.html': 'Gestionar trabajadores',
     '/modules/hr/payroll-review.html': 'Revisión de nómina',
 
+    // Módulo Talento Humano - Gestión de Ausencias
+    '/modules/hr/absence-config.html': 'Configurar ausencias',
+    '/modules/hr/absence-categories.html': 'Gestionar categorías de ausencias',
+    '/modules/hr/request-absence.html': 'Solicitar ausencias',
+    '/modules/hr/authorize-absences.html': 'Autorizar ausencias',
+    '/modules/hr/adjust-balances.html': 'Ajustar saldos de ausencias',
+    '/modules/hr/manage-absences.html': 'Gestionar todas las ausencias',
+    '/modules/hr/work-calendar.html': 'Configurar calendario laboral',
+    '/modules/hr/absence-reports.html': 'Ver reportes de ausencias',
+    
     // Módulo Presupuesto - Administración
     '/modules/budget/chart-of-accounts.html': 'Gestionar PUC',
     '/modules/budget/upload-combo.html': 'Subir el combo',
