@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.11.03.11.00">
+    <meta name="page-version" content="25.11.03.11.09">
     
     <title>Reportes de Ausencias - SchoolNet</title>
     
@@ -824,70 +824,6 @@
         }
 
         // ==========================================
-        // FUNCIÓN: CALCULAR SALDOS
-        // ==========================================
-        async function calculateBalances(workerId) {
-            try {
-                // Obtener ajustes
-                const adjustments = await supabaseRequest(
-                    '/hr_balance_adjustments?select=adjustment_type,amount&worker_id=eq.' + workerId,
-                    { method: 'GET' }
-                );
-                
-                let personalHours = 0;
-                let calamityDays = 0;
-                
-                adjustments.forEach(adj => {
-                    if (adj.adjustment_type === 'personal_hours') {
-                        personalHours += parseFloat(adj.amount);
-                    } else if (adj.adjustment_type === 'calamity_days') {
-                        calamityDays += parseFloat(adj.amount);
-                    }
-                });
-                
-                // Obtener ausencias aprobadas
-                const absences = await supabaseRequest(
-                    '/hr_absence_requests?select=total_hours,total_days,category_id&worker_id=eq.' + 
-                    workerId + '&status=eq.approved',
-                    { method: 'GET' }
-                );
-                
-                // Obtener categorías para saber cuáles consumen saldo
-                const categories = await supabaseRequest(
-                    '/hr_absence_categories?select=category_id,accumulates_personal_hours,controls_calamity_days_limit',
-                    { method: 'GET' }
-                );
-                
-                const categoryMap = {};
-                categories.forEach(cat => {
-                    categoryMap[cat.category_id] = cat;
-                });
-                
-                // Restar ausencias que consumen del saldo
-                absences.forEach(absence => {
-                    const category = categoryMap[absence.category_id];
-                    if (category) {
-                        if (category.accumulates_personal_hours) {
-                            personalHours -= parseFloat(absence.total_hours || 0);
-                        }
-                        if (category.controls_calamity_days_limit) {
-                            calamityDays -= parseFloat(absence.total_days || 0);
-                        }
-                    }
-                });
-                
-                return {
-                    personalHours: personalHours,
-                    calamityDays: calamityDays
-                };
-                
-            } catch (error) {
-                console.error('Error calculando saldos:', error);
-                return { personalHours: 0, calamityDays: 0 };
-            }
-        }
-
-        // ==========================================
         // UTILIDADES
         // ==========================================
         function showLoading(show) {
@@ -927,8 +863,9 @@
         function getSectionName(worker) {
             return worker.sections?.section_name || 'Sin sección';
         }
-      // ==========================================
-        // REPORTE 1: ASISTENCIA VS AUSENCIAS
+        
+        // ==========================================
+        // REPORTE 1: ASISTENCIA VS AUSENCIAS (OPTIMIZADO)
         // ==========================================
         async function generateReport1() {
             const startDate = document.getElementById('r1_startDate').value;
@@ -953,10 +890,64 @@
                     workers = workers.filter(w => w.section_id === sectionId);
                 }
                 
-                // Calcular días laborables del período
+                if (workers.length === 0) {
+                    showMessage('No hay trabajadores con los filtros seleccionados', 'warning');
+                    showLoading(false);
+                    return;
+                }
+                
+                // Calcular días laborables del período UNA SOLA VEZ
                 const totalWorkDays = await calculateWorkDays(startDate, endDate);
                 
-                // Procesar cada trabajador
+                // OPTIMIZACIÓN: Obtener TODAS las asistencias de una sola vez
+                const workerDocs = workers.map(w => w.worker_id_doc);
+                const attendances = await supabaseRequest(
+                    '/attendance?select=person_id_document,attendance_date,registro_tipo&person_type=eq.worker' +
+                    '&attendance_date=gte.' + startDate + '&attendance_date=lte.' + endDate,
+                    { method: 'GET' }
+                );
+                
+                // Crear mapa de asistencias por trabajador
+                const attendanceMap = {};
+                attendances.forEach(att => {
+                    if (att.registro_tipo === 'entrada') {
+                        if (!attendanceMap[att.person_id_document]) {
+                            attendanceMap[att.person_id_document] = new Set();
+                        }
+                        attendanceMap[att.person_id_document].add(att.attendance_date);
+                    }
+                });
+                
+                // OPTIMIZACIÓN: Obtener TODAS las ausencias de una sola vez
+                const workerIds = workers.map(w => w.worker_id);
+                const absencesQuery = '/hr_absence_requests?select=worker_id,start_date,end_date,is_full_day&status=eq.approved' +
+                    '&start_date=lte.' + endDate + '&end_date=gte.' + startDate;
+                
+                const absences = await supabaseRequest(absencesQuery, { method: 'GET' });
+                
+                // Crear mapa de ausencias por trabajador
+                const absenceMap = {};
+                absences.forEach(absence => {
+                    if (absence.is_full_day) {
+                        if (!absenceMap[absence.worker_id]) {
+                            absenceMap[absence.worker_id] = new Set();
+                        }
+                        
+                        // Iterar cada día de la ausencia
+                        const start = new Date(absence.start_date + 'T00:00:00');
+                        const end = new Date(absence.end_date + 'T00:00:00');
+                        
+                        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                            const dayOfWeek = d.getDay();
+                            // Solo contar días laborables
+                            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                                absenceMap[absence.worker_id].add(formatDateForDB(new Date(d)));
+                            }
+                        }
+                    }
+                });
+                
+                // Procesar cada trabajador con datos ya cargados
                 const results = [];
                 let totalAttendance = 0;
                 let totalAbsences = 0;
@@ -964,17 +955,17 @@
                 let totalInconsistencies = 0;
                 
                 for (const worker of workers) {
-                    // Días con asistencia
-                    const attendanceDays = await getAttendanceDays(worker.worker_id_doc, startDate, endDate);
+                    // Obtener días con asistencia del mapa
+                    const attendanceDays = attendanceMap[worker.worker_id_doc] || new Set();
                     
-                    // Días con ausencia aprobada
-                    const absenceDays = await getAbsenceDays(worker.worker_id, startDate, endDate);
+                    // Obtener días con ausencia del mapa
+                    const absenceDays = absenceMap[worker.worker_id] || new Set();
                     
                     // Detectar inconsistencias (día con ausencia Y asistencia)
-                    const inconsistencies = [];
+                    let inconsistencies = 0;
                     absenceDays.forEach(day => {
                         if (attendanceDays.has(day)) {
-                            inconsistencies.push(day);
+                            inconsistencies++;
                         }
                     });
                     
@@ -992,13 +983,13 @@
                         absenceDays: absenceDays.size,
                         unjustifiedDays: unjustifiedDays > 0 ? unjustifiedDays : 0,
                         absenteeismPercent: absenteeismPercent,
-                        inconsistencies: inconsistencies.length
+                        inconsistencies: inconsistencies
                     });
                     
                     totalAttendance += attendanceDays.size;
                     totalAbsences += absenceDays.size;
                     totalUnjustified += (unjustifiedDays > 0 ? unjustifiedDays : 0);
-                    totalInconsistencies += inconsistencies.length;
+                    totalInconsistencies += inconsistencies;
                 }
                 
                 report1Data = results;
@@ -1013,6 +1004,8 @@
                 document.getElementById('report1Placeholder').style.display = 'none';
                 document.getElementById('report1Results').style.display = 'block';
                 document.getElementById('btnExportR1').style.display = 'inline-block';
+                
+                showMessage('Reporte generado correctamente', 'success');
                 
             } catch (error) {
                 console.error('Error generando reporte 1:', error);
@@ -1108,7 +1101,7 @@
         }
 
         // ==========================================
-        // REPORTE 2: CONTROL DE LÍMITES
+        // REPORTE 2: CONTROL DE LÍMITES (OPTIMIZADO)
         // ==========================================
         async function generateReport2() {
             const workerId = document.getElementById('r2_worker').value;
@@ -1132,30 +1125,114 @@
                     workers = workers.filter(w => w.section_id === sectionId);
                 }
                 
-                // Procesar cada trabajador
+                if (workers.length === 0) {
+                    showMessage('No hay trabajadores con los filtros seleccionados', 'warning');
+                    showLoading(false);
+                    return;
+                }
+                
+                const workerIds = workers.map(w => w.worker_id);
+                
+                // OPTIMIZACIÓN 1: Obtener TODOS los ajustes de una sola vez
+                const adjustments = await supabaseRequest(
+                    '/hr_balance_adjustments?select=worker_id,adjustment_type,amount',
+                    { method: 'GET' }
+                );
+                
+                // Crear mapa de ajustes por trabajador
+                const adjustmentMap = {};
+                adjustments.forEach(adj => {
+                    if (!adjustmentMap[adj.worker_id]) {
+                        adjustmentMap[adj.worker_id] = {
+                            personal_hours: 0,
+                            calamity_days: 0
+                        };
+                    }
+                    
+                    if (adj.adjustment_type === 'personal_hours') {
+                        adjustmentMap[adj.worker_id].personal_hours += parseFloat(adj.amount);
+                    } else if (adj.adjustment_type === 'calamity_days') {
+                        adjustmentMap[adj.worker_id].calamity_days += parseFloat(adj.amount);
+                    }
+                });
+                
+                // OPTIMIZACIÓN 2: Obtener TODAS las ausencias aprobadas de una sola vez
+                const absences = await supabaseRequest(
+                    '/hr_absence_requests?select=worker_id,total_hours,total_days,category_id&status=eq.approved',
+                    { method: 'GET' }
+                );
+                
+                // OPTIMIZACIÓN 3: Obtener TODAS las categorías de una sola vez (ya las tenemos en allCategories)
+                const categoryMap = {};
+                allCategories.forEach(cat => {
+                    categoryMap[cat.category_id] = {
+                        accumulates_personal_hours: cat.accumulates_personal_hours,
+                        controls_calamity_days_limit: cat.controls_calamity_days_limit
+                    };
+                });
+                
+                // Pero necesitamos los campos completos de las categorías
+                const categoriesComplete = await supabaseRequest(
+                    '/hr_absence_categories?select=category_id,accumulates_personal_hours,controls_calamity_days_limit',
+                    { method: 'GET' }
+                );
+                
+                categoriesComplete.forEach(cat => {
+                    categoryMap[cat.category_id] = cat;
+                });
+                
+                // Crear mapa de consumo por trabajador
+                const consumptionMap = {};
+                absences.forEach(absence => {
+                    if (!consumptionMap[absence.worker_id]) {
+                        consumptionMap[absence.worker_id] = {
+                            personal_hours: 0,
+                            calamity_days: 0
+                        };
+                    }
+                    
+                    const category = categoryMap[absence.category_id];
+                    if (category) {
+                        if (category.accumulates_personal_hours) {
+                            consumptionMap[absence.worker_id].personal_hours += parseFloat(absence.total_hours || 0);
+                        }
+                        if (category.controls_calamity_days_limit) {
+                            consumptionMap[absence.worker_id].calamity_days += parseFloat(absence.total_days || 0);
+                        }
+                    }
+                });
+                
+                // Procesar cada trabajador con datos ya cargados
                 const results = [];
+                const hoursLimit = hrConfig.personal_hours_limit;
+                const daysLimit = hrConfig.calamity_days_limit;
                 
                 for (const worker of workers) {
-                    const balances = await calculateBalances(worker.worker_id);
+                    // Obtener ajustes del mapa
+                    const adjusts = adjustmentMap[worker.worker_id] || { personal_hours: 0, calamity_days: 0 };
                     
-                    const hoursLimit = hrConfig.personal_hours_limit;
-                    const daysLimit = hrConfig.calamity_days_limit;
+                    // Obtener consumo del mapa
+                    const consumption = consumptionMap[worker.worker_id] || { personal_hours: 0, calamity_days: 0 };
+                    
+                    // Calcular saldos
+                    const personalHours = adjusts.personal_hours - consumption.personal_hours;
+                    const calamityDays = adjusts.calamity_days - consumption.calamity_days;
                     
                     const hoursUsedPercent = hoursLimit > 0 ? 
-                        (((hoursLimit - balances.personalHours) / hoursLimit) * 100).toFixed(2) : 0;
+                        (((hoursLimit - personalHours) / hoursLimit) * 100).toFixed(2) : 0;
                     const daysUsedPercent = daysLimit > 0 ? 
-                        (((daysLimit - balances.calamityDays) / daysLimit) * 100).toFixed(2) : 0;
+                        (((daysLimit - calamityDays) / daysLimit) * 100).toFixed(2) : 0;
                     
-                    const hoursAlert = (balances.personalHours / hoursLimit) < 0.2;
-                    const daysAlert = (balances.calamityDays / daysLimit) < 0.2;
+                    const hoursAlert = (personalHours / hoursLimit) < 0.2;
+                    const daysAlert = (calamityDays / daysLimit) < 0.2;
                     
                     const result = {
                         worker: worker,
-                        personalHours: balances.personalHours,
+                        personalHours: personalHours,
                         hoursLimit: hoursLimit,
                         hoursUsedPercent: hoursUsedPercent,
                         hoursAlert: hoursAlert,
-                        calamityDays: balances.calamityDays,
+                        calamityDays: calamityDays,
                         daysLimit: daysLimit,
                         daysUsedPercent: daysUsedPercent,
                         daysAlert: daysAlert
@@ -1176,6 +1253,8 @@
                 document.getElementById('report2Placeholder').style.display = 'none';
                 document.getElementById('report2Results').style.display = 'block';
                 document.getElementById('btnExportR2').style.display = 'inline-block';
+                
+                showMessage('Reporte generado correctamente', 'success');
                 
             } catch (error) {
                 console.error('Error generando reporte 2:', error);
@@ -1232,7 +1311,7 @@
         }
 
         // ==========================================
-        // REPORTE 3: AUSENCIAS POR CATEGORÍA
+        // REPORTE 3: AUSENCIAS POR CATEGORÍA (CORREGIDO)
         // ==========================================
         async function generateReport3() {
             const startDate = document.getElementById('r3_startDate').value;
@@ -1248,8 +1327,8 @@
             try {
                 showLoading(true);
                 
-                // Construir query
-                let query = '/hr_absence_requests?select=*,category:hr_absence_categories(name),worker:workers(worker_first_name,worker_last_name_1,worker_last_name_2)' +
+                // CORRECCIÓN: Especificar la relación correcta para evitar ambigüedad
+                let query = '/hr_absence_requests?select=*,category:hr_absence_categories(name),worker:workers!hr_absence_requests_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)' +
                     '&start_date=gte.' + startDate + '&end_date=lte.' + endDate;
                 
                 if (categoryId) {
@@ -1307,6 +1386,8 @@
                 document.getElementById('report3Placeholder').style.display = 'none';
                 document.getElementById('report3Results').style.display = 'block';
                 document.getElementById('btnExportR3').style.display = 'inline-block';
+                
+                showMessage('Reporte generado correctamente', 'success');
                 
             } catch (error) {
                 console.error('Error generando reporte 3:', error);
