@@ -690,6 +690,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Test de conectividad simple
         await supabaseRequest('/users?select=user_id&limit=1');
         console.log(`✅ Conexión con Supabase ${CURRENT_ENVIRONMENT} establecida`);
+        await loadAndApplyBrandColors();
     } catch (error) {
         console.error(`❌ Error de conexión con Supabase ${CURRENT_ENVIRONMENT}:`, error);
         showMessage(`Error de conexión con la base de datos ${CURRENT_ENVIRONMENT}. Verifica tu configuración.`, 'danger');
@@ -735,6 +736,76 @@ function getStoredSession() {
         return sessionData ? JSON.parse(sessionData) : null;
     } catch (error) {
         return null;
+    }
+}
+
+// ==========================================
+// CARGAR Y APLICAR COLORES CORPORATIVOS
+// ==========================================
+
+/**
+ * Carga los colores corporativos desde system_config y los aplica al sistema
+ */
+async function loadAndApplyBrandColors() {
+    try {
+        console.log('🎨 Cargando colores corporativos...');
+        
+        const configData = await supabaseRequest('/system_config?select=primary_color_hex,secondary_color_hex,tertiary_color_hex&limit=1');
+        
+        if (configData && configData.length > 0) {
+            const colors = configData[0];
+            
+            // Aplicar colores como variables CSS globales
+            const root = document.documentElement;
+            
+            if (colors.primary_color_hex) {
+                root.style.setProperty('--system-primary-color', colors.primary_color_hex);
+                console.log('✅ Color primario aplicado:', colors.primary_color_hex);
+            }
+            
+            if (colors.secondary_color_hex) {
+                root.style.setProperty('--system-secondary-color', colors.secondary_color_hex);
+                console.log('✅ Color secundario aplicado:', colors.secondary_color_hex);
+            }
+            
+            if (colors.tertiary_color_hex) {
+                root.style.setProperty('--system-tertiary-color', colors.tertiary_color_hex);
+                console.log('✅ Color terciario aplicado:', colors.tertiary_color_hex);
+            }
+            
+            // Actualizar el navbar si existe
+            updateNavbarColors(colors.primary_color_hex);
+            
+            // Guardar colores en APP_CONFIG para uso global
+            APP_CONFIG.brandColors = {
+                primary: colors.primary_color_hex || '#1B365D',
+                secondary: colors.secondary_color_hex || '#667eea',
+                tertiary: colors.tertiary_color_hex || '#f59e0b'
+            };
+            
+            console.log('🎨 Colores corporativos aplicados correctamente');
+            return colors;
+        } else {
+            console.warn('⚠️ No se encontró configuración de colores, usando colores por defecto');
+            return null;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error cargando colores corporativos:', error);
+        return null;
+    }
+}
+
+/**
+ * Actualiza los colores del navbar con el color primario
+ */
+function updateNavbarColors(primaryColor) {
+    if (!primaryColor) return;
+    
+    const navbar = document.getElementById('schoolnet-user-navbar');
+    if (navbar) {
+        navbar.style.background = primaryColor;
+        console.log('✅ Color del navbar actualizado');
     }
 }
 
@@ -785,6 +856,17 @@ const URL_PERMISSIONS = {
     '/modules/hr/workers.html': 'Gestionar trabajadores',
     '/modules/hr/payroll-review.html': 'Revisión de nómina',
 
+    // Módulo Talento Humano - Gestión de Ausencias
+    '/modules/hr/absence-config.html': 'Configurar ausencias',
+    '/modules/hr/absence-categories.html': 'Gestionar categorías de ausencias',
+    '/modules/hr/request-absence.html': 'Solicitar ausencias',
+    '/modules/hr/authorize-absences.html': 'Autorizar ausencias',
+    '/modules/hr/adjust-balances.html': 'Ajustar saldos de ausencias',
+    '/modules/hr/manage-absences.html': 'Gestionar todas las ausencias',
+    '/modules/hr/work-calendar.html': 'Configurar calendario laboral',
+    '/modules/hr/absence-reports.html': 'Ver reportes de ausencias',
+    '/modules/hr/hr-dashboard.html': 'Ver dashboard de talento humano', 
+    
     // Módulo Presupuesto - Administración
     '/modules/budget/chart-of-accounts.html': 'Gestionar PUC',
     '/modules/budget/upload-combo.html': 'Subir el combo',
@@ -1303,6 +1385,8 @@ window.initializePage = initializePage;
 window.applyBrandingAutomatically = applyBrandingAutomatically;window.generateBreadcrumbs = generateBreadcrumbs;
 window.getModuleFolder = getModuleFolder;
 window.getAuditLogs = getAuditLogs;
+window.loadAndApplyBrandColors = loadAndApplyBrandColors;
+window.updateNavbarColors = updateNavbarColors;
 
 // ==========================================
 // SISTEMA DE NAVBAR DE USUARIO Y CAMBIO DE CONTRASEÑA
@@ -1318,7 +1402,7 @@ const navbarStyles = `
         left: 0;
         right: 0;
         z-index: 1040;
-        background: #1B365D;
+        background: var(--system-primary-color, #1B365D);
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         padding: 0.75rem 0;
     }
