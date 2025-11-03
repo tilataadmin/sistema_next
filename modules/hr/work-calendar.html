@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.11.03.06.40">
+    <meta name="page-version" content="25.11.03.10.32">
     
     <title>Calendario Laboral - SchoolNet</title>
     
@@ -612,11 +612,20 @@
         async function loadAcademicYears() {
             try {
                 const years = await supabaseRequest(
-                    '/academic_years?select=year_id,year_name&order=year_name.desc',
+                    '/academic_years?select=year_id,year_name,start_month,start_year,end_month,end_year&order=year_order.desc',
                     { method: 'GET' }
                 );
                 
                 academicYears = years;
+                
+                // Obtener el año académico actual desde system_config
+                const systemConfig = await supabaseRequest(
+                    '/system_config?select=current_academic_year_id&limit=1',
+                    { method: 'GET' }
+                );
+                
+                const currentAcademicYearId = systemConfig && systemConfig.length > 0 ? 
+                    systemConfig[0].current_academic_year_id : null;
                 
                 // Llenar selectores
                 const selects = ['academicYearSelect', 'periodAcademicYear', 'holidaysYear'];
@@ -627,10 +636,13 @@
                 });
                 
                 // Seleccionar el año actual por defecto
-                if (years.length > 0) {
+                if (currentAcademicYearId) {
+                    document.getElementById('academicYearSelect').value = currentAcademicYearId;
+                } else if (years.length > 0) {
                     document.getElementById('academicYearSelect').value = years[0].year_id;
-                    await loadCalendar();
                 }
+                
+                await loadCalendar();
                 
             } catch (error) {
                 console.error('Error cargando años académicos:', error);
@@ -638,6 +650,7 @@
             }
         }
 
+        
         async function loadPeriods() {
             const selectedYear = document.getElementById('academicYearSelect').value;
             if (!selectedYear) return;
@@ -707,6 +720,118 @@
             }).join('');
         }
 
+        // ==========================================
+        // CARGA DE DATOS INICIALES
+        // ==========================================
+        async function loadAcademicYears() {
+            try {
+                const years = await supabaseRequest(
+                    '/academic_years?select=year_id,year_name,start_month,start_year,end_month,end_year&order=year_order.desc',
+                    { method: 'GET' }
+                );
+                
+                academicYears = years;
+                
+                // Obtener el año académico actual desde system_config
+                const systemConfig = await supabaseRequest(
+                    '/system_config?select=current_academic_year_id&limit=1',
+                    { method: 'GET' }
+                );
+                
+                const currentAcademicYearId = systemConfig && systemConfig.length > 0 ? 
+                    systemConfig[0].current_academic_year_id : null;
+                
+                // Llenar selectores
+                const selects = ['academicYearSelect', 'periodAcademicYear', 'holidaysYear'];
+                selects.forEach(selectId => {
+                    const select = document.getElementById(selectId);
+                    select.innerHTML = '<option value="">Seleccione...</option>' +
+                        years.map(y => `<option value="${y.year_id}">${y.year_name}</option>`).join('');
+                });
+                
+                // Seleccionar el año actual por defecto
+                if (currentAcademicYearId) {
+                    document.getElementById('academicYearSelect').value = currentAcademicYearId;
+                } else if (years.length > 0) {
+                    document.getElementById('academicYearSelect').value = years[0].year_id;
+                }
+                
+                await loadCalendar();
+                
+            } catch (error) {
+                console.error('Error cargando años académicos:', error);
+                showMessage('Error al cargar años académicos: ' + error.message, 'danger');
+            }
+        }
+        
+        async function loadPeriods() {
+            const selectedYear = document.getElementById('academicYearSelect').value;
+            if (!selectedYear) return;
+            
+            try {
+                // Obtener el nombre del año académico
+                const year = academicYears.find(y => y.year_id === selectedYear);
+                if (!year) return;
+                
+                const periods = await supabaseRequest(
+                    '/hr_non_work_days?select=*&academic_year=eq.' + encodeURIComponent(year.year_name) + '&order=start_date.asc',
+                    { method: 'GET' }
+                );
+                
+                nonWorkDays = periods;
+                displayPeriods(periods);
+                
+            } catch (error) {
+                console.error('Error cargando periodos:', error);
+                showMessage('Error al cargar periodos: ' + error.message, 'danger');
+            }
+        }
+        
+        function displayPeriods(periods) {
+            const container = document.getElementById('periodsContainer');
+            
+            if (periods.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1"></i>
+                        <p class="mt-2">No hay periodos registrados para este año</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = periods.map(period => {
+                const typeClass = period.day_type === 'holiday' ? 'period-holiday' :
+                                 period.day_type === 'paid_break' ? 'period-paid' : 'period-unpaid';
+                const typeName = period.day_type === 'holiday' ? 'Festivo' :
+                                period.day_type === 'paid_break' ? 'Receso Remunerado' : 'Receso No Remunerado';
+                
+                return `
+                    <div class="card period-card ${typeClass}">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${period.description}</h6>
+                                    <p class="mb-1 text-muted small">
+                                        <i class="bi bi-calendar-range me-1"></i>
+                                        ${formatDate(period.start_date)} - ${formatDate(period.end_date)}
+                                    </p>
+                                    <span class="badge bg-secondary">${typeName}</span>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary me-1" onclick='editPeriod(${JSON.stringify(period)})' title="Editar">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick='openDeleteModal(${JSON.stringify(period)})' title="Eliminar">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
         
         // ==========================================
         // CALENDARIO
@@ -723,20 +848,18 @@
                 // Cargar periodos no laborables
                 await loadPeriods();
                 
-                // Obtener el año del nombre del año académico
+                // Obtener el año académico seleccionado
                 const year = academicYears.find(y => y.year_id === yearId);
                 if (!year) return;
                 
-                // Extraer el año del nombre (ej: "2025" de "2025")
-                const yearNumber = parseInt(year.year_name);
-                currentYear = yearNumber;
+                currentYear = year;
                 
                 if (viewMode === 'annual') {
-                    renderAnnualCalendar(yearNumber);
+                    renderAnnualCalendar(year);
                 } else {
                     const month = parseInt(document.getElementById('monthSelect').value);
                     currentMonth = month;
-                    renderMonthCalendar(yearNumber, month);
+                    renderMonthCalendar(year, month);
                 }
                 
             } catch (error) {
@@ -746,51 +869,114 @@
                 showLoading(false);
             }
         }
-
+        
         function changeViewMode() {
             const viewMode = document.getElementById('viewMode').value;
             const monthContainer = document.getElementById('monthSelectorContainer');
             
             if (viewMode === 'monthly') {
                 monthContainer.style.display = 'block';
+                
+                // Actualizar el selector de meses según el año académico actual
+                const yearId = document.getElementById('academicYearSelect').value;
+                if (yearId) {
+                    const year = academicYears.find(y => y.year_id === yearId);
+                    if (year) {
+                        updateMonthSelector(year);
+                    }
+                }
             } else {
                 monthContainer.style.display = 'none';
             }
             
             loadCalendar();
         }
-
-        function renderAnnualCalendar(year) {
+        
+        function updateMonthSelector(academicYear) {
+            const monthSelect = document.getElementById('monthSelect');
+            const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                               'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            
+            const startMonth = parseInt(academicYear.start_month);
+            const startYear = parseInt(academicYear.start_year);
+            
+            let html = '';
+            let currentMonth = startMonth;
+            let currentYear = startYear;
+            
+            // Generar opciones en orden académico (dinámico según BD)
+            for (let i = 0; i < 12; i++) {
+                const label = `${monthNames[currentMonth - 1]} ${currentYear}`;
+                html += `<option value="${currentMonth}">${label}</option>`;
+                
+                currentMonth++;
+                if (currentMonth > 12) {
+                    currentMonth = 1;
+                    currentYear++;
+                }
+            }
+            
+            monthSelect.innerHTML = html;
+        }
+        
+        function renderAnnualCalendar(academicYear) {
             const container = document.getElementById('calendarContainer');
             let html = '<div class="row">';
             
-            for (let month = 1; month <= 12; month++) {
+            // Año académico dinámico desde BD
+            const startMonth = parseInt(academicYear.start_month);
+            const startYear = parseInt(academicYear.start_year);
+            const endMonth = parseInt(academicYear.end_month);
+            const endYear = parseInt(academicYear.end_year);
+            
+            let currentMonth = startMonth;
+            let currentYear = startYear;
+            
+            // Iterar por los 12 meses del año académico
+            for (let i = 0; i < 12; i++) {
                 html += `
                     <div class="col-lg-6 col-xl-4">
                         <div class="calendar-month">
-                            ${renderMonth(year, month)}
+                            ${renderMonth(currentYear, currentMonth)}
                         </div>
                     </div>
                 `;
+                
+                // Avanzar al siguiente mes
+                currentMonth++;
+                if (currentMonth > 12) {
+                    currentMonth = 1;
+                    currentYear++;
+                }
             }
             
             html += '</div>';
             container.innerHTML = html;
         }
-
-        function renderMonthCalendar(year, month) {
+        
+        function renderMonthCalendar(academicYear, monthNumber) {
             const container = document.getElementById('calendarContainer');
+            
+            // Determinar el año correcto según el mes
+            const startMonth = parseInt(academicYear.start_month);
+            const startYear = parseInt(academicYear.start_year);
+            
+            let year = startYear;
+            if (monthNumber < startMonth) {
+                year = parseInt(academicYear.end_year);
+            }
+            
             container.innerHTML = `
                 <div class="row">
                     <div class="col-12">
                         <div class="calendar-month">
-                            ${renderMonth(year, month, true)}
+                            ${renderMonth(year, monthNumber, true)}
                         </div>
                     </div>
                 </div>
             `;
         }
-
+        
         function renderMonth(year, month, large = false) {
             const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                               'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -842,7 +1028,7 @@
             html += '</div>';
             return html;
         }
-
+        
         function getDayInfo(dateStr, date) {
             const dayOfWeek = date.getDay();
             
@@ -862,7 +1048,6 @@
             
             return { class: 'workday', label: '' };
         }
-
         
         // ==========================================
         // CRUD DE PERIODOS
