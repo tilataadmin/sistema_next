@@ -865,6 +865,7 @@ const URL_PERMISSIONS = {
     '/modules/hr/manage-absences.html': 'Gestionar todas las ausencias',
     '/modules/hr/work-calendar.html': 'Configurar calendario laboral',
     '/modules/hr/absence-reports.html': 'Ver reportes de ausencias',
+    '/modules/hr/hr-dashboard.html': 'Ver dashboard de talento humano', 
     
     // Módulo Presupuesto - Administración
     '/modules/budget/chart-of-accounts.html': 'Gestionar PUC',
