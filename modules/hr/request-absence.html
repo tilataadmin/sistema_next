@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.02.20.00">
+    <meta name="page-version" content="25.11.03.05.16">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -1073,6 +1073,18 @@
         });
 
         // ==========================================
+        // FUNCIÓN AUXILIAR PARA CONVERTIR A BASE64
+        // ==========================================
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // ==========================================
         // ENVÍO DEL FORMULARIO
         // ==========================================
         document.getElementById('absenceForm').addEventListener('submit', async function(e) {
@@ -1185,49 +1197,36 @@
         }
 
         async function uploadFiles(requestId) {
-            const year = new Date().getFullYear();
-            const workerId = currentSession.worker_id;
+            console.log(`📎 Subiendo ${selectedFiles.length} archivos como Base64...`);
             
             for (const file of selectedFiles) {
                 try {
-                    const filePath = `${year}/${workerId}/${requestId}/${file.name}`;
+                    console.log('📄 Procesando archivo:', file.name);
                     
-                    const formData = new FormData();
-                    formData.append('file', file);
+                    // Convertir archivo a Base64
+                    const base64 = await fileToBase64(file);
                     
-                    // SIN AUTENTICACIÓN (bucket público)
-                    const uploadResponse = await fetch(
-                        `https://spjzvpcsgbewxupjvmfm.supabase.co/storage/v1/object/hr-absence-supports/${filePath}`,
-                        {
-                            method: 'POST',
-                            body: formData
-                        }
-                    );
-                    
-                    if (!uploadResponse.ok) {
-                        const errorText = await uploadResponse.text();
-                        console.error('Error response:', errorText);
-                        throw new Error(`Error al subir ${file.name}`);
-                    }
-                    
-                    // Registrar en la base de datos
+                    // Guardar directamente en la base de datos
                     await supabaseRequest('/hr_absence_attachments', {
                         method: 'POST',
                         body: JSON.stringify({
                             request_id: requestId,
                             file_name: file.name,
-                            file_path: filePath,
+                            file_path: base64,  // 👈 Guardar Base64 aquí
                             file_type: file.type,
                             file_size: file.size
                         })
                     });
                     
-                    console.log('✅ Archivo subido:', file.name);
+                    console.log('✅ Archivo guardado:', file.name);
                     
                 } catch (error) {
-                    console.error('Error al subir archivo:', file.name, error);
+                    console.error('❌ Error al guardar archivo:', file.name, error);
+                    // No lanzar error, continuar con siguiente archivo
                 }
             }
+            
+            console.log('✅ Todos los archivos procesados');
         }
 
         
@@ -1451,6 +1450,31 @@
                     authHTML += `<li class="mb-2"><strong>${authorizerName}</strong> (${auth.authorization_level}): ${statusIcon}</li>`;
                 }
                 authHTML += '</ul>';
+
+                // Cargar archivos adjuntos
+                const attachmentsData = await supabaseRequest(
+                    '/hr_absence_attachments?request_id=eq.' + requestId + '&select=*'
+                );
+                
+                let attachmentsHTML = '';
+                if (attachmentsData && attachmentsData.length > 0) {
+                    attachmentsHTML = '<h6 class="mt-3">Archivos Adjuntos:</h6><div class="list-group mb-3">';
+                    attachmentsData.forEach(att => {
+                        const fileSize = (att.file_size / 1024).toFixed(2);
+                        attachmentsHTML += `
+                            <a href="${att.file_path}" 
+                               download="${att.file_name}" 
+                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                <span>
+                                    <i class="bi bi-file-earmark me-2"></i>
+                                    <strong>${att.file_name}</strong>
+                                </span>
+                                <span class="badge bg-secondary">${fileSize} KB</span>
+                            </a>
+                        `;
+                    });
+                    attachmentsHTML += '</div>';
+                }
                 
                 modalBody.innerHTML = `
                     <div class="mb-3">
@@ -1462,6 +1486,7 @@
                         <p><strong>Descripción:</strong> ${request.description || 'Sin descripción'}</p>
                     </div>
                     ${authHTML}
+                    ${attachmentsHTML}
                 `;
                 
             } catch (error) {
