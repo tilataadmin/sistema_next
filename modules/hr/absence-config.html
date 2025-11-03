@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA - Actualizar en cada modificación (Formato: YY.MM.DD.HH.MM) -->
-    <meta name="page-version" content="25.11.02.19.18">
+    <meta name="page-version" content="25.11.02.19.27">
     
     <title>Configuración de Ausencias - SchoolNet</title>
     
@@ -550,8 +550,6 @@
             progressModalInstance.show();
             
             try {
-                const session = getStoredSession();
-                
                 const workers = await supabaseRequest('/workers?worker_status=eq.active&select=worker_id,worker_first_name,worker_last_name_1');
                 
                 if (!workers || workers.length === 0) {
@@ -562,40 +560,54 @@
                 
                 document.getElementById('progressText').textContent = `Procesando ${workers.length} trabajadores...`;
                 
+                // PASO 1: ELIMINAR ajustes de inicialización previos
+                document.getElementById('progressText').textContent = 'Limpiando inicializaciones anteriores...';
+                
+                await supabaseRequest('/hr_balance_adjustments?reason=eq.Inicialización del sistema de ausencias', {
+                    method: 'DELETE'
+                });
+                
+                console.log('✅ Inicializaciones anteriores eliminadas');
+                
+                // PASO 2: INSERTAR nuevos ajustes
+                document.getElementById('progressText').textContent = `Inicializando ${workers.length} trabajadores...`;
+                
                 const adjustments = [];
-                    const reason = `Inicialización de saldos - ${new Date().toLocaleDateString('es-CO')}`;
-                    const adjustedBy = await getWorkerIdFromSession();
+                const reason = 'Inicialización del sistema de ausencias';
+                const adjustedBy = await getWorkerIdFromSession();
+                
+                for (const worker of workers) {
+                    adjustments.push({
+                        worker_id: worker.worker_id,
+                        adjustment_type: 'personal_hours',
+                        amount: currentConfig.personal_hours_limit,
+                        reason: reason,
+                        adjusted_by: adjustedBy
+                    });
                     
-                    for (const worker of workers) {
-                        adjustments.push({
-                            worker_id: worker.worker_id,
-                            adjustment_type: 'personal_hours',
-                            amount: currentConfig.personal_hours_limit,
-                            reason: reason,
-                            adjusted_by: adjustedBy
-                        });
-                        
-                        adjustments.push({
-                            worker_id: worker.worker_id,
-                            adjustment_type: 'calamity_days',
-                            amount: currentConfig.calamity_days_limit,
-                            reason: reason,
-                            adjusted_by: adjustedBy
-                        });
-                    }
+                    adjustments.push({
+                        worker_id: worker.worker_id,
+                        adjustment_type: 'calamity_days',
+                        amount: currentConfig.calamity_days_limit,
+                        reason: reason,
+                        adjusted_by: adjustedBy
+                    });
+                }
                 
                 await supabaseRequest('/hr_balance_adjustments', {
                     method: 'POST',
                     body: JSON.stringify(adjustments)
                 });
                 
+                console.log(`✅ ${adjustments.length} ajustes insertados`);
+                
                 progressModalInstance.hide();
-                showMessage(`Saldos inicializados para ${workers.length} trabajadores`, 'success');
+                showMessage(`Saldos inicializados correctamente para ${workers.length} trabajadores`, 'success');
                 
             } catch (error) {
                 console.error('❌ Error inicializando:', error);
                 progressModalInstance.hide();
-                showMessage('Error al inicializar saldos', 'danger');
+                showMessage('Error al inicializar saldos: ' + error.message, 'danger');
             }
         }
         
