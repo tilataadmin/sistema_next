@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.03.05.32">
+    <meta name="page-version" content="25.11.03.15.03">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -428,6 +428,8 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- ✅ NUEVO: Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../assets/js/config.js"></script>
     
     <script>
@@ -436,6 +438,7 @@
         // ==========================================
         let currentSession = null;
         let categories = [];
+        let supabaseClient = null; // ✅ NUEVO
         let selectedCategory = null;
         let selectedFiles = [];
         let cameraStream = null;
@@ -538,6 +541,13 @@
                 console.log('🆔 Worker ID:', currentSession.worker_id);
                 
                 // CORRECCIÓN: Cargar hrConfig PRIMERO, luego el resto
+                // ✅ NUEVO: Inicializar cliente de Supabase
+                console.log('🔧 Inicializando cliente de Supabase...');
+                supabaseClient = supabase.createClient(
+                    SUPABASE_CONFIG.url,
+                    SUPABASE_CONFIG.anonKey
+                );
+                console.log('✅ Cliente de Supabase inicializado');
                 await loadHRConfig();
                 await loadCategories();
                 
@@ -1073,18 +1083,6 @@
         });
 
         // ==========================================
-        // FUNCIÓN AUXILIAR PARA CONVERTIR A BASE64
-        // ==========================================
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        // ==========================================
         // ENVÍO DEL FORMULARIO
         // ==========================================
         document.getElementById('absenceForm').addEventListener('submit', async function(e) {
@@ -1197,31 +1195,61 @@
         }
 
         async function uploadFiles(requestId) {
-            console.log(`📎 Subiendo ${selectedFiles.length} archivos como Base64...`);
+            console.log(`📎 Subiendo ${selectedFiles.length} archivos a Supabase Storage...`);
+            const BUCKET_NAME = 'hr-absence-supports';
             
             for (const file of selectedFiles) {
                 try {
                     console.log('📄 Procesando archivo:', file.name);
                     
-                    // Convertir archivo a Base64
-                    const base64 = await fileToBase64(file);
+                    // ✅ Generar ruta única en Storage
+                    const timestamp = Date.now();
+                    const sanitizedName = file.name.replace(/[^a-z0-9.-]/gi, '_').toLowerCase();
+                    const filePath = `${currentSession.worker_id}/${requestId}/${timestamp}_${sanitizedName}`;
                     
-                    // Guardar directamente en la base de datos
+                    console.log('📁 Ruta en Storage:', filePath);
+                    
+                    // ✅ Subir a Supabase Storage usando el cliente
+                    const { data, error } = await supabaseClient
+                        .storage
+                        .from(BUCKET_NAME)
+                        .upload(filePath, file, {
+                            cacheControl: '3600',
+                            upsert: false
+                        });
+                    
+                    if (error) {
+                        console.error('❌ Error de Supabase Storage:', error);
+                        throw error;
+                    }
+                    
+                    console.log('✅ Archivo subido a Storage:', data);
+                    
+                    // ✅ Obtener URL pública
+                    const { data: urlData } = supabaseClient
+                        .storage
+                        .from(BUCKET_NAME)
+                        .getPublicUrl(filePath);
+                    
+                    const publicUrl = urlData.publicUrl;
+                    console.log('🔗 URL pública:', publicUrl);
+                    
+                    // ✅ Guardar referencia en base de datos
                     await supabaseRequest('/hr_absence_attachments', {
                         method: 'POST',
                         body: JSON.stringify({
                             request_id: requestId,
                             file_name: file.name,
-                            file_path: base64,  // 👈 Guardar Base64 aquí
+                            file_path: publicUrl,  // 👈 Guardar URL pública
                             file_type: file.type,
                             file_size: file.size
                         })
                     });
                     
-                    console.log('✅ Archivo guardado:', file.name);
+                    console.log('✅ Referencia guardada en BD:', file.name);
                     
                 } catch (error) {
-                    console.error('❌ Error al guardar archivo:', file.name, error);
+                    console.error('❌ Error al procesar archivo:', file.name, error);
                     // No lanzar error, continuar con siguiente archivo
                 }
             }

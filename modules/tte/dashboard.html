@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.11.03.17.41">
     <title>Dashboard TTE - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -447,9 +448,34 @@
                 }
                 
                 // Cargar todas las solicitudes
-                solicitudesData = await supabaseRequest(query);
+                const solicitudes = await supabaseRequest(query);
                 
-                console.log(`📊 ${solicitudesData.length} solicitudes cargadas para análisis`);
+                // ✅ NUEVO: También cargar fragmentos para análisis completo
+                let fragmentosQuery = '/tte_request_fragments?select=*,tte_requests!inner(created_at,status),tte_categories(category_name)';
+                let fragmentos = [];
+                
+                if (startDate) {
+                    fragmentosQuery += `&tte_requests.created_at=gte.${startDate}T00:00:00`;
+                }
+                if (endDate) {
+                    fragmentosQuery += `&tte_requests.created_at=lte.${endDate}T23:59:59`;
+                }
+                
+                try {
+                    fragmentos = await supabaseRequest(fragmentosQuery);
+                } catch (error) {
+                    console.warn('⚠️ Error cargando fragmentos:', error);
+                    fragmentos = [];
+                }
+                
+                // ✅ Combinar solicitudes y fragmentos para análisis
+                solicitudesData = {
+                    solicitudes: solicitudes || [],
+                    fragmentos: fragmentos || [],
+                    total: (solicitudes?.length || 0) + (fragmentos?.length || 0)
+                };
+                
+                console.log(`📊 ${solicitudesData.solicitudes.length} solicitudes + ${solicitudesData.fragmentos.length} fragmentos cargados`);
                 
                 // Calcular métricas
                 calcularMetricas();
@@ -473,10 +499,23 @@
         // CALCULAR MÉTRICAS
         // ==========================================
         function calcularMetricas() {
-            const total = solicitudesData.length;
-            const pendientes = solicitudesData.filter(s => s.status === 'Pendiente').length;
-            const proceso = solicitudesData.filter(s => s.status === 'En proceso').length;
-            const cerradas = solicitudesData.filter(s => s.status === 'Cerrado').length;
+            // ✅ NUEVO: Contar solicitudes + fragmentos
+            const solicitudes = solicitudesData.solicitudes || [];
+            const fragmentos = solicitudesData.fragmentos || [];
+            
+            const total = solicitudes.length + fragmentos.length;
+            
+            // Contar por estado (solicitudes)
+            let pendientes = solicitudes.filter(s => s.status === 'Pendiente').length;
+            let proceso = solicitudes.filter(s => s.status === 'En proceso').length;
+            let cerradas = solicitudes.filter(s => s.status === 'Cerrado').length;
+            
+            // Sumar fragmentos por estado de respuesta
+            fragmentos.forEach(f => {
+                if (f.response_status === 'pending') pendientes++;
+                else if (f.response_status === 'draft') proceso++;
+                else if (f.response_status === 'approved') cerradas++;
+            });
             
             document.getElementById('metric-total').textContent = total;
             document.getElementById('metric-pendientes').textContent = pendientes;
@@ -497,9 +536,20 @@
         // GRÁFICO: DISTRIBUCIÓN POR ESTADO
         // ==========================================
         function generarGraficoEstado() {
-            const pendientes = solicitudesData.filter(s => s.status === 'Pendiente').length;
-            const proceso = solicitudesData.filter(s => s.status === 'En proceso').length;
-            const cerradas = solicitudesData.filter(s => s.status === 'Cerrado').length;
+            // ✅ NUEVO: Contar estados incluyendo fragmentos
+            const solicitudes = solicitudesData.solicitudes || [];
+            const fragmentos = solicitudesData.fragmentos || [];
+            
+            let pendientes = solicitudes.filter(s => s.status === 'Pendiente').length;
+            let proceso = solicitudes.filter(s => s.status === 'En proceso').length;
+            let cerradas = solicitudes.filter(s => s.status === 'Cerrado').length;
+            
+            // Sumar fragmentos
+            fragmentos.forEach(f => {
+                if (f.response_status === 'pending') pendientes++;
+                else if (f.response_status === 'draft') proceso++;
+                else if (f.response_status === 'approved') cerradas++;
+            });
             
             const ctx = document.getElementById('chart-estado');
             
@@ -532,10 +582,13 @@
         // GRÁFICO: DISTRIBUCIÓN POR TIPOLOGÍA
         // ==========================================
         function generarGraficoTipologia() {
-            const positivo = solicitudesData.filter(s => s.typology === 'Positivo').length;
-            const neutro = solicitudesData.filter(s => s.typology === 'Neutro').length;
-            const negativo = solicitudesData.filter(s => s.typology === 'Negativo').length;
-            const sinDefinir = solicitudesData.filter(s => !s.typology).length;
+            // ✅ NUEVO: Solo las solicitudes tienen tipología (no los fragmentos)
+            const solicitudes = solicitudesData.solicitudes || [];
+            
+            const positivo = solicitudes.filter(s => s.typology === 'Positivo').length;
+            const neutro = solicitudes.filter(s => s.typology === 'Neutro').length;
+            const negativo = solicitudes.filter(s => s.typology === 'Negativo').length;
+            const sinDefinir = solicitudes.filter(s => !s.typology).length;
             
             const ctx = document.getElementById('chart-tipologia');
             
@@ -570,8 +623,17 @@
         function generarGraficoCategoria() {
             const categorias = {};
             
-            solicitudesData.forEach(sol => {
+            // ✅ NUEVO: Contar solicitudes
+            const solicitudes = solicitudesData.solicitudes || [];
+            solicitudes.forEach(sol => {
                 const catName = sol.tte_categories?.category_name || 'Sin categoría';
+                categorias[catName] = (categorias[catName] || 0) + 1;
+            });
+            
+            // ✅ NUEVO: Sumar fragmentos
+            const fragmentos = solicitudesData.fragmentos || [];
+            fragmentos.forEach(frag => {
+                const catName = frag.tte_categories?.category_name || 'Sin categoría';
                 categorias[catName] = (categorias[catName] || 0) + 1;
             });
             
@@ -620,8 +682,18 @@
         function generarGraficoTendencia() {
             const meses = {};
             
-            solicitudesData.forEach(sol => {
+            // ✅ NUEVO: Contar solicitudes
+            const solicitudes = solicitudesData.solicitudes || [];
+            solicitudes.forEach(sol => {
                 const fecha = new Date(sol.created_at);
+                const mesAno = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
+                meses[mesAno] = (meses[mesAno] || 0) + 1;
+            });
+            
+            // ✅ NUEVO: Sumar fragmentos
+            const fragmentos = solicitudesData.fragmentos || [];
+            fragmentos.forEach(frag => {
+                const fecha = new Date(frag.tte_requests.created_at);
                 const mesAno = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
                 meses[mesAno] = (meses[mesAno] || 0) + 1;
             });
@@ -680,12 +752,22 @@
         // ==========================================
         function generarTopCategorias() {
             const categorias = {};
-            const total = solicitudesData.length;
             
-            solicitudesData.forEach(sol => {
+            // ✅ NUEVO: Contar solicitudes
+            const solicitudes = solicitudesData.solicitudes || [];
+            solicitudes.forEach(sol => {
                 const catName = sol.tte_categories?.category_name || 'Sin categoría';
                 categorias[catName] = (categorias[catName] || 0) + 1;
             });
+            
+            // ✅ NUEVO: Sumar fragmentos
+            const fragmentos = solicitudesData.fragmentos || [];
+            fragmentos.forEach(frag => {
+                const catName = frag.tte_categories?.category_name || 'Sin categoría';
+                categorias[catName] = (categorias[catName] || 0) + 1;
+            });
+            
+            const total = solicitudes.length + fragmentos.length;
             
             // Ordenar por cantidad descendente
             const categoriasOrdenadas = Object.entries(categorias)
@@ -732,7 +814,10 @@
             const hoy = new Date();
             const vencidas = [];
             
-            solicitudesData.forEach(sol => {
+            // ✅ NUEVO: Solo revisar solicitudes (fragmentos no tienen prioridad individual)
+            const solicitudes = solicitudesData.solicitudes || [];
+            
+            solicitudes.forEach(sol => {
                 // Solo considerar las que no están cerradas
                 if (sol.status === 'Cerrado') return;
                 
