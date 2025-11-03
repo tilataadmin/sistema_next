@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0
+    <meta name="page-version" content="25.11.03.17.26">
     <title>Responder Solicitudes TTE - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -444,7 +445,7 @@
         // ==========================================
         async function cargarSolicitudes() {
             try {
-                console.log('📡 Cargando solicitudes asignadas...');
+                console.log('📡 Cargando solicitudes y fragmentos asignados...');
                 
                 // Obtener categorías donde soy responsable
                 const categoriasResponsable = await supabaseRequest(`/tte_categories?select=category_id&responsible_email=eq.${userEmail}`);
@@ -460,10 +461,49 @@
                 
                 const categoryIds = categoriasResponsable.map(c => c.category_id);
                 
-                // Obtener solicitudes de esas categorías
-                const solicitudes = await supabaseRequest(`/tte_requests?select=*,tte_categories(category_name),tte_priorities(priority_name,max_response_days)&category_id=in.(${categoryIds.join(',')})&order=created_at.desc`);
+                // ✅ NUEVO: Obtener fragmentos asignados a mis categorías
+                const fragmentos = await supabaseRequest(
+                    `/tte_request_fragments?select=*,tte_requests(request_id,request_folio,requester_name,requester_type,requester_email,student_name,course_id,message,status,created_at),tte_categories(category_name)&category_id=in.(${categoryIds.join(',')})&order=created_at.desc`
+                );
                 
-                solicitudesCache = solicitudes || [];
+                // ✅ NUEVO: Obtener solicitudes sin fragmentar de esas categorías
+                const solicitudesSimples = await supabaseRequest(
+                    `/tte_requests?select=*,tte_categories(category_name),tte_priorities(priority_name,max_response_days)&category_id=in.(${categoryIds.join(',')})&has_fragments=eq.false&order=created_at.desc`
+                );
+                
+                // ✅ Combinar ambas en una lista unificada
+                let itemsCombinados = [];
+                
+                // Agregar fragmentos
+                if (fragmentos && fragmentos.length > 0) {
+                    fragmentos.forEach(frag => {
+                        itemsCombinados.push({
+                            ...frag.tte_requests,
+                            fragment_id: frag.fragment_id,
+                            fragment_text: frag.fragment_text,
+                            fragment_response_status: frag.response_status,
+                            fragment_response_text: frag.response_text,
+                            tte_categories: frag.tte_categories,
+                            is_fragment: true
+                        });
+                    });
+                }
+                
+                // Agregar solicitudes simples
+                if (solicitudesSimples && solicitudesSimples.length > 0) {
+                    solicitudesSimples.forEach(sol => {
+                        itemsCombinados.push({
+                            ...sol,
+                            is_fragment: false,
+                            fragment_response_status: sol.response_status
+                        });
+                    });
+                }
+                
+                // Ordenar por fecha
+                itemsCombinados.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                
+                solicitudesCache = itemsCombinados;
                 renderizarTabla(solicitudesCache);
                 
                 document.getElementById('total-requests').textContent = solicitudesCache.length;
@@ -509,11 +549,15 @@
                 else if (sol.status === 'En proceso') estadoBadge = '<span class="badge badge-proceso">En proceso</span>';
                 else if (sol.status === 'Cerrado') estadoBadge = '<span class="badge badge-cerrado">Cerrado</span>';
                 
-                // Badge de estado de respuesta
+                // ✅ NUEVO: Badge de estado de respuesta (usar fragment_response_status)
                 let respuestaBadge = '';
-                if (sol.response_status === 'pending') respuestaBadge = '<span class="badge bg-secondary">Sin respuesta</span>';
-                else if (sol.response_status === 'draft') respuestaBadge = '<span class="badge bg-warning text-dark">Propuesta</span>';
-                else if (sol.response_status === 'approved') respuestaBadge = '<span class="badge bg-success">Aprobada</span>';
+                const responseStatus = sol.fragment_response_status || sol.response_status;
+                if (responseStatus === 'pending') respuestaBadge = '<span class="badge bg-secondary">Sin respuesta</span>';
+                else if (responseStatus === 'draft') respuestaBadge = '<span class="badge bg-warning text-dark">Propuesta</span>';
+                else if (responseStatus === 'approved') respuestaBadge = '<span class="badge bg-success">Aprobada</span>';
+                
+                // ✅ NUEVO: Indicador si es fragmento
+                const tipoIndicador = sol.is_fragment ? '<i class="bi bi-scissors text-info" title="Fragmento"></i> ' : '';
                 
                 // Calcular días transcurridos
                 const fechaCreacion = new Date(sol.created_at);
@@ -535,8 +579,8 @@
                 const categoria = sol.tte_categories?.category_name || 'Sin categoría';
                 
                 return `
-                    <tr class="request-row" onclick="verDetalle('${sol.request_id}')">
-                        <td><span class="folio-badge">${escapeHtml(sol.request_folio)}</span></td>
+                    <tr class="request-row" onclick="verDetalle('${sol.request_id}', ${sol.is_fragment ? `'${sol.fragment_id}'` : 'null'})">
+                        <td><span class="folio-badge">${tipoIndicador}${escapeHtml(sol.request_folio)}</span></td>
                         <td>${fecha}</td>
                         <td>${escapeHtml(sol.requester_name)}</td>
                         <td>${categoria}</td>
@@ -582,11 +626,14 @@
         // ==========================================
         // VER DETALLE DE SOLICITUD
         // ==========================================
-        async function verDetalle(requestId) {
+        async function verDetalle(requestId, fragmentId = null) {
             try {
                 mostrarLoading();
-                
-                const solicitud = solicitudesCache.find(s => s.request_id === requestId);
+
+                const solicitud = solicitudesCache.find(s => 
+                    s.request_id === requestId && 
+                    (fragmentId ? s.fragment_id === fragmentId : !s.is_fragment)
+                );
                 
                 if (!solicitud) {
                     showMessage('Solicitud no encontrada', 'danger');
@@ -601,7 +648,22 @@
                 document.getElementById('detail-name').textContent = solicitud.requester_name;
                 document.getElementById('detail-email').textContent = solicitud.requester_email;
                 document.getElementById('detail-date').textContent = formatDate(solicitud.created_at);
-                document.getElementById('detail-message').textContent = solicitud.message;
+                // ✅ NUEVO: Mostrar fragmento o mensaje completo
+                if (solicitud.is_fragment) {
+                    document.getElementById('detail-message').innerHTML = `
+                        <div class="alert alert-info mb-2">
+                            <i class="bi bi-scissors me-2"></i>
+                            <strong>Fragmento asignado a tu categoría:</strong>
+                        </div>
+                        <div class="p-2 bg-white rounded">"${escapeHtml(solicitud.fragment_text)}"</div>
+                        <hr>
+                        <small class="text-muted">Mensaje completo del usuario:</small>
+                        <div class="mt-2 text-muted">${escapeHtml(solicitud.message)}</div>
+                    `;
+                } else {
+                    document.getElementById('detail-message').textContent = solicitud.message;
+                }
+
                 
                 // Badge de estado
                 let estadoBadge = '';
@@ -751,14 +813,18 @@
             document.getElementById('form-respuesta').style.display = 'none';
             document.getElementById('btn-proponer-inicial').style.display = 'none';
             
-            if (solicitud.response_status === 'approved') {
+            // ✅ NUEVO: Usar fragment_response_status si es fragmento
+            const responseStatus = solicitud.is_fragment ? solicitud.fragment_response_status : solicitud.response_status;
+            const responseText = solicitud.is_fragment ? solicitud.fragment_response_text : solicitud.response_text;
+            
+            if (responseStatus === 'approved') {
                 // Respuesta ya aprobada
                 document.getElementById('respuesta-aprobada').style.display = 'block';
-                document.getElementById('texto-respuesta-aprobada').textContent = solicitud.response_text || '';
-            } else if (solicitud.response_status === 'draft') {
+                document.getElementById('texto-respuesta-aprobada').textContent = responseText || '';
+            } else if (responseStatus === 'draft') {
                 // Ya existe respuesta propuesta
                 document.getElementById('respuesta-existente').style.display = 'block';
-                document.getElementById('texto-respuesta-existente').textContent = solicitud.response_text || '';
+                document.getElementById('texto-respuesta-existente').textContent = responseText || '';
             } else {
                 // Sin respuesta - mostrar botón
                 document.getElementById('btn-proponer-inicial').style.display = 'block';
@@ -806,13 +872,25 @@
             try {
                 mostrarLoading();
                 
-                await supabaseRequest(`/tte_requests?request_id=eq.${solicitudActual.request_id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                        response_text: respuestaTexto,
-                        response_status: 'draft'
-                    })
-                });
+                // ✅ NUEVO: Guardar en fragmento o solicitud según corresponda
+                if (solicitudActual.is_fragment) {
+                    await supabaseRequest(`/tte_request_fragments?fragment_id=eq.${solicitudActual.fragment_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            response_text: respuestaTexto,
+                            response_status: 'draft',
+                            responded_at: new Date().toISOString()
+                        })
+                    });
+                } else {
+                    await supabaseRequest(`/tte_requests?request_id=eq.${solicitudActual.request_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            response_text: respuestaTexto,
+                            response_status: 'draft'
+                        })
+                    });
+                }
                 
                 showMessage('Respuesta propuesta exitosamente. Pendiente de aprobación.', 'success');
                 
