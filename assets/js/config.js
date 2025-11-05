@@ -974,6 +974,7 @@ const URL_PERMISSIONS = {
     '/modules/general-tools/lists.html': 'Listas',
     '/modules/general-tools/generar-dias-tilata.html': 'Generar días Tilatá',
     '/modules/general-tools/agendar-recurrencias.html': 'Agendar recurrencias en días Tilatá',
+    '/modules/general-tools/pedagogical-days.html': 'Gestionar jornadas pedagógicas',
 
     // Módulo Gestión Ambiental (environmental)
     '/modules/environmental/species.html': 'Gestionar especies de árboles',
