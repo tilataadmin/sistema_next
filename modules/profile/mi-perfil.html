@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.05.18.35">
+    <meta name="page-version" content="25.11.05.18.46">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -281,13 +281,6 @@
 
                                 <div class="info-row">
                                     <div class="info-label">
-                                        <i class="bi bi-phone me-1"></i>Teléfono
-                                    </div>
-                                    <div class="info-value" id="profile-phone">No disponible</div>
-                                </div>
-
-                                <div class="info-row">
-                                    <div class="info-label">
                                         <i class="bi bi-cake2 me-1"></i>Fecha de Nacimiento
                                     </div>
                                     <div class="info-value" id="profile-birthdate">-</div>
@@ -529,8 +522,8 @@
             try {
                 mostrarLoading('Cargando información del perfil...');
                 
-                // Query completa con todos los datos necesarios
-                const query = '/workers?select=*,job_roles(role_name),genders(gender_name)&email=eq.' + currentUser.user_mail + '&limit=1';
+                // Query para obtener datos del trabajador
+                const query = '/workers?select=*,genders(gender_name)&email=eq.' + currentUser.user_mail + '&limit=1';
                 const data = await supabaseRequest(query);
                 
                 if (!data || data.length === 0) {
@@ -539,6 +532,13 @@
                 
                 workerData = data[0];
                 console.log('✅ Datos del trabajador cargados:', workerData);
+                
+                // Obtener TODOS los cargos del trabajador a través de worker_job_roles
+                const rolesQuery = '/worker_job_roles?select=job_roles(role_name),is_primary_role,assignment_status&worker_id=eq.' + workerData.worker_id + '&assignment_status=eq.active&order=is_primary_role.desc';
+                const rolesData = await supabaseRequest(rolesQuery);
+                
+                workerData.all_roles = rolesData || [];
+                console.log('✅ Cargos del trabajador:', workerData.all_roles);
                 
                 // Renderizar datos en las tabs
                 await renderizarInformacionPersonal();
@@ -588,9 +588,20 @@
                 const nombreCompleto = `${workerData.worker_first_name} ${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''}`.trim();
                 document.getElementById('profile-full-name').textContent = nombreCompleto;
                 
-                // Cargo
-                const cargo = workerData.job_roles?.role_name || 'Sin cargo asignado';
-                document.getElementById('profile-role').textContent = cargo;
+                // Cargos - TODOS los cargos activos, primero el principal
+                const profileRoleElement = document.getElementById('profile-role');
+                if (workerData.all_roles && workerData.all_roles.length > 0) {
+                    const roleNames = workerData.all_roles.map(r => r.job_roles.role_name);
+                    
+                    if (roleNames.length === 1) {
+                        profileRoleElement.textContent = roleNames[0];
+                    } else {
+                        // Si tiene múltiples cargos, mostrarlos separados por " • "
+                        profileRoleElement.textContent = roleNames.join(' • ');
+                    }
+                } else {
+                    profileRoleElement.textContent = 'Sin cargo asignado';
+                }
                 
                 // Documento
                 document.getElementById('profile-document').textContent = workerData.worker_id_doc || '-';
@@ -598,12 +609,11 @@
                 // Email
                 document.getElementById('profile-email').textContent = workerData.email || '-';
                 
-                // Teléfono - CAMPO NO EXISTE EN BD
-                document.getElementById('profile-phone').textContent = 'No disponible';
-                
-                // Fecha de nacimiento - CAMPO CORRECTO: worker_birthday
+                // Fecha de nacimiento - CORRECCIÓN: Parsear correctamente para evitar problema de zona horaria
                 if (workerData.worker_birthday) {
-                    const birthdate = new Date(workerData.worker_birthday);
+                    // Parsear la fecha como UTC para evitar que reste un día por zona horaria
+                    const [year, month, day] = workerData.worker_birthday.split('-');
+                    const birthdate = new Date(year, month - 1, day);
                     document.getElementById('profile-birthdate').textContent = birthdate.toLocaleDateString('es-CO', {
                         year: 'numeric',
                         month: 'long',
@@ -613,9 +623,10 @@
                     document.getElementById('profile-birthdate').textContent = 'No registrada';
                 }
                 
-                // Fecha de ingreso - CAMPO CORRECTO: worker_entry_date
+                // Fecha de ingreso - CORRECCIÓN: Parsear correctamente para evitar problema de zona horaria
                 if (workerData.worker_entry_date) {
-                    const hireDate = new Date(workerData.worker_entry_date);
+                    const [year, month, day] = workerData.worker_entry_date.split('-');
+                    const hireDate = new Date(year, month - 1, day);
                     document.getElementById('profile-hire-date').textContent = hireDate.toLocaleDateString('es-CO', {
                         year: 'numeric',
                         month: 'long',
