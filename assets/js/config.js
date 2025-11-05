@@ -972,6 +972,9 @@ const URL_PERMISSIONS = {
     '/modules/general-tools/contract-templates.html': 'Gestionar plantillas de contratos',
     '/modules/general-tools/contracts-dashboard.html': 'Ver dashboard de contratos',
     '/modules/general-tools/lists.html': 'Listas',
+    '/modules/general-tools/generar-dias-tilata.html': 'Generar días Tilatá',
+    '/modules/general-tools/agendar-recurrencias.html': 'Agendar recurrencias en días Tilatá',
+    '/modules/general-tools/pedagogical-days.html': 'Gestionar jornadas pedagógicas',
 
     // Módulo Gestión Ambiental (environmental)
     '/modules/environmental/species.html': 'Gestionar especies de árboles',
