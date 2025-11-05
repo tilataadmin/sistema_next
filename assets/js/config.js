@@ -976,6 +976,9 @@ const URL_PERMISSIONS = {
     '/modules/general-tools/agendar-recurrencias.html': 'Agendar recurrencias en días Tilatá',
     '/modules/general-tools/pedagogical-days.html': 'Gestionar jornadas pedagógicas',
 
+    // Módulo Perfil (profile) - NUEVO
+    '/modules/profile/mi-perfil.html': 'Ver mi perfil',
+
     // Módulo Gestión Ambiental (environmental)
     '/modules/environmental/species.html': 'Gestionar especies de árboles',
     '/modules/environmental/species-documentation.html': 'Documentación de especies',
