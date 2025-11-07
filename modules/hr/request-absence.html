@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.07.13.25">
+    <meta name="page-version" content="25.11.07.13.38">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -1389,19 +1389,77 @@
 
         async function sendNotifications(requestId) {
             try {
+                const emailsSet = new Set(); // Usar Set para evitar duplicados
+                
+                // 1. AUTORIZADORES (siempre se notifican)
                 const authData = await supabaseRequest(
                     '/hr_absence_authorizations?request_id=eq.' + requestId + '&select=authorizer_id'
                 );
                 
-                if (!authData || authData.length === 0) return;
+                if (authData && authData.length > 0) {
+                    const authorizerIds = authData.map(a => a.authorizer_id);
+                    const authorizersData = await supabaseRequest(
+                        '/workers?worker_id=in.(' + authorizerIds.join(',') + ')&select=email'
+                    );
+                    authorizersData.forEach(w => emailsSet.add(w.email));
+                }
                 
-                const authorizerIds = authData.map(a => a.authorizer_id);
-                const workersData = await supabaseRequest(
-                    '/workers?worker_id=in.(' + authorizerIds.join(',') + ')&select=email'
-                );
+                // 2. TODOS LOS JEFES del trabajador (si notify_managers = true)
+                if (selectedCategory.notify_managers) {
+                    const managersData = await supabaseRequest(
+                        '/worker_managers?worker_id=eq.' + currentSession.worker_id + '&assignment_status=eq.active&select=manager_id'
+                    );
+                    
+                    if (managersData && managersData.length > 0) {
+                        const managerIds = managersData.map(m => m.manager_id);
+                        const managersWorkersData = await supabaseRequest(
+                            '/workers?worker_id=in.(' + managerIds.join(',') + ')&select=email'
+                        );
+                        managersWorkersData.forEach(w => emailsSet.add(w.email));
+                    }
+                }
                 
-                const emails = workersData.map(w => w.email);
+                // 3. EMAIL DE TALENTO HUMANO (si notify_hr = true)
+                if (selectedCategory.notify_hr && hrConfig.hr_manager_email) {
+                    emailsSet.add(hrConfig.hr_manager_email);
+                }
                 
+                // 4. EMAIL DE LA SECCIÓN (si notify_section_email = true)
+                if (selectedCategory.notify_section_email && currentSession.section_id) {
+                    const sectionData = await supabaseRequest(
+                        '/organizational_areas?area_id=eq.' + currentSession.section_id + '&select=section_name'
+                    );
+                    
+                    if (sectionData && sectionData.length > 0) {
+                        const sectionName = sectionData[0].section_name.toLowerCase();
+                        
+                        // Mapear nombre de sección a campo de email en hr_config
+                        const sectionEmailMap = {
+                            'preescolar': hrConfig.preschool_email,
+                            'primaria': hrConfig.elementary_email,
+                            'media': hrConfig.middle_school_email,
+                            'bachillerato': hrConfig.high_school_email
+                        };
+                        
+                        const sectionEmail = sectionEmailMap[sectionName];
+                        if (sectionEmail) {
+                            emailsSet.add(sectionEmail);
+                        }
+                    }
+                } else if (selectedCategory.notify_section_email && !currentSession.section_id && hrConfig.non_school_email) {
+                    // Si no tiene sección pero notify_section_email = true, enviar a non_school_email
+                    emailsSet.add(hrConfig.non_school_email);
+                }
+                
+                // Convertir Set a Array
+                const emails = Array.from(emailsSet).filter(email => email); // Filtrar emails vacíos
+                
+                if (emails.length === 0) {
+                    console.log('⚠️ No hay destinatarios para las notificaciones');
+                    return;
+                }
+                
+                // Preparar datos del correo
                 const requestData = selectedCategory.full_day_only ? 
                     `${document.getElementById('startDate').value} al ${document.getElementById('endDate').value}` :
                     `${document.getElementById('singleDate').value} de ${document.getElementById('startTime').value} a ${document.getElementById('endTime').value}`;
@@ -1419,16 +1477,18 @@
                 
                 await sendNotification(
                     emails.join(','),
-                    'Nueva solicitud de ausencia pendiente de autorización',
+                    'Nueva solicitud de ausencia',
                     emailBody,
                     false
                 );
-                console.log('✅ Notificaciones enviadas');
+                
+                console.log(`✅ Notificaciones enviadas a ${emails.length} destinatarios:`, emails);
+                
             } catch (error) {
                 console.error('Error al enviar notificaciones:', error);
             }
         }
-
+                
         // ==========================================
         // CARGAR HISTORIAL DE SOLICITUDES
         // ==========================================
