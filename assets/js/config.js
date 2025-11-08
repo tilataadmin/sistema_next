@@ -1427,6 +1427,27 @@ const navbarStyles = `
         color: #f8f9fa;
     }
     
+    #schoolnet-user-navbar .manual-button {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+        text-decoration: none;
+    }
+    
+    #schoolnet-user-navbar .manual-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        color: white;
+        transform: translateY(-1px);
+    }
+    
     #schoolnet-user-navbar .user-menu {
         position: relative;
     }
@@ -1549,10 +1570,39 @@ const navbarStyles = `
 </style>
 `;
 
+// Función para detectar la URL del manual según la página actual
+function getManualUrl() {
+    const currentPath = window.location.pathname;
+    
+    // Si ya estamos en el dashboard o login, ir al manual general
+    if (currentPath.includes('dashboard.html') || currentPath.includes('login.html') || currentPath === '/') {
+        return '/manual/index.html';
+    }
+    
+    // Si ya estamos en el manual, quedarse ahí
+    if (currentPath.includes('/manual/')) {
+        return currentPath;
+    }
+    
+    // Para páginas en /modules/, construir ruta paralela en /manual/
+    if (currentPath.includes('/modules/')) {
+        // Ejemplo: /modules/security/users.html -> /manual/security/users.html
+        const manualPath = currentPath.replace('/modules/', '/manual/');
+        return manualPath;
+    }
+    
+    // Para cualquier otra página, manual general
+    return '/manual/index.html';
+}
+
+// HTML del navbar
 // HTML del navbar
 function createNavbarHTML() {
     const session = getStoredSession();
     const userName = session?.user?.user_display_name || session?.user?.user_name || 'Usuario';
+    
+    // Detectar ruta al manual automáticamente
+    const manualUrl = getManualUrl();
     
     return `
         <nav id="schoolnet-user-navbar">
@@ -1563,23 +1613,31 @@ function createNavbarHTML() {
                         ${APP_CONFIG.name}
                     </a>
                     
-                    <div class="user-menu">
-                        <button class="user-button" id="user-menu-button" type="button">
-                            <i class="bi bi-person-circle"></i>
-                            <span>${userName}</span>
-                            <i class="bi bi-chevron-down" style="font-size: 0.75rem;"></i>
-                        </button>
+                    <div class="d-flex align-items-center gap-3">
+                        <!-- Botón de Manual -->
+                        <a href="${manualUrl}" class="manual-button" id="manual-button">
+                            <i class="bi bi-book"></i>
+                            <span class="d-none d-md-inline">Manual</span>
+                        </a>
                         
-                        <div class="dropdown-menu" id="user-dropdown-menu">
-                            <button class="dropdown-item" id="change-password-btn">
-                                <i class="bi bi-key"></i>
-                                Cambiar Contraseña
+                        <div class="user-menu">
+                            <button class="user-button" id="user-menu-button" type="button">
+                                <i class="bi bi-person-circle"></i>
+                                <span>${userName}</span>
+                                <i class="bi bi-chevron-down" style="font-size: 0.75rem;"></i>
                             </button>
-                            <div class="dropdown-divider"></div>
-                            <button class="dropdown-item" id="logout-btn">
-                                <i class="bi bi-box-arrow-right"></i>
-                                Cerrar Sesión
-                            </button>
+                            
+                            <div class="dropdown-menu" id="user-dropdown-menu">
+                                <button class="dropdown-item" id="change-password-btn">
+                                    <i class="bi bi-key"></i>
+                                    Cambiar Contraseña
+                                </button>
+                                <div class="dropdown-divider"></div>
+                                <button class="dropdown-item" id="logout-btn">
+                                    <i class="bi bi-box-arrow-right"></i>
+                                    Cerrar Sesión
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
