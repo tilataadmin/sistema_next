@@ -1615,7 +1615,7 @@ function createNavbarHTML() {
                     
                     <div class="d-flex align-items-center gap-3">
                         <!-- Botón de Manual -->
-                        <a href="${manualUrl}" class="manual-button" id="manual-button">
+                        <a href="${manualUrl}" class="manual-button" id="manual-button" target="_blank">
                             <i class="bi bi-book"></i>
                             <span class="d-none d-md-inline">Manual</span>
                         </a>
