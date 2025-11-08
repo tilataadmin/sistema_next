@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.11.08.10.34">
+    <meta name="page-version" content="25.11.08.11.10">
     
     <title>Reportar Bug - SchoolNet</title>
     
@@ -333,6 +333,7 @@
                 }
 
                 currentUser = session.user;
+                console.log('Usuario actual:', currentUser);
                 
                 // Cargar información automática
                 await loadAutoInformation();
@@ -352,12 +353,31 @@
         // CARGAR INFORMACIÓN AUTOMÁTICA
         // ==========================================
         async function loadAutoInformation() {
-            // Usuario actual
-            const userName = `${currentUser.user_first_name} ${currentUser.user_last_name}`;
+            // Usuario actual - manejar diferentes formatos de sesión
+            let userName = 'Usuario no identificado';
+            
+            if (currentUser) {
+                // Intentar diferentes combinaciones de campos
+                const firstName = currentUser.user_first_name || currentUser.user_name || '';
+                const lastName = currentUser.user_last_name || currentUser.last_name || '';
+                const displayName = currentUser.user_display_name || '';
+                const email = currentUser.user_mail || currentUser.email || '';
+                
+                if (displayName) {
+                    userName = displayName;
+                } else if (firstName || lastName) {
+                    userName = `${firstName} ${lastName}`.trim();
+                } else if (email) {
+                    userName = email;
+                }
+            }
+            
             document.getElementById('display-user').value = userName;
+            console.log('Nombre de usuario mostrado:', userName);
             
             // Página de referencia (de donde viene el usuario)
             referrerPage = document.referrer;
+            console.log('Página de referencia:', referrerPage);
             
             if (referrerPage && referrerPage.includes(window.location.hostname)) {
                 // Extraer la ruta relativa
@@ -380,27 +400,39 @@
         // ==========================================
         async function detectModule(pagePath) {
             try {
-                // Extraer el nombre del módulo de la ruta
-                // Ejemplo: /modules/security/users.html -> security
-                const moduleMatch = pagePath.match(/\/modules\/([^\/]+)\//);
+                console.log('Detectando módulo para:', pagePath);
                 
+                // Extraer el nombre del módulo de diferentes rutas posibles
+                let moduleName = null;
+                let moduleDisplay = 'No detectado';
+                
+                // Caso 1: /modules/[modulo]/archivo.html
+                const moduleMatch = pagePath.match(/\/modules\/([^\/]+)\//);
                 if (moduleMatch) {
-                    const moduleName = moduleMatch[1];
-                    
-                    // Buscar el módulo en permissions
-                    const permissions = await supabaseRequest(
-                        '/permissions?select=permission_id,permission_name&permission_name=ilike.' + moduleName + '%'
-                    );
-                    
-                    if (permissions && permissions.length > 0) {
-                        detectedModule = permissions[0];
-                        document.getElementById('display-module').value = detectedModule.permission_name;
-                    } else {
-                        document.getElementById('display-module').value = `${moduleName} (no encontrado en permisos)`;
-                    }
-                } else {
-                    document.getElementById('display-module').value = 'Página fuera de módulos';
+                    moduleName = moduleMatch[1];
+                    moduleDisplay = `Módulo: ${moduleName}`;
                 }
+                
+                // Caso 2: /manual/[modulo]/archivo.html
+                const manualMatch = pagePath.match(/\/manual\/([^\/]+)\//);
+                if (manualMatch) {
+                    moduleName = manualMatch[1];
+                    moduleDisplay = `Manual: ${moduleName}`;
+                }
+                
+                // Caso 3: Dashboard o páginas raíz
+                if (pagePath.includes('dashboard.html')) {
+                    moduleDisplay = 'Dashboard Principal';
+                } else if (pagePath.includes('login.html')) {
+                    moduleDisplay = 'Login / Autenticación';
+                } else if (pagePath === '/' || pagePath === '/index.html') {
+                    moduleDisplay = 'Página de Inicio';
+                }
+                
+                document.getElementById('display-module').value = moduleDisplay;
+                detectedModule = moduleName;
+                
+                console.log('Módulo detectado:', moduleDisplay);
                 
             } catch (error) {
                 console.error('Error detectando módulo:', error);
@@ -600,10 +632,14 @@
                     screenshotUrl = await uploadScreenshot();
                 }
                 
+                // Obtener información del usuario para el reporte
+                const userEmail = currentUser.user_mail || currentUser.email || 'No disponible';
+                const userDisplayName = document.getElementById('display-user').value;
+                
                 // Crear el reporte
                 const reportData = {
                     user_id: currentUser.user_id,
-                    module_id: detectedModule ? detectedModule.permission_id : null,
+                    module_id: null, // Ajustar según necesites
                     page_url: referrerPage || 'Acceso directo',
                     page_title: document.getElementById('display-page').value,
                     description: description,
@@ -634,8 +670,8 @@
                                     <h3 style="color: #1B365D; margin-top: 0;">Información del Reporte</h3>
                                     <p><strong>ID:</strong> ${reportId}</p>
                                     <p><strong>Prioridad:</strong> <span style="color: ${priority === 'critica' ? '#dc3545' : priority === 'alta' ? '#fd7e14' : priority === 'media' ? '#ffc107' : '#28a745'}; font-weight: bold;">${priority.toUpperCase()}</span></p>
-                                    <p><strong>Reportado por:</strong> ${currentUser.user_first_name} ${currentUser.user_last_name}</p>
-                                    <p><strong>Email:</strong> ${currentUser.email}</p>
+                                    <p><strong>Reportado por:</strong> ${userDisplayName}</p>
+                                    <p><strong>Email:</strong> ${userEmail}</p>
                                     <p><strong>Página:</strong> ${document.getElementById('display-page').value}</p>
                                     <p><strong>Módulo:</strong> ${document.getElementById('display-module').value}</p>
                                 </div>
