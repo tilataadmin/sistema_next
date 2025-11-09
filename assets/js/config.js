@@ -516,28 +516,23 @@ function validateForm(formId, rules = {}) {
     return isValid;
 }
 
+/**
+ * Obtiene la carpeta del módulo basándose en el nombre
+ * @param {string} moduleName - Nombre del módulo (ej: "Seguridad")
+ * @returns {string|null} - Carpeta del módulo (ej: "security") o null
+ */
 function getModuleFolder(moduleName) {
-    const moduleMap = {
-        'Seguridad': 'security',
-        'Configuración': 'config',
-        'Talento Humano': 'hr',
-        'Indicadores': 'indicators',
-        'Presupuesto': 'budget',
-        'Gestión de Estudiantes Nuevos': 'new-students',
-        'Seguimientos': 'follow-ups',
-        'Alertas Tempranas': 'early-alerts',
-        'Admisiones': 'admissions',
-        'Tilatá te Escucha': 'tte',
-        'Encuestas': 'surveys',
-        'Herramientas Generales': 'general-tools',
-        'Gestión Ambiental': 'environmental',
-        'Formación': 'training',
-        'Procedimientos': 'procedures'
-    };
+    const module = APP_CONFIG.modules.find(m => m.name === moduleName);
     
-    return moduleMap[moduleName] || moduleName.toLowerCase();
+    if (module && module.path) {
+        // Extraer solo el nombre de la carpeta desde el path
+        // '/modules/security/' → 'security'
+        const folderMatch = module.path.match(/\/modules\/([^\/]+)\//);
+        return folderMatch ? folderMatch[1] : null;
+    }
+    
+    return null;
 }
-
 
 // Función para generar breadcrumbs consistentes
 function generateBreadcrumbs(moduleName, pageName) {
