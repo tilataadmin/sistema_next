@@ -950,6 +950,148 @@ function redirectToLogin() {
 }
 
 // ==========================================
+// GESTIÓN DE PERMISOS DE MÓDULOS
+// ==========================================
+
+/**
+ * Carga los permisos de un módulo desde la base de datos
+ * @param {string} moduleId - ID del módulo (debe coincidir con permission_module en BD)
+ * @returns {Promise<Array<string>>} - Array con los nombres de los permisos del módulo
+ * @example
+ * const permisos = await cargarPermisosDeModulo('Admisiones');
+ * // Retorna: ['Aspirantes', 'Dashboard', 'Reportes', ...]
+ */
+async function cargarPermisosDeModulo(moduleId) {
+    try {
+        if (!moduleId || moduleId.trim() === '') {
+            // Módulo sin restricción (acceso universal)
+            console.log('⚪ Módulo sin restricciones de permisos');
+            return [];
+        }
+        
+        console.log(`📦 Cargando permisos del módulo: ${moduleId}...`);
+        
+        const permisos = await supabaseRequest(
+            `/permissions?select=permission_name&permission_module=eq.${moduleId}&permission_status=eq.active`
+        );
+        
+        const permisosArray = permisos.map(p => p.permission_name);
+        
+        console.log(`✅ ${permisosArray.length} permisos cargados para: ${moduleId}`);
+        
+        return permisosArray;
+        
+    } catch (error) {
+        console.error(`❌ Error cargando permisos del módulo ${moduleId}:`, error);
+        return [];
+    }
+}
+
+/**
+ * Verifica si el usuario tiene acceso a un módulo
+ * @param {string} userId - ID del usuario
+ * @param {Array<string>} modulePermissions - Array de permisos del módulo
+ * @returns {Promise<boolean>} - true si tiene acceso, false si no
+ */
+async function checkModuleAccess(userId, modulePermissions) {
+    try {
+        if (!userId) {
+            console.log('❌ No hay usuario especificado');
+            return false;
+        }
+        
+        // Verificar si es super admin
+        const isSuperAdmin = await checkUserIsSuperAdmin(userId);
+        if (isSuperAdmin) {
+            console.log('✅ Acceso permitido - es Super Admin');
+            return true;
+        }
+        
+        // Si no hay permisos configurados, acceso universal
+        if (!modulePermissions || modulePermissions.length === 0) {
+            console.log('✅ Módulo sin restricciones de permisos');
+            return true;
+        }
+        
+        // Verificar si tiene al menos uno de los permisos del módulo
+        for (const permission of modulePermissions) {
+            const hasPermission = await checkUserPermission(userId, permission);
+            if (hasPermission) {
+                console.log(`✅ Acceso permitido con permiso: ${permission}`);
+                return true;
+            }
+        }
+        
+        console.log('❌ Sin permisos para este módulo');
+        return false;
+        
+    } catch (error) {
+        console.error('❌ Error verificando acceso al módulo:', error);
+        return false;
+    }
+}
+
+/**
+ * Verifica si usuario es Super Admin
+ * @param {string} userId - ID del usuario
+ * @returns {Promise<boolean>}
+ */
+async function checkUserIsSuperAdmin(userId) {
+    try {
+        const userData = await supabaseRequest(`/user_roles?select=roles(is_super_admin)&user_id=eq.${userId}`);
+        return userData.some(ur => ur.roles?.is_super_admin === true);
+    } catch (error) {
+        console.error('❌ Error verificando super admin:', error);
+        return false;
+    }
+}
+
+/**
+ * Obtiene todos los permisos de un usuario
+ * @param {string} userId - ID del usuario
+ * @param {Array<string>} modulePermissions - Permisos del módulo actual (opcional)
+ * @returns {Promise<Array<string>>} - Array de permisos del usuario
+ */
+async function obtenerTodosLosPermisosUsuario(userId, modulePermissions = []) {
+    try {
+        // Verificar si es super admin primero
+        const isSuperAdmin = await checkUserIsSuperAdmin(userId);
+        if (isSuperAdmin) {
+            // Super admin tiene todos los permisos del módulo
+            return modulePermissions;
+        }
+        
+        // Obtener todos los permisos del usuario
+        const data = await supabaseRequest(
+            `/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`
+        );
+        
+        if (!data || data.length === 0) {
+            return [];
+        }
+        
+        // Extraer todos los permisos en un array
+        const permissions = [];
+        data[0].user_roles?.forEach(userRole => {
+            userRole.roles?.role_permissions?.forEach(rolePermission => {
+                const permName = rolePermission.permissions?.permission_name;
+                if (permName && !permissions.includes(permName)) {
+                    permissions.push(permName);
+                }
+            });
+        });
+        
+        return permissions;
+        
+    } catch (error) {
+        console.error('❌ Error obteniendo permisos:', error);
+        return [];
+    }
+}
+
+console.log('✅ Sistema de gestión de permisos de módulos cargado');
+
+// ==========================================
 // SISTEMA DE NOTIFICACIONES - SchoolNet
 // ==========================================
 
