@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.01.18.45">
+    <meta name="page-version" content="25.11.09.05.42">
     <title>Admisiones - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -157,6 +157,7 @@
 
         <!-- CONTENEDOR DE ALERTAS -->
         <div id="alertContainer"></div>
+        
         <!-- GRID DE FUNCIONES -->
         <div class="row mb-5">
             <div class="col-12">
@@ -276,7 +277,6 @@
                             </a>
                         </div>
                         
-                        <!-- NUEVA FUNCIÓN -->
                         <div class="col-12 col-md-6 col-lg-4">
                             <a href="upload-campaigns.html" class="function-card card h-100" data-permission="Subir archivos de campañas">
                                 <div class="card-body">
@@ -381,34 +381,15 @@
 
     <!-- SCRIPTS - ORDEN CRÍTICO -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- CONFIG.JS -->
     <script src="../../assets/js/config.js"></script>
+    
     <script>
-        
         // ==========================================
         // CONFIGURACIÓN DEL MÓDULO
         // ==========================================
         const MODULE_CONFIG = {
             name: 'Admisiones',
-            modulePermissions: [
-                'Jardines infantiles',
-            'Estados del proceso',
-            'Razones de pérdida',
-            'Pasos del proceso',
-            'Ferias de preescolares',
-            'Nacimiento - grados',
-            'Fuentes de contacto',
-            'Tipos de referidos',
-            'Configuración del formulario',
-            'Subir archivos de campañas',  // NUEVO
-            'Aspirantes',
-            'Ficha individual del aspirante',
-            'Gestión de pasos por aspirante',
-            'Vista de seguimiento del proceso',
-            'Dashboard',
-            'Reportes'
-        ],
+            moduleId: 'Admisiones',  // ← Debe coincidir con permission_module en BD
             color: {
                 primary: '#17a2b8',
                 secondary: '#138496',
@@ -423,13 +404,13 @@
         let userRoles = [];
         
         // ==========================================
-        // INICIALIZACIÓN - PATRÓN OBLIGATORIO
+        // INICIALIZACIÓN
         // ==========================================
         document.addEventListener('DOMContentLoaded', async function() {
             console.log(`🔐 Validando acceso al módulo ${MODULE_CONFIG.name}...`);
             
             try {
-                // PASO 1: CARGAR DATOS DEL USUARIO PRIMERO
+                // Verificar sesión
                 const session = getStoredSession();
                 if (!session || !session.user) {
                     console.log('❌ No hay sesión activa');
@@ -438,86 +419,106 @@
                 }
                 
                 currentUser = session.user;
-                console.log('✅ Usuario actual establecido:', currentUser.user_mail);
+                console.log('✅ Usuario actual:', currentUser.user_mail);
                 
-                // PASO 2: Validar permisos
-                const hasAnyAccess = await checkAnyModulePermission();
-                if (!hasAnyAccess) {
-                    console.log('❌ Acceso denegado - sin permisos en el módulo');
+                // 🎯 Cargar permisos del módulo desde BD (función de config.js)
+                MODULE_CONFIG.modulePermissions = await cargarPermisosDeModulo(MODULE_CONFIG.moduleId);
+                
+                // 🎯 Verificar acceso al módulo (función de config.js)
+                const hasAccess = await checkModuleAccess(currentUser.user_id, MODULE_CONFIG.modulePermissions);
+                
+                if (!hasAccess) {
+                    console.log('❌ Acceso denegado');
                     showAccessDenied('Sin permisos para acceder a este módulo');
                     return;
                 }
                 
-                console.log('✅ Acceso al módulo permitido');
-                
-                // PASO 3: Inicializar módulo
+                console.log('✅ Acceso permitido');
                 await inicializarModulo();
                 
             } catch (error) {
-                console.error('❌ Error validando acceso al módulo:', error);
-                showMessage('Error de validación de permisos', 'danger');
+                console.error('❌ Error:', error);
+                showMessage('Error de validación: ' + error.message, 'danger');
             }
         });
         
         // ==========================================
-        // VERIFICAR ACCESO A MÓDULO
+        // INICIALIZACIÓN DEL MÓDULO
         // ==========================================
-        async function checkAnyModulePermission() {
+        async function inicializarModulo() {
             try {
-                if (!currentUser) {
-                    console.log('❌ No hay usuario actual');
-                    return false;
-                }
+                mostrarLoading();
                 
-                // PASO 1: Verificar si es super admin PRIMERO
-                const isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
-                if (isSuperAdmin) {
-                    console.log('✅ Acceso permitido - es Super Admin');
-                    return true;
-                }
+                configurarColoresModulo();
+                await cargarDatosUsuario();
+                await configurarFunciones();
                 
-                // PASO 2: Verificar permisos específicos del módulo
-                const modulePermissions = MODULE_CONFIG.modulePermissions || [];
-                
-                for (const permission of modulePermissions) {
-                    const hasPermission = await checkUserPermission(currentUser.user_id, permission);
-                    if (hasPermission) {
-                        console.log(`✅ Acceso permitido con permiso: ${permission}`);
-                        return true;
-                    }
-                }
-                
-                console.log('❌ Sin permisos para este módulo');
-                return false;
+                ocultarLoading();
+                console.log(`✅ Módulo ${MODULE_CONFIG.name} inicializado`);
                 
             } catch (error) {
-                console.error('❌ Error verificando permisos de módulo:', error);
-                return false;
+                console.error('❌ Error inicializando módulo:', error);
+                showMessage('Error al cargar el módulo: ' + error.message, 'danger');
+                ocultarLoading();
             }
         }
         
         // ==========================================
-        // VERIFICAR SI ES SUPER ADMIN
+        // CONFIGURAR FUNCIONES SEGÚN PERMISOS
         // ==========================================
-        async function checkUserIsSuperAdmin(userId) {
+        async function configurarFunciones() {
             try {
-                console.log(`🔍 Verificando si usuario ${userId} es Super Admin...`);
+                console.log('🔒 Configurando funciones según permisos...');
                 
-                const userData = await supabaseRequest(`/user_roles?select=roles(is_super_admin)&user_id=eq.${userId}`);
+                // 🎯 Obtener permisos del usuario (función de config.js)
+                const userPermissions = await obtenerTodosLosPermisosUsuario(
+                    currentUser.user_id, 
+                    MODULE_CONFIG.modulePermissions
+                );
                 
-                if (!userData || userData.length === 0) {
-                    console.log('⚠️ No se encontraron roles para el usuario');
-                    return false;
+                // Filtrar funciones según permisos
+                const functionCards = document.querySelectorAll('.function-card[data-permission]');
+                
+                for (const card of functionCards) {
+                    const permission = card.getAttribute('data-permission');
+                    
+                    if (permission && !userPermissions.includes(permission)) {
+                        card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
+                    }
                 }
                 
-                const isSuperAdmin = userData.some(ur => ur.roles?.is_super_admin === true);
-                console.log(`🔑 Super Admin status: ${isSuperAdmin}`);
-                
-                return isSuperAdmin;
+                ocultarGruposVacios();
+                console.log('✅ Funciones configuradas');
                 
             } catch (error) {
-                console.error('❌ Error verificando super admin:', error);
-                return false;
+                console.error('❌ Error configurando funciones:', error);
+            }
+        }
+        
+        // ==========================================
+        // CONFIGURACIÓN DE COLORES
+        // ==========================================
+        function configurarColoresModulo() {
+            const root = document.documentElement;
+            root.style.setProperty('--module-primary', MODULE_CONFIG.color.primary);
+            root.style.setProperty('--module-secondary', MODULE_CONFIG.color.secondary);
+            root.style.setProperty('--module-light', MODULE_CONFIG.color.light);
+            console.log('🎨 Colores del módulo aplicados');
+        }
+        
+        // ==========================================
+        // CARGAR DATOS DE USUARIO
+        // ==========================================
+        async function cargarDatosUsuario() {
+            try {
+                if (currentUser) {
+                    const data = await supabaseRequest(`/user_roles?select=roles(role_name)&user_id=eq.${currentUser.user_id}`);
+                    userRoles = data.map(ur => ur.roles.role_name);
+                    console.log('✅ Datos de usuario cargados');
+                    console.log('🔑 Roles:', userRoles);
+                }
+            } catch (error) {
+                console.error('❌ Error cargando datos de usuario:', error);
             }
         }
         
@@ -557,142 +558,14 @@
         }
         
         // ==========================================
-        // INICIALIZACIÓN DEL MÓDULO
-        // ==========================================
-        async function inicializarModulo() {
-            try {
-                mostrarLoading();
-                
-                configurarColoresModulo();
-                await cargarDatosUsuario();
-                await configurarFunciones();
-                
-                ocultarLoading();
-                console.log(`✅ Módulo ${MODULE_CONFIG.name} inicializado correctamente`);
-                
-            } catch (error) {
-                console.error('❌ Error inicializando módulo:', error);
-                showMessage('Error al cargar el módulo: ' + error.message, 'danger');
-                ocultarLoading();
-            }
-        }
-        
-        // ==========================================
-        // CONFIGURACIÓN DE COLORES
-        // ==========================================
-        function configurarColoresModulo() {
-            const root = document.documentElement;
-            root.style.setProperty('--module-primary', MODULE_CONFIG.color.primary);
-            root.style.setProperty('--module-secondary', MODULE_CONFIG.color.secondary);
-            root.style.setProperty('--module-light', MODULE_CONFIG.color.light);
-            
-            console.log(`🎨 Colores del módulo ${MODULE_CONFIG.name} aplicados`);
-        }
-        
-        // ==========================================
-        // CARGAR DATOS DE USUARIO
-        // ==========================================
-        async function cargarDatosUsuario() {
-            try {
-                if (currentUser) {
-                    userRoles = await obtenerRolesUsuario(currentUser.user_id);
-                    console.log('✅ Datos de usuario cargados');
-                    console.log('🔑 Roles del usuario:', userRoles);
-                }
-            } catch (error) {
-                console.error('❌ Error cargando datos de usuario:', error);
-            }
-        }
-        
-        // ==========================================
-        // OBTENER ROLES DEL USUARIO
-        // ==========================================
-        async function obtenerRolesUsuario(userId) {
-            try {
-                const data = await supabaseRequest(`/user_roles?select=roles(role_name)&user_id=eq.${userId}`);
-                return data.map(ur => ur.roles.role_name);
-            } catch (error) {
-                console.error('❌ Error obteniendo roles:', error);
-                return [];
-            }
-        }
-        
-        // ==========================================
-        // OBTENER TODOS LOS PERMISOS EN UNA QUERY - OPTIMIZADO
-        // ==========================================
-        async function obtenerTodosLosPermisosUsuario(userId) {
-            try {
-                // Verificar si es super admin primero
-                const isSuperAdmin = await checkUserIsSuperAdmin(userId);
-                if (isSuperAdmin) {
-                    return MODULE_CONFIG.modulePermissions;
-                }
-                
-                // Una sola query para obtener todos los permisos
-                const data = await supabaseRequest(`/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
-                
-                if (!data || data.length === 0) {
-                    return [];
-                }
-                
-                // Extraer todos los permisos en un array
-                const permissions = [];
-                data[0].user_roles?.forEach(userRole => {
-                    userRole.roles?.role_permissions?.forEach(rolePermission => {
-                        const permName = rolePermission.permissions?.permission_name;
-                        if (permName && !permissions.includes(permName)) {
-                            permissions.push(permName);
-                        }
-                    });
-                });
-                
-                return permissions;
-                
-            } catch (error) {
-                console.error('❌ Error obteniendo permisos:', error);
-                return [];
-            }
-        }
-        
-        // ==========================================
-        // CONFIGURAR FUNCIONES - OPTIMIZADA
-        // ==========================================
-        async function configurarFunciones() {
-            try {
-                console.log('🔒 Configurando funciones según permisos...');
-                
-                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
-                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
-                
-                // PASO 2: Filtrar funciones basado en los permisos obtenidos
-                const functionCards = document.querySelectorAll('.function-card[data-permission]');
-                
-                for (const card of functionCards) {
-                    const permission = card.getAttribute('data-permission');
-                    
-                    if (permission && !userPermissions.includes(permission)) {
-                        card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
-                    }
-                }
-                
-                ocultarGruposVacios();
-                
-                console.log('✅ Funciones configuradas según permisos');
-                
-            } catch (error) {
-                console.error('❌ Error configurando funciones:', error);
-            }
-        }
-        
-        // ==========================================
         // UTILIDADES
         // ==========================================
         function mostrarLoading() {
-            document.getElementById('loading-overlay').classList.remove('hidden');
+            document.getElementById('loading-overlay')?.classList.remove('hidden');
         }
         
         function ocultarLoading() {
-            document.getElementById('loading-overlay').classList.add('hidden');
+            document.getElementById('loading-overlay')?.classList.add('hidden');
         }
         
         function ocultarGruposVacios() {
@@ -710,8 +583,7 @@
             });
         }
         
-        console.log(`🎉 Módulo ${MODULE_CONFIG.name} cargado correctamente`);
-        console.log(`⚡ Configuración de funciones optimizada - 1 query en lugar de N queries`);
+        console.log(`🎉 Módulo ${MODULE_CONFIG.name} v25.11.09.14.00 - Optimizado sin hardcode`);
     </script>
 </body>
 </html>
