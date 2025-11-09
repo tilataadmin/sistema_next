@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version content="25.11.09.10.07">
     <title>Configuración - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -427,6 +428,18 @@
                             </div>
                         </a>
                     </div>
+                    <!-- 🆕 Función 10: Tarifas Anuales -->
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <a href="annual-fees.html" class="function-card card h-100" data-permission="Gestionar tarifas anuales">
+                            <div class="card-body">
+                                <div class="function-icon">
+                                    <i class="bi bi-currency-dollar"></i>
+                                </div>
+                                <h6 class="function-title">Tarifas Anuales</h6>
+                                <p class="function-description">Gestionar las tarifas anuales del colegio</p>
+                            </div>
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -444,17 +457,7 @@
         const MODULE_CONFIG = {
             // Información básica del módulo
             name: 'Configuración',
-            modulePermissions: [ // Lista de permisos del módulo - acceso con AL MENOS UNO
-                'Configuración general',
-                'Años académicos',
-                'Gestionar secciones',
-                'Gestionar grados',
-                'Gestionar cursos',
-                'Gestionar áreas académicas',
-                'Gestionar programas',
-                'Gestionar familias',
-                'Gestionar estudiantes'
-            ],
+            moduleId: 'config',  // 🎯 CRÍTICO: Debe coincidir con permission_module en BD
             color: {
                 primary: '#6f42c1',
                 secondary: '#e0cffc', 
@@ -521,92 +524,46 @@
         // ==========================================
         let currentUser = null;
         let userRoles = [];
-        let moduleData = {};
-        let metricsLoaded = false; // NUEVO: Bandera para controlar carga de métricas
+        let metricsLoaded = false;
         
         // ==========================================
-        // INICIALIZACIÓN - PATRÓN OBLIGATORIO
+        // INICIALIZACIÓN - PATRÓN SIN HARDCODE
         // ==========================================
         document.addEventListener('DOMContentLoaded', async function() {
             console.log(`🔐 Validando acceso al módulo ${MODULE_CONFIG.name}...`);
             
             try {
-                // PASO 1: Validar que tenga AL MENOS UN permiso del módulo
-                const hasAnyAccess = await checkAnyModulePermission();
-                if (!hasAnyAccess) {
-                    console.log('❌ Acceso denegado - sin permisos en el módulo');
+                // PASO 1: Obtener sesión
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showMessage('Por favor, inicia sesión.', 'warning');
+                    setTimeout(() => window.location.href = '../../index.html', 2000);
+                    return;
+                }
+                
+                currentUser = session.user;
+                console.log('✅ Usuario actual:', currentUser.user_mail);
+                
+                // PASO 2: 🎯 Cargar permisos del módulo desde BD
+                MODULE_CONFIG.modulePermissions = await cargarPermisosDeModulo(MODULE_CONFIG.moduleId);
+                
+                // PASO 3: 🎯 Verificar acceso al módulo
+                const hasAccess = await checkModuleAccess(currentUser.user_id, MODULE_CONFIG.modulePermissions);
+                
+                if (!hasAccess) {
+                    console.log('❌ Acceso denegado');
                     showAccessDenied('Sin permisos para acceder a este módulo');
                     return;
                 }
                 
-                console.log('✅ Acceso al módulo permitido');
-                
-                // PASO 2: Inicializar módulo (SIN CARGAR MÉTRICAS)
+                console.log('✅ Acceso permitido');
                 await inicializarModulo();
                 
             } catch (error) {
-                console.error('❌ Error validando acceso al módulo:', error);
-                showMessage('Error de validación de permisos', 'danger');
+                console.error('❌ Error:', error);
+                showMessage('Error de validación: ' + error.message, 'danger');
             }
         });
-        
-        // ==========================================
-        // VERIFICAR ACCESO A MÓDULO POR CUALQUIER PERMISO
-        // ==========================================
-        async function checkAnyModulePermission() {
-            try {
-                const session = getStoredSession();
-                if (!session || !session.user) {
-                    return false;
-                }
-                
-                currentUser = session.user;
-                
-                // PASO 1: Verificar si es super admin PRIMERO
-                const isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
-                if (isSuperAdmin) {
-                    console.log('✅ Acceso permitido - es Super Admin');
-                    return true;
-                }
-                
-                // PASO 2: Lista de permisos del módulo
-                const modulePermissions = MODULE_CONFIG.modulePermissions || [];
-                
-                if (modulePermissions.length === 0) {
-                    console.warn('⚠️ No hay permisos configurados para este módulo');
-                    return true;
-                }
-                
-                // PASO 3: Verificar si tiene AL MENOS UNO
-                for (const permission of modulePermissions) {
-                    const hasPermission = await checkUserPermission(currentUser.user_id, permission);
-                    if (hasPermission) {
-                        console.log(`✅ Acceso permitido con permiso: ${permission}`);
-                        return true;
-                    }
-                }
-                
-                console.log('❌ Sin permisos para este módulo');
-                return false;
-                
-            } catch (error) {
-                console.error('❌ Error verificando permisos de módulo:', error);
-                return false;
-            }
-        }
-        
-        // ==========================================
-        // VERIFICAR SI USUARIO ES SUPER ADMIN
-        // ==========================================
-        async function checkUserIsSuperAdmin(userId) {
-            try {
-                const userData = await supabaseRequest(`/user_roles?select=roles(is_super_admin)&user_id=eq.${userId}`);
-                return userData.some(ur => ur.roles?.is_super_admin === true);
-            } catch (error) {
-                console.error('❌ Error verificando super admin:', error);
-                return false;
-            }
-        }
         
         // ==========================================
         // MOSTRAR PÁGINA DE ACCESO DENEGADO
@@ -650,19 +607,9 @@
             try {
                 mostrarLoading();
                 
-                // Configurar colores del módulo
                 configurarColoresModulo();
-                
-                // Cargar datos del usuario actual
                 await cargarDatosUsuario();
-                
-                // Cargar badges contextuales
                 await cargarBadges();
-                
-                // ⚠️ CAMBIO IMPORTANTE: NO cargar métricas automáticamente
-                // await cargarMetricas(); // ELIMINADO
-                
-                // Filtrar funciones según permisos - OPTIMIZADO
                 await configurarFunciones();
                 
                 ocultarLoading();
@@ -684,7 +631,6 @@
             root.style.setProperty('--module-primary', MODULE_CONFIG.color.primary);
             root.style.setProperty('--module-secondary', MODULE_CONFIG.color.secondary);
             root.style.setProperty('--module-light', MODULE_CONFIG.color.light);
-            
             console.log(`🎨 Colores del módulo ${MODULE_CONFIG.name} aplicados`);
         }
         
@@ -694,9 +640,7 @@
         async function cargarDatosUsuario() {
             try {
                 if (currentUser) {
-                    // Cargar roles del usuario
                     userRoles = await obtenerRolesUsuario(currentUser.user_id);
-                    
                     console.log('✅ Datos de usuario cargados');
                     console.log('🔑 Roles del usuario:', userRoles);
                 }
@@ -731,7 +675,6 @@
                     
                     let badgeValue = badge.value;
                     
-                    // Cargar valores dinámicos
                     if (badge.id === 'current-year' && !badgeValue) {
                         badgeValue = await obtenerAnoActivo();
                     }
@@ -752,11 +695,11 @@
                 console.error('❌ Error cargando badges:', error);
             }
         }
+        
         // ==========================================
         // 🆕 CARGA DIFERIDA DE MÉTRICAS - FUNCIÓN MANUAL
         // ==========================================
         async function cargarMetricas() {
-            // Evitar múltiples cargas
             if (metricsLoaded) {
                 showMessage('Las métricas ya están cargadas', 'info');
                 return;
@@ -765,7 +708,6 @@
             const btnLoadMetrics = document.getElementById('btn-load-metrics');
             
             try {
-                // Cambiar estado del botón
                 btnLoadMetrics.disabled = true;
                 btnLoadMetrics.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando...';
                 
@@ -773,7 +715,6 @@
                 
                 for (const metric of MODULE_CONFIG.metrics) {
                     try {
-                        // PASO 1: Verificar si tiene algún rol requerido para esta métrica
                         const tieneAccesoMetrica = verificarAccesoMetrica(metric, userRoles);
                         
                         if (!tieneAccesoMetrica) {
@@ -784,7 +725,6 @@
                         
                         let value = 0;
                         
-                        // PASO 2: Ejecutar query para obtener métrica
                         if (metric.query.startsWith('custom_')) {
                             value = await ejecutarQueryPersonalizada(metric.query);
                         } else {
@@ -792,7 +732,6 @@
                             value = Array.isArray(data) ? data.length : (data || 0);
                         }
                         
-                        // Formatear y mostrar valor
                         const formattedValue = formatearValorMetrica(value, metric.format);
                         const elemento = document.getElementById(metric.id + '-value');
                         if (elemento) {
@@ -808,12 +747,9 @@
                     }
                 }
                 
-                // PASO 3: Reorganizar grid de métricas
                 reorganizarGridMetricas();
-                
                 metricsLoaded = true;
                 
-                // Actualizar botón a modo "Actualizar"
                 btnLoadMetrics.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Actualizar Métricas';
                 btnLoadMetrics.disabled = false;
                 
@@ -835,7 +771,6 @@
             try {
                 switch (queryType) {
                     case 'custom_active_students':
-                        // Estudiantes con estado activo
                         const statusData = await supabaseRequest('/student_status?select=status_id&status_code=eq.1');
                         if (!statusData || statusData.length === 0) return 0;
                         
@@ -857,12 +792,10 @@
         // VERIFICAR ACCESO A MÉTRICA POR ROLES
         // ==========================================
         function verificarAccesoMetrica(metric, userRoles) {
-            // Si no tiene restricción de roles, mostrar a todos
             if (!metric.allowedRoles || metric.allowedRoles.length === 0) {
                 return true;
             }
             
-            // Super Admin ve TODAS las métricas
             const hasAdminRole = userRoles.some(role => 
                 role.toLowerCase().includes('admin') || 
                 role.toLowerCase().includes('super')
@@ -872,46 +805,9 @@
                 return true;
             }
             
-            // Verificar si tiene algún rol permitido específico
             return metric.allowedRoles.some(roleRequired => 
                 userRoles.includes(roleRequired)
             );
-        }
-        
-        // ==========================================
-        // 🚀 OBTENER TODOS LOS PERMISOS EN UNA QUERY - OPTIMIZADO
-        // ==========================================
-        async function obtenerTodosLosPermisosUsuario(userId) {
-            try {
-                // Verificar si es super admin primero
-                const isSuperAdmin = await checkUserIsSuperAdmin(userId);
-                if (isSuperAdmin) {
-                    return MODULE_CONFIG.modulePermissions;
-                }
-                
-                // Una sola query para obtener todos los permisos
-                const data = await supabaseRequest(`/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
-                if (!data || data.length === 0) {
-                    return [];
-                }
-                
-                // Extraer todos los permisos en un array
-                const permissions = [];
-                data[0].user_roles?.forEach(userRole => {
-                    userRole.roles?.role_permissions?.forEach(rolePermission => {
-                        const permName = rolePermission.permissions?.permission_name;
-                        if (permName && !permissions.includes(permName)) {
-                            permissions.push(permName);
-                        }
-                    });
-                });
-                
-                return permissions;
-                
-            } catch (error) {
-                console.error('❌ Error obteniendo permisos:', error);
-                return [];
-            }
         }
         
         // ==========================================
@@ -921,10 +817,12 @@
             try {
                 console.log('🔒 Configurando funciones según permisos...');
                 
-                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
-                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
+                // 🎯 Obtener TODOS los permisos del usuario (función de config.js)
+                const userPermissions = await obtenerTodosLosPermisosUsuario(
+                    currentUser.user_id, 
+                    MODULE_CONFIG.modulePermissions
+                );
                 
-                // PASO 2: Filtrar funciones basado en los permisos obtenidos
                 const functionCards = document.querySelectorAll('.function-card[data-permission]');
                 
                 for (const card of functionCards) {
@@ -1004,8 +902,7 @@
         window.cargarMetricas = cargarMetricas;
         
         console.log(`🎉 Módulo de Configuración cargado correctamente`);
-        console.log(`📊 Métricas en modo carga diferida - usar botón "Cargar Métricas"`);
-        console.log(`⚡ Configuración de funciones optimizada - 1 query en lugar de N queries`);
+        console.log(`📊 Sistema sin hardcode - permisos desde BD`);
     </script>
 </body>
 </html>
