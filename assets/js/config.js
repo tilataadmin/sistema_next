@@ -516,28 +516,23 @@ function validateForm(formId, rules = {}) {
     return isValid;
 }
 
+/**
+ * Obtiene la carpeta del módulo basándose en el nombre
+ * @param {string} moduleName - Nombre del módulo (ej: "Seguridad")
+ * @returns {string|null} - Carpeta del módulo (ej: "security") o null
+ */
 function getModuleFolder(moduleName) {
-    const moduleMap = {
-        'Seguridad': 'security',
-        'Configuración': 'config',
-        'Talento Humano': 'hr',
-        'Indicadores': 'indicators',
-        'Presupuesto': 'budget',
-        'Gestión de Estudiantes Nuevos': 'new-students',
-        'Seguimientos': 'follow-ups',
-        'Alertas Tempranas': 'early-alerts',
-        'Admisiones': 'admissions',
-        'Tilatá te Escucha': 'tte',
-        'Encuestas': 'surveys',
-        'Herramientas Generales': 'general-tools',
-        'Gestión Ambiental': 'environmental',
-        'Formación': 'training',
-        'Procedimientos': 'procedures'
-    };
+    const module = APP_CONFIG.modules.find(m => m.name === moduleName);
     
-    return moduleMap[moduleName] || moduleName.toLowerCase();
+    if (module && module.path) {
+        // Extraer solo el nombre de la carpeta desde el path
+        // '/modules/security/' → 'security'
+        const folderMatch = module.path.match(/\/modules\/([^\/]+)\//);
+        return folderMatch ? folderMatch[1] : null;
+    }
+    
+    return null;
 }
-
 
 // Función para generar breadcrumbs consistentes
 function generateBreadcrumbs(moduleName, pageName) {
@@ -811,229 +806,15 @@ function updateNavbarColors(primaryColor) {
 
 // ==========================================
 // SISTEMA DE VALIDACIÓN DE PERMISOS POR URL
+// Actualizado: Nov 2025 - Sin hardcode
 // ==========================================
 
-// Mapeo de URLs a permisos requeridos
-const URL_PERMISSIONS = {
-    // Módulo Seguridad
-    '/modules/security/users.html': 'Gestión de usuarios',
-    '/modules/security/roles.html': 'Gestión de roles', 
-    '/modules/security/permissions.html': 'Gestión de permisos',
-    '/modules/security/user-roles.html': 'Asignar roles',
-    '/modules/security/role-permissions.html': 'Configurar permisos',
-    '/modules/security/audit-log.html': 'Logs de auditoría',
-    '/modules/security/id-cards.html': 'Gestión de carnets',
-    
-    // Módulo Configuración
-    '/modules/config/config.html': 'Configuración general',
-    '/modules/config/academic-years.html': 'Años académicos',
-    '/modules/config/sections.html': 'Gestionar secciones',
-    '/modules/config/grades.html': 'Gestionar grados',
-    '/modules/config/courses.html': 'Gestionar cursos',
-    '/modules/config/academic-areas.html': 'Gestionar áreas académicas',
-    '/modules/config/programs.html': 'Gestionar programas',
-    '/modules/config/families.html': 'Gestionar familias',
-    '/modules/config/students.html': 'Gestionar estudiantes',
-    
-    // Módulo Indicadores
-    '/modules/indicators/variables.html': 'Variables',
-    '/modules/indicators/segments.html': 'Segmentaciones',
-    '/modules/indicators/categories.html': 'Categorías de indicadores',
-    '/modules/indicators/data-entry.html': 'Captura de datos',
-    '/modules/indicators/indicators.html': 'Indicadores',
-    '/modules/indicators/dashboard-config.html': 'Configurar mi dashboard',  // NUEVO
-    '/modules/indicators/dashboard.html': 'Ver mi dashboard',                // NUEVO
-    '/modules/indicators/improvement.html': 'Gestión de mejora',
-    '/modules/indicators/improvement-dashboard.html': 'Tablero de mejora',
-    '/modules/indicators/correlations.html': 'Análisis global de correlaciones',
-        
-    // Módulo Talento Humano
-    '/modules/hr/divisions.html': 'Divisiones',
-    '/modules/hr/cost-centers.html': 'Centros de costos',
-    '/modules/hr/organizational-areas.html': 'Secciones / Áreas',
-    '/modules/hr/subareas.html': 'Subáreas',
-    '/modules/hr/job-roles.html': 'Roles y cargos',
-    '/modules/hr/workers.html': 'Gestionar trabajadores',
-    '/modules/hr/payroll-review.html': 'Revisión de nómina',
-
-    // Módulo Talento Humano - Gestión de Ausencias
-    '/modules/hr/absence-config.html': 'Configurar ausencias',
-    '/modules/hr/absence-categories.html': 'Gestionar categorías de ausencias',
-    '/modules/hr/request-absence.html': 'Solicitar ausencias',
-    '/modules/hr/authorize-absences.html': 'Autorizar ausencias',
-    '/modules/hr/adjust-balances.html': 'Ajustar saldos de ausencias',
-    '/modules/hr/manage-absences.html': 'Gestionar todas las ausencias',
-    '/modules/hr/work-calendar.html': 'Configurar calendario laboral',
-    '/modules/hr/absence-reports.html': 'Ver reportes de ausencias',
-    '/modules/hr/hr-dashboard.html': 'Ver dashboard de talento humano', 
-    
-    // Módulo Presupuesto - Administración
-    '/modules/budget/chart-of-accounts.html': 'Gestionar PUC',
-    '/modules/budget/upload-combo.html': 'Subir el combo',
-    '/modules/budget/tax-types.html': 'Gestionar IVA asociado',
-    '/modules/budget/budget-categories.html': 'Gestionar rubros',
-    '/modules/budget/budget-items.html': 'Gestionar subítems',
-    '/modules/budget/suppliers.html': 'Gestionar proveedores',
-    '/modules/budget/initialize-budget-year.html': 'Inicializar año presupuestal',
-    '/modules/budget/initialize-budget-general.html': 'Inicializar año presupuestal - Generales',
-    '/modules/budget/budget-authorization.html': 'Autorización de presupuesto',
-    '/modules/budget/associate-invoices.html': 'Asociar facturas',
-    '/modules/budget/report-design.html': 'Diseño de informes',
-    '/modules/budget/assignments-report.html': 'Informe de asignaciones',
-    '/modules/budget/accounting-crosscheck.html': 'Cruce contable',
-
-    // Módulo Presupuesto - Usuarios
-    '/modules/budget/budget-request.html': 'Petición de presupuesto',
-    '/modules/budget/assign-requesters.html': 'Designar solicitantes',
-    '/modules/budget/execution-request.html': 'Solicitud de ejecución',
-    '/modules/budget/request-resolution.html': 'Resolución de solicitudes',
-    '/modules/budget/close-overruns.html': 'Cerrar requerimientos sobreejecutados',
-    '/modules/budget/budget-transfer.html': 'Iniciar traslado presupuestal',
-    '/modules/budget/close-transfer.html': 'Cerrar traslado presupuestal',
-    '/modules/budget/category-detail.html': 'Vista detallada por rubro',
-    '/modules/budget/budget-overview.html': 'Vista particular del presupuesto',
-    '/modules/budget/budget-queries.html': 'Consultas de presupuesto',
-
-    // Módulo Gestión de estudiantes nuevos
-    '/modules/new-students/activities.html': 'Actividades',
-    '/modules/new-students/actors.html': 'Actores', 
-    '/modules/new-students/new-students-report.html': 'Reporte de estudiantes nuevos',
-    '/modules/new-students/register-activities.html': 'Registrar actividades',
-    '/modules/new-students/registration-queries.html': 'Consulta de registro',
-    '/modules/new-students/students-dashboard.html': 'Tablero de control',
-        
-    // Módulo Seguimientos
-    '/modules/follow-ups/categories.html': 'Gestionar categorías',
-    '/modules/follow-ups/user-course-assignments.html': 'Asignar usuarios a cursos',
-    '/modules/follow-ups/individual-issues.html': 'Registrar asuntos individuales',
-    '/modules/follow-ups/eae-issues.html': 'Registrar asuntos EAE',
-    '/modules/follow-ups/review-individual-issues.html': 'Revisar asuntos individuales',
-    '/modules/follow-ups/manage-eae-issues.html': 'Gestionar asuntos EAE',
-    '/modules/follow-ups/course-follow-ups.html': 'Seguimientos por cursos',
-    '/modules/follow-ups/group-issues.html': 'Registrar asuntos grupales',
-    '/modules/follow-ups/manage-group-issues.html': 'Gestionar asuntos grupales',
-    '/modules/follow-ups/manage-unescalated-issues.html': 'Gestionar asuntos no escalados',
-    '/modules/follow-ups/tasks.html': 'Gestionar tareas',
-    '/modules/follow-ups/course-follow-up-queries.html': 'Consultas a seguimientos por cursos',
-    '/modules/follow-ups/general-queries.html': 'Consultas',
-    '/modules/follow-ups/confidential-notes.html': 'Notas confidenciales',
-    '/modules/follow-ups/query-confidential-notes.html': 'Consultar notas confidenciales',
-
-    // Módulo Alertas Tempranas
-    '/modules/early-alerts/alert-types.html': 'Causas de alertas tempranas',
-    '/modules/early-alerts/register-alerts.html': 'Registro de alertas',
-    '/modules/early-alerts/manage-alerts.html': 'Gestión de alertas tempranas',
-    '/modules/early-alerts/alerts-dashboard.html': 'Tablero de control de alertas tempranas',
-        
-    // Módulo Admisiones (Atraer y Atrapar)
-    '/modules/admissions/kindergartens.html': 'Jardines infantiles',
-    '/modules/admissions/process-states.html': 'Estados del proceso',
-    '/modules/admissions/loss-reasons.html': 'Razones de pérdida',
-    '/modules/admissions/process-steps.html': 'Pasos del proceso',
-    '/modules/admissions/fairs.html': 'Ferias de preescolares',
-    '/modules/admissions/grade-age-ranges.html': 'Nacimiento - grados',
-    '/modules/admissions/contact-sources.html': 'Fuentes de contacto',
-    '/modules/admissions/referral-types.html': 'Tipos de referidos',
-    '/modules/admissions/form-config.html': 'Configuración del formulario',
-    '/modules/admissions/upload-campaigns.html': 'Subir archivos de campañas',  // NUEVO
-    '/modules/admissions/applicants.html': 'Aspirantes',
-    '/modules/admissions/applicant-detail.html': 'Ficha individual del aspirante',
-    '/modules/admissions/applicant-steps.html': 'Gestión de pasos por aspirante',
-    '/modules/admissions/applicant-process.html': 'Vista de seguimiento del proceso',
-    '/modules/admissions/dashboard.html': 'Dashboard',
-    '/modules/admissions/reports.html': 'Reportes',    
-    
-    // Módulo Tilatá te Escucha (TTE)
-    '/modules/tte/categories.html': 'Gestionar categorías TTE',
-    '/modules/tte/priorities.html': 'Gestionar prioridades TTE',
-    '/modules/tte/manage-requests.html': 'Gestionar solicitudes TTE',
-    '/modules/tte/respond-requests.html': 'Responder solicitudes TTE',
-    '/modules/tte/dashboard.html': 'Dashboard TTE',
-
-    // Módulo Encuestas (surveys)
-    '/modules/surveys/scales.html': 'Gestionar escalas',
-    '/modules/surveys/masters.html': 'Crear encuestas',
-    '/modules/surveys/master-segments.html': 'Asociar segmentaciones',
-    '/modules/surveys/sections.html': 'Gestionar secciones de encuestas',
-    '/modules/surveys/questions.html': 'Gestionar preguntas',
-    '/modules/surveys/applications.html': 'Gestionar aplicaciones',
-    '/modules/surveys/results.html': 'Ver resultados',
-    '/modules/surveys/comparison.html': 'Comparar aplicaciones',
-    '/modules/surveys/dashboard.html': 'Dashboard de encuestas',
-
-    // Módulo Herramientas Generales
-    '/modules/general-tools/tasks.html': 'Gestionar tareas',
-    '/modules/general-tools/dashboard.html': 'Dashboard de tareas',
-    '/modules/general-tools/community-query.html': 'Consulta de la comunidad',
-    '/modules/general-tools/family-activities.html': 'Asistencia de familias',
-    '/modules/general-tools/attendance.html': 'Registrar asistencia',
-    '/modules/general-tools/attendance-reports.html': 'Reportes de asistencia',
-    '/modules/general-tools/contract-categories.html': 'Gestionar categorías de contratos',
-    '/modules/general-tools/contract-templates.html': 'Gestionar plantillas de contratos',
-    '/modules/general-tools/contracts-dashboard.html': 'Ver dashboard de contratos',
-    '/modules/general-tools/lists.html': 'Listas',
-    '/modules/general-tools/generar-dias-tilata.html': 'Generar días Tilatá',
-    '/modules/general-tools/agendar-recurrencias.html': 'Agendar recurrencias en días Tilatá',
-    '/modules/general-tools/pedagogical-days.html': 'Gestionar jornadas pedagógicas',
-
-    // Módulo Perfil (profile) - NUEVO
-    '/modules/profile/mi-perfil.html': 'Ver mi perfil',
-
-    // Módulo Gestión Ambiental (environmental)
-    '/modules/environmental/species.html': 'Gestionar especies de árboles',
-    '/modules/environmental/species-documentation.html': 'Documentación de especies',
-    '/modules/environmental/tree-inventory.html': 'Gestionar inventario de árboles',
-    '/modules/environmental/register-tree-care.html': 'Registrar cuidados de árboles',
-    '/modules/environmental/tree-care-history.html': 'Historial de cuidados',
-    '/modules/environmental/tree-map.html': 'Mapa de árboles',
-    '/modules/environmental/reports.html': 'Reportes de arbolización',
-    // Módulo Gestión Ambiental - Manejo Hídrico
-    '/modules/environmental/water-meters.html': 'Gestionar medidores de agua',
-    '/modules/environmental/daily-water-readings.html': 'Registrar lecturas diarias de agua',
-    '/modules/environmental/monthly-water-readings.html': 'Registrar lecturas mensuales de agua',
-    '/modules/environmental/edit-daily-readings.html': 'Editar lecturas históricas de agua', 
-    '/modules/environmental/water-alerts.html': 'Gestionar alertas hídricas',
-    '/modules/environmental/extraordinary-water-readings.html': 'Registrar mediciones extraordinarias',
-    '/modules/environmental/water-balance-dashboard.html': 'Dashboard de balance hídrico',
-    '/modules/environmental/water-reports.html': 'Reportes de agua',
-
-     // Módulo Formación (training)
-    '/modules/training/generate-paths.html': 'Generar rutas de formación',
-    '/modules/training/axes.html': 'Gestionar ejes formativos',
-    '/modules/training/skills.html': 'Gestionar habilidades',
-    '/modules/training/modalities.html': 'Gestionar modalidades',
-    '/modules/training/requisition-sources.html': 'Gestionar fuentes de requisición',
-    '/modules/training/facilitators.html': 'Gestionar facilitadores',
-    '/modules/training/modules.html': 'Gestionar unidades formativas',
-    '/modules/training/module-skills.html': 'Asociar habilidades a unidades',
-    '/modules/training/module-facilitators.html': 'Asociar facilitadores a unidades',
-    '/modules/training/module-roles.html': 'Asociar unidades a roles',
-    '/modules/training/module-references.html': 'Gestionar referencias de unidades',
-    '/modules/training/waive-modules.html': 'Eximir cumplimiento de unidades',
-    '/modules/training/register-completion.html': 'Registrar cumplimiento de unidades',
-    '/modules/training/manage-deadlines.html': 'Gestionar fechas tentativas',
-    '/modules/training/dashboard.html': 'Dashboard global de formación',
-    '/modules/training/reports.html': 'Reportes de formación',
-    '/modules/training/path-queries.html': 'Consultas de rutas',
-    '/modules/training/my-path.html': 'Ver mi ruta de formación',
-    '/modules/training/request-modules.html': 'Solicitar unidades por interés',
-    '/modules/training/my-dashboard.html': 'Ver mi dashboard de formación',
-
-    // Módulo Procedimientos (procedures)
-    '/modules/procedures/index.html': 'Acceso al módulo de procedimientos',
-    '/modules/procedures/forms.html': 'Gestionar formularios',
-    '/modules/procedures/procedures.html': 'Gestionar procedimientos',
-    '/modules/procedures/execute.html': 'Ejecutar procedimientos',
-    '/modules/procedures/my-requests.html': 'Ver mis solicitudes',
-    '/modules/procedures/records.html': 'Consultar todos los registros',
-    '/modules/procedures/dashboard.html': 'Ver dashboard de procedimientos',
-    '/modules/procedures/reports.html': 'Ver reportes de procedimientos'
-
-    
-  };
-
-// Función principal de validación
-async function validatePageAccess(requiredPermission = null) {
+/**
+ * Valida si el usuario actual tiene acceso a la página
+ * @param {string} requiredPermission - Nombre exacto del permiso requerido (OBLIGATORIO)
+ * @returns {boolean} - true si tiene acceso, false si no
+ */
+async function validatePageAccess(requiredPermission) {
     try {
         console.log('🔐 Validando acceso a página...');
         
@@ -1045,25 +826,21 @@ async function validatePageAccess(requiredPermission = null) {
             return false;
         }
         
-        // 2. Auto-detectar permiso requerido si no se especifica
+        // 2. Validar que se especificó un permiso
         if (!requiredPermission) {
-            requiredPermission = detectRequiredPermission();
+            console.error('❌ validatePageAccess() requiere permiso explícito');
+            showAccessDenied('Permiso no especificado para esta página');
+            return false;
         }
         
-        // 3. Si no se requiere permiso específico, permitir acceso
-        if (!requiredPermission) {
-            console.log('✅ Página sin restricciones de permisos');
-            return true;
-        }
-        
-        // 4. Verificar permiso específico (incluye verificación de super admin)
+        // 3. Verificar permiso específico (incluye verificación de super admin)
         const hasPermission = await checkUserPermission(session.user.user_id, requiredPermission);
         
         if (hasPermission) {
-            console.log(`✅ Usuario tiene acceso requerido`);
+            console.log(`✅ Usuario tiene acceso: ${requiredPermission}`);
             return true;
         } else {
-            console.log(`❌ Usuario NO tiene acceso requerido`);
+            console.log(`❌ Usuario NO tiene acceso: ${requiredPermission}`);
             showAccessDenied(requiredPermission);
             return false;
         }
@@ -1077,16 +854,10 @@ async function validatePageAccess(requiredPermission = null) {
 
 // Auto-detectar permiso basado en URL actual
 function detectRequiredPermission() {
-    const currentPath = window.location.pathname;
-    const permission = URL_PERMISSIONS[currentPath];
-    
-    if (permission) {
-        console.log(`🔍 Permiso requerido detectado: ${permission}`);
-    } else {
-        console.log(`🔍 No se detectó permiso específico para: ${currentPath}`);
-    }
-    
-    return permission;
+    // Ya no usa URL_PERMISSIONS hardcoded
+    // Las páginas deben pasar el permiso explícitamente
+    console.log('⚠️ detectRequiredPermission() deprecado - pasar permiso explícitamente');
+    return null;
 }
 
 // Verificar si usuario tiene permiso específico
@@ -1177,6 +948,148 @@ function showAccessDenied(requiredPermission) {
 function redirectToLogin() {
     window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
 }
+
+// ==========================================
+// GESTIÓN DE PERMISOS DE MÓDULOS
+// ==========================================
+
+/**
+ * Carga los permisos de un módulo desde la base de datos
+ * @param {string} moduleId - ID del módulo (debe coincidir con permission_module en BD)
+ * @returns {Promise<Array<string>>} - Array con los nombres de los permisos del módulo
+ * @example
+ * const permisos = await cargarPermisosDeModulo('Admisiones');
+ * // Retorna: ['Aspirantes', 'Dashboard', 'Reportes', ...]
+ */
+async function cargarPermisosDeModulo(moduleId) {
+    try {
+        if (!moduleId || moduleId.trim() === '') {
+            // Módulo sin restricción (acceso universal)
+            console.log('⚪ Módulo sin restricciones de permisos');
+            return [];
+        }
+        
+        console.log(`📦 Cargando permisos del módulo: ${moduleId}...`);
+        
+        const permisos = await supabaseRequest(
+            `/permissions?select=permission_name&permission_module=eq.${moduleId}&permission_status=eq.active`
+        );
+        
+        const permisosArray = permisos.map(p => p.permission_name);
+        
+        console.log(`✅ ${permisosArray.length} permisos cargados para: ${moduleId}`);
+        
+        return permisosArray;
+        
+    } catch (error) {
+        console.error(`❌ Error cargando permisos del módulo ${moduleId}:`, error);
+        return [];
+    }
+}
+
+/**
+ * Verifica si el usuario tiene acceso a un módulo
+ * @param {string} userId - ID del usuario
+ * @param {Array<string>} modulePermissions - Array de permisos del módulo
+ * @returns {Promise<boolean>} - true si tiene acceso, false si no
+ */
+async function checkModuleAccess(userId, modulePermissions) {
+    try {
+        if (!userId) {
+            console.log('❌ No hay usuario especificado');
+            return false;
+        }
+        
+        // Verificar si es super admin
+        const isSuperAdmin = await checkUserIsSuperAdmin(userId);
+        if (isSuperAdmin) {
+            console.log('✅ Acceso permitido - es Super Admin');
+            return true;
+        }
+        
+        // Si no hay permisos configurados, acceso universal
+        if (!modulePermissions || modulePermissions.length === 0) {
+            console.log('✅ Módulo sin restricciones de permisos');
+            return true;
+        }
+        
+        // Verificar si tiene al menos uno de los permisos del módulo
+        for (const permission of modulePermissions) {
+            const hasPermission = await checkUserPermission(userId, permission);
+            if (hasPermission) {
+                console.log(`✅ Acceso permitido con permiso: ${permission}`);
+                return true;
+            }
+        }
+        
+        console.log('❌ Sin permisos para este módulo');
+        return false;
+        
+    } catch (error) {
+        console.error('❌ Error verificando acceso al módulo:', error);
+        return false;
+    }
+}
+
+/**
+ * Verifica si usuario es Super Admin
+ * @param {string} userId - ID del usuario
+ * @returns {Promise<boolean>}
+ */
+async function checkUserIsSuperAdmin(userId) {
+    try {
+        const userData = await supabaseRequest(`/user_roles?select=roles(is_super_admin)&user_id=eq.${userId}`);
+        return userData.some(ur => ur.roles?.is_super_admin === true);
+    } catch (error) {
+        console.error('❌ Error verificando super admin:', error);
+        return false;
+    }
+}
+
+/**
+ * Obtiene todos los permisos de un usuario
+ * @param {string} userId - ID del usuario
+ * @param {Array<string>} modulePermissions - Permisos del módulo actual (opcional)
+ * @returns {Promise<Array<string>>} - Array de permisos del usuario
+ */
+async function obtenerTodosLosPermisosUsuario(userId, modulePermissions = []) {
+    try {
+        // Verificar si es super admin primero
+        const isSuperAdmin = await checkUserIsSuperAdmin(userId);
+        if (isSuperAdmin) {
+            // Super admin tiene todos los permisos del módulo
+            return modulePermissions;
+        }
+        
+        // Obtener todos los permisos del usuario
+        const data = await supabaseRequest(
+            `/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`
+        );
+        
+        if (!data || data.length === 0) {
+            return [];
+        }
+        
+        // Extraer todos los permisos en un array
+        const permissions = [];
+        data[0].user_roles?.forEach(userRole => {
+            userRole.roles?.role_permissions?.forEach(rolePermission => {
+                const permName = rolePermission.permissions?.permission_name;
+                if (permName && !permissions.includes(permName)) {
+                    permissions.push(permName);
+                }
+            });
+        });
+        
+        return permissions;
+        
+    } catch (error) {
+        console.error('❌ Error obteniendo permisos:', error);
+        return [];
+    }
+}
+
+console.log('✅ Sistema de gestión de permisos de módulos cargado');
 
 // ==========================================
 // SISTEMA DE NOTIFICACIONES - SchoolNet
@@ -1427,6 +1340,27 @@ const navbarStyles = `
         color: #f8f9fa;
     }
     
+    #schoolnet-user-navbar .manual-button {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+        text-decoration: none;
+    }
+    
+    #schoolnet-user-navbar .manual-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        color: white;
+        transform: translateY(-1px);
+    }
+    
     #schoolnet-user-navbar .user-menu {
         position: relative;
     }
@@ -1549,10 +1483,39 @@ const navbarStyles = `
 </style>
 `;
 
+// Función para detectar la URL del manual según la página actual
+function getManualUrl() {
+    const currentPath = window.location.pathname;
+    
+    // Si ya estamos en el dashboard o login, ir al manual general
+    if (currentPath.includes('dashboard.html') || currentPath.includes('login.html') || currentPath === '/') {
+        return '/manual/index.html';
+    }
+    
+    // Si ya estamos en el manual, quedarse ahí
+    if (currentPath.includes('/manual/')) {
+        return currentPath;
+    }
+    
+    // Para páginas en /modules/, construir ruta paralela en /manual/
+    if (currentPath.includes('/modules/')) {
+        // Ejemplo: /modules/security/users.html -> /manual/security/users.html
+        const manualPath = currentPath.replace('/modules/', '/manual/');
+        return manualPath;
+    }
+    
+    // Para cualquier otra página, manual general
+    return '/manual/index.html';
+}
+
+// HTML del navbar
 // HTML del navbar
 function createNavbarHTML() {
     const session = getStoredSession();
     const userName = session?.user?.user_display_name || session?.user?.user_name || 'Usuario';
+    
+    // Detectar ruta al manual automáticamente
+    const manualUrl = getManualUrl();
     
     return `
         <nav id="schoolnet-user-navbar">
@@ -1563,23 +1526,31 @@ function createNavbarHTML() {
                         ${APP_CONFIG.name}
                     </a>
                     
-                    <div class="user-menu">
-                        <button class="user-button" id="user-menu-button" type="button">
-                            <i class="bi bi-person-circle"></i>
-                            <span>${userName}</span>
-                            <i class="bi bi-chevron-down" style="font-size: 0.75rem;"></i>
-                        </button>
+                    <div class="d-flex align-items-center gap-3">
+                        <!-- Botón de Manual -->
+                            <a href="${manualUrl}" class="manual-button" id="manual-button">
+                            <i class="bi bi-book"></i>
+                            <span class="d-none d-md-inline">Manual</span>
+                        </a>
                         
-                        <div class="dropdown-menu" id="user-dropdown-menu">
-                            <button class="dropdown-item" id="change-password-btn">
-                                <i class="bi bi-key"></i>
-                                Cambiar Contraseña
+                        <div class="user-menu">
+                            <button class="user-button" id="user-menu-button" type="button">
+                                <i class="bi bi-person-circle"></i>
+                                <span>${userName}</span>
+                                <i class="bi bi-chevron-down" style="font-size: 0.75rem;"></i>
                             </button>
-                            <div class="dropdown-divider"></div>
-                            <button class="dropdown-item" id="logout-btn">
-                                <i class="bi bi-box-arrow-right"></i>
-                                Cerrar Sesión
-                            </button>
+                            
+                            <div class="dropdown-menu" id="user-dropdown-menu">
+                                <button class="dropdown-item" id="change-password-btn">
+                                    <i class="bi bi-key"></i>
+                                    Cambiar Contraseña
+                                </button>
+                                <div class="dropdown-divider"></div>
+                                <button class="dropdown-item" id="logout-btn">
+                                    <i class="bi bi-box-arrow-right"></i>
+                                    Cerrar Sesión
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
