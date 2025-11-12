@@ -1487,11 +1487,6 @@ const navbarStyles = `
 function getManualUrl() {
     const currentPath = window.location.pathname;
     
-    // Si ya estamos en el dashboard o login, ir al manual general
-    if (currentPath.includes('dashboard.html') || currentPath.includes('login.html') || currentPath === '/') {
-        return '/manual/index.html';
-    }
-    
     // Si ya estamos en el manual, quedarse ahí
     if (currentPath.includes('/manual/')) {
         return currentPath;
@@ -1504,11 +1499,16 @@ function getManualUrl() {
         return manualPath;
     }
     
+    // Si estamos en el dashboard principal o login, ir al manual general
+    if (currentPath.endsWith('/dashboard.html') || currentPath === '/dashboard.html' || 
+        currentPath.includes('login.html') || currentPath === '/') {
+        return '/manual/index.html';
+    }
+    
     // Para cualquier otra página, manual general
     return '/manual/index.html';
 }
 
-// HTML del navbar
 // HTML del navbar
 function createNavbarHTML() {
     const session = getStoredSession();
