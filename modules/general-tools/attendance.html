@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.10.29.07.50">
+    <meta name="page-version" content="25.11.13.07.42">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -73,6 +73,50 @@
             max-width: 500px;
             border-radius: 8px;
             overflow: hidden;
+        }
+        
+        #facial-video-container {
+            position: relative;
+            max-width: 640px;
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #facial-video {
+            width: 100%;
+            display: block;
+        }
+
+        #facial-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .detection-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .detection-status.show {
+            display: block;
+        }
+
+        .detection-status.success {
+            background: rgba(40, 167, 69, 0.9);
+        }
+
+        .detection-status.error {
+            background: rgba(220, 53, 69, 0.9);
         }
         
         .scanner-icon {
@@ -255,7 +299,7 @@
     <div id="loading-overlay" class="loading-overlay hidden">
         <div class="loading-content">
             <div class="spinner"></div>
-            <p class="mb-0">Cargando...</p>
+            <p class="mb-0" id="loading-message">Cargando...</p>
         </div>
     </div>
 
@@ -296,7 +340,7 @@
                     Registro de Asistencia
                 </h1>
                 <p class="text-muted">
-                    Registro de asistencia mediante lectura de carnets o búsqueda manual
+                    Registro de asistencia mediante lectura de carnets, reconocimiento facial o búsqueda manual
                 </p>
             </div>
         </div>
@@ -348,12 +392,17 @@
                                 
                                 <input type="radio" class="btn-check" name="registro-mode" id="mode-rfid" value="rfid">
                                 <label class="btn btn-outline-primary" for="mode-rfid">
-                                    <i class="bi bi-credit-card me-1"></i>Lector RFID
+                                    <i class="bi bi-credit-card me-1"></i>RFID
+                                </label>
+
+                                <input type="radio" class="btn-check" name="registro-mode" id="mode-facial" value="facial">
+                                <label class="btn btn-outline-primary" for="mode-facial">
+                                    <i class="bi bi-person-bounding-box me-1"></i>Facial
                                 </label>
                             </div>
                         </div>
 
-                        <!-- Scanner Container (Cámara) -->
+                        <!-- Scanner Container (Cámara - Código de barras) -->
                         <div class="scanner-container" id="scanner-container">
                             <i class="bi bi-upc-scan scanner-icon"></i>
                             <h4>Listo para escanear</h4>
@@ -377,6 +426,24 @@
                                 <strong>Esperando tarjeta...</strong>
                                 <br>
                                 <small>El lector está activo y capturando códigos automáticamente</small>
+                            </div>
+                        </div>
+
+                        <!-- Facial Recognition Container -->
+                        <div class="scanner-container" id="facial-container" style="display: none;">
+                            <div id="facial-video-container" style="display: none;">
+                                <video id="facial-video" autoplay muted playsinline></video>
+                                <canvas id="facial-canvas"></canvas>
+                                <div id="facial-detection-status" class="detection-status"></div>
+                            </div>
+                            
+                            <div id="facial-init">
+                                <i class="bi bi-person-bounding-box scanner-icon"></i>
+                                <h4>Reconocimiento Facial</h4>
+                                <p class="text-muted mb-3">El sistema reconocerá tu rostro automáticamente</p>
+                                <button class="btn btn-success btn-lg" id="start-facial-btn" onclick="iniciarReconocimientoFacial()">
+                                    <i class="bi bi-camera me-2"></i>Activar Reconocimiento
+                                </button>
                             </div>
                         </div>
 
@@ -428,7 +495,7 @@
                         </h6>
                     </div>
                     <div class="card-body">
-                        <ul class="mb-0 ps-3">
+                        <ul class="mb-0 ps-3" id="tips-list">
                             <li class="mb-2">Mantén el código de barras centrado en la cámara</li>
                             <li class="mb-2">Asegúrate de tener buena iluminación</li>
                             <li class="mb-2">El sistema detecta automáticamente entrada/salida</li>
@@ -449,6 +516,12 @@
                             <span>Conexión:</span>
                             <span class="badge bg-success" id="connection-status">
                                 <i class="bi bi-wifi"></i> Online
+                            </span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2" id="models-status-container" style="display: none;">
+                            <span>Modelos ML:</span>
+                            <span class="badge bg-secondary" id="models-status">
+                                <i class="bi bi-hourglass-split"></i> Cargando...
                             </span>
                         </div>
                         <div class="d-flex justify-content-between mb-2">
@@ -558,6 +631,9 @@
     <!-- Librería para lectura de códigos de barras -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
+    <!-- Face-api.js - SOLO SE CARGA SI SE USA MODO FACIAL -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
     <script>
         // ==========================================
         // VARIABLES GLOBALES
@@ -566,37 +642,37 @@
         let html5QrcodeScanner = null;
         let selectedPerson = null;
         let manualRegistrationModal = null;
-        let currentMode = 'camera'; // camera o rfid
-        let rfidBuffer = ''; // Buffer para capturar código RFID
+        let currentMode = 'camera'; // camera, rfid, facial
+        let rfidBuffer = '';
+        
+        // Variables para reconocimiento facial
+        let facialVideoStream = null;
+        let facialDetectionInterval = null;
+        let facialModelsLoaded = false;
+        let allFaceDescriptors = []; // Cache de descriptores
 
         // ==========================================
         // OBTENER FECHA Y HORA DE COLOMBIA (UTC-5)
         // ==========================================
         function obtenerFechaHoraColombia() {
-            // Crear fecha actual en zona horaria de Colombia (America/Bogota = UTC-5)
             const ahora = new Date();
             const colombiaTime = new Date(ahora.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
             
-            // Formatear fecha (YYYY-MM-DD)
             const año = colombiaTime.getFullYear();
             const mes = String(colombiaTime.getMonth() + 1).padStart(2, '0');
             const dia = String(colombiaTime.getDate()).padStart(2, '0');
             const fecha = `${año}-${mes}-${dia}`;
             
-            // Formatear hora (HH:MM:SS)
             const horas = String(colombiaTime.getHours()).padStart(2, '0');
             const minutos = String(colombiaTime.getMinutes()).padStart(2, '0');
             const segundos = String(colombiaTime.getSeconds()).padStart(2, '0');
             const hora = `${horas}:${minutos}:${segundos}`;
             
-            // Formatear timestamp completo con zona horaria
-            const timestamp = `${fecha}T${hora}-05:00`; // UTC-5 para Colombia
+            const timestamp = `${fecha}T${hora}-05:00`;
             
             return { fecha, hora, timestamp };
         }
 
-
-        
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
@@ -604,11 +680,9 @@
             console.log('🔐 Validando acceso al módulo de Asistencia...');
             
             try {
-                // Validar permisos
                 const hasAccess = await validatePageAccess('Registrar asistencia');
                 if (!hasAccess) return;
 
-                // Obtener usuario actual
                 const session = getStoredSession();
                 if (!session || !session.user) {
                     console.log('❌ No hay sesión activa');
@@ -619,7 +693,6 @@
                 currentUser = session.user;
                 console.log('✅ Usuario autenticado:', currentUser.user_display_name);
                 
-                // CORRECCIÓN: Verificar si tiene email, si no, obtenerlo de la BD
                 if (!currentUser.user_mail) {
                     console.warn('⚠️ Email no disponible en sesión, obteniendo de BD...');
                     try {
@@ -627,15 +700,12 @@
                         if (userData && userData.length > 0 && userData[0].user_mail) {
                             currentUser.user_mail = userData[0].user_mail;
                             console.log('✅ Email obtenido de BD:', currentUser.user_mail);
-                        } else {
-                            console.error('❌ No se pudo obtener el email del usuario');
                         }
                     } catch (error) {
                         console.error('❌ Error obteniendo email:', error);
                     }
                 }
                 
-                // Inicializar componentes
                 await inicializarPagina();
                 
             } catch (error) {
@@ -651,19 +721,10 @@
             try {
                 mostrarLoading();
 
-                // Inicializar modal
                 manualRegistrationModal = new bootstrap.Modal(document.getElementById('manual-registration-modal'));
-
-                // Configurar eventos
                 configurarEventos();
-
-                // Cargar estadísticas del día
                 await cargarEstadisticas();
-
-                // Cargar últimos registros
                 await cargarUltimosRegistros();
-
-                // Actualizar fecha actual
                 actualizarFechaActual();
 
                 ocultarLoading();
@@ -680,14 +741,12 @@
         // CONFIGURAR EVENTOS
         // ==========================================
         function configurarEventos() {
-            // Cambio de modo de registro (Cámara / RFID)
             document.querySelectorAll('input[name="registro-mode"]').forEach(radio => {
                 radio.addEventListener('change', function() {
                     cambiarModoRegistro(this.value);
                 });
             });
 
-            // Cambio de tipo de búsqueda
             document.querySelectorAll('input[name="search-type"]').forEach(radio => {
                 radio.addEventListener('change', function() {
                     if (this.value === 'document') {
@@ -703,7 +762,6 @@
                 });
             });
 
-            // Enter en campos de búsqueda
             document.getElementById('search-document').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
@@ -718,32 +776,26 @@
                 }
             });
 
-            // Cerrar feedback al hacer clic
             document.getElementById('feedback-overlay').addEventListener('click', function() {
                 ocultarFeedback();
             });
 
-            // Captura de RFID
             document.getElementById('rfid-input').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     const rfidCode = this.value.trim();
                     if (rfidCode) {
                         procesarRFID(rfidCode);
-                        this.value = ''; // Limpiar campo
+                        this.value = '';
                     }
                 }
             });
 
-            // Mantener foco en campo RFID cuando está en modo RFID
-            // CORRECCIÓN: No enfocar si el modal está abierto
             document.addEventListener('click', function(e) {
                 if (currentMode === 'rfid') {
-                    // Verificar si el modal de registro manual está abierto
                     const modalElement = document.getElementById('manual-registration-modal');
                     const isModalOpen = modalElement && modalElement.classList.contains('show');
                     
-                    // No reenfocar RFID si el modal está abierto o si se hizo clic dentro del modal
                     if (!isModalOpen && !e.target.closest('.modal')) {
                         setTimeout(() => {
                             document.getElementById('rfid-input').focus();
@@ -768,28 +820,373 @@
         function cambiarModoRegistro(modo) {
             currentMode = modo;
             
+            // Ocultar todos los contenedores
+            document.getElementById('scanner-container').style.display = 'none';
+            document.getElementById('rfid-container').style.display = 'none';
+            document.getElementById('facial-container').style.display = 'none';
+            
+            // Detener lo que esté activo
+            detenerScanner();
+            detenerReconocimientoFacial();
+            
+            // Actualizar tips según el modo
+            actualizarTips(modo);
+            
             if (modo === 'camera') {
-                // Mostrar cámara, ocultar RFID
                 document.getElementById('scanner-container').style.display = 'flex';
-                document.getElementById('rfid-container').style.display = 'none';
-                
-                // Detener scanner si está activo
-                detenerScanner();
-                
             } else if (modo === 'rfid') {
-                // Mostrar RFID, ocultar cámara
-                document.getElementById('scanner-container').style.display = 'none';
                 document.getElementById('rfid-container').style.display = 'flex';
-                
-                // Detener scanner si está activo
-                detenerScanner();
-                
-                // Enfocar campo RFID
                 setTimeout(() => {
                     document.getElementById('rfid-input').focus();
                 }, 100);
+                console.log('✅ Modo RFID activado');
+            } else if (modo === 'facial') {
+                document.getElementById('facial-container').style.display = 'flex';
+                document.getElementById('models-status-container').style.display = 'flex';
+                console.log('✅ Modo Facial activado');
+            }
+        }
+
+        // ==========================================
+        // ACTUALIZAR TIPS SEGÚN MODO
+        // ==========================================
+        function actualizarTips(modo) {
+            const tipsList = document.getElementById('tips-list');
+            
+            if (modo === 'camera') {
+                tipsList.innerHTML = `
+                    <li class="mb-2">Mantén el código de barras centrado en la cámara</li>
+                    <li class="mb-2">Asegúrate de tener buena iluminación</li>
+                    <li class="mb-2">El sistema detecta automáticamente entrada/salida</li>
+                    <li class="mb-2">Si el carnet no funciona, usa el registro manual</li>
+                `;
+            } else if (modo === 'rfid') {
+                tipsList.innerHTML = `
+                    <li class="mb-2">Acerca el carnet al lector RFID</li>
+                    <li class="mb-2">Espera el sonido de confirmación</li>
+                    <li class="mb-2">El registro es automático e inmediato</li>
+                    <li class="mb-2">No es necesario presionar ningún botón</li>
+                `;
+            } else if (modo === 'facial') {
+                tipsList.innerHTML = `
+                    <li class="mb-2">Mantén tu rostro centrado en la cámara</li>
+                    <li class="mb-2">Asegúrate de tener buena iluminación</li>
+                    <li class="mb-2">El rostro debe estar de frente</li>
+                    <li class="mb-2">El reconocimiento es automático en 1-2 segundos</li>
+                    <li class="mb-2">Si usas gafas, asegúrate de tenerlas puestas (si las usaste en el entrenamiento)</li>
+                `;
+            }
+        }
+
+        // ==========================================
+        // CARGAR MODELOS DE FACE-API.JS
+        // ==========================================
+        async function cargarModelosFaciales() {
+            if (facialModelsLoaded) {
+                console.log('✅ Modelos ya cargados');
+                return true;
+            }
+
+            try {
+                mostrarLoading('Cargando modelos de reconocimiento facial...');
+                document.getElementById('models-status').innerHTML = '<i class="bi bi-hourglass-split"></i> Cargando...';
                 
-                console.log('✅ Modo RFID activado - Lector listo');
+                const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+                
+                await Promise.all([
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                ]);
+                
+                facialModelsLoaded = true;
+                document.getElementById('models-status').innerHTML = '<i class="bi bi-check-circle"></i> Listos';
+                document.getElementById('models-status').className = 'badge bg-success';
+                
+                ocultarLoading();
+                console.log('✅ Modelos cargados correctamente');
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Error cargando modelos:', error);
+                document.getElementById('models-status').innerHTML = '<i class="bi bi-x-circle"></i> Error';
+                document.getElementById('models-status').className = 'badge bg-danger';
+                ocultarLoading();
+                showMessage('Error cargando modelos de reconocimiento. Verifica tu conexión.', 'danger');
+                return false;
+            }
+        }
+
+        // ==========================================
+        // CARGAR DESCRIPTORES FACIALES DE LA BD
+        // ==========================================
+        async function cargarDescriptoresFaciales() {
+            try {
+                console.log('📥 Cargando descriptores faciales de la base de datos...');
+                
+                // Cargar estudiantes con registro facial activo
+                const estudiantes = await supabaseRequest(`/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_face_descriptor&student_face_status=eq.active`);
+                
+                // Cargar trabajadores con registro facial activo
+                const trabajadores = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,worker_face_descriptor&worker_face_status=eq.active`);
+                
+                allFaceDescriptors = [];
+                
+                if (estudiantes) {
+                    estudiantes.forEach(e => {
+                        if (e.student_face_descriptor) {
+                            try {
+                                const descriptor = JSON.parse(e.student_face_descriptor);
+                                allFaceDescriptors.push({
+                                    documento: e.student_id_document,
+                                    tipo: 'student',
+                                    nombre: `${e.student_last_name_1} ${e.student_last_name_2 || ''} ${e.student_first_name}`.trim(),
+                                    descriptor: new Float32Array(descriptor)
+                                });
+                            } catch (err) {
+                                console.warn('Error parseando descriptor de estudiante:', e.student_id_document);
+                            }
+                        }
+                    });
+                }
+                
+                if (trabajadores) {
+                    trabajadores.forEach(t => {
+                        if (t.worker_face_descriptor) {
+                            try {
+                                const descriptor = JSON.parse(t.worker_face_descriptor);
+                                allFaceDescriptors.push({
+                                    documento: t.worker_id_doc,
+                                    tipo: 'worker',
+                                    nombre: `${t.worker_last_name_1} ${t.worker_last_name_2 || ''} ${t.worker_first_name}`.trim(),
+                                    descriptor: new Float32Array(descriptor)
+                                });
+                            } catch (err) {
+                                console.warn('Error parseando descriptor de trabajador:', t.worker_id_doc);
+                            }
+                        }
+                    });
+                }
+                
+                console.log(`✅ ${allFaceDescriptors.length} descriptores faciales cargados`);
+                return allFaceDescriptors.length > 0;
+                
+            } catch (error) {
+                console.error('❌ Error cargando descriptores:', error);
+                return false;
+            }
+        }
+
+        // ==========================================
+        // INICIAR RECONOCIMIENTO FACIAL
+        // ==========================================
+        async function iniciarReconocimientoFacial() {
+            try {
+                // Cargar modelos si no están cargados
+                const modelosOK = await cargarModelosFaciales();
+                if (!modelosOK) return;
+                
+                // Cargar descriptores de la BD
+                const descriptoresOK = await cargarDescriptoresFaciales();
+                if (!descriptoresOK) {
+                    showMessage('No hay personas con registro facial activo. Por favor, registra rostros primero.', 'warning');
+                    return;
+                }
+                
+                // Ocultar botón de inicio y mostrar video
+                document.getElementById('facial-init').style.display = 'none';
+                document.getElementById('facial-video-container').style.display = 'block';
+                
+                // Iniciar cámara
+                const video = document.getElementById('facial-video');
+                
+                facialVideoStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    }
+                });
+
+                video.srcObject = facialVideoStream;
+                await video.play();
+
+                // Configurar canvas
+                const canvas = document.getElementById('facial-canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                document.getElementById('camera-status').innerHTML = '<i class="bi bi-camera-video"></i> Activa (Facial)';
+                document.getElementById('camera-status').className = 'badge bg-success';
+
+                // Iniciar detección continua
+                iniciarDeteccionFacialContinua();
+
+                console.log('✅ Reconocimiento facial iniciado');
+
+            } catch (error) {
+                console.error('❌ Error iniciando reconocimiento facial:', error);
+                showMessage('Error al iniciar la cámara: ' + error.message, 'danger');
+                detenerReconocimientoFacial();
+            }
+        }
+
+        // ==========================================
+        // DETECCIÓN FACIAL CONTINUA
+        // ==========================================
+        function iniciarDeteccionFacialContinua() {
+            const video = document.getElementById('facial-video');
+            const canvas = document.getElementById('facial-canvas');
+            const displaySize = { width: video.videoWidth, height: video.videoHeight };
+            
+            faceapi.matchDimensions(canvas, displaySize);
+
+            facialDetectionInterval = setInterval(async () => {
+                const detection = await faceapi.detectSingleFace(video)
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+                
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const statusDiv = document.getElementById('facial-detection-status');
+
+                if (!detection) {
+                    statusDiv.textContent = 'No se detecta ningún rostro';
+                    statusDiv.className = 'detection-status error show';
+                    return;
+                }
+                
+                // Dibujar detección
+                const resizedDetection = faceapi.resizeResults(detection, displaySize);
+                faceapi.draw.drawDetections(canvas, resizedDetection);
+                faceapi.draw.drawFaceLandmarks(canvas, resizedDetection);
+                
+                statusDiv.textContent = '✓ Rostro detectado - Identificando...';
+                statusDiv.className = 'detection-status success show';
+                
+                // Buscar coincidencia
+                const bestMatch = encontrarMejorCoincidencia(detection.descriptor);
+                
+                if (bestMatch) {
+                    // ¡Encontrado! Registrar asistencia
+                    clearInterval(facialDetectionInterval);
+                    facialDetectionInterval = null;
+                    
+                    detenerReconocimientoFacial();
+                    await registrarAsistenciaFacial(bestMatch);
+                }
+
+            }, 100);
+        }
+
+        // ==========================================
+        // ENCONTRAR MEJOR COINCIDENCIA
+        // ==========================================
+        function encontrarMejorCoincidencia(detectedDescriptor) {
+            const threshold = 0.6; // Umbral de confianza (ajustable)
+            let bestMatch = null;
+            let bestDistance = Infinity;
+            
+            allFaceDescriptors.forEach(person => {
+                const distance = faceapi.euclideanDistance(detectedDescriptor, person.descriptor);
+                
+                if (distance < bestDistance && distance < threshold) {
+                    bestDistance = distance;
+                    bestMatch = {
+                        ...person,
+                        distance: distance,
+                        confidence: (1 - distance) * 100
+                    };
+                }
+            });
+            
+            if (bestMatch) {
+                console.log(`✅ Persona reconocida: ${bestMatch.nombre} (confianza: ${bestMatch.confidence.toFixed(1)}%)`);
+            }
+            
+            return bestMatch;
+        }
+
+        // ==========================================
+        // REGISTRAR ASISTENCIA FACIAL
+        // ==========================================
+        async function registrarAsistenciaFacial(match) {
+            try {
+                mostrarLoading();
+
+                const { fecha: today, hora, timestamp } = obtenerFechaHoraColombia();
+                const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${match.documento}&attendance_date=eq.${today}`);
+                const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
+
+                const nuevoRegistro = {
+                    person_id_document: match.documento,
+                    person_type: match.tipo,
+                    registration_method: 'facial',
+                    registered_by_worker_id: null,
+                    attendance_date: today,
+                    attendance_time: hora,
+                    attendance_timestamp: timestamp
+                };
+                
+                await supabaseRequest('/attendance', {
+                    method: 'POST',
+                    body: JSON.stringify(nuevoRegistro)
+                });
+
+                // Log del reconocimiento
+                await supabaseRequest('/facial_recognition_logs', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        recognition_success: true,
+                        person_id_document: match.documento,
+                        person_type: match.tipo,
+                        confidence_score: match.confidence,
+                        distance_score: match.distance,
+                        recognition_context: 'attendance',
+                        face_detected: true,
+                        face_quality: 'good'
+                    })
+                });
+
+                ocultarLoading();
+                mostrarFeedback('success', `${tipoRegistro} registrada`, match.nombre);
+                reproducirSonido('success');
+
+                await cargarEstadisticas();
+                await cargarUltimosRegistros();
+
+                // Reiniciar reconocimiento después de 2 segundos
+                setTimeout(() => iniciarReconocimientoFacial(), 2000);
+
+            } catch (error) {
+                console.error('❌ Error registrando asistencia facial:', error);
+                ocultarLoading();
+                mostrarFeedback('error', 'Error', 'No se pudo registrar la asistencia');
+                setTimeout(() => iniciarReconocimientoFacial(), 2000);
+            }
+        }
+
+        // ==========================================
+        // DETENER RECONOCIMIENTO FACIAL
+        // ==========================================
+        function detenerReconocimientoFacial() {
+            if (facialDetectionInterval) {
+                clearInterval(facialDetectionInterval);
+                facialDetectionInterval = null;
+            }
+
+            if (facialVideoStream) {
+                facialVideoStream.getTracks().forEach(track => track.stop());
+                facialVideoStream = null;
+            }
+
+            document.getElementById('facial-init').style.display = 'block';
+            document.getElementById('facial-video-container').style.display = 'none';
+            
+            if (currentMode !== 'facial') {
+                document.getElementById('camera-status').innerHTML = '<i class="bi bi-camera-video-off"></i> Inactiva';
+                document.getElementById('camera-status').className = 'badge bg-secondary';
             }
         }
 
@@ -801,11 +1198,9 @@
                 console.log('🔖 Código RFID recibido:', rfidCode);
                 mostrarLoading();
 
-                // Buscar en estudiantes por RFID
                 let persona = await supabaseRequest(`/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_code,student_rfid_code&student_rfid_code=eq.${rfidCode}`);
                 let tipoPersona = 'student';
                 
-                // Si no es estudiante, buscar en trabajadores
                 if (!persona || persona.length === 0) {
                     persona = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,worker_rfid_code&worker_rfid_code=eq.${rfidCode}`);
                     tipoPersona = 'worker';
@@ -816,14 +1211,12 @@
                     mostrarFeedback('error', 'Carnet no registrado', `El código RFID ${rfidCode} no está asociado a ninguna persona`);
                     reproducirSonido('error');
                     
-                    // Reenfocar campo RFID
                     setTimeout(() => {
                         document.getElementById('rfid-input').focus();
                     }, 2000);
                     return;
                 }
 
-                // Construir nombre completo
                 const p = persona[0];
                 let nombreCompleto = '';
                 let documento = '';
@@ -836,21 +1229,15 @@
                     documento = p.worker_id_doc;
                 }
 
-                // Determinar si es entrada o salida
-                const today = new Date().toISOString().split('T')[0];
-                const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${documento}&attendance_date=eq.${today}`);
+                const { fecha, hora, timestamp } = obtenerFechaHoraColombia();
+                const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${documento}&attendance_date=eq.${fecha}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
-                // Insertar registro
-                // Obtener fecha y hora de Colombia
-                const { fecha, hora, timestamp } = obtenerFechaHoraColombia();
-                
-                // Insertar registro con fecha/hora de Colombia
                 const nuevoRegistro = {
                     person_id_document: documento,
                     person_type: tipoPersona,
-                    registration_method: 'carnet',
-                    registered_by_worker_id: null, // Los registros por RFID/carnet no requieren registered_by
+                    registration_method: 'rfid',
+                    registered_by_worker_id: null,
                     attendance_date: fecha,
                     attendance_time: hora,
                     attendance_timestamp: timestamp
@@ -862,18 +1249,12 @@
                 });
 
                 ocultarLoading();
-
-                // Mostrar feedback
                 mostrarFeedback('success', `${tipoRegistro} registrada`, nombreCompleto);
-
-                // Reproducir sonido
                 reproducirSonido('success');
 
-                // Actualizar estadísticas y registros
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
 
-                // Reenfocar campo RFID
                 setTimeout(() => {
                     document.getElementById('rfid-input').focus();
                 }, 2000);
@@ -884,7 +1265,6 @@
                 mostrarFeedback('error', 'Error', 'No se pudo registrar la asistencia');
                 reproducirSonido('error');
                 
-                // Reenfocar campo RFID
                 setTimeout(() => {
                     document.getElementById('rfid-input').focus();
                 }, 2000);
@@ -896,10 +1276,7 @@
         // ==========================================
         async function cargarEstadisticas() {
             try {
-                // Usar fecha de Colombia
                 const { fecha: today } = obtenerFechaHoraColombia();
-                
-                // Obtener todos los registros del día
                 const registros = await supabaseRequest(`/attendance?select=*&attendance_date=eq.${today}&order=attendance_time.desc`);
                 
                 if (!registros) {
@@ -907,10 +1284,7 @@
                     return;
                 }
 
-                // Calcular estadísticas
                 const total = registros.length;
-                
-                // Contar entradas y salidas
                 const registrosPorPersona = {};
                 registros.forEach(reg => {
                     const key = reg.person_id_document;
@@ -932,7 +1306,6 @@
                     }
                 });
 
-                // Registros de la última hora
                 const unaHoraAtras = new Date();
                 unaHoraAtras.setHours(unaHoraAtras.getHours() - 1);
                 const ultimaHora = registros.filter(reg => {
@@ -940,7 +1313,6 @@
                     return regTime >= unaHoraAtras;
                 }).length;
 
-                // Actualizar UI
                 document.getElementById('stat-total').textContent = total;
                 document.getElementById('stat-entradas').textContent = entradas;
                 document.getElementById('stat-salidas').textContent = salidas;
@@ -956,10 +1328,7 @@
         // ==========================================
         async function cargarUltimosRegistros() {
             try {
-                // Usar fecha de Colombia
                 const { fecha: today } = obtenerFechaHoraColombia();
-                
-                // Obtener últimos 10 registros del día
                 const registros = await supabaseRequest(`/attendance?select=*&attendance_date=eq.${today}&order=attendance_time.desc&limit=10`);
                 
                 const container = document.getElementById('recent-records');
@@ -976,11 +1345,13 @@
 
                 let html = '';
                 for (const reg of registros) {
-                    // Obtener nombre de la persona
                     const nombre = await obtenerNombrePersona(reg.person_id_document, reg.person_type);
-                    
-                    // Determinar si es entrada o salida
                     const tipoRegistro = await determinarTipoRegistro(reg.person_id_document, reg.attendance_time);
+                    
+                    let methodIcon = '';
+                    if (reg.registration_method === 'manual') methodIcon = '<i class="bi bi-pencil ms-2" title="Registro manual"></i>';
+                    else if (reg.registration_method === 'facial') methodIcon = '<i class="bi bi-person-bounding-box ms-2" title="Reconocimiento facial"></i>';
+                    else if (reg.registration_method === 'rfid') methodIcon = '<i class="bi bi-credit-card ms-2" title="RFID"></i>';
                     
                     html += `
                         <div class="recent-record">
@@ -989,7 +1360,7 @@
                                     <div class="record-name">${nombre}</div>
                                     <div class="record-time">
                                         <i class="bi bi-clock me-1"></i>${reg.attendance_time.substring(0, 5)}
-                                        ${reg.registration_method === 'manual' ? '<i class="bi bi-pencil ms-2" title="Registro manual"></i>' : ''}
+                                        ${methodIcon}
                                     </div>
                                 </div>
                                 <span class="record-type ${tipoRegistro}">${tipoRegistro === 'entrada' ? 'Entrada' : 'Salida'}</span>
@@ -1006,24 +1377,18 @@
         }
 
         // ==========================================
-        // DETERMINAR TIPO DE REGISTRO (ENTRADA/SALIDA)
+        // DETERMINAR TIPO DE REGISTRO
         // ==========================================
         async function determinarTipoRegistro(documento, horaActual) {
             try {
-                // Usar fecha de Colombia
                 const { fecha: today } = obtenerFechaHoraColombia();
-                
-                // Obtener registros previos del día para esta persona
                 const registros = await supabaseRequest(`/attendance?select=attendance_time&person_id_document=eq.${documento}&attendance_date=eq.${today}&order=attendance_time.asc`);
                 
                 if (!registros || registros.length === 0) {
                     return 'entrada';
                 }
 
-                // Encontrar la posición del registro actual
                 const index = registros.findIndex(r => r.attendance_time === horaActual);
-                
-                // Si el índice es par (0, 2, 4...) es entrada, si es impar (1, 3, 5...) es salida
                 return index % 2 === 0 ? 'entrada' : 'salida';
 
             } catch (error) {
@@ -1068,7 +1433,6 @@
                 document.querySelector('.scanner-container h4').style.display = 'none';
                 document.querySelector('.scanner-container p').style.display = 'none';
 
-                // Configurar scanner
                 html5QrcodeScanner = new Html5Qrcode("reader");
                 
                 const config = {
@@ -1076,7 +1440,6 @@
                     qrbox: { width: 250, height: 250 }
                 };
 
-                // Iniciar scanner con cámara trasera
                 await html5QrcodeScanner.start(
                     { facingMode: "environment" },
                     config,
@@ -1085,7 +1448,7 @@
                 );
 
                 document.getElementById('stop-scanner-btn').style.display = 'inline-block';
-                document.getElementById('camera-status').innerHTML = '<i class="bi bi-camera-video"></i> Activa';
+                document.getElementById('camera-status').innerHTML = '<i class="bi bi-camera-video"></i> Activa (Barcode)';
                 document.getElementById('camera-status').className = 'badge bg-success';
 
                 console.log('✅ Scanner iniciado correctamente');
@@ -1094,7 +1457,6 @@
                 console.error('❌ Error iniciando scanner:', error);
                 showMessage('Error al iniciar la cámara. Verifica los permisos del navegador.', 'danger');
                 
-                // Restaurar botones
                 document.getElementById('start-scanner-btn').style.display = 'inline-block';
                 document.getElementById('reader').style.display = 'none';
                 document.querySelector('.scanner-icon').style.display = 'block';
@@ -1120,8 +1482,10 @@
                 document.querySelector('.scanner-container h4').style.display = 'block';
                 document.querySelector('.scanner-container p').style.display = 'block';
 
-                document.getElementById('camera-status').innerHTML = '<i class="bi bi-camera-video-off"></i> Inactiva';
-                document.getElementById('camera-status').className = 'badge bg-secondary';
+                if (currentMode !== 'facial' && currentMode !== 'rfid') {
+                    document.getElementById('camera-status').innerHTML = '<i class="bi bi-camera-video-off"></i> Inactiva';
+                    document.getElementById('camera-status').className = 'badge bg-secondary';
+                }
 
             } catch (error) {
                 console.error('Error deteniendo scanner:', error);
@@ -1133,11 +1497,7 @@
         // ==========================================
         async function onScanSuccess(decodedText, decodedResult) {
             console.log('✅ Código escaneado:', decodedText);
-            
-            // Detener scanner temporalmente
             await detenerScanner();
-
-            // Registrar asistencia automáticamente
             await registrarAsistencia(decodedText, 'carnet');
         }
 
@@ -1145,8 +1505,7 @@
         // CALLBACK: ERROR EN ESCANEO
         // ==========================================
         function onScanError(errorMessage) {
-            // Ignorar errores de escaneo (son muy frecuentes mientras busca)
-            // console.log('Escaneando...', errorMessage);
+            // Ignorar errores de escaneo
         }
 
         // ==========================================
@@ -1156,11 +1515,9 @@
             try {
                 mostrarLoading();
 
-                // Buscar en estudiantes
                 let persona = await supabaseRequest(`/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_code&student_id_document=eq.${documento}`);
                 let tipoPersona = 'student';
                 
-                // Si no es estudiante, buscar en trabajadores
                 if (!persona || persona.length === 0) {
                     persona = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2&worker_id_doc=eq.${documento}`);
                     tipoPersona = 'worker';
@@ -1173,7 +1530,6 @@
                     return;
                 }
 
-                // Construir nombre completo
                 const p = persona[0];
                 let nombreCompleto = '';
                 if (tipoPersona === 'student') {
@@ -1182,15 +1538,10 @@
                     nombreCompleto = `${p.worker_last_name_1} ${p.worker_last_name_2 || ''} ${p.worker_first_name}`.trim();
                 }
 
-                // Determinar si es entrada o salida
-                // Obtener fecha y hora de Colombia
                 const { fecha: today, hora, timestamp } = obtenerFechaHoraColombia();
-                
-                // Determinar si es entrada o salida
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
-                // CORRECCIÓN: Buscar worker_id si es registro manual usando EMAIL
                 let registeredByWorkerId = null;
                 if (metodo === 'manual' && currentUser.user_mail) {
                     try {
@@ -1204,7 +1555,6 @@
                     }
                 }
 
-                // Insertar registro con fecha/hora de Colombia
                 const nuevoRegistro = {
                     person_id_document: documento,
                     person_type: tipoPersona,
@@ -1220,18 +1570,12 @@
                 });
 
                 ocultarLoading();
-
-                // Mostrar feedback
                 mostrarFeedback('success', `${tipoRegistro} registrada`, nombreCompleto);
-
-                // Reproducir sonido
                 reproducirSonido('success');
 
-                // Actualizar estadísticas y registros
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
 
-                // Reiniciar scanner después de 2 segundos
                 setTimeout(() => iniciarScanner(), 2000);
 
             } catch (error) {
@@ -1246,22 +1590,16 @@
         // MOSTRAR MODAL DE REGISTRO MANUAL
         // ==========================================
         function mostrarRegistroManual() {
-            // Detener scanner si está activo
             detenerScanner();
+            detenerReconocimientoFacial();
             
-            // CORRECCIÓN: Pausar temporalmente el modo RFID
-            const previousMode = currentMode;
             if (currentMode === 'rfid') {
-                console.log('⏸️ Pausando modo RFID temporalmente para registro manual');
+                console.log('⏸️ Pausando modo RFID temporalmente');
             }
             
-            // Limpiar formulario
             limpiarBusqueda();
-            
-            // Mostrar modal
             manualRegistrationModal.show();
             
-            // CORRECCIÓN: Restaurar foco en campos del modal
             setTimeout(() => {
                 const searchDocField = document.getElementById('search-document');
                 if (searchDocField && searchDocField.offsetParent !== null) {
@@ -1289,7 +1627,6 @@
                         return;
                     }
 
-                    // Buscar en estudiantes
                     const estudiantes = await supabaseRequest(`/students?select=student_id_document,student_code,student_first_name,student_last_name_1,student_last_name_2&student_id_document=eq.${documento}`);
                     if (estudiantes && estudiantes.length > 0) {
                         estudiantes.forEach(e => {
@@ -1302,7 +1639,6 @@
                         });
                     }
 
-                    // Buscar en trabajadores
                     const trabajadores = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2&worker_id_doc=eq.${documento}`);
                     if (trabajadores && trabajadores.length > 0) {
                         trabajadores.forEach(t => {
@@ -1316,7 +1652,6 @@
                     }
 
                 } else {
-                    // Búsqueda por nombre
                     const nombre = document.getElementById('search-name').value.trim().toLowerCase();
                     
                     if (!nombre || nombre.length < 3) {
@@ -1325,7 +1660,6 @@
                         return;
                     }
 
-                    // Buscar en estudiantes
                     const estudiantes = await supabaseRequest(`/students?select=student_id_document,student_code,student_first_name,student_last_name_1,student_last_name_2`);
                     if (estudiantes) {
                         estudiantes.forEach(e => {
@@ -1341,7 +1675,6 @@
                         });
                     }
 
-                    // Buscar en trabajadores
                     const trabajadores = await supabaseRequest(`/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2`);
                     if (trabajadores) {
                         trabajadores.forEach(t => {
@@ -1359,8 +1692,6 @@
                 }
 
                 ocultarLoading();
-
-                // Mostrar resultados
                 mostrarResultadosBusqueda(resultados);
 
             } catch (error) {
@@ -1411,11 +1742,7 @@
         // ==========================================
         function seleccionarPersona(persona) {
             selectedPerson = persona;
-
-            // Ocultar resultados
             document.getElementById('search-results').style.display = 'none';
-
-            // Mostrar persona seleccionada
             document.getElementById('selected-person-name').textContent = persona.nombre;
             const tipoTexto = persona.tipo === 'student' ? 'Estudiante' : 'Trabajador';
             const codigoTexto = persona.codigo ? ` - Código: ${persona.codigo}` : '';
@@ -1437,33 +1764,22 @@
                 mostrarLoading();
 
                 const observaciones = document.getElementById('observations').value.trim();
-
-                // Obtener fecha y hora de Colombia
                 const { fecha: today, hora, timestamp } = obtenerFechaHoraColombia();
-                
-                // Determinar si es entrada o salida
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${selectedPerson.documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
-                // CORRECCIÓN: Buscar worker_id del usuario actual usando EMAIL
                 let registeredByWorkerId = null;
                 if (currentUser.user_mail) {
                     try {
                         const workerData = await supabaseRequest(`/workers?select=worker_id&email=eq.${currentUser.user_mail}&limit=1`);
                         if (workerData && workerData.length > 0) {
                             registeredByWorkerId = workerData[0].worker_id;
-                            console.log('✅ Worker encontrado:', registeredByWorkerId);
-                        } else {
-                            console.log('⚠️ Usuario no existe como trabajador, se guardará sin registered_by');
                         }
                     } catch (error) {
                         console.warn('⚠️ Error buscando trabajador:', error.message);
                     }
-                } else {
-                    console.warn('⚠️ Usuario no tiene email, se guardará sin registered_by');
                 }
 
-                // Insertar registro con fecha/hora de Colombia
                 const nuevoRegistro = {
                     person_id_document: selectedPerson.documento,
                     person_type: selectedPerson.tipo,
@@ -1481,17 +1797,10 @@
                 });
 
                 ocultarLoading();
-
-                // Cerrar modal
                 manualRegistrationModal.hide();
-
-                // Mostrar feedback
                 mostrarFeedback('success', `${tipoRegistro} registrada`, selectedPerson.nombre);
-
-                // Reproducir sonido
                 reproducirSonido('success');
 
-                // Actualizar estadísticas y registros
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
 
@@ -1502,7 +1811,6 @@
             }
         }
 
-        
         // ==========================================
         // LIMPIAR BÚSQUEDA
         // ==========================================
@@ -1516,10 +1824,9 @@
         }
 
         // ==========================================
-        // EVENTO: Al cerrar el modal, restaurar modo RFID si corresponde
+        // EVENTO: Al cerrar el modal
         // ==========================================
         document.getElementById('manual-registration-modal').addEventListener('hidden.bs.modal', function() {
-            // Restaurar foco en RFID si estaba en ese modo
             if (currentMode === 'rfid') {
                 setTimeout(() => {
                     document.getElementById('rfid-input').focus();
@@ -1537,7 +1844,6 @@
             const titleEl = document.getElementById('feedback-title');
             const messageEl = document.getElementById('feedback-message');
 
-            // Configurar icono según tipo
             if (tipo === 'success') {
                 icon.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
                 icon.className = 'feedback-icon success';
@@ -1551,10 +1857,7 @@
 
             titleEl.textContent = titulo;
             messageEl.textContent = mensaje;
-
             overlay.classList.add('show');
-
-            // Auto-ocultar después de 2 segundos
             setTimeout(() => ocultarFeedback(), 2000);
         }
 
@@ -1586,7 +1889,6 @@
                     oscillator.stop(audioContext.currentTime + 0.2);
                 }
             } catch (error) {
-                // Sonido no disponible
                 console.log('Audio no disponible');
             }
         }
@@ -1594,7 +1896,8 @@
         // ==========================================
         // FUNCIONES DE UTILIDAD
         // ==========================================
-        function mostrarLoading() {
+        function mostrarLoading(mensaje = 'Cargando...') {
+            document.getElementById('loading-message').textContent = mensaje;
             document.getElementById('loading-overlay').classList.remove('hidden');
         }
 
@@ -1602,7 +1905,13 @@
             document.getElementById('loading-overlay').classList.add('hidden');
         }
 
-        console.log('✅ Sistema de asistencia cargado correctamente');
+        // Limpiar al salir
+        window.addEventListener('beforeunload', () => {
+            detenerScanner();
+            detenerReconocimientoFacial();
+        });
+
+        console.log('✅ Sistema de asistencia con reconocimiento facial cargado correctamente');
     </script>
 </body>
 </html>
