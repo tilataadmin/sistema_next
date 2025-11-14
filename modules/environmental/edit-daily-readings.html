@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.12.17.51">
+    <meta name="page-version" content="25.11.14.12.44">
     <title>Editar Lecturas Históricas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1405,115 +1405,199 @@
             document.getElementById('add-impacto-contenido').innerHTML = impactoHtml;
             document.getElementById('add-impacto').style.display = 'block';
         }
+
+        // ==========================================
+// MANEJAR SUBMIT AGREGAR - VERSIÓN CORREGIDA
+// ==========================================
+async function manejarSubmitAgregar(e) {
+    e.preventDefault();
+    
+    try {
+        mostrarLoading();
         
-        // ==========================================
-        // MANEJAR SUBMIT AGREGAR
-        // ==========================================
-        async function manejarSubmitAgregar(e) {
-            e.preventDefault();
+        const fecha = document.getElementById('add-fecha').value;
+        const motivo = document.getElementById('add-motivo').value.trim();
+        
+        const existe = lecturasCache.find(l => l.reading_date === fecha);
+        if (existe) {
+            showMessage('Esta fecha ya tiene registro', 'danger');
+            ocultarLoading();
+            return;
+        }
+        
+        // Recopilar lecturas de medidores
+        const meterReadings = {};
+        const dailyConsumption = {};
+        
+        // Variables para campos individuales (requeridos por la BD)
+        let captacionReading = 0;
+        let acueductoReading = 0;
+        let tratamientoReading = null; // Este puede ser null
+        let ptarReading = 0;
+        
+        let entradaTotal = 0;
+        let salidaTotal = 0;
+        
+        medidoresActivos.forEach(medidor => {
+            const input = document.getElementById(`add-meter-${medidor.meter_id}`);
+            if (!input) return;
             
-            try {
-                mostrarLoading();
+            const valor = parseFloat(input.value) || null;
+            if (valor !== null) {
+                // Guardar en JSONB
+                meterReadings[medidor.meter_id] = valor;
                 
-                const fecha = document.getElementById('add-fecha').value;
-                const motivo = document.getElementById('add-motivo').value.trim();
+                // Asignar también a campos individuales según el tipo
+                switch(medidor.meter_type) {
+                    case 'fuente_captacion':
+                        captacionReading = valor;
+                        break;
+                    case 'fuente_acueducto':
+                        acueductoReading = valor;
+                        break;
+                    case 'proceso_tratamiento':
+                        tratamientoReading = valor;
+                        break;
+                    case 'salida_ptar':
+                        ptarReading = valor;
+                        break;
+                }
                 
-                const existe = lecturasCache.find(l => l.reading_date === fecha);
-                if (existe) {
-                    showMessage('Esta fecha ya tiene registro', 'danger');
+                if (fechaAnteriorData && fechaAnteriorData.meter_readings) {
+                    const valorAnterior = fechaAnteriorData.meter_readings[medidor.meter_id] || 0;
+                    
+                    // Validar que no sea menor
+                    if (valor < valorAnterior) {
+                        showMessage(`${medidor.meter_name}: La lectura no puede ser menor que la del día anterior`, 'danger');
+                        ocultarLoading();
+                        return;
+                    }
+                    
+                    const consumo = valor - valorAnterior;
+                    dailyConsumption[medidor.meter_id] = consumo;
+                    
+                    const tipoInfo = METER_TYPES[medidor.meter_type];
+                    if (tipoInfo && tipoInfo.includeInBalance) {
+                        if (tipoInfo.balanceType === 'entrada') {
+                            entradaTotal += consumo;
+                        } else if (tipoInfo.balanceType === 'salida') {
+                            salidaTotal += consumo;
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Validar campos individuales obligatorios
+        if (captacionReading === 0) {
+            showMessage('La lectura de Captación es obligatoria', 'danger');
+            ocultarLoading();
+            return;
+        }
+        
+        if (acueductoReading === 0) {
+            showMessage('La lectura de Acueducto es obligatoria', 'danger');
+            ocultarLoading();
+            return;
+        }
+        
+        if (ptarReading === 0) {
+            showMessage('La lectura de PTAR es obligatoria', 'danger');
+            ocultarLoading();
+            return;
+        }
+        
+        // Validar rangos si hay día siguiente
+        if (fechaSiguienteData && fechaSiguienteData.meter_readings) {
+            for (const medidor of medidoresActivos) {
+                const valor = meterReadings[medidor.meter_id];
+                const valorSiguiente = fechaSiguienteData.meter_readings[medidor.meter_id];
+                
+                if (valor && valorSiguiente && valor > valorSiguiente) {
+                    showMessage(`${medidor.meter_name}: La lectura debe ser <= al día siguiente`, 'danger');
                     ocultarLoading();
                     return;
                 }
-                
-                // Recopilar lecturas de medidores
-                const meterReadings = {};
-                const dailyConsumption = {};
-                
-                let entradaTotal = 0;
-                let salidaTotal = 0;
-                
-                medidoresActivos.forEach(medidor => {
-                    const input = document.getElementById(`add-meter-${medidor.meter_id}`);
-                    if (!input) return;
-                    
-                    const valor = parseFloat(input.value) || null;
-                    if (valor !== null) {
-                        meterReadings[medidor.meter_id] = valor;
-                        
-                        if (fechaAnteriorData && fechaAnteriorData.meter_readings) {
-                            const valorAnterior = fechaAnteriorData.meter_readings[medidor.meter_id] || 0;
-                            
-                            // Validar que no sea menor
-                            if (valor < valorAnterior) {
-                                showMessage(`${medidor.meter_name}: La lectura no puede ser menor que la del día anterior`, 'danger');
-                                ocultarLoading();
-                                return;
-                            }
-                            
-                            const consumo = valor - valorAnterior;
-                            dailyConsumption[medidor.meter_id] = consumo;
-                            
-                            const tipoInfo = METER_TYPES[medidor.meter_type];
-                            if (tipoInfo && tipoInfo.includeInBalance) {
-                                if (tipoInfo.balanceType === 'entrada') {
-                                    entradaTotal += consumo;
-                                } else if (tipoInfo.balanceType === 'salida') {
-                                    salidaTotal += consumo;
-                                }
-                            }
-                        }
-                    }
-                });
-                
-                // Validar rangos si hay día siguiente
-                if (fechaSiguienteData && fechaSiguienteData.meter_readings) {
-                    for (const medidor of medidoresActivos) {
-                        const valor = meterReadings[medidor.meter_id];
-                        const valorSiguiente = fechaSiguienteData.meter_readings[medidor.meter_id];
-                        
-                        if (valor && valorSiguiente && valor > valorSiguiente) {
-                            showMessage(`${medidor.meter_name}: La lectura debe ser <= al día siguiente`, 'danger');
-                            ocultarLoading();
-                            return;
-                        }
-                    }
-                }
-                
-                const datos = {
-                    reading_date: fecha,
-                    meter_readings: meterReadings,
-                    daily_consumption: fechaAnteriorData ? dailyConsumption : null,
-                    is_baseline: !fechaAnteriorData
-                };
-                
-                const session = getStoredSession();
-                if (session && session.user) {
-                    datos.recorded_by = session.user.user_id;
-                }
-                
-                await supabaseRequest('/env_water_readings_daily', {
-                    method: 'POST',
-                    body: JSON.stringify(datos)
-                });
-                
-                console.log('✅ Lectura retroactiva agregada');
-                
-                await registrarCambioEnAudit('INSERT', null, null, datos, motivo);
-                
-                // TODO: Recalcular alarmas y día siguiente
-                
-                showMessage('✅ Lectura retroactiva agregada exitosamente', 'success');
-                
-                modalAgregarInstance.hide();
-                await cargarLecturas();
-                
-            } catch (error) {
-                console.error('❌ Error agregando lectura:', error);
-                showMessage('Error al agregar: ' + error.message, 'danger');
-            } finally {
-                ocultarLoading();
             }
         }
+        
+        // Calcular campos _daily para campos individuales
+        let captacionDaily = null;
+        let acueductoDaily = null;
+        let tratamientoDaily = null;
+        let ptarDaily = null;
+        
+        if (fechaAnteriorData && fechaAnteriorData.meter_readings) {
+            // Buscar en meter_readings del día anterior
+            medidoresActivos.forEach(medidor => {
+                const valorAnterior = fechaAnteriorData.meter_readings[medidor.meter_id] || 0;
+                const valorActual = meterReadings[medidor.meter_id] || 0;
+                
+                switch(medidor.meter_type) {
+                    case 'fuente_captacion':
+                        captacionDaily = valorActual - valorAnterior;
+                        break;
+                    case 'fuente_acueducto':
+                        acueductoDaily = valorActual - valorAnterior;
+                        break;
+                    case 'proceso_tratamiento':
+                        if (valorActual > 0) {
+                            tratamientoDaily = valorActual - valorAnterior;
+                        }
+                        break;
+                    case 'salida_ptar':
+                        ptarDaily = valorActual - valorAnterior;
+                        break;
+                }
+            });
+        }
+        
+        // Preparar datos completos
+        const datos = {
+            reading_date: fecha,
+            // Campos individuales (estructura legacy)
+            captacion_reading: captacionReading,
+            acueducto_reading: acueductoReading,
+            tratamiento_reading: tratamientoReading,
+            ptar_reading: ptarReading,
+            captacion_daily: captacionDaily,
+            acueducto_daily: acueductoDaily,
+            tratamiento_daily: tratamientoDaily,
+            ptar_daily: ptarDaily,
+            // Campos JSONB (estructura nueva)
+            meter_readings: meterReadings,
+            daily_consumption: fechaAnteriorData ? dailyConsumption : null,
+            is_baseline: !fechaAnteriorData
+        };
+        
+        const session = getStoredSession();
+        if (session && session.user) {
+            datos.recorded_by = session.user.user_id;
+        }
+        
+        await supabaseRequest('/env_water_readings_daily', {
+            method: 'POST',
+            body: JSON.stringify(datos)
+        });
+        
+        console.log('✅ Lectura retroactiva agregada');
+        
+        await registrarCambioEnAudit('INSERT', null, null, datos, motivo);
+        
+        // TODO: Recalcular alarmas y día siguiente
+        
+        showMessage('✅ Lectura retroactiva agregada exitosamente', 'success');
+        
+        modalAgregarInstance.hide();
+        await cargarLecturas();
+        
+    } catch (error) {
+        console.error('❌ Error agregando lectura:', error);
+        showMessage('Error al agregar: ' + error.message, 'danger');
+    } finally {
+        ocultarLoading();
+    }
+}
         
         // ==========================================
         // ABRIR MODAL EDITAR
@@ -1544,82 +1628,170 @@
         // ==========================================
         // MANEJAR SUBMIT DE EDICIÓN
         // ==========================================
+        
         async function manejarSubmitEdicion(e) {
-            e.preventDefault();
-            
-            try {
-                mostrarLoading();
-                
-                const readingId = document.getElementById('edit-reading-id').value;
-                const motivo = document.getElementById('edit-motivo').value.trim();
-                
-                // Recopilar nuevas lecturas
-                const meterReadings = {};
-                
-                medidoresActivos.forEach(medidor => {
-                    const input = document.getElementById(`edit-meter-${medidor.meter_id}`);
-                    if (input) {
-                        const valor = parseFloat(input.value) || null;
-                        if (valor !== null) {
-                            meterReadings[medidor.meter_id] = valor;
-                        }
+    e.preventDefault();
+    
+    try {
+        mostrarLoading();
+        
+        const readingId = document.getElementById('edit-reading-id').value;
+        const motivo = document.getElementById('edit-motivo').value.trim();
+        
+        // Recopilar nuevas lecturas
+        const meterReadings = {};
+        
+        // Variables para campos individuales
+        let captacionReading = 0;
+        let acueductoReading = 0;
+        let tratamientoReading = null;
+        let ptarReading = 0;
+        
+        medidoresActivos.forEach(medidor => {
+            const input = document.getElementById(`edit-meter-${medidor.meter_id}`);
+            if (input) {
+                const valor = parseFloat(input.value) || null;
+                if (valor !== null) {
+                    // Guardar en JSONB
+                    meterReadings[medidor.meter_id] = valor;
+                    
+                    // Asignar a campos individuales
+                    switch(medidor.meter_type) {
+                        case 'fuente_captacion':
+                            captacionReading = valor;
+                            break;
+                        case 'fuente_acueducto':
+                            acueductoReading = valor;
+                            break;
+                        case 'proceso_tratamiento':
+                            tratamientoReading = valor;
+                            break;
+                        case 'salida_ptar':
+                            ptarReading = valor;
+                            break;
                     }
-                });
-                
-                // Obtener lectura anterior para recalcular consumos
-                const lecturaAnterior = await obtenerLecturaAnterior(lecturaActual.reading_date);
-                
-                const datosActualizados = {
-                    meter_readings: meterReadings
-                };
-                
-                if (!lecturaActual.is_baseline && lecturaAnterior && lecturaAnterior.meter_readings) {
-                    const dailyConsumption = {};
-                    
-                    medidoresActivos.forEach(medidor => {
-                        const valorActual = meterReadings[medidor.meter_id];
-                        const valorAnterior = lecturaAnterior.meter_readings[medidor.meter_id] || 0;
-                        
-                        if (valorActual !== null && valorActual !== undefined) {
-                            if (valorActual < valorAnterior) {
-                                throw new Error(`${medidor.meter_name}: La lectura no puede ser menor que la del día anterior`);
-                            }
-                            
-                            dailyConsumption[medidor.meter_id] = valorActual - valorAnterior;
-                        }
-                    });
-                    
-                    datosActualizados.daily_consumption = dailyConsumption;
                 }
-                
-                const valoresOriginales = {
-                    meter_readings: lecturaActual.meter_readings,
-                    daily_consumption: lecturaActual.daily_consumption
-                };
-                
-                await supabaseRequest('/env_water_readings_daily?reading_id=eq.' + readingId, {
-                    method: 'PATCH',
-                    body: JSON.stringify(datosActualizados)
-                });
-                
-                console.log('✅ Lectura actualizada');
-                
-                await registrarCambioEnAudit('UPDATE', readingId, valoresOriginales, datosActualizados, motivo);
-                
-                // TODO: Recalcular alarmas y día siguiente
-                
-                showMessage('✅ Lectura actualizada exitosamente. Balances recalculados.', 'success');
-                
-                modalEditarInstance.hide();
-                await cargarLecturas();
-                
-            } catch (error) {
-                console.error('❌ Error guardando edición:', error);
-                showMessage('Error al guardar: ' + error.message, 'danger');
-            } finally {
-                ocultarLoading();
             }
+        });
+        
+        // Validar campos individuales obligatorios
+        if (captacionReading === 0) {
+            showMessage('La lectura de Captación es obligatoria', 'danger');
+            ocultarLoading();
+            return;
         }
+        
+        if (acueductoReading === 0) {
+            showMessage('La lectura de Acueducto es obligatoria', 'danger');
+            ocultarLoading();
+            return;
+        }
+        
+        if (ptarReading === 0) {
+            showMessage('La lectura de PTAR es obligatoria', 'danger');
+            ocultarLoading();
+            return;
+        }
+        
+        // Obtener lectura anterior para recalcular consumos
+        const lecturaAnterior = await obtenerLecturaAnterior(lecturaActual.reading_date);
+        
+        // Preparar datos actualizados
+        const datosActualizados = {
+            // Campos individuales
+            captacion_reading: captacionReading,
+            acueducto_reading: acueductoReading,
+            tratamiento_reading: tratamientoReading,
+            ptar_reading: ptarReading,
+            // Campo JSONB
+            meter_readings: meterReadings
+        };
+        
+        if (!lecturaActual.is_baseline && lecturaAnterior && lecturaAnterior.meter_readings) {
+            const dailyConsumption = {};
+            
+            // Calcular consumos para JSONB
+            medidoresActivos.forEach(medidor => {
+                const valorActual = meterReadings[medidor.meter_id];
+                const valorAnterior = lecturaAnterior.meter_readings[medidor.meter_id] || 0;
+                
+                if (valorActual !== null && valorActual !== undefined) {
+                    if (valorActual < valorAnterior) {
+                        throw new Error(`${medidor.meter_name}: La lectura no puede ser menor que la del día anterior`);
+                    }
+                    
+                    dailyConsumption[medidor.meter_id] = valorActual - valorAnterior;
+                }
+            });
+            
+            datosActualizados.daily_consumption = dailyConsumption;
+            
+            // Calcular consumos para campos individuales
+            let captacionDaily = null;
+            let acueductoDaily = null;
+            let tratamientoDaily = null;
+            let ptarDaily = null;
+            
+            medidoresActivos.forEach(medidor => {
+                const valorAnterior = lecturaAnterior.meter_readings[medidor.meter_id] || 0;
+                const valorActual = meterReadings[medidor.meter_id] || 0;
+                
+                switch(medidor.meter_type) {
+                    case 'fuente_captacion':
+                        captacionDaily = valorActual - valorAnterior;
+                        break;
+                    case 'fuente_acueducto':
+                        acueductoDaily = valorActual - valorAnterior;
+                        break;
+                    case 'proceso_tratamiento':
+                        if (valorActual > 0) {
+                            tratamientoDaily = valorActual - valorAnterior;
+                        }
+                        break;
+                    case 'salida_ptar':
+                        ptarDaily = valorActual - valorAnterior;
+                        break;
+                }
+            });
+            
+            datosActualizados.captacion_daily = captacionDaily;
+            datosActualizados.acueducto_daily = acueductoDaily;
+            datosActualizados.tratamiento_daily = tratamientoDaily;
+            datosActualizados.ptar_daily = ptarDaily;
+        }
+        
+        const valoresOriginales = {
+            captacion_reading: lecturaActual.captacion_reading,
+            acueducto_reading: lecturaActual.acueducto_reading,
+            tratamiento_reading: lecturaActual.tratamiento_reading,
+            ptar_reading: lecturaActual.ptar_reading,
+            meter_readings: lecturaActual.meter_readings,
+            daily_consumption: lecturaActual.daily_consumption
+        };
+        
+        await supabaseRequest('/env_water_readings_daily?reading_id=eq.' + readingId, {
+            method: 'PATCH',
+            body: JSON.stringify(datosActualizados)
+        });
+        
+        console.log('✅ Lectura actualizada');
+        
+        await registrarCambioEnAudit('UPDATE', readingId, valoresOriginales, datosActualizados, motivo);
+        
+        // TODO: Recalcular alarmas y día siguiente
+        
+        showMessage('✅ Lectura actualizada exitosamente. Balances recalculados.', 'success');
+        
+        modalEditarInstance.hide();
+        await cargarLecturas();
+        
+    } catch (error) {
+        console.error('❌ Error guardando edición:', error);
+        showMessage('Error al guardar: ' + error.message, 'danger');
+    } finally {
+        ocultarLoading();
+    }
+}
         
         // ==========================================
         // ABRIR MODAL ELIMINAR
