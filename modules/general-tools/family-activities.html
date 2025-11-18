@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.18.13.38">
+    <meta name="page-version" content="25.11.18.13.52">
     <title>Asistencia de familias a actividades - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -933,7 +933,7 @@
                 if (cursosData.length === 0) {
                     // Cargar cursos con la relación grades→sections
                     const cursos = await supabaseRequest(
-                        '/courses?select=course_id,course_name,grades(section_id,sections(section_name))&order=course_name'
+                        '/courses?select=course_id,course_name,course_order,grades(section_id,sections(section_name))&order=course_order'
                     );
                     
                     cursosData = cursos;
@@ -1132,12 +1132,16 @@
                 
                 selectCurso.innerHTML = '<option value="">-- Cargando cursos... --</option>';
                 
-                // Obtener cursos asociados a la actividad
+                // ✅ Obtener cursos asociados con course_order para ordenar
                 const cursos = await supabaseRequest(
-                    `/familia_actividad_cursos?actividad_id=eq.${actividadId}&select=curso_id,courses(course_id,course_name)`
+                    `/familia_actividad_cursos?actividad_id=eq.${actividadId}&select=curso_id,courses(course_id,course_name,course_order)&order=courses(course_order)`
                 );
                 
                 selectCurso.innerHTML = '<option value="">-- Selecciona un curso --</option>';
+                
+                // Ordenar por course_order
+                cursos.sort((a, b) => (a.courses?.course_order || 0) - (b.courses?.course_order || 0));
+                
                 cursos.forEach(c => {
                     const option = document.createElement('option');
                     option.value = c.courses.course_id;
@@ -1151,6 +1155,7 @@
             }
         }
 
+        
         // Cargar estudiantes del curso seleccionado
         async function cargarEstudiantesCurso() {
             try {
@@ -1476,8 +1481,8 @@
                     actividadesIds = actividades.map(a => a.id);
                 }
                 
-                // ✅ CORRECCIÓN: Traer family_code directamente en la query inicial
-                let query = '/familia_actividad_asistencias?select=asistio,estudiante_id,students!inner(family_id,families(family_code))';
+                // ✅ Query con family_name incluido
+                let query = '/familia_actividad_asistencias?select=asistio,estudiante_id,students!inner(family_id,families(family_code,family_name))';
                 
                 // Aplicar filtro de actividades si existe
                 if (actividadesIds) {
@@ -1502,6 +1507,7 @@
                 asistencias.forEach(asist => {
                     const familyId = asist.students?.family_id;
                     const familyCode = asist.students?.families?.family_code;
+                    const familyName = asist.students?.families?.family_name;
                     
                     if (!familyId) return;
                     
@@ -1509,6 +1515,7 @@
                         familias[familyId] = {
                             id: familyId,
                             code: familyCode || 'Sin código',
+                            name: familyName || 'Sin nombre',
                             invitaciones: 0,
                             asistencias: 0
                         };
@@ -1527,38 +1534,45 @@
                     return {
                         id: fam.id,
                         code: fam.code,
+                        name: fam.name,
                         porcentaje: Math.round((fam.asistencias / fam.invitaciones) * 100),
                         asistencias: fam.asistencias,
                         invitaciones: fam.invitaciones
                     };
                 }).filter(f => f.invitaciones > 0);
                 
-                familiasArray.sort((a, b) => b.porcentaje - a.porcentaje);
+                // ✅ Ordenar por: 1) Porcentaje DESC, 2) Total de invitaciones DESC
+                familiasArray.sort((a, b) => {
+                    if (b.porcentaje !== a.porcentaje) {
+                        return b.porcentaje - a.porcentaje;
+                    }
+                    return b.invitaciones - a.invitaciones;
+                });
                 
                 console.log('📊 Ranking calculado:', familiasArray.length, 'familias');
                 
-                // Top 10
+                // ✅ Top 10 - Con nombres y códigos
                 const top = familiasArray.slice(0, 10);
                 document.getElementById('ranking-familias-top').innerHTML = top.length > 0
                     ? `<ul class="list-group list-group-flush">${top.map((fam, idx) => `
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <span>
-                                <strong>${idx + 1}.</strong> Familia ${escapeHtml(fam.code)}
-                                <small class="text-muted d-block">${fam.asistencias} de ${fam.invitaciones} invitaciones</small>
+                                <strong>${idx + 1}.</strong> ${escapeHtml(fam.name)}
+                                <small class="text-muted d-block">Código: ${escapeHtml(fam.code)} | ${fam.asistencias} de ${fam.invitaciones} invitaciones</small>
                             </span>
                             <span class="badge bg-success">${fam.porcentaje}%</span>
                         </li>
                     `).join('')}</ul>`
                     : '<p class="text-muted mb-0">No hay datos disponibles</p>';
                 
-                // Bottom 10
+                // ✅ Bottom 10 - Con nombres y códigos
                 const bottom = familiasArray.slice(-10).reverse();
                 document.getElementById('ranking-familias-bottom').innerHTML = bottom.length > 0
                     ? `<ul class="list-group list-group-flush">${bottom.map(fam => `
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <span>
-                                Familia ${escapeHtml(fam.code)}
-                                <small class="text-muted d-block">${fam.asistencias} de ${fam.invitaciones} invitaciones</small>
+                                ${escapeHtml(fam.name)}
+                                <small class="text-muted d-block">Código: ${escapeHtml(fam.code)} | ${fam.asistencias} de ${fam.invitaciones} invitaciones</small>
                             </span>
                             <span class="badge bg-danger">${fam.porcentaje}%</span>
                         </li>
@@ -1575,7 +1589,7 @@
                     '<p class="text-danger mb-0">Error al cargar datos: ' + error.message + '</p>';
             }
         }
-
+        
         // ==========================================
         // FUNCIONES AUXILIARES
         // ==========================================
