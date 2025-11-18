@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.11.18.13.16">
     <title>Asistencia de familias a actividades - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -1271,6 +1272,10 @@
             }
         }
 
+        // ==========================================
+        // PESTAÑA 3: DASHBOARD E INFORMES (OPTIMIZADO)
+        // ==========================================
+        
         // Cargar actividades sin registro de asistencia
         async function cargarActividadesSinRegistro(fechaDesde, fechaHasta, cursoId) {
             try {
@@ -1278,23 +1283,29 @@
                 container.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></div>';
                 
                 const hoy = new Date().toISOString().split('T')[0];
-                let query = `/familia_actividad_actividades?fecha=lt.${hoy}&select=id,nombre,fecha,familia_actividad_cursos(curso_id)`;
+                let query = `/familia_actividad_actividades?fecha=lt.${hoy}&select=id,nombre,fecha`;
                 
                 if (fechaDesde) query += `&fecha=gte.${fechaDesde}`;
                 if (fechaHasta) query += `&fecha=lte.${fechaHasta}`;
                 
                 const actividades = await supabaseRequest(query);
                 
-                // Filtrar actividades que no tienen asistencias
-                const actividadesSinRegistro = [];
-                for (const act of actividades) {
-                    const asistencias = await supabaseRequest(
-                        `/familia_actividad_asistencias?actividad_id=eq.${act.id}&select=id&limit=1`
-                    );
-                    if (!asistencias || asistencias.length === 0) {
-                        actividadesSinRegistro.push(act);
-                    }
+                if (!actividades || actividades.length === 0) {
+                    container.innerHTML = '<p class="text-muted mb-0"><i class="bi bi-check-circle text-success me-2"></i>No hay actividades en el período seleccionado</p>';
+                    return;
                 }
+                
+                // ✅ OPTIMIZACIÓN: Una sola consulta para todas las actividades
+                const actividadesIds = actividades.map(a => a.id).join(',');
+                const asistencias = await supabaseRequest(
+                    `/familia_actividad_asistencias?actividad_id=in.(${actividadesIds})&select=actividad_id`
+                );
+                
+                // Crear Set de actividades con asistencias
+                const actividadesConAsistencia = new Set(asistencias.map(a => a.actividad_id));
+                
+                // Filtrar actividades sin registro
+                const actividadesSinRegistro = actividades.filter(act => !actividadesConAsistencia.has(act.id));
                 
                 if (actividadesSinRegistro.length === 0) {
                     container.innerHTML = '<p class="text-muted mb-0"><i class="bi bi-check-circle text-success me-2"></i>No hay actividades pendientes de registro</p>';
@@ -1303,7 +1314,7 @@
                 
                 container.innerHTML = `
                     <ul class="list-group list-group-flush">
-                        ${actividadesSinRegistro.map(act => `
+                        ${actividadesSinRegistro.slice(0, 10).map(act => `
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
                                     <strong>${escapeHtml(act.nombre)}</strong>
@@ -1312,6 +1323,11 @@
                                 <span class="badge bg-warning">Sin registro</span>
                             </li>
                         `).join('')}
+                        ${actividadesSinRegistro.length > 10 ? `
+                            <li class="list-group-item text-center text-muted">
+                                <small>... y ${actividadesSinRegistro.length - 10} más</small>
+                            </li>
+                        ` : ''}
                     </ul>
                 `;
                 
@@ -1321,36 +1337,39 @@
                     '<p class="text-danger mb-0">Error al cargar datos</p>';
             }
         }
-
-        // Cargar métricas del dashboard
+        
+        // Cargar métricas del dashboard (OPTIMIZADO)
         async function cargarMetricasDashboard(fechaDesde, fechaHasta, cursoId) {
             try {
-                let query = '/familia_actividad_actividades?select=id,familia_actividad_asistencias(asistio,estudiante_id,students(family_id))';
+                // ✅ Consulta más simple y rápida
+                let queryActividades = '/familia_actividad_actividades?select=id';
                 
-                if (fechaDesde) query += `&fecha=gte.${fechaDesde}`;
-                if (fechaHasta) query += `&fecha=lte.${fechaHasta}`;
+                if (fechaDesde) queryActividades += `&fecha=gte.${fechaDesde}`;
+                if (fechaHasta) queryActividades += `&fecha=lte.${fechaHasta}`;
                 
-                const actividades = await supabaseRequest(query);
-                
-                // Total actividades
+                const actividades = await supabaseRequest(queryActividades);
                 document.getElementById('metric-total-actividades').textContent = actividades.length;
                 
-                // Calcular promedio de asistencia
-                let totalInvitaciones = 0;
-                let totalAsistencias = 0;
-                const familiasSet = new Set();
+                if (actividades.length === 0) {
+                    document.getElementById('metric-promedio-asistencia').textContent = '0%';
+                    document.getElementById('metric-familias-participantes').textContent = '0';
+                    return;
+                }
                 
-                actividades.forEach(act => {
-                    act.familia_actividad_asistencias.forEach(asist => {
-                        totalInvitaciones++;
-                        if (asist.asistio) {
-                            totalAsistencias++;
-                            if (asist.students?.family_id) {
-                                familiasSet.add(asist.students.family_id);
-                            }
-                        }
-                    });
-                });
+                // ✅ Consulta simplificada de asistencias
+                const actividadesIds = actividades.map(a => a.id).join(',');
+                let queryAsistencias = `/familia_actividad_asistencias?actividad_id=in.(${actividadesIds})&select=asistio,estudiante_id,students(family_id)`;
+                
+                const asistencias = await supabaseRequest(queryAsistencias);
+                
+                // Calcular métricas
+                const totalInvitaciones = asistencias.length;
+                const totalAsistencias = asistencias.filter(a => a.asistio).length;
+                const familiasSet = new Set(
+                    asistencias
+                        .filter(a => a.asistio && a.students?.family_id)
+                        .map(a => a.students.family_id)
+                );
                 
                 const promedio = totalInvitaciones > 0 
                     ? Math.round((totalAsistencias / totalInvitaciones) * 100) 
@@ -1361,19 +1380,48 @@
                 
             } catch (error) {
                 console.error('❌ Error cargando métricas:', error);
+                document.getElementById('metric-total-actividades').textContent = 'Error';
+                document.getElementById('metric-promedio-asistencia').textContent = 'Error';
+                document.getElementById('metric-familias-participantes').textContent = 'Error';
             }
         }
-
-        // Cargar ranking de familias
+        
+        // Cargar ranking de familias (OPTIMIZADO)
         async function cargarRankingFamilias(fechaDesde, fechaHasta, cursoId) {
             try {
+                // ✅ Construir query eficiente
                 let query = '/familia_actividad_asistencias?select=asistio,estudiante_id,students(family_id,families(family_code))';
                 
+                // Si hay filtros de fecha, necesitamos incluir la actividad
                 if (fechaDesde || fechaHasta) {
-                    query += ',actividad_id,familia_actividad_actividades(fecha)';
+                    // Primero obtener actividades en el rango
+                    let queryActividades = '/familia_actividad_actividades?select=id';
+                    if (fechaDesde) queryActividades += `&fecha=gte.${fechaDesde}`;
+                    if (fechaHasta) queryActividades += `&fecha=lte.${fechaHasta}`;
+                    
+                    const actividades = await supabaseRequest(queryActividades);
+                    
+                    if (actividades.length === 0) {
+                        document.getElementById('ranking-familias-top').innerHTML = 
+                            '<p class="text-muted mb-0">No hay datos en el período seleccionado</p>';
+                        document.getElementById('ranking-familias-bottom').innerHTML = 
+                            '<p class="text-muted mb-0">No hay datos en el período seleccionado</p>';
+                        return;
+                    }
+                    
+                    const actividadesIds = actividades.map(a => a.id).join(',');
+                    query += `&actividad_id=in.(${actividadesIds})`;
                 }
                 
                 const asistencias = await supabaseRequest(query);
+                
+                if (!asistencias || asistencias.length === 0) {
+                    document.getElementById('ranking-familias-top').innerHTML = 
+                        '<p class="text-muted mb-0">No hay datos disponibles</p>';
+                    document.getElementById('ranking-familias-bottom').innerHTML = 
+                        '<p class="text-muted mb-0">No hay datos disponibles</p>';
+                    return;
+                }
                 
                 // Agrupar por familia
                 const familias = {};
@@ -1386,7 +1434,7 @@
                     
                     if (!familias[familyId]) {
                         familias[familyId] = {
-                            code: familyCode,
+                            code: familyCode || 'Sin código',
                             invitaciones: 0,
                             asistencias: 0
                         };
@@ -1408,7 +1456,7 @@
                         asistencias: fam.asistencias,
                         invitaciones: fam.invitaciones
                     };
-                });
+                }).filter(f => f.invitaciones > 0); // Solo familias con invitaciones
                 
                 familiasArray.sort((a, b) => b.porcentaje - a.porcentaje);
                 
@@ -1418,7 +1466,7 @@
                     ? `<ul class="list-group list-group-flush">${top.map((fam, idx) => `
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <span>
-                                <strong>${idx + 1}.</strong> Familia ${fam.code}
+                                <strong>${idx + 1}.</strong> Familia ${escapeHtml(fam.code)}
                                 <small class="text-muted d-block">${fam.asistencias} de ${fam.invitaciones} invitaciones</small>
                             </span>
                             <span class="badge bg-success">${fam.porcentaje}%</span>
@@ -1426,13 +1474,13 @@
                     `).join('')}</ul>`
                     : '<p class="text-muted mb-0">No hay datos disponibles</p>';
                 
-                // Bottom 10
+                // Bottom 10 (invertido)
                 const bottom = familiasArray.slice(-10).reverse();
                 document.getElementById('ranking-familias-bottom').innerHTML = bottom.length > 0
                     ? `<ul class="list-group list-group-flush">${bottom.map(fam => `
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <span>
-                                Familia ${fam.code}
+                                Familia ${escapeHtml(fam.code)}
                                 <small class="text-muted d-block">${fam.asistencias} de ${fam.invitaciones} invitaciones</small>
                             </span>
                             <span class="badge bg-danger">${fam.porcentaje}%</span>
@@ -1442,8 +1490,13 @@
                 
             } catch (error) {
                 console.error('❌ Error cargando ranking:', error);
+                document.getElementById('ranking-familias-top').innerHTML = 
+                    '<p class="text-danger mb-0">Error al cargar datos</p>';
+                document.getElementById('ranking-familias-bottom').innerHTML = 
+                    '<p class="text-danger mb-0">Error al cargar datos</p>';
             }
         }
+
 
         // ==========================================
         // FUNCIONES AUXILIARES
