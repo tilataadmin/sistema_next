@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.11.18.13.07">
     <title>Captura de Datos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -525,7 +526,12 @@
         
         async function renderManualWithSegments(variable, yearId, monthNumber) {
             const segment = variable.variable_segments[0]; // Solo 1 segmentación para manuales
-            const segmentInfo = segment.segments;
+            
+            // ✅ CORRECCIÓN: Asegurar que segment_id esté disponible
+            const segmentInfo = {
+                segment_id: segment.segment_id,  // Tomar del nivel correcto
+                ...segment.segments               // Expandir las demás propiedades
+            };
             
             // Obtener opciones de la segmentación (genéricas o dinámicas)
             const segmentOptions = await getSegmentOptions(segmentInfo);
@@ -568,7 +574,7 @@
             
             return segmentSelectHtml;
         }
-        
+
         // ==========================================
         // CARGAR VALOR DE SEGMENTO ESPECÍFICO
         // ==========================================
@@ -595,6 +601,13 @@
             // Construir segment_combination
             const segmentCombination = {
                 [segmentId]: selectedValue
+            };
+            
+            // Guardar en variable temporal global para uso posterior
+            window[`segmentData_${variableId}`] = {
+                segmentCombination: segmentCombination,
+                segmentId: segmentId,
+                selectedValue: selectedValue
             };
             
             // Buscar valor existente
@@ -643,7 +656,7 @@
                     <div class="col-md-2 d-flex align-items-end">
                         <button 
                             class="btn btn-primary w-100" 
-                            onclick="saveManualValue('${variableId}', '${yearId}', ${monthNumber}, '${JSON.stringify(segmentCombination).replace(/'/g, "\\'")}', ${valueId ? "'" + valueId + "'" : 'null'})"
+                            onclick="saveManualValueWithSegment('${variableId}', '${yearId}', ${monthNumber}, ${valueId ? "'" + valueId + "'" : 'null'})"
                         >
                             <i class="bi bi-${existingValue ? 'pencil' : 'save'} me-1"></i>
                             ${existingValue ? 'Actualizar' : 'Guardar'}
@@ -652,11 +665,40 @@
                 </div>
             `;
         }
+
+        // ==========================================
+        // GUARDAR VALOR MANUAL CON SEGMENTO (helper)
+        // ==========================================
+        
+        async function saveManualValueWithSegment(variableId, yearId, monthNumber, valueId) {
+            // Recuperar datos de segmentación guardados temporalmente
+            const segmentData = window[`segmentData_${variableId}`];
+            
+            if (!segmentData || !segmentData.segmentCombination) {
+                showMessage('Error: No se pudo recuperar la información de segmentación', 'danger');
+                return;
+            }
+            
+            // 🔍 DEBUG: Ver qué valor estamos capturando
+            const valueInput = document.getElementById(`value-${variableId}-segment`);
+            const capturedValue = parseFloat(valueInput.value);
+            
+            console.log('🔍 DEBUG - Valor capturado del input:', valueInput.value);
+            console.log('🔍 DEBUG - Valor parseado:', capturedValue);
+            console.log('🔍 DEBUG - Tipo de dato:', typeof capturedValue);
+            console.log('🔍 DEBUG - Segmentación:', segmentData.segmentCombination);
+            
+            // Llamar a la función principal con el objeto correcto
+            await saveManualValue(variableId, yearId, monthNumber, segmentData.segmentCombination, valueId);
+        }
+
+
+        
         // ==========================================
         // GUARDAR VALOR MANUAL
         // ==========================================
         
-        async function saveManualValue(variableId, yearId, monthNumber, segmentCombinationStr, valueId) {
+        async function saveManualValue(variableId, yearId, monthNumber, segmentCombinationParam, valueId) {
             const variable = manualVariables.find(v => v.variable_id === variableId);
             
             // Determinar el ID correcto del input según si tiene segmentación
@@ -681,7 +723,19 @@
             }
             
             try {
-                const segmentCombination = segmentCombinationStr ? JSON.parse(segmentCombinationStr) : null;
+                // ✅ CORRECCIÓN: Manejar tanto objeto como null/string
+                let segmentCombination = null;
+                
+                if (segmentCombinationParam) {
+                    // Si es string (caso antiguo), parsear
+                    if (typeof segmentCombinationParam === 'string') {
+                        segmentCombination = JSON.parse(segmentCombinationParam);
+                    } 
+                    // Si ya es objeto, usar directamente
+                    else if (typeof segmentCombinationParam === 'object') {
+                        segmentCombination = segmentCombinationParam;
+                    }
+                }
                 
                 const data = {
                     variable_id: variableId,
@@ -724,7 +778,8 @@
                 showMessage('Error al guardar: ' + error.message, 'danger');
             }
         }
-        
+
+                
         // ==========================================
         // RENDERIZAR VARIABLES AUTOMÁTICAS
         // ==========================================
@@ -1124,6 +1179,7 @@
         
         window.loadVariables = loadVariables;
         window.saveManualValue = saveManualValue;
+        window.saveManualValueWithSegment = saveManualValueWithSegment;  // ✅ AGREGAR ESTA LÍNEA
         window.loadSegmentValue = loadSegmentValue;
         window.executeAutomaticVariable = executeAutomaticVariable;
         
