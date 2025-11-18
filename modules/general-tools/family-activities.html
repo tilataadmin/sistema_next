@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.18.13.16">
+    <meta name="page-version" content="25.11.18.13.25">
     <title>Asistencia de familias a actividades - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -1386,15 +1386,15 @@
             }
         }
         
-        // Cargar ranking de familias (OPTIMIZADO)
+        // Cargar ranking de familias (CORREGIDO)
         async function cargarRankingFamilias(fechaDesde, fechaHasta, cursoId) {
             try {
-                // ✅ Construir query eficiente
-                let query = '/familia_actividad_asistencias?select=asistio,estudiante_id,students(family_id,families(family_code))';
+                console.log('📊 Cargando ranking de familias...');
                 
-                // Si hay filtros de fecha, necesitamos incluir la actividad
+                let actividadesIds = null;
+                
+                // Si hay filtros de fecha, obtener IDs de actividades filtradas
                 if (fechaDesde || fechaHasta) {
-                    // Primero obtener actividades en el rango
                     let queryActividades = '/familia_actividad_actividades?select=id';
                     if (fechaDesde) queryActividades += `&fecha=gte.${fechaDesde}`;
                     if (fechaHasta) queryActividades += `&fecha=lte.${fechaHasta}`;
@@ -1409,11 +1409,20 @@
                         return;
                     }
                     
-                    const actividadesIds = actividades.map(a => a.id).join(',');
-                    query += `&actividad_id=in.(${actividadesIds})`;
+                    actividadesIds = actividades.map(a => a.id);
                 }
                 
+                // ✅ Consulta simplificada - sin JOINs innecesarios
+                let query = '/familia_actividad_asistencias?select=asistio,students!inner(family_id)';
+                
+                // Aplicar filtro de actividades si existe
+                if (actividadesIds) {
+                    query += `&actividad_id=in.(${actividadesIds.join(',')})`;
+                }
+                
+                console.log('📡 Query ranking:', query);
                 const asistencias = await supabaseRequest(query);
+                console.log('✅ Asistencias obtenidas:', asistencias.length);
                 
                 if (!asistencias || asistencias.length === 0) {
                     document.getElementById('ranking-familias-top').innerHTML = 
@@ -1428,13 +1437,12 @@
                 
                 asistencias.forEach(asist => {
                     const familyId = asist.students?.family_id;
-                    const familyCode = asist.students?.families?.family_code;
                     
                     if (!familyId) return;
                     
                     if (!familias[familyId]) {
                         familias[familyId] = {
-                            code: familyCode || 'Sin código',
+                            id: familyId,
                             invitaciones: 0,
                             asistencias: 0
                         };
@@ -1446,19 +1454,34 @@
                     }
                 });
                 
+                console.log('👨‍👩‍👧‍👦 Familias procesadas:', Object.keys(familias).length);
+                
+                // Ahora obtener los códigos de familia en una sola consulta
+                const familyIds = Object.keys(familias).join(',');
+                const familiasData = await supabaseRequest(
+                    `/families?family_id=in.(${familyIds})&select=family_id,family_code`
+                );
+                
+                // Mapear códigos
+                const familyCodesMap = {};
+                familiasData.forEach(f => {
+                    familyCodesMap[f.family_id] = f.family_code;
+                });
+                
                 // Calcular porcentajes y ordenar
-                const familiasArray = Object.keys(familias).map(id => {
-                    const fam = familias[id];
+                const familiasArray = Object.values(familias).map(fam => {
                     return {
-                        id: id,
-                        code: fam.code,
+                        id: fam.id,
+                        code: familyCodesMap[fam.id] || 'Sin código',
                         porcentaje: Math.round((fam.asistencias / fam.invitaciones) * 100),
                         asistencias: fam.asistencias,
                         invitaciones: fam.invitaciones
                     };
-                }).filter(f => f.invitaciones > 0); // Solo familias con invitaciones
+                }).filter(f => f.invitaciones > 0);
                 
                 familiasArray.sort((a, b) => b.porcentaje - a.porcentaje);
+                
+                console.log('📊 Ranking calculado:', familiasArray.length, 'familias');
                 
                 // Top 10
                 const top = familiasArray.slice(0, 10);
@@ -1474,7 +1497,7 @@
                     `).join('')}</ul>`
                     : '<p class="text-muted mb-0">No hay datos disponibles</p>';
                 
-                // Bottom 10 (invertido)
+                // Bottom 10
                 const bottom = familiasArray.slice(-10).reverse();
                 document.getElementById('ranking-familias-bottom').innerHTML = bottom.length > 0
                     ? `<ul class="list-group list-group-flush">${bottom.map(fam => `
@@ -1488,15 +1511,16 @@
                     `).join('')}</ul>`
                     : '<p class="text-muted mb-0">No hay datos disponibles</p>';
                 
+                console.log('✅ Ranking renderizado correctamente');
+                
             } catch (error) {
                 console.error('❌ Error cargando ranking:', error);
                 document.getElementById('ranking-familias-top').innerHTML = 
-                    '<p class="text-danger mb-0">Error al cargar datos</p>';
+                    '<p class="text-danger mb-0">Error al cargar datos: ' + error.message + '</p>';
                 document.getElementById('ranking-familias-bottom').innerHTML = 
-                    '<p class="text-danger mb-0">Error al cargar datos</p>';
+                    '<p class="text-danger mb-0">Error al cargar datos: ' + error.message + '</p>';
             }
         }
-
 
         // ==========================================
         // FUNCIONES AUXILIARES
