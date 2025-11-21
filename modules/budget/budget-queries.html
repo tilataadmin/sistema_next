@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.21.09.33">
+    <meta name="page-version" content="25.11.21.09.42">
     <title>Consultas de Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -415,6 +415,7 @@
         let itemsList = [];
         let workersList = [];
         let yearsList = [];
+        let currentBudgetYearId = null; // Año vigente de presupuesto
 
         // ==========================================
         // INICIALIZACIÓN
@@ -472,6 +473,7 @@
             try {
                 // Cargar en paralelo todos los filtros
                 await Promise.all([
+                    cargarYearVigente(),
                     cargarCategorias(),
                     cargarTodosItems(),
                     cargarTrabajadores(),
@@ -485,6 +487,27 @@
                 ocultarLoading();
                 console.error('Error cargando filtros:', error);
                 showMessage('Error al cargar filtros: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // CARGAR AÑO VIGENTE DE PRESUPUESTO
+        // ==========================================
+        async function cargarYearVigente() {
+            try {
+                const query = '/system_config?select=current_budget_year_id&limit=1';
+                const data = await supabaseRequest(query);
+                
+                if (data && data.length > 0 && data[0].current_budget_year_id) {
+                    currentBudgetYearId = data[0].current_budget_year_id;
+                    console.log(`✅ Año vigente de presupuesto: ${currentBudgetYearId}`);
+                } else {
+                    console.warn('⚠️ No se encontró año vigente de presupuesto en system_config');
+                }
+
+            } catch (error) {
+                console.error('Error cargando año vigente:', error);
+                // No lanzar error, continuar sin preselección
             }
         }
 
@@ -621,10 +644,20 @@
                     const option = document.createElement('option');
                     option.value = year.year_id;
                     option.textContent = year.year_name;
+                    
+                    // Preseleccionar el año vigente de presupuesto
+                    if (currentBudgetYearId && year.year_id === currentBudgetYearId) {
+                        option.selected = true;
+                    }
+                    
                     select.appendChild(option);
                 });
 
                 console.log(`✅ ${yearsList.length} años cargados`);
+                
+                if (currentBudgetYearId) {
+                    console.log(`✅ Año vigente preseleccionado: ${currentBudgetYearId}`);
+                }
 
             } catch (error) {
                 console.error('Error cargando años:', error);
@@ -659,7 +692,14 @@
             document.getElementById('filtro-categoria').value = '';
             document.getElementById('filtro-item').value = '';
             document.getElementById('filtro-trabajador').value = '';
-            document.getElementById('filtro-year').value = '';
+            
+            // Restablecer al año vigente o vacío si no existe
+            const selectYear = document.getElementById('filtro-year');
+            if (currentBudgetYearId) {
+                selectYear.value = currentBudgetYearId;
+            } else {
+                selectYear.value = '';
+            }
             
             // Recargar todos los ítems
             cargarItemsPorCategoria('');
@@ -695,7 +735,8 @@
                 </div>
             `;
         }
-      // ==========================================
+
+        // ==========================================
         // REALIZAR CONSULTA
         // ==========================================
         async function realizarConsulta() {
@@ -746,8 +787,8 @@
         // ==========================================
         async function consultarAsignaciones(filtros) {
             try {
-                // Construir query base
-                let query = '/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,worker_email,academic_year_id,budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),worker:workers!budget_assignments_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&assignment_status=eq.active';
+                // Construir query base - AGREGADO budget_item_id
+                let query = '/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,worker_email,academic_year_id,budget_item_id,budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),worker:workers!budget_assignments_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&assignment_status=eq.active';
                 
                 // Aplicar filtros
                 if (filtros.year) {
@@ -869,13 +910,14 @@
 
             divResultados.innerHTML = html;
         }
-      // ==========================================
+
+        // ==========================================
         // CONSULTAR REQUERIMIENTOS
         // ==========================================
         async function consultarRequerimientos(filtros) {
             try {
-                // Construir query base con relaciones
-                let query = '/execution_requests?select=request_id,requested_at,requested_value,responded_at,closed_value,request_status,assignment:budget_assignments!execution_requests_assignment_fkey(budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),authorizer:workers!budget_assignments_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)),requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&order=requested_at.desc';
+                // Construir query base con relaciones - CORREGIDO execution_requests_assignment_fkey
+                let query = '/execution_requests?select=request_id,requested_at,requested_value,responded_at,closed_value,request_status,assignment:budget_assignments!execution_requests_assignment_fkey(budget_item_id,budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),worker_email,authorizer:workers!budget_assignments_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)),requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&order=requested_at.desc';
                 
                 let data = await supabaseRequest(query);
                 
@@ -1008,8 +1050,8 @@
         // ==========================================
         async function consultarSobreejecuciones(filtros) {
             try {
-                // Obtener todos los requerimientos
-                let query = '/execution_requests?select=request_id,requested_at,requested_value,closed_value,overrun_reasons,assignment:budget_assignments!execution_requests_assignment_fkey(budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name)),requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&order=requested_at.desc';
+                // Obtener todos los requerimientos - CORREGIDO execution_requests_assignment_fkey
+                let query = '/execution_requests?select=request_id,requested_at,requested_value,closed_value,overrun_reasons,assignment:budget_assignments!execution_requests_assignment_fkey(budget_item_id,budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),worker_email),requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&order=requested_at.desc';
                 
                 let data = await supabaseRequest(query);
                 
@@ -1132,7 +1174,8 @@
 
             divResultados.innerHTML = html;
         }
-      // ==========================================
+
+        // ==========================================
         // FORMATEAR ESTADO
         // ==========================================
         function formatEstado(estado) {
