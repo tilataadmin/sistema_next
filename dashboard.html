@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.24.13.23">
+    <meta name="page-version" content="25.11.09.05.20">
     <title>Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -421,14 +421,13 @@
             },
             {
                 id: 'general-tools',
-                moduleId: '',  // Módulo público - visible para todos los usuarios autenticados
+                moduleId: '',
                 name: 'Herramientas Generales',
                 description: 'Gestión de tareas y herramientas transversales del sistema',
                 icon: 'bi-tools',
                 path: '/modules/general-tools/',
                 color: '#6c757d',
-                lightColor: '#e9ecef',
-                isPublic: true  // Flag explícito para módulos públicos
+                lightColor: '#e9ecef'
             },
             {
                 id: 'environmental',
@@ -462,14 +461,13 @@
             },
             {
                 id: 'profile',
-                moduleId: '',  // Módulo público - visible para todos los usuarios autenticados
+                moduleId: '',
                 name: 'Mi Perfil',
                 description: 'Ver y configurar información personal, seguridad y calendario',
                 icon: 'bi-person-circle',
                 path: '/modules/profile/',
                 color: '#9b59b6',
-                lightColor: '#e8daef',
-                isPublic: true  // Flag explícito para módulos públicos
+                lightColor: '#e8daef'
             }
         ];
         
@@ -523,7 +521,6 @@
         let userPermissions = [];
         let metricsLoaded = false;
         let modulePermissionsCache = {};
-        let isSuperAdmin = false;  // Nueva variable para cachear estado de super admin
 
         // ==========================================
         // 🚀 FUNCIÓN CLAVE: CARGAR TODOS LOS PERMISOS EN 1 QUERY
@@ -536,9 +533,6 @@
                     '/permissions?select=permission_name,permission_module&permission_status=eq.active'
                 );
                 
-                // Limpiar cache antes de llenar
-                modulePermissionsCache = {};
-                
                 allPermissions.forEach(perm => {
                     const moduleName = perm.permission_module;
                     
@@ -549,22 +543,15 @@
                     modulePermissionsCache[moduleName].push(perm.permission_name);
                 });
                 
-                // Asignar permisos a cada módulo en MODULES_CONFIG
                 MODULES_CONFIG.forEach(module => {
                     if (module.moduleId) {
                         module.modulePermissions = modulePermissionsCache[module.moduleId] || [];
-                        
-                        // Log de advertencia si el módulo tiene moduleId pero no hay permisos en BD
-                        if (module.modulePermissions.length === 0) {
-                            console.warn(`⚠️ Módulo "${module.name}" tiene moduleId="${module.moduleId}" pero no hay permisos en BD`);
-                        }
                     } else {
                         module.modulePermissions = [];
                     }
                 });
                 
-                console.log('✅ Permisos cargados:', Object.keys(modulePermissionsCache).length, 'módulos en BD');
-                console.log('📋 Módulos en BD:', Object.keys(modulePermissionsCache));
+                console.log('✅ Permisos cargados:', Object.keys(modulePermissionsCache).length, 'módulos');
                 
             } catch (error) {
                 console.error('❌ Error cargando permisos:', error);
@@ -606,14 +593,10 @@
         // ==========================================
         async function cargarDatosUsuario() {
             try {
-                // Verificar si es super admin primero
-                isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
-                
                 userRoles = await obtenerRolesUsuario(currentUser.user_id);
                 userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
                 
                 console.log('✅ Datos de usuario cargados');
-                console.log('👑 Es Super Admin:', isSuperAdmin);
                 console.log('🔑 Roles:', userRoles);
                 console.log('🔐 Permisos:', userPermissions.length);
                 
@@ -640,9 +623,8 @@
         // ==========================================
         async function obtenerTodosLosPermisosUsuario(userId) {
             try {
-                // Si es super admin, tiene todos los permisos
+                const isSuperAdmin = await checkUserIsSuperAdmin(userId);
                 if (isSuperAdmin) {
-                    console.log('👑 Super Admin - acceso total a todos los permisos');
                     return Object.values(modulePermissionsCache).flat();
                 }
                 
@@ -720,7 +702,7 @@
         }
 
         // ==========================================
-        // 🔧 CARGAR MÓDULOS SEGÚN PERMISOS - CORREGIDO
+        // CARGAR MÓDULOS SEGÚN PERMISOS
         // ==========================================
         async function cargarModulos() {
             try {
@@ -728,54 +710,17 @@
                 
                 const container = document.getElementById('modules-container');
                 let modulesHtml = '';
-                let modulesWithAccess = 0;
-                let modulesWithoutAccess = 0;
                 
                 for (const module of MODULES_CONFIG) {
-                    // ==========================================
-                    // 🎯 LÓGICA DE ACCESO CORREGIDA
-                    // ==========================================
-                    let hasAccess = false;
-                    
-                    // Caso 1: Super Admin tiene acceso a todo
-                    if (isSuperAdmin) {
-                        hasAccess = true;
-                        console.log(`👑 Módulo ${module.name}: acceso por Super Admin`);
-                    }
-                    // Caso 2: Módulos públicos (sin moduleId o con flag isPublic)
-                    else if (!module.moduleId || module.isPublic === true) {
-                        hasAccess = true;
-                        console.log(`🌐 Módulo ${module.name}: acceso público`);
-                    }
-                    // Caso 3: Módulos con permisos definidos en BD
-                    else if (module.modulePermissions && module.modulePermissions.length > 0) {
-                        // Usuario debe tener AL MENOS UN permiso del módulo
-                        hasAccess = module.modulePermissions.some(perm => 
+                    const hasAccess = module.modulePermissions.length === 0 || 
+                        module.modulePermissions.some(perm => 
                             userPermissions.includes(perm)
                         );
-                        
-                        if (hasAccess) {
-                            console.log(`✅ Módulo ${module.name}: acceso por permiso`);
-                        } else {
-                            console.log(`❌ Módulo ${module.name}: sin permisos requeridos`);
-                        }
-                    }
-                    // Caso 4: Módulo tiene moduleId pero NO hay permisos en BD
-                    else {
-                        // NO mostrar - es un error de configuración
-                        hasAccess = false;
-                        console.warn(`⚠️ Módulo ${module.name}: moduleId="${module.moduleId}" sin permisos en BD - OCULTO`);
-                    }
                     
-                    // ==========================================
-                    // Renderizar o saltar según acceso
-                    // ==========================================
                     if (!hasAccess) {
-                        modulesWithoutAccess++;
+                        console.log(`⏭️ Módulo ${module.name} omitido - sin permisos`);
                         continue;
                     }
-                    
-                    modulesWithAccess++;
                     
                     modulesHtml += `
                         <div class="col-12 col-md-6 col-lg-4">
@@ -794,7 +739,6 @@
                     `;
                 }
                 
-                // Mostrar resultado
                 if (modulesHtml === '') {
                     container.innerHTML = `
                         <div class="col-12">
@@ -808,7 +752,7 @@
                     container.innerHTML = modulesHtml;
                 }
                 
-                console.log(`✅ Módulos cargados: ${modulesWithAccess} visibles, ${modulesWithoutAccess} ocultos`);
+                console.log('✅ Módulos cargados correctamente');
                 
             } catch (error) {
                 console.error('❌ Error cargando módulos:', error);
@@ -904,11 +848,6 @@
         // VERIFICAR ACCESO A MÉTRICA POR ROLES
         // ==========================================
         function verificarAccesoMetrica(metric, userRoles) {
-            // Super Admin tiene acceso a todas las métricas
-            if (isSuperAdmin) {
-                return true;
-            }
-            
             if (!metric.allowedRoles || metric.allowedRoles.length === 0) {
                 return true;
             }
@@ -978,7 +917,7 @@
         window.cerrarSesion = cerrarSesion;
         window.cargarMetricas = cargarMetricas;
         
-        console.log('🎉 Dashboard SchoolNet v25.11.24.10.00 - Permisos corregidos');
+        console.log('🎉 Dashboard SchoolNet Optimizado v25.11.09.12.30');
     </script>
 </body>
 </html>
