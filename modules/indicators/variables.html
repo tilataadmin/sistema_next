@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.21.12.48">
+    <meta name="page-version" content="25.11.25.08.05">
     <title>Variables - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -216,8 +216,9 @@
                     </div>
                     <div class="col-md-2">
                         <select class="form-select" id="filterOwner" onchange="filterVariables()">
-                            <option value="">Todos</option>
-                            <option value="mine">Mis variables</option>
+                            <option value="">Todos los creadores</option>
+                            <option value="mine">Solo mis variables</option>
+                            <!-- Se llenará dinámicamente con creadores -->
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -566,6 +567,7 @@
         let currentDataSource = 'manual'; // Nuevo
         let availableUsers = []; // NUEVO: Lista de usuarios para responsables
         let selectedCategoryFilters = []; // Categorías seleccionadas para filtro
+        let availableCreators = []; // Lista de creadores únicos
         
         // ==========================================
         // INICIALIZACIÓN
@@ -835,6 +837,7 @@
                 filteredVariables = [...allVariables];
                 renderVariablesGrid();
                 loadStats();
+                loadCreators(); // NUEVO: Cargar lista de creadores
                 
                 console.log(`✅ ${allVariables.length} variables cargadas con categorías heredadas`);
                 
@@ -907,6 +910,73 @@
                 console.error('❌ Error cargando categorías:', error);
                 availableCategories = [];
             }
+        }
+
+        // ==========================================
+        // CARGAR CREADORES ÚNICOS
+        // ==========================================
+        
+        async function loadCreators() {
+            try {
+                // Obtener IDs únicos de propietarios
+                const uniqueOwnerIds = [...new Set(allVariables.map(v => v.owner_id))].filter(id => id);
+                
+                if (uniqueOwnerIds.length === 0) {
+                    availableCreators = [];
+                    return;
+                }
+                
+                // Cargar información de usuarios
+                const users = await supabaseRequest(`/users?select=user_id,user_name,user_display_name&user_id=in.(${uniqueOwnerIds.join(',')})`);
+                
+                availableCreators = users || [];
+                
+                // Renderizar opciones en el select
+                renderCreatorsFilter();
+                
+                console.log(`✅ ${availableCreators.length} creadores cargados`);
+            } catch (error) {
+                console.error('❌ Error cargando creadores:', error);
+                availableCreators = [];
+            }
+        }
+        
+        // ==========================================
+        // RENDERIZAR SELECT DE CREADORES
+        // ==========================================
+        
+        function renderCreatorsFilter() {
+            const select = document.getElementById('filterOwner');
+            
+            if (!select) return;
+            
+            // Mantener las opciones base
+            const baseHTML = `
+                <option value="">Todos los creadores</option>
+                <option value="mine">Solo mis variables</option>
+            `;
+            
+            // Agregar separador si hay creadores
+            let creatorsHTML = '';
+            if (availableCreators.length > 0) {
+                creatorsHTML = '<option disabled>──────────</option>';
+                
+                // Ordenar por nombre
+                const sortedCreators = [...availableCreators].sort((a, b) => {
+                    const nameA = (a.user_display_name || a.user_name).toLowerCase();
+                    const nameB = (b.user_display_name || b.user_name).toLowerCase();
+                    return nameA.localeCompare(nameB);
+                });
+                
+                // Agregar cada creador
+                sortedCreators.forEach(user => {
+                    const displayName = user.user_display_name || user.user_name;
+                    const variableCount = allVariables.filter(v => v.owner_id === user.user_id).length;
+                    creatorsHTML += `<option value="${user.user_id}">${displayName} (${variableCount})</option>`;
+                });
+            }
+            
+            select.innerHTML = baseHTML + creatorsHTML;
         }
 
         // ==========================================
@@ -1531,7 +1601,16 @@
                 
                 const matchesDataSource = !dataSourceFilter || (variable.data_source || 'manual') === dataSourceFilter;
                 const matchesPeriodicity = !periodicityFilter || variable.periodicity === periodicityFilter;
-                const matchesOwner = !ownerFilter || (ownerFilter === 'mine' && currentUser && variable.owner_id === currentUser.user_id);
+                // Lógica mejorada de filtro de creador
+                let matchesOwner = true;
+                if (ownerFilter) {
+                    if (ownerFilter === 'mine') {
+                        matchesOwner = currentUser && variable.owner_id === currentUser.user_id;
+                    } else {
+                        // Filtrar por creador específico (user_id)
+                        matchesOwner = variable.owner_id === ownerFilter;
+                    }
+                }
                 const matchesStatus = !statusFilter || variable.variable_status === statusFilter;
 
                 
@@ -1552,7 +1631,7 @@
             document.getElementById('searchVariables').value = '';
             document.getElementById('filterDataSource').value = '';
             document.getElementById('filterPeriodicity').value = '';
-            document.getElementById('filterOwner').value = '';
+            document.getElementById('filterOwner').value = ''; // Cambiado: limpiar completamente
             document.getElementById('filterStatus').value = 'active';
             
             // Limpiar filtro de categorías
@@ -2495,6 +2574,8 @@
         window.clearCategoryFilter = clearCategoryFilter;
         window.clearAllSegments = clearAllSegments;
         window.deleteVariable = deleteVariable;
+        window.loadCreators = loadCreators;
+        window.renderCreatorsFilter = renderCreatorsFilter;
         
         console.log('🎉 Página de variables cargada correctamente');
     </script>
