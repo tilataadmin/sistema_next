@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.26.06.47">
+    <meta name="page-version" content="25.11.26.06.51">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1414,51 +1414,59 @@
                 if (selectedDate < today) { showMessage('La fecha límite no puede ser anterior a hoy', 'warning'); ocultarLoading(); return; }
                 
                 // Crear la tarea
-                const tareaCreada = await supabaseRequest('/tasks?select=task_id', { 
+                await supabaseRequest('/tasks', { 
                     method: 'POST', 
-                    body: JSON.stringify(datos),
-                    headers: { 'Prefer': 'return=representation' }
+                    body: JSON.stringify(datos)
                 });
-                
-                const taskId = tareaCreada[0]?.task_id;
                 
                 // Enviar notificación al responsable principal
                 const emailSent = await enviarNotificacionTarea(datos.assigned_to_mail, datos.task_description, datos.due_date, datos.task_priority, currentUser.user_display_name || currentUser.user_mail);
                 
-                // Crear colaboradores si hay
+                // Si hay colaboradores, buscar el task_id de la tarea recién creada
                 let colaboradoresCreados = 0;
                 let colaboradoresNotificados = 0;
                 
-                if (taskId && colaboradoresNuevaTarea.length > 0) {
-                    for (const colab of colaboradoresNuevaTarea) {
-                        try {
-                            await supabaseRequest('/task_collaborators', {
-                                method: 'POST',
-                                body: JSON.stringify({
-                                    task_id: taskId,
-                                    worker_email: colab.email,
-                                    worker_name: colab.nombre,
-                                    added_by: currentUser.user_id,
-                                    added_by_name: currentUser.user_display_name || currentUser.user_mail,
-                                    collaborator_status: 'active'
-                                })
-                            });
-                            colaboradoresCreados++;
-                            
-                            // Enviar notificación al colaborador
-                            const notifColab = await enviarNotificacionColaborador(
-                                colab.email, 
-                                datos.task_description, 
-                                datos.due_date, 
-                                datos.task_priority, 
-                                datos.assigned_to_name, 
-                                currentUser.user_display_name || currentUser.user_mail
-                            );
-                            if (notifColab) colaboradoresNotificados++;
-                            
-                        } catch (err) {
-                            console.error('Error creando colaborador:', colab.email, err);
+                if (colaboradoresNuevaTarea.length > 0) {
+                    // Buscar la tarea recién creada
+                    const tareasRecientes = await supabaseRequest(
+                        `/tasks?select=task_id&task_description=eq.${encodeURIComponent(datos.task_description)}&created_by=eq.${currentUser.user_id}&order=created_at.desc&limit=1`
+                    );
+                    
+                    const taskId = tareasRecientes && tareasRecientes[0] ? tareasRecientes[0].task_id : null;
+                    
+                    if (taskId) {
+                        for (const colab of colaboradoresNuevaTarea) {
+                            try {
+                                await supabaseRequest('/task_collaborators', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        task_id: taskId,
+                                        worker_email: colab.email,
+                                        worker_name: colab.nombre,
+                                        added_by: currentUser.user_id,
+                                        added_by_name: currentUser.user_display_name || currentUser.user_mail,
+                                        collaborator_status: 'active'
+                                    })
+                                });
+                                colaboradoresCreados++;
+                                
+                                // Enviar notificación al colaborador
+                                const notifColab = await enviarNotificacionColaborador(
+                                    colab.email, 
+                                    datos.task_description, 
+                                    datos.due_date, 
+                                    datos.task_priority, 
+                                    datos.assigned_to_name, 
+                                    currentUser.user_display_name || currentUser.user_mail
+                                );
+                                if (notifColab) colaboradoresNotificados++;
+                                
+                            } catch (err) {
+                                console.error('Error creando colaborador:', colab.email, err);
+                            }
                         }
+                    } else {
+                        console.warn('No se pudo obtener task_id para agregar colaboradores');
                     }
                 }
                 
