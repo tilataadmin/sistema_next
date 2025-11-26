@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.21.15.07">
+    <meta name="page-version" content="25.11.26.15.44">
     <title>Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -168,6 +168,20 @@
                 font-size: 1.25rem;
             }
         }
+
+        /* Tarjetas ocultas por defecto hasta validar permisos */
+        .function-card[data-permission] {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .function-card.authorized {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        
     </style>
 </head>
 <body>
@@ -754,42 +768,33 @@
                 currentUser = session.user;
                 userEmail = session.user.user_mail;
                 
-                const isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
-                if (isSuperAdmin) {
-                    console.log('✅ Acceso permitido - es Super Admin');
+                // Obtener permisos una sola vez y guardarlos
+                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
+                
+                // Guardar en variable global para reutilizar
+                window._cachedUserPermissions = userPermissions;
+                
+                // Si tiene todos los permisos del módulo, es super admin
+                if (userPermissions.length === MODULE_CONFIG.modulePermissions.length) {
+                    console.log('✅ Acceso permitido - Super Admin o permisos completos');
                     return true;
                 }
                 
-                const modulePermissions = MODULE_CONFIG.modulePermissions || [];
+                // Verificar si tiene al menos un permiso del módulo
+                const hasAnyPermission = MODULE_CONFIG.modulePermissions.some(p => 
+                    userPermissions.includes(p)
+                );
                 
-                if (modulePermissions.length === 0) {
-                    console.warn('⚠️ No hay permisos configurados para este módulo');
+                if (hasAnyPermission) {
+                    console.log('✅ Acceso permitido al módulo');
                     return true;
-                }
-                
-                for (const permission of modulePermissions) {
-                    const hasPermission = await checkUserPermission(currentUser.user_id, permission);
-                    if (hasPermission) {
-                        console.log(`✅ Acceso permitido con permiso: ${permission}`);
-                        return true;
-                    }
                 }
                 
                 console.log('❌ Sin permisos para este módulo');
                 return false;
                 
             } catch (error) {
-                console.error('❌ Error verificando permisos de módulo:', error);
-                return false;
-            }
-        }
-
-        async function checkUserIsSuperAdmin(userId) {
-            try {
-                const userData = await supabaseRequest(`/user_roles?select=roles(is_super_admin)&user_id=eq.${userId}`);
-                return userData.some(ur => ur.roles?.is_super_admin === true);
-            } catch (error) {
-                console.error('❌ Error verificando super admin:', error);
+                console.error('❌ Error verificando permisos:', error);
                 return false;
             }
         }
@@ -1109,24 +1114,32 @@
             try {
                 console.log('🔒 Configurando funciones según permisos...');
                 
-                // PASO 1: Obtener TODOS los permisos del usuario en UNA sola query
-                const userPermissions = await obtenerTodosLosPermisosUsuario(currentUser.user_id);
+                // Reutilizar permisos cacheados si existen, sino obtenerlos
+                const userPermissions = window._cachedUserPermissions || 
+                    await obtenerTodosLosPermisosUsuario(currentUser.user_id);
                 
-                // PASO 2: Filtrar funciones basado en los permisos obtenidos
                 const functionCards = document.querySelectorAll('.function-card[data-permission]');
                 
-                for (const card of functionCards) {
+                functionCards.forEach(card => {
                     const permission = card.getAttribute('data-permission');
                     
-                    if (permission && !userPermissions.includes(permission)) {
+                    if (!permission || userPermissions.includes(permission)) {
+                        // Mostrar tarjeta autorizada
+                        card.classList.add('authorized');
+                    } else {
+                        // Ocultar contenedor completo
                         card.closest('.col-12, .col-md-6, .col-lg-4').style.display = 'none';
                     }
-                } // ← FALTABA ESTE CIERRE
+                });
                 
-                console.log('✅ Funciones configuradas según permisos');
+                console.log(`✅ ${userPermissions.length} permisos cargados`);
                 
             } catch (error) {
                 console.error('❌ Error configurando funciones:', error);
+                // En caso de error, mostrar todas las tarjetas
+                document.querySelectorAll('.function-card[data-permission]').forEach(card => {
+                    card.classList.add('authorized');
+                });
             }
         }
 
@@ -1136,31 +1149,33 @@
         // ==========================================
         async function obtenerTodosLosPermisosUsuario(userId) {
             try {
-                // Verificar si es super admin primero
-                const isSuperAdmin = await checkUserIsSuperAdmin(userId);
-                if (isSuperAdmin) {
-                    // Super admin tiene todos los permisos del módulo
-                    return MODULE_CONFIG.modulePermissions;
-                }
+                // UNA SOLA QUERY que obtiene roles (incluyendo is_super_admin) y permisos
+                const data = await supabaseRequest(
+                    `/user_roles?select=roles(is_super_admin,role_permissions(permissions(permission_name)))&user_id=eq.${userId}`
+                );
                 
-                // Una sola query para obtener todos los permisos
-                const data = await supabaseRequest(`/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
                 if (!data || data.length === 0) {
                     return [];
                 }
                 
-                // Extraer todos los permisos en un array
-                const permissions = [];
-                data[0].user_roles?.forEach(userRole => {
-                    userRole.roles?.role_permissions?.forEach(rolePermission => {
-                        const permName = rolePermission.permissions?.permission_name;
-                        if (permName && !permissions.includes(permName)) {
-                            permissions.push(permName);
+                // Verificar si algún rol es super admin
+                const isSuperAdmin = data.some(ur => ur.roles?.is_super_admin === true);
+                if (isSuperAdmin) {
+                    console.log('✅ Super Admin - Acceso total');
+                    return MODULE_CONFIG.modulePermissions;
+                }
+                
+                // Extraer permisos únicos
+                const permissions = new Set();
+                data.forEach(userRole => {
+                    userRole.roles?.role_permissions?.forEach(rp => {
+                        if (rp.permissions?.permission_name) {
+                            permissions.add(rp.permissions.permission_name);
                         }
                     });
                 });
                 
-                return permissions;
+                return Array.from(permissions);
                 
             } catch (error) {
                 console.error('❌ Error obteniendo permisos:', error);
