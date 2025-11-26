@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.25.13.01">
+    <meta name="page-version" content="25.11.26.06.44">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -391,6 +391,45 @@
                             <textarea class="form-control" id="nueva-notas" name="task_progress" rows="2"></textarea>
                             <small class="text-muted">Información adicional sobre la tarea (resumen ejecutivo)</small>
                         </div>
+                        
+                        <!-- Sección de Colaboradores (opcional) -->
+                        <div class="card border-info mb-3">
+                            <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center" 
+                                 style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#seccion-colaboradores-nueva">
+                                <span>
+                                    <i class="bi bi-people me-1"></i>Colaboradores 
+                                    <span class="badge bg-secondary" id="badge-colaboradores-nueva">0</span>
+                                    <small class="text-muted ms-2">(opcional)</small>
+                                </span>
+                                <i class="bi bi-chevron-down" id="icono-collapse-colaboradores"></i>
+                            </div>
+                            <div class="collapse" id="seccion-colaboradores-nueva">
+                                <div class="card-body">
+                                    <div class="row g-2 align-items-end mb-3">
+                                        <div class="col-md-9">
+                                            <label for="select-colaborador-nueva" class="form-label">
+                                                Agregar colaborador
+                                            </label>
+                                            <select class="form-select" id="select-colaborador-nueva">
+                                                <option value="">Seleccione un trabajador...</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <button type="button" class="btn btn-outline-success w-100" onclick="agregarColaboradorNuevaTarea()">
+                                                <i class="bi bi-plus"></i> Agregar
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Lista de colaboradores agregados -->
+                                    <div id="lista-colaboradores-nueva">
+                                        <div class="text-center text-muted py-2" id="sin-colaboradores-msg">
+                                            <small>No se han agregado colaboradores</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -700,6 +739,7 @@
         let estudiantesCache = [];
         let colaboradoresCache = {};  // Objeto: {task_id: cantidad}
         let notasCache = {};          // Objeto: {task_id: cantidad}
+        let colaboradoresNuevaTarea = []; // Array temporal para nueva tarea
         let currentUser = null;
         let userHasPermission = false;
         
@@ -794,6 +834,11 @@
             document.getElementById('modal-nueva-tarea').addEventListener('show.bs.modal', function() {
                 const today = new Date().toISOString().split('T')[0];
                 document.getElementById('nueva-fecha-limite').setAttribute('min', today);
+            });
+            
+            // Actualizar dropdown de colaboradores cuando cambia el responsable
+            document.getElementById('nueva-asignada-a').addEventListener('change', function() {
+                actualizarDropdownColaboradoresNueva();
             });
             
             console.log('✅ Event listeners configurados');
@@ -1153,7 +1198,97 @@
             document.getElementById('form-nueva-tarea').reset();
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('nueva-fecha-limite').setAttribute('min', today);
+            
+            // Limpiar colaboradores
+            colaboradoresNuevaTarea = [];
+            actualizarListaColaboradoresNueva();
+            actualizarDropdownColaboradoresNueva();
+            
             modalNuevaTarea.show();
+        }
+        
+        // Actualizar dropdown de colaboradores cuando cambia el responsable
+        function actualizarDropdownColaboradoresNueva() {
+            const responsableEmail = document.getElementById('nueva-asignada-a').value;
+            const select = document.getElementById('select-colaborador-nueva');
+            select.innerHTML = '<option value="">Seleccione un trabajador...</option>';
+            
+            // Emails a excluir: responsable + colaboradores ya agregados
+            const emailsExcluir = [responsableEmail, ...colaboradoresNuevaTarea.map(c => c.email)];
+            
+            trabajadoresCache.forEach(worker => {
+                if (emailsExcluir.includes(worker.email)) return;
+                
+                const nombreCompleto = `${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}, ${worker.worker_first_name}`.trim();
+                const option = document.createElement('option');
+                option.value = worker.email;
+                option.textContent = nombreCompleto;
+                option.dataset.workerName = nombreCompleto;
+                select.appendChild(option);
+            });
+        }
+        
+        // Agregar colaborador a la lista temporal
+        function agregarColaboradorNuevaTarea() {
+            const select = document.getElementById('select-colaborador-nueva');
+            if (!select.value) {
+                showMessage('Selecciona un trabajador para agregar', 'warning');
+                return;
+            }
+            
+            const email = select.value;
+            const nombre = select.selectedOptions[0].dataset.workerName;
+            
+            // Verificar que no esté ya agregado
+            if (colaboradoresNuevaTarea.find(c => c.email === email)) {
+                showMessage('Este colaborador ya fue agregado', 'warning');
+                return;
+            }
+            
+            colaboradoresNuevaTarea.push({ email, nombre });
+            actualizarListaColaboradoresNueva();
+            actualizarDropdownColaboradoresNueva();
+        }
+        
+        // Quitar colaborador de la lista temporal
+        function quitarColaboradorNuevaTarea(email) {
+            colaboradoresNuevaTarea = colaboradoresNuevaTarea.filter(c => c.email !== email);
+            actualizarListaColaboradoresNueva();
+            actualizarDropdownColaboradoresNueva();
+        }
+        
+        // Renderizar lista de colaboradores en modal nueva tarea
+        function actualizarListaColaboradoresNueva() {
+            const container = document.getElementById('lista-colaboradores-nueva');
+            const badge = document.getElementById('badge-colaboradores-nueva');
+            const msgVacio = document.getElementById('sin-colaboradores-msg');
+            
+            badge.textContent = colaboradoresNuevaTarea.length;
+            
+            if (colaboradoresNuevaTarea.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted py-2" id="sin-colaboradores-msg"><small>No se han agregado colaboradores</small></div>';
+                return;
+            }
+            
+            let html = '';
+            colaboradoresNuevaTarea.forEach(colab => {
+                const iniciales = obtenerIniciales(colab.nombre);
+                html += `
+                    <div class="collaborator-item">
+                        <div class="collaborator-info">
+                            <div class="collaborator-avatar">${iniciales}</div>
+                            <div>
+                                <div class="small fw-semibold">${escapeHtml(colab.nombre)}</div>
+                                <small class="text-muted">${escapeHtml(colab.email)}</small>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="quitarColaboradorNuevaTarea('${colab.email}')" title="Quitar">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
         }
 
         // ==========================================
@@ -1278,11 +1413,67 @@
                 const selectedDate = new Date(datos.due_date);
                 if (selectedDate < today) { showMessage('La fecha límite no puede ser anterior a hoy', 'warning'); ocultarLoading(); return; }
                 
-                await supabaseRequest('/tasks', { method: 'POST', body: JSON.stringify(datos) });
+                // Crear la tarea
+                const tareaCreada = await supabaseRequest('/tasks?select=task_id', { 
+                    method: 'POST', 
+                    body: JSON.stringify(datos),
+                    headers: { 'Prefer': 'return=representation' }
+                });
+                
+                const taskId = tareaCreada[0]?.task_id;
+                
+                // Enviar notificación al responsable principal
                 const emailSent = await enviarNotificacionTarea(datos.assigned_to_mail, datos.task_description, datos.due_date, datos.task_priority, currentUser.user_display_name || currentUser.user_mail);
                 
-                if (emailSent) { showMessage('Tarea creada y notificación enviada exitosamente', 'success'); }
-                else { showMessage('Tarea creada, pero no se pudo enviar la notificación por email', 'warning'); }
+                // Crear colaboradores si hay
+                let colaboradoresCreados = 0;
+                let colaboradoresNotificados = 0;
+                
+                if (taskId && colaboradoresNuevaTarea.length > 0) {
+                    for (const colab of colaboradoresNuevaTarea) {
+                        try {
+                            await supabaseRequest('/task_collaborators', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    task_id: taskId,
+                                    worker_email: colab.email,
+                                    worker_name: colab.nombre,
+                                    added_by: currentUser.user_id,
+                                    added_by_name: currentUser.user_display_name || currentUser.user_mail,
+                                    collaborator_status: 'active'
+                                })
+                            });
+                            colaboradoresCreados++;
+                            
+                            // Enviar notificación al colaborador
+                            const notifColab = await enviarNotificacionColaborador(
+                                colab.email, 
+                                datos.task_description, 
+                                datos.due_date, 
+                                datos.task_priority, 
+                                datos.assigned_to_name, 
+                                currentUser.user_display_name || currentUser.user_mail
+                            );
+                            if (notifColab) colaboradoresNotificados++;
+                            
+                        } catch (err) {
+                            console.error('Error creando colaborador:', colab.email, err);
+                        }
+                    }
+                }
+                
+                // Mensaje según resultados
+                let mensaje = 'Tarea creada';
+                if (emailSent) mensaje += ' y responsable notificado';
+                if (colaboradoresCreados > 0) {
+                    mensaje += `. ${colaboradoresCreados} colaborador(es) agregado(s)`;
+                    if (colaboradoresNotificados > 0) mensaje += ` y notificado(s)`;
+                }
+                
+                showMessage(mensaje, 'success');
+                
+                // Limpiar colaboradores temporales
+                colaboradoresNuevaTarea = [];
                 
                 modalNuevaTarea.hide();
                 await cargarTareas();
@@ -1643,6 +1834,8 @@
         window.gestionarColaboradores = gestionarColaboradores;
         window.agregarColaborador = agregarColaborador;
         window.removerColaborador = removerColaborador;
+        window.agregarColaboradorNuevaTarea = agregarColaboradorNuevaTarea;
+        window.quitarColaboradorNuevaTarea = quitarColaboradorNuevaTarea;
         
         console.log('🎉 tasks.html v2.0 con colaboradores y notas cargado correctamente');
     </script>
