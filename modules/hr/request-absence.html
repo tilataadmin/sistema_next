@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.10.05.08">
+    <meta name="page-version" content="25.11.26.15.35">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -25,6 +25,10 @@
             font-size: 2rem;
             font-weight: bold;
             color: #0d6efd;
+        }
+        
+        .balance-value.text-danger {
+            color: #dc3545 !important;
         }
         
         .balance-label {
@@ -445,6 +449,7 @@
         let capturedPhotoBlob = null;
         let hrConfig = null;
         let workers = [];
+        let nonWorkDays = [];
         let currentBalances = {
             personalHours: 0,
             calamityDays: 0
@@ -554,6 +559,7 @@
                 // Ahora cargar lo que depende de hrConfig
                 await Promise.all([
                     loadWorkers(),
+                    loadNonWorkDays(),
                     loadBalances(),
                     loadMyRequests()
                 ]);
@@ -619,6 +625,20 @@
                 throw error;
             }
         }
+
+        async function loadNonWorkDays() {
+            try {
+                const data = await supabaseRequest('/hr_non_work_days?select=start_date,end_date,day_type&order=start_date.asc');
+                nonWorkDays = data || [];
+                console.log(`📅 ${nonWorkDays.length} períodos no laborables cargados`);
+            } catch (error) {
+                console.error('Error al cargar días no laborables:', error);
+                nonWorkDays = [];
+            }
+        }
+
+
+        
         // ==========================================
         // CARGAR Y CALCULAR SALDOS
         // ==========================================
@@ -643,8 +663,26 @@
                 console.log('💰 Saldos calculados:', { availableHours, availableDays });
                 
                 // Actualizar UI
-                document.getElementById('availableHours').innerHTML = `${availableHours.toFixed(2)} <small>hrs</small>`;
-                document.getElementById('availableDays').innerHTML = `${availableDays.toFixed(2)} <small>días</small>`;
+                const hoursElement = document.getElementById('availableHours');
+                const daysElement = document.getElementById('availableDays');
+                
+                hoursElement.innerHTML = `${availableHours.toFixed(2)} <small>hrs</small>`;
+                daysElement.innerHTML = `${availableDays.toFixed(2)} <small>días</small>`;
+                
+                // Mostrar en rojo si es negativo
+                if (availableHours < 0) {
+                    hoursElement.classList.add('text-danger');
+                    hoursElement.classList.remove('text-primary');
+                } else {
+                    hoursElement.classList.remove('text-danger');
+                }
+                
+                if (availableDays < 0) {
+                    daysElement.classList.add('text-danger');
+                    daysElement.classList.remove('text-primary');
+                } else {
+                    daysElement.classList.remove('text-danger');
+                }
                 
                 // Guardar en variable global
                 currentBalances = {
@@ -765,34 +803,36 @@
                 `;
             }
             
-            // Campo de reemplazo si es necesario
-            if (category.worker_finds_replacement) {
-                const currentWorker = workers.find(w => w.worker_id === currentSession.worker_id);
-                const hasSection = currentWorker && currentWorker.section_id;
-                
-                const filteredWorkers = workers.filter(w => {
-                    if (w.worker_id === currentSession.worker_id) return false;
-                    if (w.is_replacement) return false;
-                    if (hasSection) {
-                        return w.section_id !== null;
-                    } else {
-                        return w.section_id === null;
-                    }
-                });
-                
-                html += `
-                    <div class="mb-3">
-                        <label for="replacementWorker" class="form-label required-field">Trabajador de Reemplazo</label>
-                        <select class="form-select" id="replacementWorker" required>
-                            <option value="">Seleccione un reemplazo...</option>
-                            ${filteredWorkers.map(w => 
-                                `<option value="${w.worker_id}">${w.worker_first_name} ${w.worker_last_name_1}</option>`
-                            ).join('')}
-                        </select>
-                        <div class="form-text">Debe buscar un reemplazo para cubrir su ausencia</div>
-                    </div>
-                `;
-            }
+            // Campo de reemplazo (siempre visible, opcional)
+            const currentWorker = workers.find(w => w.worker_id === currentSession.worker_id);
+            const hasSection = currentWorker && currentWorker.section_id;
+            
+            const filteredWorkers = workers.filter(w => {
+                if (w.worker_id === currentSession.worker_id) return false;
+                if (w.is_replacement) return false;
+                if (hasSection) {
+                    return w.section_id !== null;
+                } else {
+                    return w.section_id === null;
+                }
+            }).sort((a, b) => {
+                const nameA = `${a.worker_last_name_1} ${a.worker_first_name}`.toLowerCase();
+                const nameB = `${b.worker_last_name_1} ${b.worker_first_name}`.toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+            
+            html += `
+                <div class="mb-3">
+                    <label for="replacementWorker" class="form-label">Trabajador de Reemplazo</label>
+                    <select class="form-select" id="replacementWorker">
+                        <option value="">Seleccione un reemplazo (opcional)...</option>
+                        ${filteredWorkers.map(w => 
+                            `<option value="${w.worker_id}">${w.worker_last_name_1} ${w.worker_first_name}</option>`
+                        ).join('')}
+                    </select>
+                    <div class="form-text">Opcional: seleccione quién cubrirá su ausencia</div>
+                </div>
+            `;
             
             // Alertas de saldo si aplica
             if (category.accumulates_personal_hours || category.controls_calamity_days_limit) {
@@ -825,6 +865,39 @@
             }
         }
 
+        function countWorkDays(startDate, endDate) {
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            let count = 0;
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const dayOfWeek = d.getDay();
+                
+                // Excluir fines de semana
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    continue;
+                }
+                
+                // Formatear fecha para comparar
+                const dateStr = d.toISOString().split('T')[0];
+                
+                // Excluir días no laborables (festivos, recesos)
+                let isNonWorkDay = false;
+                for (const period of nonWorkDays) {
+                    if (dateStr >= period.start_date && dateStr <= period.end_date) {
+                        isNonWorkDay = true;
+                        break;
+                    }
+                }
+                
+                if (!isNonWorkDay) {
+                    count++;
+                }
+            }
+            
+            return count;
+        }
+
         // ==========================================
         // CALCULAR TOTALES Y VALIDAR SALDOS
         // ==========================================
@@ -847,9 +920,8 @@
                     return;
                 }
                 
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                totalDays = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                // Calcular solo días hábiles (excluyendo fines de semana y días no laborables)
+                totalDays = countWorkDays(startDate, endDate);
                 
                 const workdayStart = hrConfig.workday_start_time || '07:00:00';
                 const workdayEnd = hrConfig.workday_end_time || '15:00:00';
@@ -900,7 +972,16 @@
                     totalHours = (end - start) / (1000 * 60 * 60);
                     
                     const hoursPerDay = calculateHoursPerDay(workdayStart, workdayEnd);
-                    totalDays = totalHours / hoursPerDay;
+                    
+                    // Validar que no exceda el máximo de horas (jornada menos almuerzo)
+                    if (totalHours > hoursPerDay) {
+                        hasTimeError = true;
+                        timeErrorMessage = `⚠️ <strong>Horas excedidas:</strong> El máximo de horas que puedes solicitar es ${hoursPerDay} (jornada laboral menos 1 hora de almuerzo). Estás solicitando ${totalHours} horas.`;
+                        totalDays = 0;
+                        totalHours = 0;
+                    } else {
+                        totalDays = totalHours / hoursPerDay;
+                    }
                 }
             }
             
@@ -1172,15 +1253,6 @@
                 }
             }
             
-            // Validar reemplazo si es necesario
-            if (selectedCategory.worker_finds_replacement) {
-                const replacementId = document.getElementById('replacementWorker').value;
-                if (!replacementId) {
-                    showMessage('Debes seleccionar un trabajador de reemplazo', 'warning');
-                    return;
-                }
-            }
-            
             if (!confirm('¿Estás seguro de enviar esta solicitud de ausencia?')) {
                 return;
             }
@@ -1217,13 +1289,14 @@
             const totalHours = parseFloat(document.getElementById('totalHours').value);
             const description = document.getElementById('description').value;
             
+            // ✅ CAMBIO 1: Estado según requires_authorization
             let requestData = {
                 worker_id: currentSession.worker_id,
                 category_id: selectedCategory.category_id,
                 total_days: totalDays,
                 total_hours: totalHours,
                 description: description,
-                status: 'pending'
+                status: selectedCategory.requires_authorization ? 'pending' : 'approved'
             };
             
             if (selectedCategory.full_day_only) {
@@ -1323,6 +1396,9 @@
         async function createAuthorizations(requestId) {
             const totalDays = parseFloat(document.getElementById('totalDays').value);
             
+            // ✅ CAMBIO 2: Estado de autorizaciones según requires_authorization
+            const authorizationStatus = selectedCategory.requires_authorization ? 'pending' : 'approved';
+            
             const managersData = await supabaseRequest(
                 '/worker_managers?worker_id=eq.' + currentSession.worker_id + '&is_primary_manager=eq.true&assignment_status=eq.active&select=manager_id'
             );
@@ -1337,7 +1413,7 @@
                 request_id: requestId,
                 authorizer_id: managersData[0].manager_id,
                 authorization_level: 'primary_manager',
-                status: 'pending'
+                status: authorizationStatus
             });
             
             if (selectedCategory.days_require_hr_authorization && 
@@ -1352,7 +1428,7 @@
                         request_id: requestId,
                         authorizer_id: thData[0].worker_id,
                         authorization_level: 'hr',
-                        status: 'pending'
+                        status: authorizationStatus
                     });
                 }
             }
@@ -1372,7 +1448,7 @@
                         request_id: requestId,
                         authorizer_id: upperData[0].worker_id,
                         authorization_level: 'upper_management',
-                        status: 'pending'
+                        status: authorizationStatus
                     });
                 }
             }
@@ -1384,7 +1460,7 @@
                 });
             }
             
-            console.log(`✅ ${authorizations.length} autorizaciones creadas`);
+            console.log(`✅ ${authorizations.length} autorizaciones creadas con estado: ${authorizationStatus}`);
         }
 
         async function sendNotifications(requestId) {
@@ -1450,6 +1526,36 @@
                     // Si no tiene sección pero notify_section_email = true, enviar a non_school_email
                     emailsSet.add(hrConfig.non_school_email);
                 }
+
+                // 5. INSTANCIA SUPERIOR (si notify_upper_instance = true)
+                if (selectedCategory.notify_upper_instance && selectedCategory.upper_instance_user_id) {
+                    try {
+                        // Obtener email del usuario seleccionado
+                        const userData = await supabaseRequest(
+                            '/users?user_id=eq.' + selectedCategory.upper_instance_user_id + '&select=user_mail'
+                        );
+                        
+                        if (userData && userData.length > 0) {
+                            const userEmail = userData[0].user_mail;
+                            
+                            // Buscar el worker con ese email para notificarlo
+                            const workerData = await supabaseRequest(
+                                '/workers?email=eq.' + userEmail + '&select=email'
+                            );
+                            
+                            if (workerData && workerData.length > 0) {
+                                emailsSet.add(workerData[0].email);
+                                console.log('📧 Agregado estratega a notificaciones:', workerData[0].email);
+                            } else {
+                                // Si no hay worker, usar el email del user directamente
+                                emailsSet.add(userEmail);
+                                console.log('📧 Agregado usuario estratega a notificaciones:', userEmail);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error al obtener instancia superior:', error);
+                    }
+                }
                 
                 // Convertir Set a Array
                 const emails = Array.from(emailsSet).filter(email => email); // Filtrar emails vacíos
@@ -1464,6 +1570,7 @@
                     `${document.getElementById('startDate').value} al ${document.getElementById('endDate').value}` :
                     `${document.getElementById('singleDate').value} de ${document.getElementById('startTime').value} a ${document.getElementById('endTime').value}`;
                 
+                // ✅ CAMBIO 3: Eliminar enlace del correo
                 const emailBody = `
                     <h3>Nueva Solicitud de Ausencia</h3>
                     <p><strong>Solicitante:</strong> ${currentSession.worker_name}</p>
@@ -1472,7 +1579,6 @@
                     <p><strong>Total días:</strong> ${document.getElementById('totalDays').value}</p>
                     <p><strong>Total horas:</strong> ${document.getElementById('totalHours').value}</p>
                     <p><strong>Descripción:</strong> ${document.getElementById('description').value || 'Sin descripción'}</p>
-                    <p><a href="${window.location.origin}/modules/hr/authorize-absences.html">Ver y autorizar solicitud</a></p>
                 `;
                 
                 await sendNotification(

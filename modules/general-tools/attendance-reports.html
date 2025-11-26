@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.10.29.10.07">
+    <meta name="page-version" content="25.11.26.16.39">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -731,7 +731,10 @@
             students: {},
             workers: {}
         };
-
+        // Cache de trabajadores con trabajo remoto aprobado para hoy
+        let trabajadoresRemotos = new Set();
+        // Indica si hoy es un día virtual completo (todo el personal remoto)
+        let esDiaVirtual = false;
         
         // ==========================================
         // INICIALIZACIÓN
@@ -771,11 +774,18 @@
             try {
                 mostrarLoading();
         
-                // ✅ NUEVO: Cargar cache de nombres PRIMERO
+                // Cargar cache de nombres PRIMERO
                 await cargarCacheNombres();
-        
+                
+                // Cargar trabajadores con trabajo remoto aprobado
+                await cargarTrabajadoresRemotos();
+                
+                // Verificar si hoy es día virtual
+                await verificarDiaVirtual();
+                
                 // Cargar hora de puntualidad desde system_config
                 await cargarHoraPuntualidad();
+                
                 // Configurar fechas por defecto (hoy)
                 const today = new Date().toISOString().split('T')[0];
                 const historyStartElement = document.getElementById('history-date-start');
@@ -783,25 +793,30 @@
                 const courseReportElement = document.getElementById('course-report-date');
                 const areaReportElement = document.getElementById('area-report-date');
                 const punctualityDateElement = document.getElementById('punctuality-date');
-
+        
                 if (historyStartElement) historyStartElement.value = today;
                 if (historyEndElement) historyEndElement.value = today;
                 if (courseReportElement) courseReportElement.value = today;
                 if (areaReportElement) areaReportElement.value = today;
                 if (punctualityDateElement) punctualityDateElement.value = today;
-
+        
                 // Cargar filtros
                 await cargarFiltros();
-
+        
                 // Cargar estadísticas generales
                 await cargarEstadisticasGenerales();
-
+        
                 // Cargar presencia actual (tab activo por defecto)
                 await cargarPresenciaActual();
-
+        
                 // Configurar eventos de pestañas
                 configurarEventosPestanas();
-
+        
+                // Mostrar banner si es día virtual
+                if (esDiaVirtual) {
+                    mostrarBannerDiaVirtual();
+                }
+        
                 ocultarLoading();
                 console.log('✅ Página de reportes inicializada correctamente');
                 
@@ -845,6 +860,99 @@
             } catch (error) {
                 console.error('❌ Error cargando cache de nombres:', error);
             }
+        }
+
+        // ==========================================
+        // CARGAR TRABAJADORES CON TRABAJO REMOTO APROBADO HOY
+        // ==========================================
+        async function cargarTrabajadoresRemotos() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                
+                // Obtener categorías de trabajo remoto
+                const categoriasRemotas = await supabaseRequest(
+                    '/hr_absence_categories?select=category_id&is_remote_work=eq.true&is_active=eq.true'
+                );
+                
+                if (!categoriasRemotas || categoriasRemotas.length === 0) {
+                    console.log('ℹ️ No hay categorías de trabajo remoto configuradas');
+                    trabajadoresRemotos = new Set();
+                    return;
+                }
+                
+                const categoryIds = categoriasRemotas.map(c => c.category_id);
+                
+                // Obtener solicitudes aprobadas de trabajo remoto para hoy
+                const solicitudes = await supabaseRequest(
+                    `/hr_absence_requests?select=worker_id,workers(worker_id_doc)&status=eq.approved&category_id=in.(${categoryIds.join(',')})&start_date=lte.${today}&end_date=gte.${today}`
+                );
+                
+                trabajadoresRemotos = new Set();
+                
+                if (solicitudes && solicitudes.length > 0) {
+                    solicitudes.forEach(s => {
+                        if (s.workers && s.workers.worker_id_doc) {
+                            trabajadoresRemotos.add(s.workers.worker_id_doc);
+                        }
+                    });
+                }
+                
+                console.log(`🏠 ${trabajadoresRemotos.size} trabajadores con trabajo remoto aprobado hoy`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando trabajadores remotos:', error);
+                trabajadoresRemotos = new Set();
+            }
+        }
+
+        // ==========================================
+        // VERIFICAR SI HOY ES DÍA VIRTUAL
+        // ==========================================
+        async function verificarDiaVirtual() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                
+                const diasVirtuales = await supabaseRequest(
+                    `/hr_non_work_days?select=non_work_day_id,description&day_type=eq.virtual_day&start_date=lte.${today}&end_date=gte.${today}`
+                );
+                
+                if (diasVirtuales && diasVirtuales.length > 0) {
+                    esDiaVirtual = true;
+                    console.log('🏠 Hoy es DÍA VIRTUAL:', diasVirtuales[0].description);
+                } else {
+                    esDiaVirtual = false;
+                }
+                
+            } catch (error) {
+                console.error('❌ Error verificando día virtual:', error);
+                esDiaVirtual = false;
+            }
+        }
+
+        // ==========================================
+        // MOSTRAR BANNER DE DÍA VIRTUAL
+        // ==========================================
+        function mostrarBannerDiaVirtual() {
+            const alertContainer = document.getElementById('alertContainer');
+            
+            const bannerHtml = `
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-house-door fs-4 me-3"></i>
+                        <div>
+                            <strong>🏠 Día Virtual Activo</strong>
+                            <p class="mb-0">Hoy está configurado como día de trabajo virtual. Todo el personal trabaja de forma remota.</p>
+                            <small class="text-muted">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                En caso de emergencia: No hay personal físicamente en el edificio.
+                            </small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            
+            alertContainer.innerHTML = bannerHtml + alertContainer.innerHTML;
         }
 
         // ==========================================
@@ -969,13 +1077,21 @@
                 });
             });
         }
-        
+
         // ==========================================
         // CARGAR ESTADÍSTICAS GENERALES
         // ==========================================
         async function cargarEstadisticasGenerales() {
             try {
                 const today = new Date().toISOString().split('T')[0];
+                
+                // Si es día virtual, mostrar estadísticas especiales
+                if (esDiaVirtual) {
+                    document.getElementById('stat-present').textContent = '0';
+                    document.getElementById('stat-absent').textContent = '0';
+                    document.getElementById('stat-alerts').textContent = '🏠';
+                    return;
+                }
                 
                 // Obtener todos los registros del día
                 const registros = await supabaseRequest(`/attendance?select=*&attendance_date=eq.${today}`);
@@ -984,7 +1100,7 @@
                     console.warn('No se pudieron cargar las estadísticas');
                     return;
                 }
-
+        
                 // Calcular presentes (personas con entrada sin salida o con ambos registros)
                 const personasConRegistro = {};
                 registros.forEach(reg => {
@@ -994,7 +1110,7 @@
                     }
                     personasConRegistro[key].push(reg);
                 });
-
+        
                 // Personas presentes = tienen número impar de registros (última fue entrada)
                 let presentes = 0;
                 Object.values(personasConRegistro).forEach(regs => {
@@ -1002,7 +1118,7 @@
                         presentes++;
                     }
                 });
-
+        
                 // Obtener total de personas (estudiantes + trabajadores activos)
                 // Para students: buscar el status_id que corresponde a "Activo"
                 const activeStatus = await supabaseRequest('/student_status?select=status_id&status_description=eq.Activo&limit=1');
@@ -1016,8 +1132,13 @@
                 const totalWorkers = await supabaseRequest('/workers?select=worker_id_doc&worker_status=eq.active');
                 const totalPersonas = (totalStudents?.length || 0) + (totalWorkers?.length || 0);
                 
-                const ausentes = totalPersonas - Object.keys(personasConRegistro).length;
-
+                // Calcular ausentes excluyendo trabajadores remotos
+                const personasConRegistroORemoto = new Set([
+                    ...Object.keys(personasConRegistro),
+                    ...trabajadoresRemotos
+                ]);
+                const ausentes = totalPersonas - personasConRegistroORemoto.size;
+                
                 // Calcular alertas (solo registros irregulares: más de 4 registros)
                 let alertas = 0;
                 Object.values(personasConRegistro).forEach(regs => {
@@ -1025,17 +1146,18 @@
                         alertas++;
                     }
                 });
-
+        
                 // Actualizar UI
                 document.getElementById('stat-present').textContent = presentes;
                 document.getElementById('stat-absent').textContent = ausentes;
                 document.getElementById('stat-alerts').textContent = alertas;
-
+        
             } catch (error) {
                 console.error('❌ Error cargando estadísticas generales:', error);
             }
         }
-
+        
+        
         // ==========================================
         // CARGAR PRESENCIA ACTUAL
         // ==========================================
@@ -1198,13 +1320,23 @@
                 const registrosHoy = await supabaseRequest(`/attendance?select=person_id_document,person_type&attendance_date=eq.${today}`);
                 const documentosConRegistro = new Set(registrosHoy?.map(r => r.person_id_document) || []);
 
-                // Filtrar ausentes
+                // Filtrar ausentes (estudiantes no tienen trabajo remoto)
                 const estudiantesAusentes = todosEstudiantes?.filter(e => !documentosConRegistro.has(e.student_id_document)) || [];
-                const trabajadoresAusentes = todosTrabajadores?.filter(t => !documentosConRegistro.has(t.worker_id_doc)) || [];
-
+                
+                // Filtrar trabajadores ausentes EXCLUYENDO los que tienen trabajo remoto aprobado
+                const trabajadoresAusentes = todosTrabajadores?.filter(t => 
+                    !documentosConRegistro.has(t.worker_id_doc) && 
+                    !trabajadoresRemotos.has(t.worker_id_doc)
+                ) || [];
+                
                 // Mostrar listas
                 mostrarListaAusentes(estudiantesAusentes, 'student');
                 mostrarListaAusentes(trabajadoresAusentes, 'worker');
+                
+                // Mostrar trabajadores remotos si hay
+                if (trabajadoresRemotos.size > 0) {
+                    mostrarTrabajadoresRemotos(todosTrabajadores);
+                }
 
                 ocultarLoading();
 
@@ -1261,6 +1393,67 @@
 
             container.innerHTML = html;
             document.getElementById(countId).textContent = personas.length;
+        }
+
+        // ==========================================
+        // MOSTRAR TRABAJADORES EN TRABAJO REMOTO
+        // ==========================================
+        function mostrarTrabajadoresRemotos(todosTrabajadores) {
+            // Filtrar solo los que están en trabajo remoto
+            const remotos = todosTrabajadores?.filter(t => trabajadoresRemotos.has(t.worker_id_doc)) || [];
+            
+            if (remotos.length === 0) return;
+            
+            // Verificar si ya existe el contenedor de remotos
+            let containerCard = document.getElementById('workers-remote-card');
+            
+            if (!containerCard) {
+                // Crear la tarjeta si no existe
+                const ausentesTab = document.getElementById('ausentes');
+                const rowDiv = ausentesTab.querySelector('.row');
+                
+                const newCol = document.createElement('div');
+                newCol.className = 'col-lg-12 mb-4';
+                newCol.innerHTML = `
+                    <div class="card" id="workers-remote-card">
+                        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="bi bi-house-door me-2"></i>Trabajadores en Modalidad Remota
+                            </h5>
+                            <span class="badge bg-light text-info" id="count-workers-remote">0</span>
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="workers-remote-list" style="max-height: 300px; overflow-y: auto;">
+                            </div>
+                        </div>
+                    </div>
+                `;
+                rowDiv.appendChild(newCol);
+            }
+            
+            const container = document.getElementById('workers-remote-list');
+            const countBadge = document.getElementById('count-workers-remote');
+            
+            let html = '';
+            remotos.forEach(t => {
+                const nombre = `${t.worker_last_name_1} ${t.worker_last_name_2 || ''} ${t.worker_first_name}`.trim();
+                const division = t.organizational_divisions?.division_name || '';
+                
+                html += `
+                    <div class="person-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="person-name">${nombre}</div>
+                                ${division ? `<small class="text-muted">${division}</small>` : ''}
+                            </div>
+                            <span class="badge bg-info">🏠 Remoto</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            countBadge.textContent = remotos.length;
         }
 
         // ==========================================
