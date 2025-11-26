@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.26.08.08">
+    <meta name="page-version" content="25.11.26.08.18">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -449,6 +449,7 @@
         let capturedPhotoBlob = null;
         let hrConfig = null;
         let workers = [];
+        let nonWorkDays = [];
         let currentBalances = {
             personalHours: 0,
             calamityDays: 0
@@ -558,6 +559,7 @@
                 // Ahora cargar lo que depende de hrConfig
                 await Promise.all([
                     loadWorkers(),
+                    loadNonWorkDays(),
                     loadBalances(),
                     loadMyRequests()
                 ]);
@@ -623,6 +625,20 @@
                 throw error;
             }
         }
+
+        async function loadNonWorkDays() {
+            try {
+                const data = await supabaseRequest('/hr_non_work_days?select=start_date,end_date,day_type&order=start_date.asc');
+                nonWorkDays = data || [];
+                console.log(`📅 ${nonWorkDays.length} períodos no laborables cargados`);
+            } catch (error) {
+                console.error('Error al cargar días no laborables:', error);
+                nonWorkDays = [];
+            }
+        }
+
+
+        
         // ==========================================
         // CARGAR Y CALCULAR SALDOS
         // ==========================================
@@ -849,6 +865,39 @@
             }
         }
 
+        function countWorkDays(startDate, endDate) {
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            let count = 0;
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const dayOfWeek = d.getDay();
+                
+                // Excluir fines de semana
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    continue;
+                }
+                
+                // Formatear fecha para comparar
+                const dateStr = d.toISOString().split('T')[0];
+                
+                // Excluir días no laborables (festivos, recesos)
+                let isNonWorkDay = false;
+                for (const period of nonWorkDays) {
+                    if (dateStr >= period.start_date && dateStr <= period.end_date) {
+                        isNonWorkDay = true;
+                        break;
+                    }
+                }
+                
+                if (!isNonWorkDay) {
+                    count++;
+                }
+            }
+            
+            return count;
+        }
+
         // ==========================================
         // CALCULAR TOTALES Y VALIDAR SALDOS
         // ==========================================
@@ -871,9 +920,8 @@
                     return;
                 }
                 
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                totalDays = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                // Calcular solo días hábiles (excluyendo fines de semana y días no laborables)
+                totalDays = countWorkDays(startDate, endDate);
                 
                 const workdayStart = hrConfig.workday_start_time || '07:00:00';
                 const workdayEnd = hrConfig.workday_end_time || '15:00:00';
