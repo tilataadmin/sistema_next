@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.11.26.16.11">
+    <meta name="page-version" content="25.11.26.16.39">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -733,7 +733,8 @@
         };
         // Cache de trabajadores con trabajo remoto aprobado para hoy
         let trabajadoresRemotos = new Set();
-
+        // Indica si hoy es un día virtual completo (todo el personal remoto)
+        let esDiaVirtual = false;
         
         // ==========================================
         // INICIALIZACIÓN
@@ -773,14 +774,18 @@
             try {
                 mostrarLoading();
         
-                // ✅ NUEVO: Cargar cache de nombres PRIMERO
+                // Cargar cache de nombres PRIMERO
                 await cargarCacheNombres();
                 
                 // Cargar trabajadores con trabajo remoto aprobado
                 await cargarTrabajadoresRemotos();
                 
+                // Verificar si hoy es día virtual
+                await verificarDiaVirtual();
+                
                 // Cargar hora de puntualidad desde system_config
                 await cargarHoraPuntualidad();
+                
                 // Configurar fechas por defecto (hoy)
                 const today = new Date().toISOString().split('T')[0];
                 const historyStartElement = document.getElementById('history-date-start');
@@ -788,25 +793,30 @@
                 const courseReportElement = document.getElementById('course-report-date');
                 const areaReportElement = document.getElementById('area-report-date');
                 const punctualityDateElement = document.getElementById('punctuality-date');
-
+        
                 if (historyStartElement) historyStartElement.value = today;
                 if (historyEndElement) historyEndElement.value = today;
                 if (courseReportElement) courseReportElement.value = today;
                 if (areaReportElement) areaReportElement.value = today;
                 if (punctualityDateElement) punctualityDateElement.value = today;
-
+        
                 // Cargar filtros
                 await cargarFiltros();
-
+        
                 // Cargar estadísticas generales
                 await cargarEstadisticasGenerales();
-
+        
                 // Cargar presencia actual (tab activo por defecto)
                 await cargarPresenciaActual();
-
+        
                 // Configurar eventos de pestañas
                 configurarEventosPestanas();
-
+        
+                // Mostrar banner si es día virtual
+                if (esDiaVirtual) {
+                    mostrarBannerDiaVirtual();
+                }
+        
                 ocultarLoading();
                 console.log('✅ Página de reportes inicializada correctamente');
                 
@@ -893,6 +903,56 @@
                 console.error('❌ Error cargando trabajadores remotos:', error);
                 trabajadoresRemotos = new Set();
             }
+        }
+
+        // ==========================================
+        // VERIFICAR SI HOY ES DÍA VIRTUAL
+        // ==========================================
+        async function verificarDiaVirtual() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                
+                const diasVirtuales = await supabaseRequest(
+                    `/hr_non_work_days?select=non_work_day_id,description&day_type=eq.virtual_day&start_date=lte.${today}&end_date=gte.${today}`
+                );
+                
+                if (diasVirtuales && diasVirtuales.length > 0) {
+                    esDiaVirtual = true;
+                    console.log('🏠 Hoy es DÍA VIRTUAL:', diasVirtuales[0].description);
+                } else {
+                    esDiaVirtual = false;
+                }
+                
+            } catch (error) {
+                console.error('❌ Error verificando día virtual:', error);
+                esDiaVirtual = false;
+            }
+        }
+
+        // ==========================================
+        // MOSTRAR BANNER DE DÍA VIRTUAL
+        // ==========================================
+        function mostrarBannerDiaVirtual() {
+            const alertContainer = document.getElementById('alertContainer');
+            
+            const bannerHtml = `
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-house-door fs-4 me-3"></i>
+                        <div>
+                            <strong>🏠 Día Virtual Activo</strong>
+                            <p class="mb-0">Hoy está configurado como día de trabajo virtual. Todo el personal trabaja de forma remota.</p>
+                            <small class="text-muted">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                En caso de emergencia: No hay personal físicamente en el edificio.
+                            </small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            
+            alertContainer.innerHTML = bannerHtml + alertContainer.innerHTML;
         }
 
         // ==========================================
@@ -1017,13 +1077,21 @@
                 });
             });
         }
-        
+
         // ==========================================
         // CARGAR ESTADÍSTICAS GENERALES
         // ==========================================
         async function cargarEstadisticasGenerales() {
             try {
                 const today = new Date().toISOString().split('T')[0];
+                
+                // Si es día virtual, mostrar estadísticas especiales
+                if (esDiaVirtual) {
+                    document.getElementById('stat-present').textContent = '0';
+                    document.getElementById('stat-absent').textContent = '0';
+                    document.getElementById('stat-alerts').textContent = '🏠';
+                    return;
+                }
                 
                 // Obtener todos los registros del día
                 const registros = await supabaseRequest(`/attendance?select=*&attendance_date=eq.${today}`);
@@ -1032,7 +1100,7 @@
                     console.warn('No se pudieron cargar las estadísticas');
                     return;
                 }
-
+        
                 // Calcular presentes (personas con entrada sin salida o con ambos registros)
                 const personasConRegistro = {};
                 registros.forEach(reg => {
@@ -1042,7 +1110,7 @@
                     }
                     personasConRegistro[key].push(reg);
                 });
-
+        
                 // Personas presentes = tienen número impar de registros (última fue entrada)
                 let presentes = 0;
                 Object.values(personasConRegistro).forEach(regs => {
@@ -1050,7 +1118,7 @@
                         presentes++;
                     }
                 });
-
+        
                 // Obtener total de personas (estudiantes + trabajadores activos)
                 // Para students: buscar el status_id que corresponde a "Activo"
                 const activeStatus = await supabaseRequest('/student_status?select=status_id&status_description=eq.Activo&limit=1');
@@ -1078,17 +1146,18 @@
                         alertas++;
                     }
                 });
-
+        
                 // Actualizar UI
                 document.getElementById('stat-present').textContent = presentes;
                 document.getElementById('stat-absent').textContent = ausentes;
                 document.getElementById('stat-alerts').textContent = alertas;
-
+        
             } catch (error) {
                 console.error('❌ Error cargando estadísticas generales:', error);
             }
         }
-
+        
+        
         // ==========================================
         // CARGAR PRESENCIA ACTUAL
         // ==========================================
