@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2025.11.25.06.42">
+    <meta name="page-version" content="2025.11.26.08.50">
     <title>Gestionar Trabajadores - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1487,6 +1487,83 @@
             }
         }
 
+        // ==========================================
+        // ASIGNACIÓN AUTOMÁTICA DE SALDOS INICIALES
+        // ==========================================
+        
+        async function assignInitialBalances(workerId) {
+            try {
+                console.log('💰 Asignando saldos iniciales al nuevo trabajador...');
+                
+                // Obtener configuración de HR
+                const hrConfigData = await supabaseRequest('/hr_config?select=personal_hours_limit,calamity_days_limit&limit=1');
+                
+                if (!hrConfigData || hrConfigData.length === 0) {
+                    console.warn('⚠️ No se encontró configuración de HR, no se asignarán saldos');
+                    return { success: false, error: 'No hay configuración de HR' };
+                }
+                
+                const hrConfig = hrConfigData[0];
+                
+                if (!hrConfig.personal_hours_limit && !hrConfig.calamity_days_limit) {
+                    console.warn('⚠️ Los límites de horas/días no están configurados');
+                    return { success: false, error: 'Límites no configurados' };
+                }
+                
+                // Obtener el worker_id del usuario actual para registrar quién hizo el ajuste
+                const session = getStoredSession();
+                let adjustedBy = null;
+                
+                if (session?.user?.user_mail) {
+                    const workerData = await supabaseRequest('/workers?email=eq.' + session.user.user_mail + '&select=worker_id');
+                    if (workerData && workerData.length > 0) {
+                        adjustedBy = workerData[0].worker_id;
+                    }
+                }
+                
+                const adjustments = [];
+                const reason = 'Asignación inicial por ingreso';
+                
+                // Agregar ajuste de horas personales
+                if (hrConfig.personal_hours_limit) {
+                    adjustments.push({
+                        worker_id: workerId,
+                        adjustment_type: 'personal_hours',
+                        amount: hrConfig.personal_hours_limit,
+                        reason: reason,
+                        adjusted_by: adjustedBy
+                    });
+                }
+                
+                // Agregar ajuste de días de calamidad
+                if (hrConfig.calamity_days_limit) {
+                    adjustments.push({
+                        worker_id: workerId,
+                        adjustment_type: 'calamity_days',
+                        amount: hrConfig.calamity_days_limit,
+                        reason: reason,
+                        adjusted_by: adjustedBy
+                    });
+                }
+                
+                // Insertar ajustes
+                if (adjustments.length > 0) {
+                    await supabaseRequest('/hr_balance_adjustments', {
+                        method: 'POST',
+                        body: JSON.stringify(adjustments)
+                    });
+                    
+                    console.log(`✅ Saldos asignados: ${hrConfig.personal_hours_limit} horas, ${hrConfig.calamity_days_limit} días`);
+                }
+                
+                return { success: true };
+                
+            } catch (error) {
+                console.error('❌ Error asignando saldos iniciales:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
         // Hacer funciones disponibles globalmente
         window.loadCostCenters = loadCostCenters;
         window.loadAreas = loadAreas;
@@ -1967,8 +2044,20 @@
         
                 await saveWorkerRoles(workerId);
                 // Guardar jefes asignados
-                await saveWorkerManagers(workerId);              
-        
+                await saveWorkerManagers(workerId);
+                
+                // Asignar saldos iniciales SOLO si es nuevo trabajador, activo y NO es reemplazo
+                if (!currentEditingWorkerId && 
+                    workerData.worker_status === 'active' && 
+                    !workerData.is_replacement) {
+                    const balanceResult = await assignInitialBalances(workerId);
+                    if (balanceResult.success) {
+                        console.log('✅ Saldos iniciales asignados correctamente');
+                    } else {
+                        console.warn('⚠️ No se pudieron asignar saldos:', balanceResult.error);
+                    }
+                }
+                
                 let successMessage = currentEditingWorkerId ? 
                     'Trabajador actualizado exitosamente' : 
                     'Trabajador creado exitosamente';
