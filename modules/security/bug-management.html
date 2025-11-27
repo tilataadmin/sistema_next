@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.11.09.05.04">
+    <meta name="page-version" content="25.11.27.09.49">
     
     <title>Gestión de Reportes de Bugs - SchoolNet</title>
     
@@ -478,17 +478,28 @@
         // ==========================================
         async function loadModules() {
             try {
-                const modules = await supabaseRequest('/permissions?select=permission_id,permission_name&order=permission_name');
-                allModules = modules || [];
+                // Obtener módulos únicos desde permission_module
+                const permissions = await supabaseRequest('/permissions?select=permission_module&permission_status=eq.active');
+                
+                // Extraer módulos únicos y filtrar nulos/vacíos
+                const modulesSet = new Set();
+                (permissions || []).forEach(p => {
+                    if (p.permission_module && p.permission_module.trim() !== '') {
+                        modulesSet.add(p.permission_module);
+                    }
+                });
+                
+                // Convertir a array y ordenar
+                allModules = Array.from(modulesSet).sort();
                 
                 // Llenar select de filtro
                 const moduleSelect = document.getElementById('filter-module');
                 moduleSelect.innerHTML = '<option value="">Todos los módulos</option>';
                 
-                allModules.forEach(module => {
+                allModules.forEach(moduleName => {
                     const option = document.createElement('option');
-                    option.value = module.permission_id;
-                    option.textContent = module.permission_name;
+                    option.value = moduleName;
+                    option.textContent = moduleName;
                     moduleSelect.appendChild(option);
                 });
                 
@@ -496,7 +507,7 @@
                 console.error('Error cargando módulos:', error);
             }
         }
-
+        
         // ==========================================
         // CARGAR REPORTES
         // ==========================================
@@ -505,9 +516,8 @@
             
             try {
                 // Cargar reportes con información relacionada
-                const reports = await supabaseRequest(
-                    '/bug_reports?select=*,users!bug_reports_user_fkey(user_display_name),permissions(permission_name),assigned:users!bug_reports_assigned_to_fkey(user_display_name),resolver:users!bug_reports_resolved_by_fkey(user_display_name)&order=created_at.desc'
-                );
+                // DESPUÉS (incluye permission_module):
+                const reports = await supabaseRequest('/bug_reports?select=*,users!bug_reports_user_fkey(user_display_name),permissions(permission_name,permission_module),assigned:users!bug_reports_assigned_to_fkey(user_display_name),resolver:users!bug_reports_resolved_by_fkey(user_display_name)&order=created_at.desc');
                 
                 allReports = reports || [];
                 filteredReports = allReports;
@@ -585,7 +595,7 @@
             const statusBadge = getStatusBadge(report.report_status);
             const priorityBadge = getPriorityBadge(report.priority);
             const userName = report.users ? report.users.user_display_name : 'Usuario desconocido';
-            const moduleName = report.permissions ? report.permissions.permission_name : 'Sin módulo';
+            const moduleName = report.permissions?.permission_module || 'Sin módulo';
             const date = new Date(report.created_at).toLocaleString('es-CO');
             
             div.innerHTML = `
@@ -780,8 +790,11 @@
                 // Filtro de prioridad
                 if (priorityFilter && report.priority !== priorityFilter) return false;
                 
-                // Filtro de módulo
-                if (moduleFilter && report.module_id !== moduleFilter) return false;
+                // Filtro de módulo (por permission_module del permiso asociado)
+                if (moduleFilter) {
+                    const reportModule = report.permissions?.permission_module;
+                    if (reportModule !== moduleFilter) return false;
+                }
                 
                 // Filtro de búsqueda en descripción
                 if (searchFilter && !report.description.toLowerCase().includes(searchFilter)) return false;
@@ -792,6 +805,7 @@
             renderReports();
         }
 
+        
         // ==========================================
         // LIMPIAR FILTROS
         // ==========================================
