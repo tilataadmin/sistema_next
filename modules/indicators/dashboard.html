@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.28.12.08">
+    <meta name="page-version" content="25.11.28.12.14">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1434,57 +1434,31 @@
                 const variable = userVariables.find(v => v.variable_id === variableId);
                 if (!variable) return [];
                 
-                const currentYear = parseInt(document.getElementById('filterYear').value) || new Date().getFullYear();
-                const years = [];
-                for (let i = 0; i < 5; i++) {  // Ampliado a 5 años para más datos históricos
-                    years.push(currentYear - i);
+                // Obtener TODOS los valores históricos de esta variable directamente
+                const query = `/variable_values?select=value_numeric,academic_year_id,academic_years!inner(year_name,year_order)&variable_id=eq.${variableId}&value_status=eq.active&order=academic_years(year_order).asc`;
+                
+                const results = await supabaseRequest(query);
+                
+                console.log(`📊 Valores históricos para variable ${variableId}:`, results);
+                
+                if (!results || results.length === 0) {
+                    return [];
                 }
                 
-                const values = [];
+                // Mapear resultados
+                const values = results
+                    .filter(r => r.value_numeric !== null)
+                    .map(r => ({
+                        period: r.academic_years.year_name,
+                        value: parseFloat(r.value_numeric),
+                        order: r.academic_years.year_order
+                    }))
+                    .sort((a, b) => a.order - b.order);
                 
-                if (variable.periodicity === 'annual') {
-                    // Variables anuales - consulta directa a la base de datos
-                    for (const year of years) {
-                        try {
-                            const query = `/variable_values?select=value_numeric&variable_id=eq.${variableId}&academic_year_id=eq.${year}&value_status=eq.active&limit=1`;
-                            const result = await supabaseRequest(query);
-                            
-                            if (result && result.length > 0 && result[0].value_numeric !== null) {
-                                values.push({
-                                    period: String(year),
-                                    value: result[0].value_numeric
-                                });
-                            }
-                        } catch (e) {
-                            // Continuar si no hay datos para este año
-                        }
-                    }
-                } else {
-                    // Variables mensuales
-                    for (const year of years) {
-                        for (let month = 1; month <= 12; month++) {
-                            try {
-                                const query = `/variable_values?select=value_numeric&variable_id=eq.${variableId}&academic_year_id=eq.${year}&month_number=eq.${month}&value_status=eq.active&limit=1`;
-                                const result = await supabaseRequest(query);
-                                
-                                if (result && result.length > 0 && result[0].value_numeric !== null) {
-                                    values.push({
-                                        period: `${year}-${String(month).padStart(2, '0')}`,
-                                        value: result[0].value_numeric
-                                    });
-                                }
-                            } catch (e) {
-                                // Continuar si no hay datos
-                            }
-                        }
-                    }
-                }
+                console.log(`✅ Valores mapeados:`, values);
                 
-                // Ordenar cronológicamente y tomar últimos 12
-                return values
-                    .sort((a, b) => a.period.localeCompare(b.period))
-                    .slice(-12);
-                    
+                return values;
+                
             } catch (error) {
                 console.error('❌ Error obteniendo histórico de variable:', error);
                 return [];
