@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.25.07.49">
+    <meta name="page-version" content="25.11.28.12.08">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1319,8 +1319,16 @@
                     historicalValues = await getVariableHistoricalValues(itemId);
                 }
                 
+                // Log de depuración - puedes eliminar después
+                console.log(`📊 Datos históricos para ${itemType} ${itemId}:`, historicalValues);
+                
                 if (!historicalValues || historicalValues.length < 2) {
                     console.log('ℹ️ No hay suficientes datos históricos para sparkline:', canvasId);
+                    // Mostrar mensaje en el canvas
+                    ctx.font = '12px Arial';
+                    ctx.fillStyle = '#6c757d';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Sin datos históricos suficientes', canvas.width / 2, canvas.height / 2);
                     return;
                 }
                 
@@ -1428,39 +1436,51 @@
                 
                 const currentYear = parseInt(document.getElementById('filterYear').value) || new Date().getFullYear();
                 const years = [];
-                for (let i = 0; i < 3; i++) {
+                for (let i = 0; i < 5; i++) {  // Ampliado a 5 años para más datos históricos
                     years.push(currentYear - i);
                 }
                 
                 const values = [];
                 
                 if (variable.periodicity === 'annual') {
-                    // Variables anuales
+                    // Variables anuales - consulta directa a la base de datos
                     for (const year of years) {
-                        const value = await getDirectVariableValue(variableId, year, null);
-                        if (value !== null) {
-                            values.push({
-                                period: String(year),
-                                value: value
-                            });
+                        try {
+                            const query = `/variable_values?select=value_numeric&variable_id=eq.${variableId}&academic_year_id=eq.${year}&value_status=eq.active&limit=1`;
+                            const result = await supabaseRequest(query);
+                            
+                            if (result && result.length > 0 && result[0].value_numeric !== null) {
+                                values.push({
+                                    period: String(year),
+                                    value: result[0].value_numeric
+                                });
+                            }
+                        } catch (e) {
+                            // Continuar si no hay datos para este año
                         }
                     }
                 } else {
                     // Variables mensuales
                     for (const year of years) {
                         for (let month = 1; month <= 12; month++) {
-                            const value = await getDirectVariableValue(variableId, year, month);
-                            if (value !== null) {
-                                values.push({
-                                    period: `${year}-${String(month).padStart(2, '0')}`,
-                                    value: value
-                                });
+                            try {
+                                const query = `/variable_values?select=value_numeric&variable_id=eq.${variableId}&academic_year_id=eq.${year}&month_number=eq.${month}&value_status=eq.active&limit=1`;
+                                const result = await supabaseRequest(query);
+                                
+                                if (result && result.length > 0 && result[0].value_numeric !== null) {
+                                    values.push({
+                                        period: `${year}-${String(month).padStart(2, '0')}`,
+                                        value: result[0].value_numeric
+                                    });
+                                }
+                            } catch (e) {
+                                // Continuar si no hay datos
                             }
                         }
                     }
                 }
                 
-                // Ordenar y tomar últimos 12
+                // Ordenar cronológicamente y tomar últimos 12
                 return values
                     .sort((a, b) => a.period.localeCompare(b.period))
                     .slice(-12);
