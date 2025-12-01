@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.01.11.14">
+    <meta name="page-version" content="25.12.01.11.39">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -362,20 +362,16 @@
         let modalInstance = null;
 
         // ==========================================
-        // CONFIGURACIÓN PHIDIAS
+        // MAPEOS ESPECÍFICOS PARA SINCRONIZACIÓN DE ESTUDIANTES
         // ==========================================
-        const PHIDIAS_CONFIG = {
-            apiUrl: 'https://tilatav3.phidias.co/rest/1/course/consolidate',
-            token: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ0aWxhdGF2My5waGlkaWFzLmNvIiwic3ViIjoiNTUxNyIsImV4cCI6MTc5NTY5ODUyOCwibmJmIjoxNzQ2MTYyMDAwLCJpYXQiOjE3NjQ1OTQ1MjgsImp0aSI6InlWaE5MbVVYTUFlUkRGZ3JScldSQ1NMMTdnMWxNczZnekpiN2M5dkpzWTB1QkRFYzYwdTJNYlN5SkFua3ROaEYiLCJwaGlkaWFzIjp7InR5cGUiOiJyZXN0YXBpX2FjY2VzcyIsInZlcnNpb24iOjJ9fQ.tipt5rj6zLnZHSxLr5qCStlVaOI3KO5GQBZQxAS8Ytk', // Reemplazar con el token real
-            
-            // Mapeo de géneros: PHIDIAS -> Tilata
-            genderMap: {
+        const STUDENT_SYNC_MAPPINGS = {
+            // Géneros: PHIDIAS -> Tilata UUID
+            gender: {
                 1: '9d3e1c57-67c8-4133-b55b-9f35100e5174', // Masculino
                 2: '789560c3-e8f5-47b7-bf7a-da256ac03962'  // Femenino
             },
-            
-            // Mapeo de estados: PHIDIAS -> Tilata
-            statusMap: {
+            // Estados: PHIDIAS -> Tilata UUID
+            status: {
                 'activo': 'd89b6287-ee51-435d-aeeb-d0f503af4646',
                 'inscrito': '44318f7a-7f5e-481f-a5c1-b062169566a7',
                 'retirado': '7386162d-6aa5-4b80-bea3-718ed8f82205'
@@ -958,20 +954,8 @@
                 showLoading();
                 document.getElementById('loadingOverlay').querySelector('p').textContent = 'Conectando con PHIDIAS...';
                 
-                // 1. Llamar API de PHIDIAS
-                const phidiasResponse = await fetch(PHIDIAS_CONFIG.apiUrl, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${PHIDIAS_CONFIG.token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (!phidiasResponse.ok) {
-                    throw new Error(`Error de PHIDIAS: ${phidiasResponse.status} - ${phidiasResponse.statusText}`);
-                }
-                
-                const phidiasData = await phidiasResponse.json();
+                // 1. Llamar API de PHIDIAS usando función centralizada
+                const phidiasData = await phidiasRequest('/course/consolidate');
                 console.log('📥 Datos recibidos de PHIDIAS:', phidiasData);
                 
                 // 2. Obtener estudiantes existentes (solo códigos)
@@ -1021,7 +1005,7 @@
                                 
                                 // Ignorar estados no mapeables
                                 const status = student.enrollment?.status?.toLowerCase();
-                                if (!PHIDIAS_CONFIG.statusMap[status]) {
+                                if (!STUDENT_SYNC_MAPPINGS.status[status]) {
                                     skipped++;
                                     continue;
                                 }
@@ -1039,11 +1023,11 @@
                                 if (!existingFamilyCodes.has(familyCode)) {
                                     const familyName = `${student.lastname1 || ''} ${student.lastname2 || ''}`.trim();
                                     familiesToCreate.push({
-                                    family_code: familyCode,
-                                    family_name: familyName,
-                                    student_count: 1
-                                });
-                                    existingFamilyCodes.add(familyCode); // Evitar duplicados en el lote
+                                        family_code: familyCode,
+                                        family_name: familyName,
+                                        student_count: 1
+                                    });
+                                    existingFamilyCodes.add(familyCode);
                                 }
                                 
                                 // Preparar estudiante
@@ -1053,12 +1037,12 @@
                                     student_first_name: student.firstname || '',
                                     student_last_name_1: student.lastname1 || '',
                                     student_last_name_2: student.lastname2 || null,
-                                    student_birthday: student.birthday ? timestampToDate(student.birthday) : null,
-                                    student_entry_date: student.enrollment?.date ? timestampToDate(student.enrollment.date) : getCurrentDateColombia(),
+                                    student_birthday: phidiasTimestampToDate(student.birthday),
+                                    student_entry_date: phidiasTimestampToDate(student.enrollment?.date) || getCurrentDateColombia(),
                                     family_id: familyCode,
                                     course_id: courseId,
-                                    gender_id: PHIDIAS_CONFIG.genderMap[student.gender] || null,
-                                    status_id: PHIDIAS_CONFIG.statusMap[status]
+                                    gender_id: STUDENT_SYNC_MAPPINGS.gender[student.gender] || null,
+                                    status_id: STUDENT_SYNC_MAPPINGS.status[status]
                                 });
                             }
                         }
@@ -1068,7 +1052,6 @@
                 // 6. Insertar familias nuevas
                 document.getElementById('loadingOverlay').querySelector('p').textContent = 'Creando familias...';
                 if (familiesToCreate.length > 0) {
-                    // Insertar de a lotes de 50
                     for (let i = 0; i < familiesToCreate.length; i += 50) {
                         const batch = familiesToCreate.slice(i, i + 50);
                         await supabaseRequest('/families', {
@@ -1082,16 +1065,13 @@
                 // 7. Insertar estudiantes nuevos
                 document.getElementById('loadingOverlay').querySelector('p').textContent = 'Creando estudiantes...';
                 if (studentsToCreate.length > 0) {
-                    // Obtener el próximo student_id
                     const maxIdData = await supabaseRequest('/students?select=student_id&order=student_id.desc&limit=1');
                     let nextId = maxIdData && maxIdData.length > 0 ? maxIdData[0].student_id + 1 : 1;
                     
-                    // Asignar IDs secuenciales
                     studentsToCreate.forEach(s => {
                         s.student_id = nextId++;
                     });
                     
-                    // Insertar de a lotes de 50
                     for (let i = 0; i < studentsToCreate.length; i += 50) {
                         const batch = studentsToCreate.slice(i, i + 50);
                         await supabaseRequest('/students', {
@@ -1105,19 +1085,18 @@
                 hideLoading();
                 
                 // 8. Mostrar resultado
-                let message = `Sincronización completada:\n`;
-                message += `• ${studentsToCreate.length} estudiantes nuevos creados\n`;
-                message += `• ${familiesToCreate.length} familias nuevas creadas\n`;
+                let message = `Sincronización completada:<br>`;
+                message += `• ${studentsToCreate.length} estudiantes nuevos creados<br>`;
+                message += `• ${familiesToCreate.length} familias nuevas creadas<br>`;
                 message += `• ${skipped} registros omitidos (ya existían o sin datos)`;
                 
                 if (noMatchCourse.length > 0) {
-                    message += `\n\n⚠️ ${noMatchCourse.length} estudiantes sin curso equivalente en Tilata`;
+                    message += `<br><br>⚠️ ${noMatchCourse.length} estudiantes sin curso equivalente en Tilata`;
                     console.warn('Estudiantes sin curso:', noMatchCourse);
                 }
                 
-                showAlert(message.replace(/\n/g, '<br>'), 'success');
+                showAlert(message, 'success');
                 
-                // Recargar lista
                 await loadStudents();
                 
             } catch (error) {
@@ -1125,18 +1104,6 @@
                 hideLoading();
                 showAlert('Error en sincronización con PHIDIAS: ' + error.message, 'danger');
             }
-        }
-        
-        /**
-         * Convierte timestamp de PHIDIAS a formato YYYY-MM-DD
-         */
-        function timestampToDate(timestamp) {
-            if (!timestamp || timestamp === 0) return null;
-            const date = new Date(timestamp * 1000);
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
         }
         
         // ==========================================
