@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.28.12.14">
+    <meta name="page-version" content="25.12.01.07.36">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -903,16 +903,19 @@
         // ==========================================
         // OBTENER METAS
         // ==========================================
-        
         async function getIndicatorGoal(indicatorId, yearId) {
             try {
-                const goals = await supabaseRequest(`/indicator_goals?select=goal_value&indicator_id=eq.${indicatorId}&academic_year_id=eq.${yearId}&limit=1`);
+                const goals = await supabaseRequest(`/indicator_goals?select=goal_value,goal_direction,goal_value_max&indicator_id=eq.${indicatorId}&academic_year_id=eq.${yearId}&limit=1`);
                 
                 if (!goals || goals.length === 0) {
                     return null;
                 }
                 
-                return goals[0].goal_value;
+                return {
+                    value: goals[0].goal_value,
+                    direction: goals[0].goal_direction || 'maximize',
+                    value_max: goals[0].goal_value_max
+                };
                 
             } catch (error) {
                 console.error('Error obteniendo meta de indicador:', error);
@@ -1081,10 +1084,50 @@
             
             let goalSection = '';
             if (result.goal !== null) {
-                const difference = result.value - result.goal;
-                const percentageDiff = (difference / result.goal * 100).toFixed(1);
-                const isPositive = difference >= 0;
-                const statusIcon = isPositive ? 
+                const goalValue = result.goal.value;
+                const goalDirection = result.goal.direction || 'maximize';
+                const goalValueMax = result.goal.value_max;
+                
+                // Evaluar si se cumplió la meta según la dirección
+                let isGoalMet = false;
+                let differenceText = '';
+                let goalLabel = 'Meta del año';
+                let goalDisplayValue = formatResult(goalValue, indicator.result_format);
+                
+                switch(goalDirection) {
+                    case 'maximize':
+                        isGoalMet = result.value >= goalValue;
+                        const diffMax = ((result.value - goalValue) / goalValue * 100).toFixed(1);
+                        differenceText = `${result.value >= goalValue ? '+' : ''}${diffMax}%`;
+                        goalLabel = 'Meta mínima';
+                        break;
+                    case 'minimize':
+                        isGoalMet = result.value <= goalValue;
+                        const diffMin = ((goalValue - result.value) / goalValue * 100).toFixed(1);
+                        differenceText = `${result.value <= goalValue ? '+' : '-'}${Math.abs(diffMin)}%`;
+                        goalLabel = 'Meta máxima';
+                        break;
+                    case 'max_limit':
+                        isGoalMet = result.value <= goalValue;
+                        const diffLimit = ((goalValue - result.value) / goalValue * 100).toFixed(1);
+                        differenceText = result.value <= goalValue ? `${diffLimit}% bajo límite` : `⚠️ Excede`;
+                        goalLabel = 'Límite máximo';
+                        break;
+                    case 'min_limit':
+                        isGoalMet = result.value >= goalValue;
+                        const diffMinLimit = ((result.value - goalValue) / goalValue * 100).toFixed(1);
+                        differenceText = result.value >= goalValue ? `${diffMinLimit}% sobre límite` : `⚠️ Por debajo`;
+                        goalLabel = 'Límite mínimo';
+                        break;
+                    case 'range':
+                        isGoalMet = result.value >= goalValue && result.value <= (goalValueMax || goalValue);
+                        goalDisplayValue = `${formatResult(goalValue, indicator.result_format)} - ${formatResult(goalValueMax, indicator.result_format)}`;
+                        differenceText = isGoalMet ? '✓ En rango' : '⚠️ Fuera de rango';
+                        goalLabel = 'Rango objetivo';
+                        break;
+                }
+                
+                const statusIcon = isGoalMet ? 
                     '<i class="bi bi-check-circle-fill text-success status-icon"></i>' : 
                     '<i class="bi bi-exclamation-circle-fill text-warning status-icon"></i>';
                 
@@ -1095,12 +1138,12 @@
                                 ${statusIcon}
                             </div>
                             <div class="col">
-                                <div class="goal-label">Meta del año</div>
-                                <div class="goal-value">${formatResult(result.goal, indicator.result_format)}</div>
+                                <div class="goal-label">${goalLabel}</div>
+                                <div class="goal-value">${goalDisplayValue}</div>
                             </div>
                             <div class="col-auto">
-                                <span class="difference-badge ${isPositive ? 'difference-positive' : 'difference-negative'}">
-                                    ${isPositive ? '+' : ''}${percentageDiff}%
+                                <span class="difference-badge ${isGoalMet ? 'difference-positive' : 'difference-negative'}">
+                                    ${differenceText}
                                 </span>
                             </div>
                         </div>
@@ -1119,7 +1162,7 @@
                                 ''}
                             
                             <div class="text-center">
-                                <div class="indicator-value" style="color: ${result.goal && result.value >= result.goal ? '#198754' : '#667eea'}">
+                                <div class="indicator-value" style="color: ${getIndicatorValueColor(result)}">
                                     ${formattedValue}
                                 </div>
                             </div>
@@ -1244,9 +1287,22 @@
                                    calculatedVariables.filter(r => r.calculated).length;
             const noDataItems = (totalIndicators + totalVariables) - calculatedItems;
             
-            const indicatorGoalsAchieved = calculatedIndicators.filter(r => 
-                r.calculated && r.goal !== null && r.value >= r.goal
-            ).length;
+            const indicatorGoalsAchieved = calculatedIndicators.filter(r => {
+                if (!r.calculated || r.goal === null) return false;
+                
+                const goalValue = r.goal.value;
+                const goalDirection = r.goal.direction || 'maximize';
+                const goalValueMax = r.goal.value_max;
+                
+                switch(goalDirection) {
+                    case 'maximize': return r.value >= goalValue;
+                    case 'minimize': return r.value <= goalValue;
+                    case 'max_limit': return r.value <= goalValue;
+                    case 'min_limit': return r.value >= goalValue;
+                    case 'range': return r.value >= goalValue && r.value <= (goalValueMax || goalValue);
+                    default: return r.value >= goalValue;
+                }
+            }).length;
             
             const variableGoalsAchieved = calculatedVariables.filter(r => 
                 r.calculated && r.goal !== null && r.value >= r.goal
@@ -1275,6 +1331,27 @@
         // ==========================================
         // FORMATEAR RESULTADO
         // ==========================================
+        
+        function getIndicatorValueColor(result) {
+            if (!result.goal) return '#667eea'; // Sin meta, color default
+            
+            const goalValue = result.goal.value;
+            const goalDirection = result.goal.direction || 'maximize';
+            const goalValueMax = result.goal.value_max;
+            
+            let isGoalMet = false;
+            
+            switch(goalDirection) {
+                case 'maximize': isGoalMet = result.value >= goalValue; break;
+                case 'minimize': isGoalMet = result.value <= goalValue; break;
+                case 'max_limit': isGoalMet = result.value <= goalValue; break;
+                case 'min_limit': isGoalMet = result.value >= goalValue; break;
+                case 'range': isGoalMet = result.value >= goalValue && result.value <= (goalValueMax || goalValue); break;
+                default: isGoalMet = result.value >= goalValue;
+            }
+            
+            return isGoalMet ? '#198754' : '#dc3545'; // Verde si cumple, rojo si no
+        }
         
         function formatResult(value, format) {
             if (value === null || value === undefined) {
