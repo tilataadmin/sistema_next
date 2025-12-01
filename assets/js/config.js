@@ -141,6 +141,17 @@ const SUPABASE_CONFIG = {
     environment: CURRENT_ENVIRONMENT
 };
 
+// ==========================================
+// CONFIGURACIÓN DE PHIDIAS - Cache local
+// ==========================================
+
+let PHIDIAS_CONFIG = {
+    baseUrl: null,
+    token: null,
+    tokenExpiry: null,
+    loaded: false
+};
+
 // Validar configuración
 if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) {
     console.error(`❌ Error: Variables de entorno de Supabase no configuradas para ${CURRENT_ENVIRONMENT}`);
@@ -414,6 +425,126 @@ async function getAuditLogs(filters = {}) {
     if (limit) query += `&limit=${limit}`;
     
     return await supabaseRequest(query);
+}
+
+// ==========================================
+// FUNCIONES DE INTEGRACIÓN CON PHIDIAS
+// ==========================================
+
+/**
+ * Carga la configuración de PHIDIAS desde system_config
+ * @returns {Promise<Object>} - Configuración de PHIDIAS
+ */
+async function loadPhidiasConfig() {
+    try {
+        if (PHIDIAS_CONFIG.loaded && isPhidiasTokenValid()) {
+            return PHIDIAS_CONFIG;
+        }
+        
+        console.log('🔄 Cargando configuración de PHIDIAS...');
+        
+        const configData = await supabaseRequest(
+            '/system_config?select=phidias_base_url,phidias_token,phidias_token_expiry&limit=1'
+        );
+        
+        if (configData && configData.length > 0) {
+            PHIDIAS_CONFIG.baseUrl = configData[0].phidias_base_url;
+            PHIDIAS_CONFIG.token = configData[0].phidias_token;
+            PHIDIAS_CONFIG.tokenExpiry = configData[0].phidias_token_expiry;
+            PHIDIAS_CONFIG.loaded = true;
+            
+            console.log('✅ Configuración de PHIDIAS cargada');
+            return PHIDIAS_CONFIG;
+        } else {
+            console.warn('⚠️ No se encontró configuración de PHIDIAS');
+            return null;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error cargando configuración de PHIDIAS:', error);
+        return null;
+    }
+}
+
+/**
+ * Verifica si el token de PHIDIAS está vigente
+ * @returns {boolean}
+ */
+function isPhidiasTokenValid() {
+    if (!PHIDIAS_CONFIG.token || !PHIDIAS_CONFIG.tokenExpiry) {
+        return false;
+    }
+    
+    const today = new Date();
+    const expiry = new Date(PHIDIAS_CONFIG.tokenExpiry);
+    today.setHours(0, 0, 0, 0);
+    
+    return today <= expiry;
+}
+
+/**
+ * Realiza una petición a la API de PHIDIAS
+ * @param {string} endpoint - Endpoint (ej: '/course/consolidate')
+ * @param {Object} options - Opciones de fetch
+ * @returns {Promise<Object>}
+ */
+async function phidiasRequest(endpoint, options = {}) {
+    try {
+        if (!PHIDIAS_CONFIG.loaded) {
+            await loadPhidiasConfig();
+        }
+        
+        if (!PHIDIAS_CONFIG.baseUrl || !PHIDIAS_CONFIG.token) {
+            throw new Error('Configuración de PHIDIAS no disponible.');
+        }
+        
+        if (!isPhidiasTokenValid()) {
+            throw new Error('Token de PHIDIAS expirado. Contacte al administrador.');
+        }
+        
+        const url = `${PHIDIAS_CONFIG.baseUrl}${endpoint}`;
+        
+        const config = {
+            method: options.method || 'GET',
+            headers: {
+                'Authorization': `Bearer ${PHIDIAS_CONFIG.token}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        };
+        
+        console.log(`📡 PHIDIAS: ${config.method} ${endpoint}`);
+        
+        const response = await fetch(url, config);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`PHIDIAS HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`✅ PHIDIAS: ${Array.isArray(data) ? data.length + ' registros' : 'OK'}`);
+        
+        return data;
+        
+    } catch (error) {
+        console.error('❌ PHIDIAS Error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Convierte timestamp Unix a formato YYYY-MM-DD
+ * @param {number} timestamp - Timestamp en segundos
+ * @returns {string|null}
+ */
+function phidiasTimestampToDate(timestamp) {
+    if (!timestamp || timestamp === 0) return null;
+    const date = new Date(timestamp * 1000);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 // Función para mostrar mensajes con indicador de ambiente
@@ -1306,6 +1437,12 @@ window.getModuleFolder = getModuleFolder;
 window.getAuditLogs = getAuditLogs;
 window.loadAndApplyBrandColors = loadAndApplyBrandColors;
 window.updateNavbarColors = updateNavbarColors;
+// PHIDIAS Integration
+window.PHIDIAS_CONFIG = PHIDIAS_CONFIG;
+window.loadPhidiasConfig = loadPhidiasConfig;
+window.isPhidiasTokenValid = isPhidiasTokenValid;
+window.phidiasRequest = phidiasRequest;
+window.phidiasTimestampToDate = phidiasTimestampToDate;
 
 // ==========================================
 // SISTEMA DE NAVBAR DE USUARIO Y CAMBIO DE CONTRASEÑA
