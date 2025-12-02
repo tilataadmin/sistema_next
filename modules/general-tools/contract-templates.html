@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.05.08.43">
+    <meta name="page-version" content="25.12.02.13.13">
     <title>Plantillas de Contratos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -353,11 +353,12 @@
                     <table class="table table-hover mb-0" id="tabla-contratos">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 15%;">Categoría</th>
-                                <th style="width: 20%;">Plantilla</th>
-                                <th style="width: 25%;">Nombre del Contrato</th>
-                                <th style="width: 15%;">Fecha Fin</th>
-                                <th style="width: 25%;" class="text-center">Acciones</th>
+                                <th style="width: 12%;">Categoría</th>
+                                <th style="width: 18%;">Plantilla</th>
+                                <th style="width: 22%;">Nombre del Contrato</th>
+                                <th style="width: 12%;">Fecha Fin</th>
+                                <th style="width: 10%;">Estado</th>
+                                <th style="width: 26%;" class="text-center">Acciones</th>
                             </tr>
                         </thead>
                         <tbody id="tabla-contratos-body">
@@ -646,6 +647,83 @@
         </div>
     </div>
 
+    <!-- MODAL: SUBIR CONTRATO FIRMADO -->
+    <div class="modal fade" id="modal-subir-firmado" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="modal-firmado-title">
+                        <i class="bi bi-upload me-2"></i>Subir Contrato Firmado
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="form-subir-firmado">
+                    <input type="hidden" id="firmado-contract-id">
+                    <input type="hidden" id="firmado-es-reemplazo" value="false">
+                    <div class="modal-body">
+                        
+                        <!-- Info del contrato -->
+                        <div class="alert alert-info">
+                            <strong>Contrato:</strong> <span id="firmado-contract-name"></span>
+                        </div>
+
+                        <!-- Aviso de reemplazo -->
+                        <div class="alert alert-warning d-none" id="firmado-aviso-reemplazo">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Atención:</strong> Este contrato ya tiene un PDF firmado. 
+                            Al subir uno nuevo, el anterior será reemplazado.
+                        </div>
+
+                        <!-- Selector de archivo -->
+                        <div class="mb-3">
+                            <label for="firmado-archivo" class="form-label">
+                                Archivo PDF Firmado <span class="text-danger">*</span>
+                            </label>
+                            <input 
+                                type="file" 
+                                class="form-control" 
+                                id="firmado-archivo" 
+                                accept=".pdf,application/pdf"
+                                required
+                            >
+                            <div class="form-text">
+                                Solo archivos PDF. Tamaño máximo: 10MB
+                            </div>
+                        </div>
+
+                        <!-- Preview del archivo seleccionado -->
+                        <div class="d-none" id="firmado-preview">
+                            <div class="card bg-light">
+                                <div class="card-body py-2">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-file-pdf text-danger me-2" style="font-size: 1.5rem;"></i>
+                                        <div class="flex-grow-1">
+                                            <strong id="firmado-nombre-archivo"></strong>
+                                            <br>
+                                            <small class="text-muted" id="firmado-tamano-archivo"></small>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="limpiarArchivoFirmado()">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-upload me-1"></i>Subir PDF Firmado
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
@@ -676,6 +754,7 @@
         let modalGenerar = null;
         let modalVariable = null;
         let modalPdf = null;
+        let modalSubirFirmado = null;
         
         // Editor Quill
         let quillEditor = null;
@@ -735,6 +814,7 @@
                 modalGenerar = new bootstrap.Modal(document.getElementById('modal-generar'));
                 modalVariable = new bootstrap.Modal(document.getElementById('modal-variable'));
                 modalPdf = new bootstrap.Modal(document.getElementById('modal-pdf'));
+                modalSubirFirmado = new bootstrap.Modal(document.getElementById('modal-subir-firmado'));
                 
                 // Inicializar Quill Editor
                 inicializarEditor();
@@ -742,6 +822,8 @@
                 // Configurar eventos
                 document.getElementById('form-plantilla').addEventListener('submit', manejarSubmitPlantilla);
                 document.getElementById('form-generar').addEventListener('submit', manejarSubmitGenerar);
+                document.getElementById('form-subir-firmado').addEventListener('submit', manejarSubmitFirmado);
+                document.getElementById('firmado-archivo').addEventListener('change', previsualizarArchivoFirmado);
                 
                 // Cargar datos
                 await cargarDatosIniciales();
@@ -963,6 +1045,89 @@
             tbody.innerHTML = datos.map(contract => {
                 const categoryName = contract.contract_categories?.category_name || '-';
                 const templateName = contract.contract_templates?.template_name || '-';
+                const estaFirmado = contract.contract_status === 'signed';
+                const estaVencido = contract.contract_end_date && new Date(contract.contract_end_date) < new Date();
+                
+                // Badge de estado
+                const estadoBadge = estaFirmado 
+                    ? '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Firmado</span>'
+                    : '<span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>Pendiente</span>';
+                
+                // Botones de acción según estado
+                let botonesAccion = '';
+                
+                if (estaFirmado) {
+                    // Ya tiene firmado: Ver Original, Ver Firmado, Descargar (menú), Reemplazar, Eliminar
+                    botonesAccion = `
+                        <div class="btn-group btn-group-sm me-1">
+                            <button 
+                                class="btn btn-outline-primary" 
+                                onclick="verPDF('${contract.contract_id}', 'original')"
+                                title="Ver PDF Original">
+                                <i class="bi bi-file-earmark"></i>
+                            </button>
+                            <button 
+                                class="btn btn-success" 
+                                onclick="verPDF('${contract.contract_id}', 'signed')"
+                                title="Ver PDF Firmado">
+                                <i class="bi bi-file-earmark-check"></i>
+                            </button>
+                        </div>
+                        <div class="btn-group btn-group-sm me-1">
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="Descargar">
+                                <i class="bi bi-download"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="descargarPDF('${contract.contract_id}', 'original'); return false;">
+                                    <i class="bi bi-file-earmark me-2"></i>Original
+                                </a></li>
+                                <li><a class="dropdown-item" href="#" onclick="descargarPDF('${contract.contract_id}', 'signed'); return false;">
+                                    <i class="bi bi-file-earmark-check me-2"></i>Firmado
+                                </a></li>
+                            </ul>
+                        </div>
+                        <button 
+                            class="btn btn-sm btn-outline-warning" 
+                            onclick="abrirModalSubirFirmado('${contract.contract_id}', true)"
+                            title="Reemplazar Firmado">
+                            <i class="bi bi-arrow-repeat"></i>
+                        </button>
+                        <button 
+                            class="btn btn-sm btn-outline-danger" 
+                            onclick="eliminarContrato('${contract.contract_id}')"
+                            title="Eliminar">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    `;
+                } else {
+                    // Sin firmado: Ver, Descargar, Subir Firmado, Eliminar
+                    botonesAccion = `
+                        <button 
+                            class="btn btn-sm btn-outline-primary" 
+                            onclick="verPDF('${contract.contract_id}', 'original')"
+                            title="Ver PDF">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button 
+                            class="btn btn-sm btn-outline-success" 
+                            onclick="descargarPDF('${contract.contract_id}', 'original')"
+                            title="Descargar">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button 
+                            class="btn btn-sm btn-primary" 
+                            onclick="abrirModalSubirFirmado('${contract.contract_id}', false)"
+                            title="Subir Firmado">
+                            <i class="bi bi-upload me-1"></i>Subir Firmado
+                        </button>
+                        <button 
+                            class="btn btn-sm btn-outline-danger" 
+                            onclick="eliminarContrato('${contract.contract_id}')"
+                            title="Eliminar">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    `;
+                }
                 
                 return `
                     <tr>
@@ -978,28 +1143,14 @@
                         </td>
                         <td>
                             <small>${contract.contract_end_date ? formatDate(contract.contract_end_date) : '-'}</small>
-                            ${contract.contract_end_date && new Date(contract.contract_end_date) < new Date() ? 
-                                '<br><span class="badge bg-danger">Vencido</span>' : ''}
+                            ${estaVencido ? '<br><span class="badge bg-danger">Vencido</span>' : ''}
+                        </td>
+                        <td>
+                            ${estadoBadge}
+                            ${estaFirmado && contract.signed_at ? `<br><small class="text-muted">${formatDate(contract.signed_at)}</small>` : ''}
                         </td>
                         <td class="text-center table-actions">
-                            <button 
-                                class="btn btn-sm btn-outline-primary" 
-                                onclick="verPDF('${contract.contract_id}')"
-                                title="Ver PDF">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            <button 
-                                class="btn btn-sm btn-outline-success" 
-                                onclick="descargarPDF('${contract.contract_id}')"
-                                title="Descargar">
-                                <i class="bi bi-download"></i>
-                            </button>
-                            <button 
-                                class="btn btn-sm btn-outline-danger" 
-                                onclick="eliminarContrato('${contract.contract_id}')"
-                                title="Eliminar">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            ${botonesAccion}
                         </td>
                     </tr>
                 `;
@@ -1620,9 +1771,9 @@
         }
 
         // ==========================================
-        // VER PDF
+        // VER PDF (ORIGINAL O FIRMADO)
         // ==========================================
-        async function verPDF(contractId) {
+        async function verPDF(contractId, tipo = 'original') {
             try {
                 const contrato = misContratosCache.find(c => c.contract_id === contractId);
                 
@@ -1631,15 +1782,29 @@
                     return;
                 }
                 
+                let pdfUrl, titulo;
+                
+                if (tipo === 'signed') {
+                    if (!contrato.signed_pdf_url) {
+                        showMessage('Este contrato no tiene PDF firmado', 'warning');
+                        return;
+                    }
+                    pdfUrl = contrato.signed_pdf_url;
+                    titulo = contrato.contract_name + ' (Firmado)';
+                } else {
+                    pdfUrl = contrato.pdf_url;
+                    titulo = contrato.contract_name + ' (Original)';
+                }
+                
                 const pdfViewer = document.getElementById('pdf-viewer');
                 const pdfTitle = document.getElementById('pdf-title');
                 const downloadBtn = document.getElementById('pdf-download-btn');
                 
-                pdfTitle.textContent = contrato.contract_name;
-                downloadBtn.href = contrato.pdf_url;
-                downloadBtn.download = `${contrato.contract_name}.pdf`;
+                pdfTitle.textContent = titulo;
+                downloadBtn.href = pdfUrl;
+                downloadBtn.download = `${contrato.contract_name}${tipo === 'signed' ? '_firmado' : ''}.pdf`;
                 
-                pdfViewer.innerHTML = `<iframe src="${contrato.pdf_url}" width="100%" height="100%"></iframe>`;
+                pdfViewer.innerHTML = `<iframe src="${pdfUrl}" width="100%" height="100%"></iframe>`;
                 
                 modalPdf.show();
                 
@@ -1650,9 +1815,9 @@
         }
 
         // ==========================================
-        // DESCARGAR PDF
+        // DESCARGAR PDF (ORIGINAL O FIRMADO)
         // ==========================================
-        async function descargarPDF(contractId) {
+        async function descargarPDF(contractId, tipo = 'original') {
             try {
                 const contrato = misContratosCache.find(c => c.contract_id === contractId);
                 
@@ -1661,9 +1826,23 @@
                     return;
                 }
                 
+                let pdfUrl, nombreArchivo;
+                
+                if (tipo === 'signed') {
+                    if (!contrato.signed_pdf_url) {
+                        showMessage('Este contrato no tiene PDF firmado', 'warning');
+                        return;
+                    }
+                    pdfUrl = contrato.signed_pdf_url;
+                    nombreArchivo = `${contrato.contract_name}_firmado.pdf`;
+                } else {
+                    pdfUrl = contrato.pdf_url;
+                    nombreArchivo = `${contrato.contract_name}.pdf`;
+                }
+                
                 const a = document.createElement('a');
-                a.href = contrato.pdf_url;
-                a.download = `${contrato.contract_name}.pdf`;
+                a.href = pdfUrl;
+                a.download = nombreArchivo;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -1676,6 +1855,7 @@
             }
         }
 
+        
         // ==========================================
         // ELIMINAR CONTRATO
         // ==========================================
@@ -1724,6 +1904,224 @@
                 showMessage('Error al eliminar contrato: ' + error.message, 'danger');
             } finally {
                 ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // FUNCIONES PARA SUBIR CONTRATO FIRMADO
+        // ==========================================
+        
+        /**
+         * Abre el modal para subir un PDF firmado
+         */
+        function abrirModalSubirFirmado(contractId, esReemplazo = false) {
+            const contrato = misContratosCache.find(c => c.contract_id === contractId);
+            
+            if (!contrato) {
+                showMessage('Contrato no encontrado', 'danger');
+                return;
+            }
+            
+            // Limpiar formulario
+            document.getElementById('form-subir-firmado').reset();
+            document.getElementById('firmado-preview').classList.add('d-none');
+            
+            // Llenar datos
+            document.getElementById('firmado-contract-id').value = contractId;
+            document.getElementById('firmado-contract-name').textContent = contrato.contract_name;
+            document.getElementById('firmado-es-reemplazo').value = esReemplazo;
+            
+            // Mostrar/ocultar aviso de reemplazo
+            const avisoReemplazo = document.getElementById('firmado-aviso-reemplazo');
+            if (esReemplazo) {
+                avisoReemplazo.classList.remove('d-none');
+                document.getElementById('modal-firmado-title').innerHTML = 
+                    '<i class="bi bi-arrow-repeat me-2"></i>Reemplazar Contrato Firmado';
+            } else {
+                avisoReemplazo.classList.add('d-none');
+                document.getElementById('modal-firmado-title').innerHTML = 
+                    '<i class="bi bi-upload me-2"></i>Subir Contrato Firmado';
+            }
+            
+            modalSubirFirmado.show();
+        }
+        
+        /**
+         * Previsualiza el archivo seleccionado
+         */
+        function previsualizarArchivoFirmado(e) {
+            const file = e.target.files[0];
+            const preview = document.getElementById('firmado-preview');
+            
+            if (!file) {
+                preview.classList.add('d-none');
+                return;
+            }
+            
+            // Validar tipo
+            if (file.type !== 'application/pdf') {
+                showMessage('Solo se permiten archivos PDF', 'warning');
+                e.target.value = '';
+                preview.classList.add('d-none');
+                return;
+            }
+            
+            // Validar tamaño (10MB)
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showMessage('El archivo excede el tamaño máximo de 10MB', 'warning');
+                e.target.value = '';
+                preview.classList.add('d-none');
+                return;
+            }
+            
+            // Mostrar preview
+            document.getElementById('firmado-nombre-archivo').textContent = file.name;
+            document.getElementById('firmado-tamano-archivo').textContent = formatFileSize(file.size);
+            preview.classList.remove('d-none');
+        }
+        
+        /**
+         * Limpia el archivo seleccionado
+         */
+        function limpiarArchivoFirmado() {
+            document.getElementById('firmado-archivo').value = '';
+            document.getElementById('firmado-preview').classList.add('d-none');
+        }
+        
+        /**
+         * Formatea el tamaño de archivo en formato legible
+         */
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        /**
+         * Maneja el submit del formulario de subir firmado
+         */
+        async function manejarSubmitFirmado(e) {
+            e.preventDefault();
+            
+            try {
+                mostrarLoading('Subiendo PDF firmado...');
+                
+                const contractId = document.getElementById('firmado-contract-id').value;
+                const esReemplazo = document.getElementById('firmado-es-reemplazo').value === 'true';
+                const archivo = document.getElementById('firmado-archivo').files[0];
+                
+                if (!archivo) {
+                    ocultarLoading();
+                    showMessage('Selecciona un archivo PDF', 'warning');
+                    return;
+                }
+                
+                const contrato = misContratosCache.find(c => c.contract_id === contractId);
+                if (!contrato) {
+                    throw new Error('Contrato no encontrado');
+                }
+                
+                // Si es reemplazo, eliminar el archivo anterior de Storage
+                if (esReemplazo && contrato.signed_pdf_url) {
+                    await eliminarPDFFirmadoDeStorage(contrato.signed_pdf_url);
+                }
+                
+                // Subir nuevo archivo
+                const signedPdfUrl = await subirPDFFirmadoAStorage(archivo, contrato.contract_name);
+                
+                // Actualizar registro en BD
+                await supabaseRequest('/generated_contracts?contract_id=eq.' + contractId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        signed_pdf_url: signedPdfUrl,
+                        signed_at: new Date().toISOString(),
+                        contract_status: 'signed'
+                    })
+                });
+                
+                showMessage(esReemplazo ? 'PDF firmado reemplazado exitosamente' : 'PDF firmado subido exitosamente', 'success');
+                
+                modalSubirFirmado.hide();
+                await cargarMisContratos();
+                
+            } catch (error) {
+                console.error('❌ Error subiendo PDF firmado:', error);
+                showMessage('Error al subir PDF firmado: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+        
+        /**
+         * Sube el PDF firmado a Supabase Storage
+         */
+        async function subirPDFFirmadoAStorage(file, contractName) {
+            try {
+                const timestamp = Date.now();
+                const cleanName = sanitizeFileName(contractName);
+                const filePath = `${currentUser.user_id}/${timestamp}-${cleanName}_firmado.pdf`;
+                
+                console.log('📁 Subiendo PDF firmado:', filePath);
+                console.log('📦 Tamaño:', formatFileSize(file.size));
+                
+                const { data, error } = await supabaseClient
+                    .storage
+                    .from(BUCKET_NAME)
+                    .upload(filePath, file, {
+                        cacheControl: '3600',
+                        upsert: false,
+                        contentType: 'application/pdf'
+                    });
+                
+                if (error) {
+                    console.error('❌ Error de Supabase Storage:', error);
+                    throw error;
+                }
+                
+                console.log('✅ Upload exitoso:', data);
+                
+                // Obtener URL pública
+                const { data: urlData } = supabaseClient
+                    .storage
+                    .from(BUCKET_NAME)
+                    .getPublicUrl(filePath);
+                
+                console.log('✅ PDF firmado subido:', urlData.publicUrl);
+                return urlData.publicUrl;
+                
+            } catch (error) {
+                console.error('❌ Error subiendo PDF firmado:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * Elimina un PDF firmado de Storage (para reemplazos)
+         */
+        async function eliminarPDFFirmadoDeStorage(pdfUrl) {
+            try {
+                // Extraer ruta del archivo desde la URL
+                const urlParts = pdfUrl.split('/');
+                const filePath = `${urlParts[urlParts.length - 2]}/${urlParts[urlParts.length - 1]}`;
+                
+                console.log('🗑️ Eliminando PDF firmado anterior:', filePath);
+                
+                const { error } = await supabaseClient
+                    .storage
+                    .from(BUCKET_NAME)
+                    .remove([filePath]);
+                
+                if (error) {
+                    console.warn('⚠️ Error eliminando PDF anterior:', error);
+                } else {
+                    console.log('✅ PDF anterior eliminado');
+                }
+                
+            } catch (error) {
+                console.warn('⚠️ Error eliminando PDF anterior:', error);
             }
         }
 
@@ -1804,6 +2202,8 @@
         window.filtrarPlantillas = filtrarPlantillas;
         window.filtrarContratos = filtrarContratos;
         window.limpiarFormatoEditor = limpiarFormatoEditor;
+        window.abrirModalSubirFirmado = abrirModalSubirFirmado;
+        window.limpiarArchivoFirmado = limpiarArchivoFirmado;
         
         console.log('✅ contract-templates.html FIXED - PDF Liviano cargado correctamente');
     </script>
