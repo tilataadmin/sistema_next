@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.12.02.14.01">
+    <meta name="page-version" content="25.12.02.yyyy">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2197,48 +2197,75 @@
         // ==========================================
         async function iniciarScannerVisitante() {
             try {
-                // Ocultar elementos decorativos PRIMERO
+                // Ocultar elementos decorativos
                 const container = document.getElementById('visitante-scanner-container');
                 container.querySelector('.scanner-icon').style.display = 'none';
                 container.querySelector('h4').style.display = 'none';
                 container.querySelector('p').style.display = 'none';
                 
-                // Mostrar el reader y ocultar botón de inicio
                 document.getElementById('start-visitante-scanner-btn').style.display = 'none';
                 document.getElementById('visitante-reader').style.display = 'block';
 
-                // Crear scanner con soporte para múltiples formatos
-                html5QrcodeScannerVisitante = new Html5Qrcode("visitante-reader", {
-                    formatsToSupport: [
-                        Html5QrcodeSupportedFormats.QR_CODE,
-                        Html5QrcodeSupportedFormats.PDF_417,
-                        Html5QrcodeSupportedFormats.CODE_128,
-                        Html5QrcodeSupportedFormats.EAN_13
-                    ],
-                    verbose: false
-                });
+                // Crear scanner
+                html5QrcodeScannerVisitante = new Html5Qrcode("visitante-reader");
                 
+                // Configuración agresiva para cédulas colombianas
                 const config = {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 }
+                    fps: 20,
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        // Usar el 80% del área disponible
+                        let minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        let qrboxSize = Math.floor(minEdge * 0.8);
+                        return {
+                            width: qrboxSize,
+                            height: Math.floor(qrboxSize * 0.6) // Rectangular para PDF417
+                        };
+                    },
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
+                    }
+                };
+
+                // Solicitar cámara con alta resolución
+                const cameraConfig = {
+                    facingMode: "environment",
+                    advanced: [
+                        { width: { min: 1280 } },
+                        { height: { min: 720 } }
+                    ]
                 };
 
                 await html5QrcodeScannerVisitante.start(
-                    { facingMode: "environment" },
+                    cameraConfig,
                     config,
                     onScanVisitanteSuccess,
                     onScanVisitanteError
                 );
 
                 document.getElementById('stop-visitante-scanner-btn').style.display = 'inline-block';
-                console.log('✅ Scanner de visitantes iniciado');
+                console.log('✅ Scanner de visitantes iniciado (modo alta resolución)');
 
             } catch (error) {
                 console.error('❌ Error iniciando scanner visitantes:', error);
-                showMessage('Error al iniciar la cámara: ' + error.message, 'danger');
-                resetearUIScanner();
+                
+                // Si falla con alta resolución, intentar con configuración básica
+                console.log('⚠️ Intentando con configuración básica...');
+                try {
+                    await html5QrcodeScannerVisitante.start(
+                        { facingMode: "environment" },
+                        { fps: 15, qrbox: { width: 300, height: 200 } },
+                        onScanVisitanteSuccess,
+                        onScanVisitanteError
+                    );
+                    document.getElementById('stop-visitante-scanner-btn').style.display = 'inline-block';
+                    console.log('✅ Scanner iniciado con configuración básica');
+                } catch (fallbackError) {
+                    showMessage('Error al iniciar la cámara: ' + fallbackError.message, 'danger');
+                    resetearUIScanner();
+                }
             }
         }
+
         
         async function detenerScannerVisitante() {
             try {
@@ -2269,14 +2296,25 @@
         }
 
         // Callback: Escaneo exitoso de cédula
+        // Callback: Escaneo exitoso de cédula
         async function onScanVisitanteSuccess(decodedText, decodedResult) {
-            console.log('📋 Código de cédula escaneado:', decodedText);
-            console.log('📋 Formato detectado:', decodedResult.result.format?.formatName || 'desconocido');
+            console.log('========================================');
+            console.log('📋 CÓDIGO DETECTADO');
+            console.log('Texto crudo:', decodedText);
+            console.log('Longitud:', decodedText.length);
+            console.log('Formato:', decodedResult.result.format?.formatName || 'desconocido');
+            console.log('Resultado completo:', decodedResult);
+            console.log('========================================');
+            
+            // TEMPORAL: Mostrar el código en pantalla para debug
+            alert('Código detectado:\n\n' + decodedText.substring(0, 200) + (decodedText.length > 200 ? '...' : ''));
             
             await detenerScannerVisitante();
             
             // Parsear el código según el formato
             const datosExtraidos = parsearCodigoCedula(decodedText);
+            
+            console.log('📋 Datos extraídos:', datosExtraidos);
             
             if (datosExtraidos) {
                 await procesarVisitanteEscaneado(datosExtraidos);
@@ -2286,6 +2324,7 @@
             }
         }
 
+        
         function onScanVisitanteError(errorMessage) {
             // Ignorar errores continuos de escaneo
         }
