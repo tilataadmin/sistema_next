@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.12.04.12.39">
     <title>Designar Solicitantes - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -149,6 +150,50 @@
                 min-width: 600px;
             }
         }
+
+        /* Tabla resumen de solicitantes asignados */
+        .tabla-resumen {
+            margin-bottom: 2rem;
+        }
+        
+        .tabla-resumen h5 {
+            color: #495057;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        
+        .tabla-resumen .table {
+            margin-bottom: 0;
+        }
+        
+        .tabla-resumen td {
+            vertical-align: top;
+        }
+        
+        .lista-asignaciones {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 0.9rem;
+        }
+        
+        .lista-asignaciones li {
+            padding: 2px 0;
+            color: #495057;
+        }
+        
+        .lista-asignaciones li::before {
+            content: "•";
+            color: #0d6efd;
+            margin-right: 6px;
+        }
+        
+        .estado-sin-solicitantes {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
+            background-color: #f8f9fa;
+            border-radius: 0.5rem;
     </style>
 </head>
 <body>
@@ -189,6 +234,17 @@
                         <h1 class="h3 mb-0">Designar Solicitantes</h1>
                         <p class="text-muted mb-0">Autorizar trabajadores para hacer requerimientos en sus asignaciones presupuestales</p>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla resumen de solicitantes asignados -->
+        <div id="seccionResumen" class="tabla-resumen">
+            <h5><i class="bi bi-list-check me-2"></i>Solicitantes autorizados actualmente</h5>
+            <div id="containerResumen">
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span class="ms-2">Cargando...</span>
                 </div>
             </div>
         </div>
@@ -290,6 +346,7 @@
         let trabajadorSeleccionado = null;
         let cambiosPendientes = false;
         let modalConfirmacion;
+        let solicitantesAsignados = [];
 
         // ===== ELEMENTOS DEL DOM =====
         const elementos = {
@@ -315,6 +372,10 @@
                     cargarTrabajadores(),
                     cargarAsignacionesUsuario()
                 ]);
+                
+                // Cargar solicitantes ya asignados (requiere asignacionesUsuario cargado)
+                await cargarSolicitantesAsignados();
+                renderizarTablaResumen();
 
                 if (trabajadores.length === 0) {
                     showMessage('No se encontraron trabajadores activos', 'warning');
@@ -383,6 +444,133 @@
             
             return asignacionesUsuario;
         }
+
+        async function cargarSolicitantesAsignados() {
+            const session = getStoredSession();
+            const userEmail = session.user.user_mail;
+            
+            // Obtener IDs de asignaciones del usuario
+            const asignacionesIds = asignacionesUsuario.map(a => a.assignment_id);
+            
+            if (asignacionesIds.length === 0) {
+                solicitantesAsignados = [];
+                return [];
+            }
+            
+            // Consultar budget_requesters con datos del trabajador
+            const query = `budget_requesters?select=assignment_id,worker_id,workers(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2)&assignment_id=in.(${asignacionesIds.join(',')})`;
+            
+            const data = await supabaseRequest('/' + query);
+            
+            // Agrupar por trabajador
+            const agrupado = {};
+            
+            data.forEach(registro => {
+                const workerId = registro.worker_id;
+                const worker = registro.workers;
+                
+                if (!worker) return;
+                
+                if (!agrupado[workerId]) {
+                    agrupado[workerId] = {
+                        worker_id: workerId,
+                        worker_full_name: construirNombreCompleto(worker),
+                        asignaciones: []
+                    };
+                }
+                
+                // Buscar datos de la asignación
+                const asignacion = asignacionesUsuario.find(a => a.assignment_id === registro.assignment_id);
+                if (asignacion) {
+                    agrupado[workerId].asignaciones.push({
+                        assignment_id: asignacion.assignment_id,
+                        descripcion: asignacion.category_detail 
+                            ? `${asignacion.item_name} - ${asignacion.category_detail}`
+                            : `${asignacion.item_name} - ${asignacion.assignment_category}`
+                    });
+                }
+            });
+            
+            // Convertir a array y ordenar por nombre
+            solicitantesAsignados = Object.values(agrupado).sort((a, b) => 
+                a.worker_full_name.localeCompare(b.worker_full_name)
+            );
+            
+            return solicitantesAsignados;
+        }
+
+        function renderizarTablaResumen() {
+            const container = document.getElementById('containerResumen');
+            
+            if (solicitantesAsignados.length === 0) {
+                container.innerHTML = `
+                    <div class="estado-sin-solicitantes">
+                        <i class="bi bi-person-plus" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
+                        <p class="mb-0">No ha autorizado solicitantes aún.<br>
+                        <small>Seleccione un trabajador abajo para comenzar.</small></p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Trabajador</th>
+                                <th>Asignaciones autorizadas</th>
+                                <th style="width: 100px; text-align: center;">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            solicitantesAsignados.forEach(solicitante => {
+                const listaAsignaciones = solicitante.asignaciones
+                    .map(a => `<li>${a.descripcion}</li>`)
+                    .join('');
+                
+                html += `
+                    <tr>
+                        <td><strong>${solicitante.worker_full_name}</strong></td>
+                        <td>
+                            <ul class="lista-asignaciones">
+                                ${listaAsignaciones}
+                            </ul>
+                        </td>
+                        <td style="text-align: center;">
+                            <button class="btn btn-sm btn-outline-primary" 
+                                    onclick="editarSolicitante(${solicitante.worker_id})">
+                                <i class="bi bi-pencil-fill me-1"></i>Editar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        function editarSolicitante(workerId) {
+            // Seleccionar el trabajador en el dropdown
+            elementos.selectTrabajador.value = workerId;
+            
+            // Disparar el evento change para cargar sus datos
+            elementos.selectTrabajador.dispatchEvent(new Event('change'));
+            
+            // Hacer scroll hacia la sección de edición
+            elementos.selectTrabajador.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        
+        // Hacer función disponible globalmente
+        window.editarSolicitante = editarSolicitante;
 
         // ===== FUNCIONES AUXILIARES =====
         function construirNombreCompleto(worker) {
@@ -767,6 +955,10 @@
                 btnGuardar.disabled = false;
                 
                 showMessage('Autorizaciones actualizadas correctamente', 'success');
+                
+                // Recargar tabla resumen
+                await cargarSolicitantesAsignados();
+                renderizarTablaResumen();
                 
                 // Recargar datos para reflejar estado actual
                 await cargarDatosCompletos(trabajadorSeleccionado);
