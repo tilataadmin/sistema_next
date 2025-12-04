@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.27.12.49">
+    <meta name="page-version" content="25.12.04.11.33">
     <title>Mi Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -271,6 +271,35 @@
             font-weight: 600;
         }
 
+        /* Fila de totales en modal */
+        .fila-totales {
+            background-color: #e7f1ff !important;
+            font-weight: 700;
+            border-top: 2px solid #0d6efd;
+        }
+        
+        .fila-totales td {
+            padding: 12px !important;
+        }
+        
+        /* Filtro de estado en modal */
+        .filtro-estado-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .filtro-estado-container label {
+            font-weight: 600;
+            margin-bottom: 0;
+            white-space: nowrap;
+        }
+        
+        .filtro-estado-container select {
+            max-width: 200px;
+        }
+
         
     </style>
 </head>
@@ -417,7 +446,24 @@
                             </div>
                         </div>
                     </div>
-
+                
+                    <!-- Filtro por estado -->
+                    <div class="filtro-estado-container">
+                        <label for="filtro-estado">
+                            <i class="bi bi-funnel me-1"></i>Filtrar por estado:
+                        </label>
+                        <select class="form-select form-select-sm" id="filtro-estado">
+                            <option value="">Todos</option>
+                            <option value="pending">Pendiente</option>
+                            <option value="approved">Aprobado</option>
+                            <option value="rejected">Rechazado</option>
+                            <option value="executed">Ejecutado</option>
+                            <option value="pre-closed">Pre-cerrado</option>
+                            <option value="closed">Cerrado</option>
+                        </select>
+                        <span class="text-muted" id="contador-requerimientos"></span>
+                    </div>
+                
                     <!-- Tabla de requerimientos -->
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="tabla-requerimientos">
@@ -441,6 +487,9 @@
                                     </td>
                                 </tr>
                             </tbody>
+                            <tfoot id="tfoot-requerimientos">
+                                <!-- Fila de totales se genera dinámicamente -->
+                            </tfoot>
                         </table>
                     </div>
                 </div>
@@ -537,6 +586,8 @@
         let currentAssignmentDetail = '';
         let currentRequestSolicitante = '';
         let currentUserEmail = '';
+        let currentAssignmentId = null;
+        let requerimientosData = []; // Para almacenar los datos y filtrar
         
         // Instancias de modales
         let modalRequerimientos = null;
@@ -599,6 +650,12 @@
                 }
             });
 
+            // Evento de cambio en filtro de estado del modal
+            const filtroEstado = document.getElementById('filtro-estado');
+            filtroEstado.addEventListener('change', function() {
+                renderizarTablaRequerimientos(this.value);
+            });
+
             console.log('✅ Eventos configurados');
         }
 
@@ -654,25 +711,44 @@
         }
 
         // ==========================================
-        // CARGAR ASIGNACIONES
+        // CARGAR ASIGNACIONES (con cálculo en tiempo real)
         // ==========================================
         async function cargarAsignaciones() {
             mostrarLoading('Cargando asignaciones...');
             
             try {
                 // Query para obtener asignaciones del usuario para el año seleccionado
-                const query = `/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,budget_item:budget_items(item_name)&worker_email=eq.${currentUserEmail}&academic_year_id=eq.${currentYear}&assignment_status=eq.active&order=budget_item(item_name).asc,category_detail.asc`;
+                // Incluimos los requerimientos para calcular el ejecutado en tiempo real
+                const query = `/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,budget_item:budget_items(item_name),execution_requests(request_id,requested_value,request_status)&worker_email=eq.${currentUserEmail}&academic_year_id=eq.${currentYear}&assignment_status=eq.active&order=budget_item(item_name).asc,category_detail.asc`;
                 
                 const data = await supabaseRequest(query);
-                assignmentsList = data;
-
+                
+                // Estados que cuentan como "ejecutado"
+                const estadosProductivos = ['approved', 'executed', 'closed', 'pre-closed'];
+                
+                // Procesar y calcular executed_value en tiempo real
+                assignmentsList = data.map(asig => {
+                    // Calcular el valor ejecutado sumando requested_value de requerimientos productivos
+                    let executedCalculado = 0;
+                    if (asig.execution_requests && asig.execution_requests.length > 0) {
+                        executedCalculado = asig.execution_requests
+                            .filter(req => estadosProductivos.includes(req.request_status))
+                            .reduce((sum, req) => sum + (req.requested_value || 0), 0);
+                    }
+                    
+                    return {
+                        ...asig,
+                        executed_value_calculado: executedCalculado
+                    };
+                });
+        
                 renderizarTablaAsignaciones();
                 calcularResumen();
                 
                 ocultarLoading();
-
+        
                 console.log(`✅ ${assignmentsList.length} asignaciones cargadas`);
-
+        
             } catch (error) {
                 ocultarLoading();
                 console.error('Error cargando asignaciones:', error);
@@ -697,16 +773,17 @@
                 `;
                 return;
             }
-
+        
             let html = '';
             assignmentsList.forEach((asig, index) => {
                 const itemName = asig.budget_item?.item_name || 'Sin ítem';
                 const detalle = asig.category_detail || 'Sin detalle';
                 const solicitado = asig.requested_value || 0;
                 const aprobado = asig.approved_value || 0;
-                const ejecutado = asig.executed_value || 0;
+                // Usar el valor calculado en tiempo real
+                const ejecutado = asig.executed_value_calculado || 0;
                 const disponible = aprobado - ejecutado;
-
+        
                 html += `
                     <tr>
                         <td><strong>${escapeHtml(itemName)}</strong></td>
@@ -723,7 +800,7 @@
                     </tr>
                 `;
             });
-
+        
             tbody.innerHTML = html;
         }
 
@@ -735,30 +812,31 @@
                 ocultarResumen();
                 return;
             }
-
+        
             let totalSolicitado = 0;
             let totalAprobado = 0;
             let totalEjecutado = 0;
             let totalDisponible = 0;
-
+        
             assignmentsList.forEach(asig => {
                 const solicitado = asig.requested_value || 0;
                 const aprobado = asig.approved_value || 0;
-                const ejecutado = asig.executed_value || 0;
+                // Usar el valor calculado en tiempo real
+                const ejecutado = asig.executed_value_calculado || 0;
                 const disponible = aprobado - ejecutado;
-
+        
                 totalSolicitado += solicitado;
                 totalAprobado += aprobado;
                 totalEjecutado += ejecutado;
                 totalDisponible += disponible;
             });
-
+        
             // Actualizar tarjetas
             document.getElementById('total-solicitado').textContent = formatCurrency(totalSolicitado);
             document.getElementById('total-aprobado').textContent = formatCurrency(totalAprobado);
             document.getElementById('total-ejecutado').textContent = formatCurrency(totalEjecutado);
             document.getElementById('total-disponible').textContent = formatCurrency(totalDisponible);
-
+        
             // Mostrar resumen
             document.getElementById('budget-summary').style.display = 'grid';
         }
@@ -784,20 +862,25 @@
                 </tr>
             `;
         }
-      // ==========================================
+
+        // ==========================================
         // ABRIR MODAL DE REQUERIMIENTOS
         // ==========================================
         async function abrirModalRequerimientos(assignmentId, itemName, detalle) {
             currentItemName = itemName;
             currentAssignmentDetail = detalle;
+            currentAssignmentId = assignmentId;
             
             // Actualizar info
             document.getElementById('info-req-item').textContent = itemName;
             document.getElementById('info-req-detalle').textContent = detalle;
-
+            
+            // Resetear filtro
+            document.getElementById('filtro-estado').value = '';
+        
             // Mostrar modal
             modalRequerimientos.show();
-
+        
             // Cargar requerimientos
             await cargarRequerimientos(assignmentId);
         }
@@ -807,6 +890,8 @@
         // ==========================================
         async function cargarRequerimientos(assignmentId) {
             const tbody = document.getElementById('tbody-requerimientos');
+            const tfoot = document.getElementById('tfoot-requerimientos');
+            
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8" class="empty-state">
@@ -815,65 +900,23 @@
                     </td>
                 </tr>
             `;
+            tfoot.innerHTML = '';
+            document.getElementById('contador-requerimientos').textContent = '';
             
             try {
                 // Query para obtener requerimientos de la asignación
                 const query = `/execution_requests?select=request_id,requested_at,request_details,requested_value,responded_at,closed_value,request_status,workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&assignment_id=eq.${assignmentId}&order=requested_at.desc`;
                 
                 const data = await supabaseRequest(query);
-
-                if (data.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="8" class="empty-state">
-                                <i class="bi bi-inbox"></i>
-                                <p>No hay requerimientos para esta asignación</p>
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-
-                let html = '';
-                data.forEach((req, index) => {
-                    const solicitanteName = formatWorkerName(req.workers);
-                    const detalle = req.request_details || 'Sin detalle';
-                    const valorSolicitado = req.requested_value || 0;
-                    const fechaSolicitud = req.requested_at ? formatDate(req.requested_at) : 'N/A';
-                    const valorFacturado = req.closed_value || 0;
-                    const estado = req.request_status || 'pending';
-                    const fechaCierre = req.responded_at ? formatDate(req.responded_at) : 'Pendiente';
-
-                    html += `
-                        <tr>
-                            <td>${escapeHtml(solicitanteName)}</td>
-                            <td class="detalle-cell">
-                                <div class="detalle-content rich-text">
-                                    ${detalle}
-                                </div>
-                            </td>
-                            <td class="valor-cell">${formatCurrency(valorSolicitado)}</td>
-                            <td>${fechaSolicitud}</td>
-                            <td class="valor-cell">${formatCurrency(valorFacturado)}</td>
-                            <td class="text-center">
-                                <span class="badge-estado estado-${estado}">
-                                    ${formatEstado(estado)}
-                                </span>
-                            </td>
-                            <td>${fechaCierre}</td>
-                            <td class="text-center">
-                                <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMovimientos('${req.request_id}', '${escapeHtml(solicitanteName)}')">
-                                    <i class="bi bi-cash-stack me-1"></i>Movimientos
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-
-                tbody.innerHTML = html;
-
+                
+                // Guardar datos para filtrado
+                requerimientosData = data;
+                
+                // Renderizar con filtro vacío (todos)
+                renderizarTablaRequerimientos('');
+        
                 console.log(`✅ ${data.length} requerimientos cargados`);
-
+        
             } catch (error) {
                 console.error('Error cargando requerimientos:', error);
                 tbody.innerHTML = `
@@ -886,7 +929,100 @@
                 `;
             }
         }
-
+        
+        // ==========================================
+        // RENDERIZAR TABLA DE REQUERIMIENTOS (con filtro y totales)
+        // ==========================================
+        function renderizarTablaRequerimientos(filtroEstado) {
+            const tbody = document.getElementById('tbody-requerimientos');
+            const tfoot = document.getElementById('tfoot-requerimientos');
+            
+            // Filtrar datos según el estado seleccionado
+            let datosFiltrados = requerimientosData;
+            if (filtroEstado && filtroEstado !== '') {
+                datosFiltrados = requerimientosData.filter(req => req.request_status === filtroEstado);
+            }
+            
+            // Actualizar contador
+            const totalRegistros = requerimientosData.length;
+            const registrosFiltrados = datosFiltrados.length;
+            const contadorTexto = filtroEstado 
+                ? `Mostrando ${registrosFiltrados} de ${totalRegistros}` 
+                : `Total: ${totalRegistros}`;
+            document.getElementById('contador-requerimientos').textContent = contadorTexto;
+        
+            if (datosFiltrados.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="empty-state">
+                            <i class="bi bi-inbox"></i>
+                            <p>${filtroEstado ? 'No hay requerimientos con el estado seleccionado' : 'No hay requerimientos para esta asignación'}</p>
+                        </td>
+                    </tr>
+                `;
+                tfoot.innerHTML = '';
+                return;
+            }
+        
+            // Variables para totales
+            let totalSolicitado = 0;
+            let totalFacturado = 0;
+        
+            let html = '';
+            datosFiltrados.forEach((req, index) => {
+                const solicitanteName = formatWorkerName(req.workers);
+                const detalle = req.request_details || 'Sin detalle';
+                const valorSolicitado = req.requested_value || 0;
+                const fechaSolicitud = req.requested_at ? formatDate(req.requested_at) : 'N/A';
+                const valorFacturado = req.closed_value || 0;
+                const estado = req.request_status || 'pending';
+                const fechaCierre = req.responded_at ? formatDate(req.responded_at) : 'Pendiente';
+        
+                // Acumular totales
+                totalSolicitado += valorSolicitado;
+                totalFacturado += valorFacturado;
+        
+                html += `
+                    <tr>
+                        <td>${escapeHtml(solicitanteName)}</td>
+                        <td class="detalle-cell">
+                            <div class="detalle-content rich-text">
+                                ${detalle}
+                            </div>
+                        </td>
+                        <td class="valor-cell">${formatCurrency(valorSolicitado)}</td>
+                        <td>${fechaSolicitud}</td>
+                        <td class="valor-cell">${formatCurrency(valorFacturado)}</td>
+                        <td class="text-center">
+                            <span class="badge-estado estado-${estado}">
+                                ${formatEstado(estado)}
+                            </span>
+                        </td>
+                        <td>${fechaCierre}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMovimientos('${req.request_id}', '${escapeHtml(solicitanteName)}')">
+                                <i class="bi bi-cash-stack me-1"></i>Movimientos
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        
+            tbody.innerHTML = html;
+        
+            // Renderizar fila de totales
+            tfoot.innerHTML = `
+                <tr class="fila-totales">
+                    <td colspan="2" class="text-end"><strong>TOTALES:</strong></td>
+                    <td class="valor-cell">${formatCurrency(totalSolicitado)}</td>
+                    <td></td>
+                    <td class="valor-cell">${formatCurrency(totalFacturado)}</td>
+                    <td colspan="3"></td>
+                </tr>
+            `;
+        }
+        
+        
         // ==========================================
         // ABRIR MODAL DE MOVIMIENTOS
         // ==========================================
