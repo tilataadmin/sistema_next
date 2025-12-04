@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.12.04.11.50">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -86,11 +87,13 @@
             background-color: #f8f9fa;
         }
 
-        .col-solicitante { width: 18%; }
-        .col-autorizador { width: 18%; }
-        .col-detalle { width: 30%; }
-        .col-valor { width: 15%; text-align: right; }
-        .col-accion { width: 19%; text-align: center; }
+        .col-solicitante { width: 15%; }
+        .col-rubro { width: 18%; }
+        .col-autorizador { width: 10%; }
+        .col-detalle { width: 25%; }
+        .col-valor { width: 12%; text-align: right; }
+        .col-accion { width: 20%; text-align: center; }
+        .col-rubro { width: 20%; }
 
         .valor-money {
             font-family: 'Courier New', monospace;
@@ -377,14 +380,16 @@
                     <!-- Información del requerimiento -->
                     <div class="requerimiento-info">
                         <h5><i class="bi bi-info-circle me-2"></i>Información del Requerimiento</h5>
-                        <div class="row">
+                       <div class="row">
                             <div class="col-md-6">
                                 <p><strong>Solicitante:</strong> <span id="info-solicitante">-</span></p>
-                                <p><strong>Autorizador:</strong> <span id="info-autorizador">-</span></p>
+                                <p><strong>Rubro:</strong> <span id="info-rubro">-</span></p>
+                                <p><strong>Subítem:</strong> <span id="info-subitem">-</span></p>
                             </div>
                             <div class="col-md-6">
                                 <p><strong>Valor:</strong> <span id="info-valor" class="valor-money">-</span></p>
-                                <p><strong>ID:</strong> <span id="info-request-id">-</span></p>
+                                <p><strong>Fecha solicitud:</strong> <span id="info-fecha-solicitud">-</span></p>
+                                <p><strong>Estado:</strong> <span id="info-autorizador">-</span></p>
                             </div>
                         </div>
                         <p><strong>Detalle:</strong></p>
@@ -456,7 +461,7 @@
                                 
                                 <div class="mb-3">
                                     <label for="factura-descripcion-input" class="form-label">
-                                        Descripción <span class="text-danger">*</span>
+                                        Descripción
                                     </label>
                                     <div class="editor-container">
                                         <div class="editor-toolbar">
@@ -590,6 +595,9 @@
                 infoValor: document.getElementById('info-valor'),
                 infoRequestId: document.getElementById('info-request-id'),
                 infoDetalle: document.getElementById('info-detalle'),
+                infoRubro: document.getElementById('info-rubro'),
+                infoSubitem: document.getElementById('info-subitem'),
+                infoFechaSolicitud: document.getElementById('info-fecha-solicitud'),
                 facturasTableContainer: document.getElementById('facturas-table-container'),
                 loadingFacturas: document.getElementById('loading-facturas'),
                 
@@ -662,65 +670,70 @@
         }
 
         /**
- * Carga datos iniciales (VERSIÓN CORREGIDA)
- */
-async function cargarDatosIniciales() {
-    try {
-        mostrarLoading('Cargando datos iniciales...');
-        
-        // Cargar proveedores
-        const proveedoresData = await supabaseRequest('/suppliers?select=supplier_id,supplier_name&supplier_status=eq.active&order=supplier_name.asc');
-        datosCompletos.proveedores = proveedoresData || [];
-        cargarSelectProveedores();
-        
-        // SOLUCIÓN: Consultas separadas para evitar ambigüedad
-        
-        // PASO 1: Obtener execution_requests básicos
-        const requerimientosData = await supabaseRequest('/execution_requests?select=request_id,request_details,requested_value,worker_email,worker_id&request_status=eq.approved&order=requested_at.desc');
-        
-        if (!requerimientosData || requerimientosData.length === 0) {
-            datosCompletos.requerimientos = [];
-            renderizarTablaRequerimientos();
-            ocultarLoading();
-            showMessage('No se encontraron requerimientos aprobados', 'info');
-            return;
+         * Carga datos iniciales (con rubros y subítems)
+         */
+        async function cargarDatosIniciales() {
+            try {
+                mostrarLoading('Cargando datos iniciales...');
+                
+                // Cargar proveedores
+                const proveedoresData = await supabaseRequest('/suppliers?select=supplier_id,supplier_name&supplier_status=eq.active&order=supplier_name.asc');
+                datosCompletos.proveedores = proveedoresData || [];
+                cargarSelectProveedores();
+                
+                // Consulta con relaciones a budget_assignments y budget_items
+                const requerimientosData = await supabaseRequest(
+                    '/execution_requests?select=request_id,request_details,requested_value,requested_at,worker_email,worker_id,' +
+                    'budget_assignments!inner(assignment_id,category_detail,budget_items(item_id,item_name))' +
+                    '&request_status=eq.approved&order=requested_at.desc'
+                );
+                
+                if (!requerimientosData || requerimientosData.length === 0) {
+                    datosCompletos.requerimientos = [];
+                    renderizarTablaRequerimientos();
+                    ocultarLoading();
+                    showMessage('No se encontraron requerimientos aprobados', 'info');
+                    return;
+                }
+                
+                // Obtener workers por email
+                const emails = [...new Set(requerimientosData.map(req => req.worker_email).filter(email => email))];
+                let workersMap = new Map();
+                
+                if (emails.length > 0) {
+                    const workersData = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emails.join(',')})`);
+                    
+                    workersData.forEach(worker => {
+                        const fullName = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
+                        workersMap.set(worker.email, fullName);
+                    });
+                }
+                
+                // Combinar datos incluyendo rubro y subítem
+                datosCompletos.requerimientos = requerimientosData.map(req => ({
+                    request_id: req.request_id,
+                    request_details: req.request_details,
+                    requested_value: req.requested_value,
+                    requested_at: req.requested_at,
+                    worker_email: req.worker_email,
+                    solicitante_nombre: workersMap.get(req.worker_email) || 'Sin nombre',
+                    autorizador_nombre: 'Aprobado',
+                    rubro_nombre: req.budget_assignments?.budget_items?.item_name || 'Sin rubro',
+                    subitem_nombre: req.budget_assignments?.category_detail || 'Sin subítem'
+                }));
+                
+                renderizarTablaRequerimientos();
+                ocultarLoading();
+                
+                showMessage(`Datos cargados: ${datosCompletos.requerimientos.length} requerimientos, ${datosCompletos.proveedores.length} proveedores`, 'success');
+                
+            } catch (error) {
+                console.error('Error al cargar datos iniciales:', error);
+                showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
+                ocultarLoading();
+            }
         }
-        
-        // PASO 2: Obtener workers por email (relación más confiable)
-        const emails = [...new Set(requerimientosData.map(req => req.worker_email).filter(email => email))];
-        let workersMap = new Map();
-        
-        if (emails.length > 0) {
-            const emailsQuery = emails.map(() => '?').join(',');
-            const workersData = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emails.join(',')})`);
-            
-            workersData.forEach(worker => {
-                const fullName = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
-                workersMap.set(worker.email, fullName);
-            });
-        }
-        
-        // PASO 3: Combinar datos
-        datosCompletos.requerimientos = requerimientosData.map(req => ({
-            request_id: req.request_id,
-            request_details: req.request_details,
-            requested_value: req.requested_value,
-            worker_email: req.worker_email,
-            solicitante_nombre: workersMap.get(req.worker_email) || 'Sin nombre',
-            autorizador_nombre: 'Autorizado' // Simplificado por ahora
-        }));
-        
-        renderizarTablaRequerimientos();
-        ocultarLoading();
-        
-        showMessage(`Datos cargados: ${datosCompletos.requerimientos.length} requerimientos, ${datosCompletos.proveedores.length} proveedores`, 'success');
-        
-    } catch (error) {
-        console.error('Error al cargar datos iniciales:', error);
-        showMessage('Error al cargar datos iniciales: ' + error.message, 'danger');
-        ocultarLoading();
-    }
-}
+
 
         /**
          * Carga el select de proveedores
@@ -737,7 +750,7 @@ async function cargarDatosIniciales() {
         }
 
         /**
-         * Renderiza la tabla de requerimientos
+         * Renderiza la tabla de requerimientos (con rubro y subítem)
          */
         function renderizarTablaRequerimientos() {
             elementos.totalRequerimientos.textContent = `${datosCompletos.requerimientos.length} requerimientos`;
@@ -752,15 +765,16 @@ async function cargarDatosIniciales() {
                 `;
                 return;
             }
-
+        
             const table = document.createElement('table');
             table.className = 'table table-hover requerimientos-table';
             
-            // Encabezado
+            // Encabezado con nueva columna
             const thead = document.createElement('thead');
             thead.innerHTML = `
                 <tr>
                     <th class="col-solicitante">Solicitante</th>
+                    <th class="col-rubro">Rubro / Subítem</th>
                     <th class="col-autorizador">Estado</th>
                     <th class="col-detalle">Detalle</th>
                     <th class="col-valor">Valor</th>
@@ -769,7 +783,7 @@ async function cargarDatosIniciales() {
             `;
             table.appendChild(thead);
             
-            // Cuerpo
+            // Cuerpo con nueva columna
             const tbody = document.createElement('tbody');
             datosCompletos.requerimientos.forEach((requerimiento, index) => {
                 const tr = document.createElement('tr');
@@ -777,6 +791,10 @@ async function cargarDatosIniciales() {
                     <td class="col-solicitante">
                         <strong>${escapeHtml(requerimiento.solicitante_nombre)}</strong>
                         <br><small class="text-muted">${escapeHtml(requerimiento.worker_email)}</small>
+                    </td>
+                    <td class="col-rubro">
+                        <strong>${escapeHtml(requerimiento.rubro_nombre)}</strong>
+                        <br><small class="text-muted">${escapeHtml(requerimiento.subitem_nombre)}</small>
                     </td>
                     <td class="col-autorizador">
                         <span class="badge bg-success">Aprobado</span>
@@ -802,7 +820,7 @@ async function cargarDatosIniciales() {
         }
 
         /**
-         * Abre el modal para asociar facturas
+         * Abre el modal para asociar facturas (con rubro y subítem)
          */
         function abrirModalAsociarFacturas(index) {
             requerimientoActual = datosCompletos.requerimientos[index];
@@ -816,6 +834,11 @@ async function cargarDatosIniciales() {
             elementos.infoRequestId.textContent = requerimientoActual.request_id;
             elementos.infoDetalle.innerHTML = requerimientoActual.request_details;
             
+            // Nuevos campos de rubro, subítem y fecha
+            elementos.infoRubro.textContent = requerimientoActual.rubro_nombre;
+            elementos.infoSubitem.textContent = requerimientoActual.subitem_nombre;
+            elementos.infoFechaSolicitud.textContent = formatearFecha(requerimientoActual.requested_at);
+            
             // Ocultar formulario inicialmente
             elementos.formFacturaContainer.classList.add('d-none');
             elementos.modalFooterActions.style.display = 'flex';
@@ -827,6 +850,7 @@ async function cargarDatosIniciales() {
             cargarFacturasAsociadas(requerimientoActual.request_id);
         }
 
+        
         /**
          * Carga facturas asociadas al requerimiento
          */
@@ -1187,17 +1211,10 @@ async function cerrarRequerimiento() {
             const tipo = elementos.facturaTipo.value;
             const numero = elementos.facturaNumero.value.trim();
             const fecha = elementos.facturaFecha.value;
-            const descripcion = elementos.facturaDescripcion.textContent.trim();
             const valor = elementos.facturaValor.value.trim();
             
             if (!proveedor || !tipo || !numero || !fecha || !valor) {
                 showMessage('Todos los campos marcados con * son obligatorios', 'warning');
-                return false;
-            }
-            
-            if (descripcion === '' || descripcion === 'Ingrese la descripción de la factura o nota crédito...') {
-                showMessage('La descripción es obligatoria', 'warning');
-                elementos.facturaDescripcion.focus();
                 return false;
             }
             
@@ -1215,12 +1232,19 @@ async function cerrarRequerimiento() {
          * Obtiene los datos del formulario
          */
         function obtenerDatosFormulario() {
+            // Obtener descripción y limpiar si es el placeholder
+            let descripcion = elementos.facturaDescripcion.innerHTML;
+            const textoPlano = elementos.facturaDescripcion.textContent.trim();
+            if (textoPlano === '' || textoPlano === 'Ingrese la descripción de la factura o nota crédito...') {
+                descripcion = '';
+            }
+            
             return {
                 supplier_id: elementos.facturaProveedor.value,
                 payment_type: elementos.facturaTipo.value,
                 invoice_number: elementos.facturaNumero.value.trim(),
                 invoice_date: elementos.facturaFecha.value,
-                invoice_description: elementos.facturaDescripcion.innerHTML,
+                invoice_description: descripcion,
                 invoice_value: limpiarFormatoMoneda(elementos.facturaValor.value)
             };
         }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.27.13.17">
+    <meta name="page-version" content="25.12.04.11.55">
     <title>Solicitud de Ejecución - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -866,34 +866,84 @@
         }
 
         async function cargarAsignacionesDisponibles() {
-            if (!currentWorkerId) {
-                throw new Error('Worker ID no disponible');
+            if (!currentWorkerId || !currentWorkerEmail) {
+                throw new Error('Worker ID o email no disponible');
             }
-
-            // Consultar asignaciones donde el usuario está autorizado como solicitante
-            const query = `budget_requesters?select=assignment_id,budget_assignments(assignment_id,assignment_category,category_detail,worker_email,budget_items(item_name))&worker_id=eq.${currentWorkerId}&budget_assignments.academic_year_id=eq.${currentBudgetYearId}`;
-            
-            const data = await supabaseRequest('/' + query);
-            
-            // Procesar datos
-            asignacionesData = data
-                .filter(item => item.budget_assignments)
-                .map(item => {
-                    const assignment = item.budget_assignments;
-                    return {
-                        assignment_id: item.assignment_id,
-                        item_name: assignment.budget_items?.item_name || 'Sin nombre',
-                        assignment_category: assignment.assignment_category || '',
-                        category_detail: assignment.category_detail || '',
-                        autorizador_email: assignment.worker_email || '',
-                        display_category: assignment.category_detail && assignment.category_detail !== assignment.assignment_category
-                            ? assignment.category_detail
-                            : assignment.assignment_category
-                    };
+        
+            // Array para almacenar todas las asignaciones
+            let todasAsignaciones = [];
+            const assignmentIdsAgregados = new Set();
+        
+            // ========================================
+            // 1. ASIGNACIONES DONDE ESTÁ AUTORIZADO COMO SOLICITANTE
+            // ========================================
+            try {
+                const queryRequesters = `budget_requesters?select=assignment_id,budget_assignments(assignment_id,assignment_category,category_detail,worker_email,budget_items(item_name))&worker_id=eq.${currentWorkerId}&budget_assignments.academic_year_id=eq.${currentBudgetYearId}`;
+                
+                const dataRequesters = await supabaseRequest('/' + queryRequesters);
+                
+                // Procesar asignaciones donde está autorizado
+                dataRequesters
+                    .filter(item => item.budget_assignments)
+                    .forEach(item => {
+                        const assignment = item.budget_assignments;
+                        const assignmentId = item.assignment_id;
+                        
+                        if (!assignmentIdsAgregados.has(assignmentId)) {
+                            assignmentIdsAgregados.add(assignmentId);
+                            todasAsignaciones.push({
+                                assignment_id: assignmentId,
+                                item_name: assignment.budget_items?.item_name || 'Sin nombre',
+                                assignment_category: assignment.assignment_category || '',
+                                category_detail: assignment.category_detail || '',
+                                autorizador_email: assignment.worker_email || '',
+                                display_category: assignment.category_detail && assignment.category_detail !== assignment.assignment_category
+                                    ? assignment.category_detail
+                                    : assignment.assignment_category,
+                                es_autorizador: false // El usuario es solicitante autorizado
+                            });
+                        }
+                    });
+            } catch (error) {
+                console.warn('Error cargando asignaciones como solicitante:', error);
+            }
+        
+            // ========================================
+            // 2. ASIGNACIONES DONDE ES AUTORIZADOR (RESPONSABLE)
+            // ========================================
+            try {
+                const queryAutorizador = `budget_assignments?select=assignment_id,assignment_category,category_detail,worker_email,budget_items(item_name)&worker_email=eq.${currentWorkerEmail}&academic_year_id=eq.${currentBudgetYearId}&assignment_status=eq.active`;
+                
+                const dataAutorizador = await supabaseRequest('/' + queryAutorizador);
+                
+                // Procesar asignaciones donde es autorizador
+                dataAutorizador.forEach(assignment => {
+                    const assignmentId = assignment.assignment_id;
+                    
+                    if (!assignmentIdsAgregados.has(assignmentId)) {
+                        assignmentIdsAgregados.add(assignmentId);
+                        todasAsignaciones.push({
+                            assignment_id: assignmentId,
+                            item_name: assignment.budget_items?.item_name || 'Sin nombre',
+                            assignment_category: assignment.assignment_category || '',
+                            category_detail: assignment.category_detail || '',
+                            autorizador_email: assignment.worker_email || '',
+                            display_category: assignment.category_detail && assignment.category_detail !== assignment.assignment_category
+                                ? assignment.category_detail
+                                : assignment.assignment_category,
+                            es_autorizador: true // El usuario es el autorizador de esta asignación
+                        });
+                    }
                 });
-            
+            } catch (error) {
+                console.warn('Error cargando asignaciones como autorizador:', error);
+            }
+        
             // Ordenar por nombre del sub-ítem
-            asignacionesData.sort((a, b) => a.item_name.localeCompare(b.item_name));
+            todasAsignaciones.sort((a, b) => a.item_name.localeCompare(b.item_name));
+            
+            // Asignar al array global
+            asignacionesData = todasAsignaciones;
             
             renderizarAsignaciones();
         }
@@ -968,7 +1018,10 @@
                     </td>
                     <td>${escapeHtml(asignacion.display_category)}</td>
                     <td>
-                        <small class="text-muted">${escapeHtml(asignacion.autorizador_email)}</small>
+                        ${asignacion.es_autorizador 
+                            ? '<span class="badge bg-primary me-1" title="Usted es el autorizador">Propia</span>' 
+                            : `<small class="text-muted">${escapeHtml(asignacion.autorizador_email)}</small>`
+                        }
                     </td>
                     <td>
                         <button class="btn btn-solicitar btn-sm" 
