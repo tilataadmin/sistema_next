@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.12.05.14.46">
     <title>Gestión de Divisiones - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -119,6 +120,7 @@
                         <tr>
                             <th width="80">Orden</th>
                             <th>Nombre de la División</th>
+                            <th>Responsable</th>
                             <th width="120">Estado</th>
                             <th width="150">Fecha Creación</th>
                             <th width="140">Acciones</th>
@@ -126,7 +128,7 @@
                     </thead>
                     <tbody id="divisionsTableBody">
                         <tr>
-                            <td colspan="5" class="loading-row">
+                            <td colspan="6" class="loading-row">
                                 <i class="bi bi-hourglass-split me-2"></i>
                                 Cargando divisiones...
                             </td>
@@ -168,6 +170,20 @@
                                    maxlength="100">
                             <div class="form-text">
                                 Nombre único para identificar la división organizacional
+                            </div>
+                        </div>
+                        
+                        <!-- Responsable de la División -->
+                        <div class="mb-3">
+                            <label for="divisionHead" class="form-label">
+                                <i class="bi bi-person-badge me-1"></i>
+                                Responsable de la División
+                            </label>
+                            <select class="form-select" id="divisionHead">
+                                <option value="">-- Sin asignar --</option>
+                            </select>
+                            <div class="form-text">
+                                Trabajador a cargo de esta división (opcional)
                             </div>
                         </div>
 
@@ -263,6 +279,7 @@
         
         let currentDivisionId = null;
         let divisions = [];
+        let workers = [];
 
         // ==========================================
         // VALIDACIÓN DE ACCESO A LA PÁGINA
@@ -281,9 +298,12 @@
                 }
                 
                 console.log('✅ Acceso permitido - continuando con inicialización');
-                
+
                 // Inicializar la carga de datos
-                await loadDivisions();
+                await Promise.all([
+                    loadDivisions(),
+                    loadWorkers()
+                ]);
                 
             } catch (error) {
                 console.error('❌ Error en validación de acceso:', error);
@@ -298,8 +318,10 @@
             try {
                 console.log('📡 Cargando divisiones...');
                 
-                const data = await supabaseRequest('/organizational_divisions?select=*&order=division_order.asc.nullslast,division_name.asc');
-
+                const data = await supabaseRequest(
+                    '/organizational_divisions?select=*,division_head:workers!division_head_id(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2)&order=division_order.asc.nullslast,division_name.asc'
+                );
+        
                 divisions = data || [];
                 renderDivisionsTable();
                 
@@ -310,6 +332,37 @@
                 showMessage('Error al cargar las divisiones: ' + error.message, 'danger');
                 renderEmptyState('Error al cargar los datos');
             }
+        }
+        
+        async function loadWorkers() {
+            try {
+                console.log('📡 Cargando trabajadores...');
+                
+                const data = await supabaseRequest(
+                    '/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2&worker_status=eq.active'
+                );
+        
+                workers = sortWorkersByName(data || []);
+                populateWorkersSelect();
+                
+                console.log(`✅ ${workers.length} trabajadores cargados`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando trabajadores:', error);
+            }
+        }
+        
+        function populateWorkersSelect() {
+            const select = document.getElementById('divisionHead');
+            
+            select.innerHTML = '<option value="">-- Sin asignar --</option>';
+            
+            workers.forEach(worker => {
+                const option = document.createElement('option');
+                option.value = worker.worker_id;
+                option.textContent = formatWorkerName(worker);
+                select.appendChild(option);
+            });
         }
 
         // ==========================================
@@ -323,12 +376,18 @@
                 renderEmptyState('No hay divisiones registradas');
                 return;
             }
-
+        
             tbody.innerHTML = divisions.map(division => `
                 <tr>
                     <td class="division-order">${division.division_order || '-'}</td>
                     <td>
                         <strong>${escapeHtml(division.division_name)}</strong>
+                    </td>
+                    <td>
+                        ${division.division_head 
+                            ? `<i class="bi bi-person-fill me-1 text-primary"></i>${escapeHtml(formatWorkerName(division.division_head))}`
+                            : '<span class="text-muted fst-italic">Sin asignar</span>'
+                        }
                     </td>
                     <td>
                         <span class="badge status-badge ${division.division_status === 'active' ? 'bg-success' : 'bg-secondary'}">
@@ -363,7 +422,7 @@
             const tbody = document.getElementById('divisionsTableBody');
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="empty-state">
+                    <td colspan="6" class="empty-state">
                         <i class="bi bi-diagram-3"></i>
                         <h5>${escapeHtml(message)}</h5>
                         <p>Crea la primera división para comenzar a organizar tu estructura</p>
@@ -376,6 +435,7 @@
             `;
         }
 
+        
         // ==========================================
         // FUNCIONES DEL MODAL
         // ==========================================
@@ -389,6 +449,7 @@
             document.getElementById('divisionForm').reset();
             document.getElementById('divisionId').value = '';
             document.getElementById('divisionStatus').value = 'active';
+            document.getElementById('divisionHead').value = '';
             
             // Sugerir próximo orden
             const maxOrder = Math.max(...divisions.map(d => d.division_order || 0), 0);
@@ -403,7 +464,7 @@
                 showMessage('División no encontrada', 'danger');
                 return;
             }
-
+        
             // Actualizar modal
             document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar División';
             document.getElementById('saveButton').innerHTML = '<i class="bi bi-check-circle me-2"></i>Actualizar División';
@@ -413,12 +474,14 @@
             document.getElementById('divisionName').value = division.division_name;
             document.getElementById('divisionOrder').value = division.division_order || '';
             document.getElementById('divisionStatus').value = division.division_status;
+            document.getElementById('divisionHead').value = division.division_head_id || '';
             
             // Mostrar modal
             const modal = new bootstrap.Modal(document.getElementById('divisionModal'));
             modal.show();
         }
 
+        
         function deleteDivision(divisionId, divisionName) {
             currentDivisionId = divisionId;
             document.getElementById('divisionToDelete').textContent = `División: "${divisionName}"`;
@@ -460,7 +523,8 @@
                 const formData = {
                     division_name: document.getElementById('divisionName').value.trim(),
                     division_order: parseInt(document.getElementById('divisionOrder').value) || null,
-                    division_status: document.getElementById('divisionStatus').value
+                    division_status: document.getElementById('divisionStatus').value,
+                    division_head_id: document.getElementById('divisionHead').value || null
                 };
 
                 let response;
