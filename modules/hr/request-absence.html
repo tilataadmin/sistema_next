@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.05.15.04">
+    <meta name="page-version" content="25.12.05.15.36">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -242,7 +242,7 @@
 
         <!-- Cards de Saldos -->
         <div class="row mb-4" id="balanceCards">
-            <div class="col-md-6 mb-3">
+            <div class="col-md-6 col-lg-4 mb-3" id="hoursCardCol">
                 <div class="card balance-card">
                     <div class="card-body">
                         <div class="balance-label">Horas Personales Disponibles</div>
@@ -253,7 +253,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-6 col-lg-4 mb-3" id="calamityCardCol">
                 <div class="card balance-card">
                     <div class="card-body">
                         <div class="balance-label">Días de Calamidad Disponibles</div>
@@ -264,8 +264,20 @@
                     </div>
                 </div>
             </div>
+            <!-- Tercera tarjeta: Solo visible para Administrativos y Servicios Generales -->
+            <div class="col-md-6 col-lg-4 mb-3" id="paidRestCardCol" style="display: none;">
+                <div class="card balance-card" style="border-left-color: #198754;">
+                    <div class="card-body">
+                        <div class="balance-label">Días Descanso Remunerado</div>
+                        <div class="balance-value" id="availablePaidRestDays" style="color: #198754;">
+                            <span class="spinner-border spinner-border-sm"></span>
+                        </div>
+                        <small class="text-muted">Exclusivo personal administrativo</small>
+                    </div>
+                </div>
+            </div>
         </div>
-
+        
         <!-- Formulario de Solicitud -->
         <div class="card mb-4">
             <div class="card-header bg-primary text-white">
@@ -452,8 +464,15 @@
         let nonWorkDays = [];
         let currentBalances = {
             personalHours: 0,
-            calamityDays: 0
+            calamityDays: 0,
+            paidRestDays: 0
         };
+        
+        // IDs de divisiones que tienen derecho a días de descanso remunerado
+        const DIVISIONES_DESCANSO_REMUNERADO = [
+            'b40f998a-41ca-4090-8ebe-83f930df0d84', // Administrativos
+            '83db66bf-4ed6-4bea-80af-89fea75565f6'  // Servicios Generales
+        ];
         
         // ==========================================
         // UTILIDADES PARA MANEJO DE FECHAS
@@ -636,8 +655,6 @@
                 nonWorkDays = [];
             }
         }
-
-
         
         // ==========================================
         // CARGAR Y CALCULAR SALDOS
@@ -646,11 +663,28 @@
             try {
                 const workerId = currentSession.worker_id;
                 
+                // Obtener la división del trabajador
+                const workerData = await supabaseRequest(
+                    '/workers?worker_id=eq.' + workerId + '&select=organizational_division_id'
+                );
+                
+                const workerDivisionId = workerData && workerData.length > 0 
+                    ? workerData[0].organizational_division_id 
+                    : null;
+                
+                // Verificar si el trabajador tiene derecho a días de descanso remunerado
+                const tieneDiasDescanso = workerDivisionId && 
+                    DIVISIONES_DESCANSO_REMUNERADO.includes(workerDivisionId);
+                
+                console.log('📊 División del trabajador:', workerDivisionId);
+                console.log('📊 Tiene días de descanso remunerado:', tieneDiasDescanso);
+                
                 // Obtener límites de configuración
                 const personalHoursLimit = hrConfig.personal_hours_limit || 0;
                 const calamityDaysLimit = hrConfig.calamity_days_limit || 0;
+                const paidRestDaysLimit = hrConfig.paid_rest_days_limit || 0;
                 
-                console.log('⚙️ Límites configurados:', { personalHoursLimit, calamityDaysLimit });
+                console.log('⚙️ Límites configurados:', { personalHoursLimit, calamityDaysLimit, paidRestDaysLimit });
                 
                 // Calcular saldo de horas personales
                 const hoursBalance = await calculateBalance(workerId, 'personal_hours', 'accumulates_personal_hours', 'total_hours');
@@ -662,24 +696,20 @@
                 
                 console.log('💰 Saldos calculados:', { availableHours, availableDays });
                 
-                // Actualizar UI
+                // Actualizar UI - Horas personales
                 const hoursElement = document.getElementById('availableHours');
-                const daysElement = document.getElementById('availableDays');
-                
                 hoursElement.innerHTML = `${availableHours.toFixed(2)} <small>hrs</small>`;
-                daysElement.innerHTML = `${availableDays.toFixed(2)} <small>días</small>`;
-                
-                // Mostrar en rojo si es negativo
                 if (availableHours < 0) {
                     hoursElement.classList.add('text-danger');
-                    hoursElement.classList.remove('text-primary');
                 } else {
                     hoursElement.classList.remove('text-danger');
                 }
                 
+                // Actualizar UI - Días de calamidad
+                const daysElement = document.getElementById('availableDays');
+                daysElement.innerHTML = `${availableDays.toFixed(2)} <small>días</small>`;
                 if (availableDays < 0) {
                     daysElement.classList.add('text-danger');
-                    daysElement.classList.remove('text-primary');
                 } else {
                     daysElement.classList.remove('text-danger');
                 }
@@ -687,8 +717,46 @@
                 // Guardar en variable global
                 currentBalances = {
                     personalHours: availableHours,
-                    calamityDays: availableDays
+                    calamityDays: availableDays,
+                    paidRestDays: 0
                 };
+                
+                // Si tiene derecho a días de descanso remunerado, calcular y mostrar
+                if (tieneDiasDescanso && paidRestDaysLimit > 0) {
+                    // Calcular saldo de días de descanso remunerado
+                    const paidRestBalance = await calculatePaidRestDaysBalance(workerId);
+                    const availablePaidRestDays = paidRestBalance.adjustments - paidRestBalance.consumed;
+                    
+                    console.log('💰 Días descanso remunerado:', availablePaidRestDays);
+                    
+                    // Actualizar UI
+                    const paidRestElement = document.getElementById('availablePaidRestDays');
+                    paidRestElement.innerHTML = `${availablePaidRestDays.toFixed(2)} <small>días</small>`;
+                    
+                    if (availablePaidRestDays < 0) {
+                        paidRestElement.classList.add('text-danger');
+                        paidRestElement.style.color = '#dc3545';
+                    } else {
+                        paidRestElement.classList.remove('text-danger');
+                        paidRestElement.style.color = '#198754';
+                    }
+                    
+                    // Mostrar la tarjeta
+                    document.getElementById('paidRestCardCol').style.display = 'block';
+                    
+                    // Ajustar las columnas para que queden las 3 iguales
+                    document.getElementById('hoursCardCol').className = 'col-md-4 mb-3';
+                    document.getElementById('calamityCardCol').className = 'col-md-4 mb-3';
+                    
+                    // Guardar en variable global
+                    currentBalances.paidRestDays = availablePaidRestDays;
+                    
+                } else {
+                    // Ocultar la tarjeta y mantener 2 columnas
+                    document.getElementById('paidRestCardCol').style.display = 'none';
+                    document.getElementById('hoursCardCol').className = 'col-md-6 mb-3';
+                    document.getElementById('calamityCardCol').className = 'col-md-6 mb-3';
+                }
                 
                 console.log('✅ Saldos cargados:', currentBalances);
                 
@@ -696,6 +764,47 @@
                 console.error('Error al cargar saldos:', error);
                 document.getElementById('availableHours').innerHTML = '<span class="text-danger">Error</span>';
                 document.getElementById('availableDays').innerHTML = '<span class="text-danger">Error</span>';
+            }
+        }
+        
+        // Nueva función para calcular días de descanso remunerado
+        async function calculatePaidRestDaysBalance(workerId) {
+            try {
+                // Obtener ajustes de días de descanso remunerado
+                const adjustmentsData = await supabaseRequest(
+                    '/hr_balance_adjustments?worker_id=eq.' + workerId + '&adjustment_type=eq.paid_rest_days&select=amount'
+                );
+                
+                let adjustments = 0;
+                if (adjustmentsData && adjustmentsData.length > 0) {
+                    adjustments = adjustmentsData.reduce((sum, adj) => sum + parseFloat(adj.amount || 0), 0);
+                }
+                
+                console.log('📊 Ajustes paid_rest_days:', adjustments);
+                
+                // Obtener consumo de ausencias aprobadas que usan días de descanso remunerado
+                // Buscar categorías que controlen este tipo de saldo
+                const requestsData = await supabaseRequest(
+                    '/hr_absence_requests?worker_id=eq.' + workerId + '&status=eq.approved&select=total_days,category_id'
+                );
+                
+                let consumed = 0;
+                if (requestsData && requestsData.length > 0) {
+                    for (const req of requestsData) {
+                        const category = categories.find(c => c.category_id === req.category_id);
+                        // TODO: Cuando exista una categoría que consuma días de descanso remunerado,
+                        // agregar aquí la lógica similar a las otras categorías
+                        // Por ahora, no hay consumo automático definido
+                    }
+                }
+                
+                console.log('📊 Consumo paid_rest_days:', consumed);
+                
+                return { adjustments, consumed };
+                
+            } catch (error) {
+                console.error('Error al calcular balance de días de descanso:', error);
+                return { adjustments: 0, consumed: 0 };
             }
         }
         
