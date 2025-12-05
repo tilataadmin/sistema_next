@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.05.15.36">
+    <meta name="page-version" content="25.12.05.16.30">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -614,7 +614,29 @@
         async function loadCategories() {
             try {
                 const data = await supabaseRequest('/hr_absence_categories?is_active=eq.true&select=*&order=name');
-                categories = data || [];
+                let allCategories = data || [];
+                
+                // Obtener la división del trabajador actual
+                const workerData = await supabaseRequest(
+                    '/workers?worker_id=eq.' + currentSession.worker_id + '&select=organizational_division_id'
+                );
+                
+                const workerDivisionId = workerData && workerData.length > 0 
+                    ? workerData[0].organizational_division_id 
+                    : null;
+                
+                // Verificar si pertenece a Admin/Servicios Generales
+                const belongsToPaidRestDivisions = workerDivisionId && 
+                    DIVISIONES_DESCANSO_REMUNERADO.includes(workerDivisionId);
+                
+                // Filtrar categorías según división
+                categories = allCategories.filter(cat => {
+                    // Si la categoría está restringida a divisiones de descanso remunerado
+                    if (cat.restricted_to_paid_rest_divisions) {
+                        return belongsToPaidRestDivisions;
+                    }
+                    return true;
+                });
                 
                 const select = document.getElementById('categorySelect');
                 select.innerHTML = '<option value="">Seleccione una categoría...</option>';
@@ -626,7 +648,7 @@
                     select.appendChild(option);
                 });
                 
-                console.log(`📋 ${categories.length} categorías cargadas`);
+                console.log(`📋 ${categories.length} categorías disponibles para este trabajador`);
                 
             } catch (error) {
                 console.error('Error al cargar categorías:', error);
@@ -944,7 +966,7 @@
             `;
             
             // Alertas de saldo si aplica
-            if (category.accumulates_personal_hours || category.controls_calamity_days_limit) {
+            if (category.accumulates_personal_hours || category.controls_calamity_days_limit || category.paid_rest_days_effect !== 'none') {
                 html += '<div class="alert alert-balance" id="balanceAlert" style="display:none;"></div>';
             }
             
@@ -1144,12 +1166,20 @@
                 }
             }
             
+            // Validar días de descanso remunerado (solo si resta)
+            if (selectedCategory.paid_rest_days_effect === 'subtracts') {
+                if (totalDays > currentBalances.paidRestDays) {
+                    message += `⚠️ <strong>Saldo insuficiente:</strong> Tienes ${currentBalances.paidRestDays.toFixed(2)} días de descanso remunerado disponibles, estás solicitando ${totalDays.toFixed(2)} días.<br>`;
+                    hasError = true;
+                }
+            }
+            
             if (hasError) {
                 alertDiv.className = 'alert alert-danger';
                 alertDiv.innerHTML = message + '<strong>No podrás enviar esta solicitud hasta ajustar las fechas/horas.</strong>';
                 alertDiv.style.display = 'block';
                 document.getElementById('submitBtn').disabled = true;
-            } else if (selectedCategory.accumulates_personal_hours || selectedCategory.controls_calamity_days_limit) {
+            } else if (selectedCategory.accumulates_personal_hours || selectedCategory.controls_calamity_days_limit || selectedCategory.paid_rest_days_effect !== 'none') {
                 alertDiv.className = 'alert alert-success';
                 alertDiv.innerHTML = '✓ Tienes saldo suficiente para esta solicitud.';
                 alertDiv.style.display = 'block';
