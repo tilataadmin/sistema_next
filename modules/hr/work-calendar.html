@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.11.26.16.32">
+    <meta name="page-version" content="25.12.05.15.53">
     
     <title>Calendario Laboral - SchoolNet</title>
     
@@ -467,6 +467,59 @@
         </div>
     </div>
 
+    <!-- MODAL: APLICAR DESCUENTO DE DÍAS -->
+    <div class="modal fade" id="discountModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">
+                        <i class="bi bi-calendar-check me-2"></i>Aplicar Descuento de Días
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Período:</strong> <span id="discountPeriodName"></span><br>
+                        <strong>Fechas:</strong> <span id="discountPeriodDates"></span><br>
+                        <strong>Días a descontar:</strong> <span id="discountPeriodDays" class="badge bg-primary"></span>
+                    </div>
+                    
+                    <p class="text-muted">
+                        Marque los trabajadores que <strong>SÍ tomaron</strong> el descanso. 
+                        A ellos se les descontarán los días de su saldo.
+                    </p>
+                    
+                    <div class="mb-3">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-primary" onclick="selectAllWorkers(true)">
+                                <i class="bi bi-check-all me-1"></i>Seleccionar todos
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="selectAllWorkers(false)">
+                                <i class="bi bi-x-lg me-1"></i>Deseleccionar todos
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="workersListContainer" style="max-height: 400px; overflow-y: auto;">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary"></div>
+                            <p class="mt-2">Cargando trabajadores...</p>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="discountPeriodId">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-warning" onclick="confirmApplyDiscount()">
+                        <i class="bi bi-check-circle me-1"></i>Aplicar Descuento
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
@@ -482,7 +535,16 @@
         let periodModalInstance = null;
         let deleteModalInstance = null;
         let holidaysModalInstance = null;
+        let discountModalInstance = null;
         let periodToDelete = null;
+        let adminWorkers = [];
+        let currentSession = null;
+        
+        // IDs de divisiones que tienen derecho a días de descanso remunerado
+        const DIVISIONES_DESCANSO_REMUNERADO = [
+            'b40f998a-41ca-4090-8ebe-83f930df0d84', // Administrativos
+            '83db66bf-4ed6-4bea-80af-89fea75565f6'  // Servicios Generales
+        ];
 
         // Festivos de Colombia - Ley Emiliani
         const colombianHolidays = {
@@ -609,6 +671,20 @@
                 periodModalInstance = new bootstrap.Modal(document.getElementById('periodModal'));
                 deleteModalInstance = new bootstrap.Modal(document.getElementById('deleteModal'));
                 holidaysModalInstance = new bootstrap.Modal(document.getElementById('holidaysModal'));
+                discountModalInstance = new bootstrap.Modal(document.getElementById('discountModal'));
+                
+                // PASO 2.5: Obtener sesión actual
+                const sessionData = localStorage.getItem('nextSystemSession') || sessionStorage.getItem('nextSystemSession');
+                if (sessionData) {
+                    const session = JSON.parse(sessionData);
+                    // Obtener worker_id del usuario actual
+                    const workerData = await supabaseRequest('/workers?email=eq.' + session.user.user_mail + '&select=worker_id');
+                    if (workerData && workerData.length > 0) {
+                        currentSession = {
+                            worker_id: workerData[0].worker_id
+                        };
+                    }
+                }
                 
                 // PASO 3: Cargar años académicos
                 await loadAcademicYears();
@@ -710,6 +786,29 @@
                                 period.day_type === 'paid_break' ? 'Receso Remunerado' : 
                                 period.day_type === 'unpaid_break' ? 'Receso No Remunerado' : 'Día Virtual';
                 
+                // Calcular días del período (solo días hábiles)
+                const periodDays = calculateWorkDays(period.start_date, period.end_date);
+                
+                // Botón de aplicar descuento solo para recesos remunerados
+                let discountButton = '';
+                if (period.day_type === 'paid_break') {
+                    if (period.discount_applied) {
+                        discountButton = `
+                            <span class="badge bg-success me-2" title="Descuento aplicado">
+                                <i class="bi bi-check-circle me-1"></i>Aplicado
+                            </span>
+                        `;
+                    } else {
+                        discountButton = `
+                            <button class="btn btn-sm btn-warning me-1" 
+                                    onclick='openDiscountModal(${JSON.stringify(period)}, ${periodDays})' 
+                                    title="Aplicar descuento de días">
+                                <i class="bi bi-calendar-minus"></i>
+                            </button>
+                        `;
+                    }
+                }
+                
                 return `
                     <div class="card period-card ${typeClass}">
                         <div class="card-body">
@@ -719,10 +818,12 @@
                                     <p class="mb-1 text-muted small">
                                         <i class="bi bi-calendar-range me-1"></i>
                                         ${formatDate(period.start_date)} - ${formatDate(period.end_date)}
+                                        <span class="badge bg-secondary ms-2">${periodDays} día(s) hábil(es)</span>
                                     </p>
                                     <span class="badge bg-secondary">${typeName}</span>
                                 </div>
-                                <div>
+                                <div class="d-flex align-items-center">
+                                    ${discountButton}
                                     <button class="btn btn-sm btn-outline-primary me-1" onclick='editPeriod(${JSON.stringify(period)})' title="Editar">
                                         <i class="bi bi-pencil"></i>
                                     </button>
@@ -1301,6 +1402,173 @@
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
+        }
+
+        // ==========================================
+        // FUNCIONES PARA DESCUENTO DE DÍAS
+        // ==========================================
+        
+        function calculateWorkDays(startDate, endDate) {
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            let count = 0;
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const dayOfWeek = d.getDay();
+                // Excluir fines de semana
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    count++;
+                }
+            }
+            
+            return count;
+        }
+        
+        async function openDiscountModal(period, periodDays) {
+            document.getElementById('discountPeriodId').value = period.non_work_day_id;
+            document.getElementById('discountPeriodName').textContent = period.description;
+            document.getElementById('discountPeriodDates').textContent = 
+                `${formatDate(period.start_date)} - ${formatDate(period.end_date)}`;
+            document.getElementById('discountPeriodDays').textContent = periodDays;
+            
+            discountModalInstance.show();
+            
+            // Cargar trabajadores de Admin/Servicios
+            await loadAdminWorkers();
+        }
+        
+        async function loadAdminWorkers() {
+            const container = document.getElementById('workersListContainer');
+            
+            try {
+                // Cargar trabajadores activos de las divisiones de Admin y Servicios
+                const divisionIds = DIVISIONES_DESCANSO_REMUNERADO.join(',');
+                const workers = await supabaseRequest(
+                    `/workers?worker_status=eq.active&organizational_division_id=in.(${divisionIds})&select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,organizational_division_id,organizational_divisions(division_name)&order=worker_last_name_1,worker_first_name`
+                );
+                
+                adminWorkers = workers || [];
+                
+                if (adminWorkers.length === 0) {
+                    container.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            No se encontraron trabajadores en las divisiones de Administrativos o Servicios Generales.
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = '<div class="list-group">';
+                
+                adminWorkers.forEach(worker => {
+                    const fullName = `${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''} ${worker.worker_first_name}`.trim();
+                    const divisionName = worker.organizational_divisions?.division_name || 'Sin división';
+                    
+                    html += `
+                        <label class="list-group-item d-flex align-items-center">
+                            <input class="form-check-input me-3 worker-checkbox" type="checkbox" 
+                                   value="${worker.worker_id}" checked>
+                            <div>
+                                <strong>${fullName}</strong>
+                                <br><small class="text-muted">${divisionName}</small>
+                            </div>
+                        </label>
+                    `;
+                });
+                
+                html += '</div>';
+                container.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error cargando trabajadores:', error);
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-x-circle me-2"></i>
+                        Error al cargar trabajadores: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        function selectAllWorkers(select) {
+            const checkboxes = document.querySelectorAll('.worker-checkbox');
+            checkboxes.forEach(cb => cb.checked = select);
+        }
+        
+        async function confirmApplyDiscount() {
+            const periodId = document.getElementById('discountPeriodId').value;
+            const daysToDiscount = parseInt(document.getElementById('discountPeriodDays').textContent);
+            const periodName = document.getElementById('discountPeriodName').textContent;
+            
+            // Obtener trabajadores seleccionados
+            const selectedWorkers = [];
+            document.querySelectorAll('.worker-checkbox:checked').forEach(cb => {
+                selectedWorkers.push(cb.value);
+            });
+            
+            if (selectedWorkers.length === 0) {
+                showMessage('Debe seleccionar al menos un trabajador', 'warning');
+                return;
+            }
+            
+            const totalWorkers = document.querySelectorAll('.worker-checkbox').length;
+            const exceptionsCount = totalWorkers - selectedWorkers.length;
+            
+            const confirmMsg = `¿Confirma aplicar el descuento?\n\n` +
+                `• Días a descontar: ${daysToDiscount}\n` +
+                `• Trabajadores afectados: ${selectedWorkers.length}\n` +
+                `• Excepciones (no tomaron): ${exceptionsCount}\n\n` +
+                `Esta acción no se puede deshacer.`;
+            
+            if (!confirm(confirmMsg)) return;
+            
+            try {
+                showLoading(true);
+                
+                const reason = `Descuento automático - ${periodName}`;
+                let successCount = 0;
+                
+                // Crear ajustes negativos para cada trabajador seleccionado
+                for (const workerId of selectedWorkers) {
+                    const adjustmentData = {
+                        worker_id: workerId,
+                        adjustment_type: 'paid_rest_days',
+                        amount: -daysToDiscount,  // Negativo para descontar
+                        reason: reason,
+                        adjusted_by: currentSession?.worker_id || null
+                    };
+                    
+                    await supabaseRequest('/hr_balance_adjustments', {
+                        method: 'POST',
+                        body: JSON.stringify(adjustmentData)
+                    });
+                    
+                    successCount++;
+                }
+                
+                // Marcar el período como "descuento aplicado"
+                await supabaseRequest('/hr_non_work_days?non_work_day_id=eq.' + periodId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        discount_applied: true,
+                        discount_applied_at: new Date().toISOString(),
+                        discount_applied_by: currentSession?.worker_id || null
+                    })
+                });
+                
+                showMessage(`Descuento aplicado exitosamente a ${successCount} trabajadores`, 'success');
+                discountModalInstance.hide();
+                
+                // Recargar períodos
+                await loadPeriods();
+                
+            } catch (error) {
+                console.error('Error aplicando descuento:', error);
+                showMessage('Error al aplicar descuento: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
         }
 
     </script>
