@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA - Actualizar en cada modificación (Formato: YY.MM.DD.HH.MM) -->
-    <meta name="page-version" content="25.11.02.19.27">
+    <meta name="page-version" content="25.12.05.15.30">
     
     <title>Configuración de Ausencias - SchoolNet</title>
     
@@ -161,6 +161,18 @@
                                 <span class="input-group-text">horas</span>
                             </div>
                         </div>
+                        <div class="col-md-4">
+                            <label for="paidRestDaysLimit" class="form-label">
+                                Días de descanso remunerado
+                                <span class="info-badge">Administrativos/año</span>
+                            </label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="paidRestDaysLimit" 
+                                       required min="0" step="1">
+                                <span class="input-group-text">días</span>
+                            </div>
+                            <small class="text-muted">Aplica solo a divisiones Administrativos y Servicios Generales</small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -264,8 +276,9 @@
                     </div>
                     <p><strong>Valores:</strong></p>
                     <ul>
-                        <li>Horas personales: <strong id="modalPersonalHours">-</strong> horas</li>
-                        <li>Días de calamidad: <strong id="modalCalamityDays">-</strong> días</li>
+                        <li>Horas personales: <strong id="modalPersonalHours">-</strong> horas (todos)</li>
+                        <li>Días de calamidad: <strong id="modalCalamityDays">-</strong> días (todos)</li>
+                        <li>Días de descanso remunerado: <strong id="modalPaidRestDays">-</strong> días (solo Administrativos y Servicios Generales)</li>
                     </ul>
                 </div>
                 <div class="modal-footer">
@@ -439,6 +452,7 @@
             document.getElementById('personalHoursLimit').value = config.personal_hours_limit || '';
             document.getElementById('calamityDaysLimit').value = config.calamity_days_limit || '';
             document.getElementById('maxHoursPerMedical').value = config.max_hours_per_medical_appointment || '';
+            document.getElementById('paidRestDaysLimit').value = config.paid_rest_days_limit || '';
             
             document.getElementById('hrManagerEmail').value = config.hr_manager_email || '';
             document.getElementById('preschoolEmail').value = config.preschool_email || '';
@@ -496,6 +510,7 @@
                     personal_hours_limit: parseInt(document.getElementById('personalHoursLimit').value),
                     calamity_days_limit: parseInt(document.getElementById('calamityDaysLimit').value),
                     max_hours_per_medical_appointment: parseInt(document.getElementById('maxHoursPerMedical').value),
+                    paid_rest_days_limit: parseInt(document.getElementById('paidRestDaysLimit').value) || 0,
                     hr_manager_email: document.getElementById('hrManagerEmail').value.trim() || null,
                     preschool_email: document.getElementById('preschoolEmail').value.trim() || null,
                     elementary_email: document.getElementById('elementaryEmail').value.trim() || null,
@@ -535,6 +550,7 @@
             
             document.getElementById('modalPersonalHours').textContent = currentConfig.personal_hours_limit;
             document.getElementById('modalCalamityDays').textContent = currentConfig.calamity_days_limit;
+            document.getElementById('modalPaidRestDays').textContent = currentConfig.paid_rest_days_limit || 0;
             initializeModalInstance.show();
         }
 
@@ -549,8 +565,14 @@
             initializeModalInstance.hide();
             progressModalInstance.show();
             
+            // IDs de divisiones que reciben días de descanso remunerado
+            const DIVISIONES_DESCANSO = [
+                'b40f998a-41ca-4090-8ebe-83f930df0d84', // Administrativos
+                '83db66bf-4ed6-4bea-80af-89fea75565f6'  // Servicios generales
+            ];
+            
             try {
-                const workers = await supabaseRequest('/workers?worker_status=eq.active&select=worker_id,worker_first_name,worker_last_name_1');
+                const workers = await supabaseRequest('/workers?worker_status=eq.active&select=worker_id,worker_first_name,worker_last_name_1,organizational_division_id');
                 
                 if (!workers || workers.length === 0) {
                     showMessage('No se encontraron trabajadores activos', 'warning');
@@ -575,8 +597,10 @@
                 const adjustments = [];
                 const reason = 'Inicialización del sistema de ausencias';
                 const adjustedBy = await getWorkerIdFromSession();
+                let countPaidRestDays = 0;
                 
                 for (const worker of workers) {
+                    // Horas personales (todos)
                     adjustments.push({
                         worker_id: worker.worker_id,
                         adjustment_type: 'personal_hours',
@@ -585,6 +609,7 @@
                         adjusted_by: adjustedBy
                     });
                     
+                    // Días de calamidad (todos)
                     adjustments.push({
                         worker_id: worker.worker_id,
                         adjustment_type: 'calamity_days',
@@ -592,6 +617,21 @@
                         reason: reason,
                         adjusted_by: adjustedBy
                     });
+                    
+                    // Días de descanso remunerado (solo Administrativos y Servicios Generales)
+                    if (worker.organizational_division_id && 
+                        DIVISIONES_DESCANSO.includes(worker.organizational_division_id) &&
+                        currentConfig.paid_rest_days_limit > 0) {
+                        
+                        adjustments.push({
+                            worker_id: worker.worker_id,
+                            adjustment_type: 'paid_rest_days',
+                            amount: currentConfig.paid_rest_days_limit,
+                            reason: reason,
+                            adjusted_by: adjustedBy
+                        });
+                        countPaidRestDays++;
+                    }
                 }
                 
                 await supabaseRequest('/hr_balance_adjustments', {
@@ -600,9 +640,15 @@
                 });
                 
                 console.log(`✅ ${adjustments.length} ajustes insertados`);
+                console.log(`✅ ${countPaidRestDays} trabajadores recibieron días de descanso remunerado`);
                 
                 progressModalInstance.hide();
-                showMessage(`Saldos inicializados correctamente para ${workers.length} trabajadores`, 'success');
+                showMessage(
+                    `Saldos inicializados correctamente:\n` +
+                    `• ${workers.length} trabajadores con horas personales y días de calamidad\n` +
+                    `• ${countPaidRestDays} trabajadores con días de descanso remunerado`,
+                    'success'
+                );
                 
             } catch (error) {
                 console.error('❌ Error inicializando:', error);
