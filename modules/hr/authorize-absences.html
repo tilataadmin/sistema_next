@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.07.13.47">
+    <meta name="page-version" content="25.12.05.16.32">
     <title>Autorizar Ausencias - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -948,6 +948,9 @@
                     
                     console.log('✅ Solicitud aprobada completamente');
                     
+                    // Procesar efecto en días de descanso remunerado si aplica
+                    await processPaidRestDaysEffect(currentRequestId);
+                    
                     // Enviar notificaciones
                     await sendApprovalNotifications(currentRequestId);
                 }
@@ -1024,6 +1027,65 @@
                 showLoading(false);
             }
         }
+
+        // ==========================================
+        // PROCESAR EFECTO EN DÍAS DE DESCANSO REMUNERADO
+        // ==========================================
+        async function processPaidRestDaysEffect(requestId) {
+            try {
+                // Obtener datos de la solicitud con su categoría
+                const requestData = await supabaseRequest(
+                    '/hr_absence_requests?request_id=eq.' + requestId + 
+                    '&select=worker_id,total_days,hr_absence_categories(name,paid_rest_days_effect)'
+                );
+                
+                if (!requestData || requestData.length === 0) return;
+                
+                const request = requestData[0];
+                const category = request.hr_absence_categories;
+                
+                // Si no afecta días de descanso remunerado, salir
+                if (!category.paid_rest_days_effect || category.paid_rest_days_effect === 'none') {
+                    return;
+                }
+                
+                // Determinar el monto del ajuste
+                let adjustmentAmount = 0;
+                let reason = '';
+                
+                if (category.paid_rest_days_effect === 'adds') {
+                    // Suma días (devuelve al saldo) - valor positivo
+                    adjustmentAmount = request.total_days;
+                    reason = `Devolución por: ${category.name}`;
+                } else if (category.paid_rest_days_effect === 'subtracts') {
+                    // Resta días (consume del saldo) - valor negativo
+                    adjustmentAmount = -request.total_days;
+                    reason = `Consumo por: ${category.name}`;
+                }
+                
+                // Crear el ajuste en hr_balance_adjustments
+                const adjustmentData = {
+                    worker_id: request.worker_id,
+                    adjustment_type: 'paid_rest_days',
+                    amount: adjustmentAmount,
+                    reason: reason,
+                    adjusted_by: currentSession.worker_id
+                };
+                
+                await supabaseRequest('/hr_balance_adjustments', {
+                    method: 'POST',
+                    body: JSON.stringify(adjustmentData)
+                });
+                
+                console.log(`✅ Ajuste de días de descanso remunerado creado: ${adjustmentAmount > 0 ? '+' : ''}${adjustmentAmount} días`);
+                
+            } catch (error) {
+                console.error('Error al procesar efecto en días de descanso:', error);
+                // No lanzar error para no interrumpir el flujo de aprobación
+            }
+        }
+
+
         
         // ==========================================
         // NOTIFICACIONES
