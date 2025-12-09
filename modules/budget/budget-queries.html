@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.21.09.52">
+    <meta name="page-version" content="25.12.09.13.05">
     <title>Consultas de Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <!-- SheetJS para exportar a Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     
     <!-- Estilos específicos del formulario -->
     <style>
@@ -340,6 +343,9 @@
                 <button id="btn-consultar" class="btn btn-primary">
                     <i class="bi bi-search me-1"></i>Consultar
                 </button>
+                <button id="btn-exportar" class="btn btn-success" disabled>
+                    <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
+                </button>
                 <button id="btn-limpiar" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Limpiar Filtros
                 </button>
@@ -408,6 +414,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     <script>
+        
         // ==========================================
         // VARIABLES GLOBALES
         // ==========================================
@@ -416,6 +423,13 @@
         let workersList = [];
         let yearsList = [];
         let currentBudgetYearId = null; // Año vigente de presupuesto
+        
+        // Datos de última consulta para exportación
+        let ultimaConsulta = {
+            asignaciones: [],
+            requerimientos: [],
+            sobreejecuciones: []
+        };
 
         // ==========================================
         // INICIALIZACIÓN
@@ -460,7 +474,10 @@
                     cambiarPestana(this.dataset.tab);
                 });
             });
-
+            
+            // Evento del botón exportar
+            document.getElementById('btn-exportar').addEventListener('click', exportarExcel);
+            
             console.log('✅ Eventos configurados');
         }
 
@@ -815,10 +832,11 @@
                     );
                 }
                 
+                ultimaConsulta.asignaciones = data;
                 renderizarAsignaciones(data);
+                document.getElementById('btn-exportar').disabled = data.length === 0;
                 
                 console.log(`✅ ${data.length} asignaciones consultadas`);
-
             } catch (error) {
                 console.error('Error consultando asignaciones:', error);
                 throw error;
@@ -967,10 +985,11 @@
                     );
                 }
                 
+                ultimaConsulta.requerimientos = data;
                 renderizarRequerimientos(data);
+                document.getElementById('btn-exportar').disabled = data.length === 0;
                 
                 console.log(`✅ ${data.length} requerimientos consultados`);
-
             } catch (error) {
                 console.error('Error consultando requerimientos:', error);
                 throw error;
@@ -1108,10 +1127,11 @@
                     );
                 }
                 
+                ultimaConsulta.sobreejecuciones = data;
                 renderizarSobreejecuciones(data);
+                document.getElementById('btn-exportar').disabled = data.length === 0;
                 
                 console.log(`✅ ${data.length} sobre-ejecuciones consultadas`);
-
             } catch (error) {
                 console.error('Error consultando sobre-ejecuciones:', error);
                 throw error;
@@ -1294,6 +1314,132 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // ==========================================
+        // EXPORTAR A EXCEL
+        // ==========================================
+        function exportarExcel() {
+            const tabActiva = document.querySelector('.tab-button.active').dataset.tab;
+            let datos = [];
+            let nombreArchivo = '';
+            let encabezados = [];
+            
+            switch (tabActiva) {
+                case 'asignaciones':
+                    datos = prepararDatosAsignaciones();
+                    encabezados = ['Categoría', 'Ítem', 'Año', 'Trabajador', 'Detalle', 'Vr. Solicitado', 'Vr. Aprobado', 'Vr. Ejecutado', 'Vr. Disponible', '% Ejecución'];
+                    nombreArchivo = 'Asignaciones_Presupuestales';
+                    break;
+                case 'requerimientos':
+                    datos = prepararDatosRequerimientos();
+                    encabezados = ['ID', 'Categoría', 'Ítem', 'Año', 'Solicitante', 'Autorizador', 'Fecha Solicitud', 'Días Respuesta', 'Vr. Solicitado', 'Vr. Cerrado', 'Estado'];
+                    nombreArchivo = 'Requerimientos_Presupuestales';
+                    break;
+                case 'sobreejecuciones':
+                    datos = prepararDatosSobreejecuciones();
+                    encabezados = ['ID', 'Categoría', 'Ítem', 'Año', 'Solicitante', 'Vr. Solicitado', 'Vr. Cerrado', 'Sobre-ejecución', '% Sobre-ejecución', 'Razones'];
+                    nombreArchivo = 'Sobre_Ejecuciones';
+                    break;
+            }
+            
+            if (datos.length === 0) {
+                showMessage('No hay datos para exportar', 'warning');
+                return;
+            }
+            
+            // Crear libro de Excel
+            const ws = XLSX.utils.aoa_to_sheet([encabezados, ...datos]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+            
+            // Ajustar ancho de columnas
+            const colWidths = encabezados.map(h => ({ wch: Math.max(h.length + 2, 15) }));
+            ws['!cols'] = colWidths;
+            
+            // Descargar archivo
+            const fecha = new Date().toISOString().split('T')[0];
+            XLSX.writeFile(wb, `${nombreArchivo}_${fecha}.xlsx`);
+            
+            showMessage('Archivo exportado correctamente', 'success');
+        }
+        
+        function prepararDatosAsignaciones() {
+            return ultimaConsulta.asignaciones
+                .filter(asig => {
+                    const valorSolicitado = asig.requested_value || 0;
+                    const valorAprobado = asig.approved_value || 0;
+                    const valorEjecutado = asig.executed_value || 0;
+                    return !(valorSolicitado === 0 && valorAprobado === 0 && valorEjecutado === 0);
+                })
+                .map(asig => {
+                    const valorAprobado = asig.approved_value || 0;
+                    const valorEjecutado = asig.executed_value || 0;
+                    const valorDisponible = valorAprobado - valorEjecutado;
+                    const porcentaje = valorAprobado > 0 ? ((valorEjecutado / valorAprobado) * 100).toFixed(1) : 0;
+                    
+                    return [
+                        asig.budget_item?.budget_categories?.category_name || '',
+                        asig.budget_item?.item_name || '',
+                        asig.academic_year?.year_name || '',
+                        formatWorkerName(asig.worker),
+                        asig.category_detail || '',
+                        asig.requested_value || 0,
+                        valorAprobado,
+                        valorEjecutado,
+                        valorDisponible,
+                        parseFloat(porcentaje)
+                    ];
+                });
+        }
+        
+        function prepararDatosRequerimientos() {
+            return ultimaConsulta.requerimientos.map(req => {
+                let diasRespuesta = '';
+                if (req.requested_at && req.responded_at) {
+                    const inicio = new Date(req.requested_at);
+                    const fin = new Date(req.responded_at);
+                    diasRespuesta = Math.floor((fin - inicio) / (1000 * 60 * 60 * 24));
+                } else if (req.requested_at && !req.responded_at) {
+                    diasRespuesta = 'Sin respuesta';
+                }
+                
+                return [
+                    req.request_id ? req.request_id.substring(0, 8) : '',
+                    req.assignment?.budget_item?.budget_categories?.category_name || '',
+                    req.assignment?.budget_item?.item_name || '',
+                    req.assignment?.academic_year?.year_name || '',
+                    formatWorkerName(req.requester),
+                    formatWorkerName(req.assignment?.authorizer),
+                    req.requested_at ? formatDate(req.requested_at) : '',
+                    diasRespuesta,
+                    req.requested_value || 0,
+                    req.closed_value || 0,
+                    formatEstado(req.request_status || 'pending')
+                ];
+            });
+        }
+        
+        function prepararDatosSobreejecuciones() {
+            return ultimaConsulta.sobreejecuciones.map(sobre => {
+                const valorSolicitado = sobre.requested_value || 0;
+                const valorCerrado = sobre.closed_value || 0;
+                const sobreejecucion = valorCerrado - valorSolicitado;
+                const porcentaje = valorSolicitado > 0 ? ((sobreejecucion / valorSolicitado) * 100).toFixed(1) : 0;
+                
+                return [
+                    sobre.request_id ? sobre.request_id.substring(0, 8) : '',
+                    sobre.assignment?.budget_item?.budget_categories?.category_name || '',
+                    sobre.assignment?.budget_item?.item_name || '',
+                    sobre.assignment?.academic_year?.year_name || '',
+                    formatWorkerName(sobre.requester),
+                    valorSolicitado,
+                    valorCerrado,
+                    sobreejecucion,
+                    parseFloat(porcentaje),
+                    sobre.overrun_reasons || 'Sin especificar'
+                ];
+            });
         }
 
         console.log('✅ Página de Consultas de Presupuesto cargada correctamente');
