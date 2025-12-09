@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.04.12.54">
+    <meta name="page-version" content="25.12.09.13.34">
     <title>Designar Solicitantes - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -347,7 +347,8 @@
         let cambiosPendientes = false;
         let modalConfirmacion;
         let solicitantesAsignados = [];
-
+        let esAdminPresupuesto = false;
+                
         // ===== ELEMENTOS DEL DOM =====
         const elementos = {
             loadingOverlay: document.getElementById('loadingOverlay'),
@@ -362,10 +363,35 @@
             btnConfirmarGuardar: document.getElementById('btnConfirmarGuardar')
         };
 
+        // ===== VERIFICACIÓN DE ROL ADMIN =====
+        async function verificarRolAdminPresupuesto() {
+            try {
+                const session = getStoredSession();
+                if (!session || !session.user) return false;
+                
+                const userId = session.user.user_id;
+                
+                // Consultar si el usuario tiene el rol "Presupuesto - Admin"
+                const query = `/user_roles?select=roles!inner(role_name)&user_id=eq.${userId}&roles.role_name=eq.Presupuesto - Admin`;
+                const data = await supabaseRequest(query);
+                
+                return data && data.length > 0;
+            } catch (error) {
+                console.error('Error verificando rol admin:', error);
+                return false;
+            }
+        }
+        
         // ===== CARGA DE DATOS =====
         async function cargarDatosIniciales() {
             try {
                 showMessage('Cargando datos del formulario...', 'info');
+                
+                // Verificar si es admin de presupuesto
+                esAdminPresupuesto = await verificarRolAdminPresupuesto();
+                if (esAdminPresupuesto) {
+                    console.log('✅ Usuario es Presupuesto - Admin: acceso a todas las asignaciones');
+                }
                 
                 // Cargar trabajadores y asignaciones en paralelo
                 const [trabajadoresData, asignacionesData] = await Promise.all([
@@ -418,22 +444,38 @@
             if (!session || !session.user || !session.user.user_mail) {
                 throw new Error('No se pudo obtener el email del usuario actual');
             }
-
+        
             const userEmail = session.user.user_mail;
             
-            // Cargar asignaciones del usuario con información completa
-            const query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,budget_items(item_name,budget_categories(category_name))&worker_email=eq.${userEmail}`;
+            // Si es admin de presupuesto, cargar TODAS las asignaciones
+            // Si no, cargar solo las del usuario
+            let query;
+            if (esAdminPresupuesto) {
+                query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,worker_email,workers!budget_assignments_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),budget_items(item_name,budget_categories(category_name))`;
+            } else {
+                query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,budget_items(item_name,budget_categories(category_name))&worker_email=eq.${userEmail}`;
+            }
             
             const data = await supabaseRequest('/' + query);
             
-            asignacionesUsuario = data.map(assignment => ({
-                assignment_id: assignment.assignment_id,
-                item_name: assignment.budget_items?.item_name || 'Sin nombre',
-                category_name: assignment.budget_items?.budget_categories?.category_name || 'Sin categoría',
-                assignment_category: assignment.assignment_category,
-                category_detail: assignment.category_detail,
-                approved_value: assignment.approved_value || 0
-            }));
+            asignacionesUsuario = data.map(assignment => {
+                const obj = {
+                    assignment_id: assignment.assignment_id,
+                    item_name: assignment.budget_items?.item_name || 'Sin nombre',
+                    category_name: assignment.budget_items?.budget_categories?.category_name || 'Sin categoría',
+                    assignment_category: assignment.assignment_category,
+                    category_detail: assignment.category_detail,
+                    approved_value: assignment.approved_value || 0
+                };
+                
+                // Si es admin, agregar info del autorizador
+                if (esAdminPresupuesto && assignment.workers) {
+                    obj.autorizador_nombre = construirNombreCompleto(assignment.workers);
+                    obj.autorizador_email = assignment.worker_email;
+                }
+                
+                return obj;
+            });
             
             // Ordenar en memoria por categoría y luego por item
             asignacionesUsuario.sort((a, b) => {
@@ -444,7 +486,7 @@
             
             return asignacionesUsuario;
         }
-
+        
         async function cargarSolicitantesAsignados() {
             const session = getStoredSession();
             const userEmail = session.user.user_mail;
@@ -691,6 +733,8 @@
                 return;
             }
             
+            const columnaAutorizador = esAdminPresupuesto ? '<th>Autorizador</th>' : '';
+
             let html = `
                 <div class="tabla-asignaciones">
                     <div class="table-responsive">
@@ -702,6 +746,7 @@
                                     </th>
                                     <th>Sub-ítem</th>
                                     <th>Categoría Presupuestal</th>
+                                    ${columnaAutorizador}
                                     <th>Asignación</th>
                                     <th class="valor-column">Valor Aprobado</th>
                                     <th class="autorizado-column">Estado</th>
@@ -719,6 +764,10 @@
                 const estadoTexto = asignacion.autorizado ? 'Autorizado' : 'No autorizado';
                 const estadoClase = asignacion.autorizado ? 'text-success' : 'text-muted';
                 
+                const celdaAutorizador = esAdminPresupuesto 
+                    ? `<td><small class="text-muted">${asignacion.autorizador_nombre || 'Sin asignar'}</small></td>` 
+                    : '';
+                
                 html += `
                     <tr>
                         <td class="checkbox-column">
@@ -734,6 +783,7 @@
                         <td>
                             <span class="rubro-info">${asignacion.category_name}</span>
                         </td>
+                        ${celdaAutorizador}
                         <td>${categoriaCompleta}</td>
                         <td class="valor-column">
                             <span class="valor-formatted">${valorFormateado}</span>
