@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.12.10.06.42">
+    <meta name="page-version" content="25.12.10.06.55">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -498,6 +498,28 @@
                                 <small id="selected-person-details"></small>
                             </div>
 
+                            <!-- Resumen de asistencia -->
+                            <div class="row mb-3" id="history-summary" style="display: none;">
+                                <div class="col-md-4">
+                                    <div class="alert alert-success mb-0 py-2">
+                                        <i class="bi bi-calendar-check me-2"></i>
+                                        <strong>Días asistidos:</strong> <span id="summary-attended">0</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="alert alert-warning mb-0 py-2">
+                                        <i class="bi bi-alarm me-2"></i>
+                                        <strong>Días con tardanza:</strong> <span id="summary-late">0</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="alert alert-danger mb-0 py-2">
+                                        <i class="bi bi-calendar-x me-2"></i>
+                                        <strong>Días de ausencia:</strong> <span id="summary-absent">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <!-- Tabla de historial -->
                             <div class="table-responsive">
                                 <table class="table table-hover attendance-table">
@@ -560,9 +582,9 @@
                                     <input type="date" class="form-control" id="course-report-date" onchange="cargarReporteCursos()">
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="form-label fw-bold">Grado:</label>
+                                    <label class="form-label fw-bold">Curso:</label>
                                     <select class="form-select" id="filter-grade-course" onchange="cargarReporteCursos()">
-                                        <option value="">Todos los grados</option>
+                                        <option value="">Todos los cursos</option>
                                     </select>
                                 </div>
                             </div>
@@ -995,7 +1017,7 @@
        async function cargarFiltros() {
             try {
                 // Cargar cursos únicos para filtro de ausentes
-                const courses = await supabaseRequest('/courses?select=course_id,course_name&course_status=eq.active&order=course_name.asc');
+                const courses = await supabaseRequest('/courses?select=course_id,course_name,course_order&course_status=eq.active&order=course_order.asc');
                 if (courses) {
                     const courseSelect = document.getElementById('filter-course-absent');
                     const coursePresentSelect = document.getElementById('filter-course-present'); // ✅ NUEVO
@@ -1855,35 +1877,84 @@
                     }
                 });
 
+                // Determinar hora de referencia según tipo de persona
+                const horaReferencia = selectedPersonHistory.tipo === 'student' 
+                    ? punctualityReferenceTimeStudents 
+                    : punctualityReferenceTimeWorkers;
+                
+                // Contadores para resumen
+                let diasAsistidos = 0;
+                let diasTardanza = 0;
+                
                 // Generar tabla
                 let html = '';
-                Object.keys(cursos).sort().forEach(curso => {
-                    const data = cursos[curso];
-                    const ausentes = data.total - data.presentes;
-                    const porcentaje = data.total > 0 ? ((data.presentes / data.total) * 100).toFixed(1) : 0;
+                Object.keys(registrosPorFecha).sort().reverse().forEach(fecha => {
+                    const regs = registrosPorFecha[fecha];
+                    diasAsistidos++;
                     
+                    // Primer registro = entrada, último = salida
+                    const entrada = regs[0].attendance_time.substring(0, 5);
+                    const salida = regs.length > 1 ? regs[regs.length - 1].attendance_time.substring(0, 5) : '-';
+                    
+                    // Verificar tardanza
+                    const esTarde = regs[0].attendance_time > horaReferencia;
+                    if (esTarde) diasTardanza++;
+                    
+                    // Calcular permanencia
+                    let permanencia = '-';
+                    if (regs.length > 1) {
+                        const entradaTime = new Date(`2000-01-01 ${regs[0].attendance_time}`);
+                        const salidaTime = new Date(`2000-01-01 ${regs[regs.length - 1].attendance_time}`);
+                        const diff = Math.abs(salidaTime - entradaTime);
+                        const hours = Math.floor(diff / 3600000);
+                        const minutes = Math.floor((diff % 3600000) / 60000);
+                        permanencia = `${hours}h ${minutes}m`;
+                    }
+                
+                    // Método de registro
+                    const metodos = [...new Set(regs.map(r => r.registration_method))];
+                    const metodoTexto = metodos.includes('manual') ? 
+                        '<span class="badge bg-warning">Manual</span>' : 
+                        '<span class="badge bg-success">Carnet</span>';
+                
+                    // Badge de tardanza en la hora de entrada
+                    const entradaBadge = esTarde 
+                        ? `<span class="badge badge-tardanza">${entrada}</span>` 
+                        : `<span class="badge badge-entrada">${entrada}</span>`;
+                
                     html += `
                         <tr>
-                            <td>${curso}</td>
-                            <td>${data.total}</td>
-                            <td><span class="badge bg-success">${data.presentes}</span></td>
-                            <td><span class="badge bg-danger">${ausentes}</span></td>
-                            <td>
-                                <div class="progress" style="height: 20px;">
-                                    <div class="progress-bar ${porcentaje >= 80 ? 'bg-success' : porcentaje >= 60 ? 'bg-warning' : 'bg-danger'}" 
-                                         style="width: ${porcentaje}%">${porcentaje}%</div>
-                                </div>
-                            </td>
+                            <td>${fecha}</td>
+                            <td>${entradaBadge}</td>
+                            <td>${salida !== '-' ? `<span class="badge badge-salida">${salida}</span>` : salida}</td>
+                            <td>${permanencia}</td>
+                            <td>${metodoTexto}</td>
                         </tr>
                     `;
                 });
-
-                document.getElementById('courses-table-body').innerHTML = html || `
-                    <tr><td colspan="5" class="text-center text-muted">No hay datos disponibles</td></tr>
-                `;
-
+                
+                // Calcular días hábiles en el rango (lunes a viernes)
+                const inicio = new Date(fechaInicio);
+                const fin = new Date(fechaFin);
+                let diasHabiles = 0;
+                for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+                    const diaSemana = d.getDay();
+                    if (diaSemana !== 0 && diaSemana !== 6) { // No es sábado ni domingo
+                        diasHabiles++;
+                    }
+                }
+                
+                // Calcular ausencias
+                const diasAusencia = Math.max(0, diasHabiles - diasAsistidos);
+                
+                // Mostrar resumen
+                document.getElementById('summary-attended').textContent = diasAsistidos;
+                document.getElementById('summary-late').textContent = diasTardanza;
+                document.getElementById('summary-absent').textContent = diasAusencia;
+                document.getElementById('history-summary').style.display = 'flex';
+                
+                document.getElementById('history-table-body').innerHTML = html;
                 ocultarLoading();
-
             } catch (error) {
                 console.error('❌ Error cargando reporte por cursos:', error);
                 ocultarLoading();
