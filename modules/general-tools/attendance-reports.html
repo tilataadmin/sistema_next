@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.12.10.07.02">
+    <meta name="page-version" content="25.12.10.07.17">
     
     <title>Reportes de Asistencia - SchoolNet</title>
     
@@ -681,34 +681,36 @@
                         <!-- Filtros -->
                         <div class="filter-section mb-4">
                             <div class="row">
-                                <div class="col-md-3">
-                                    <label class="form-label fw-bold">Fecha:</label>
-                                    <input type="date" class="form-control" id="punctuality-date" onchange="cargarReportePuntualidad()">
+                                <div class="col-md-2">
+                                    <label class="form-label fw-bold">Desde:</label>
+                                    <input type="date" class="form-control" id="punctuality-date-start">
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-2">
+                                    <label class="form-label fw-bold">Hasta:</label>
+                                    <input type="date" class="form-control" id="punctuality-date-end">
+                                </div>
+                                <div class="col-md-2">
                                     <label class="form-label fw-bold">Tipo de persona:</label>
-                                    <select class="form-select" id="punctuality-type" onchange="cargarReportePuntualidad()">
+                                    <select class="form-select" id="punctuality-type">
                                         <option value="">Todos</option>
                                         <option value="student">Estudiantes</option>
                                         <option value="worker">Trabajadores</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3">
-                                    <label class="form-label fw-bold">Estado:</label>
-                                    <select class="form-select" id="punctuality-status" onchange="cargarReportePuntualidad()">
-                                        <option value="">Todos</option>
-                                        <option value="ontime">A tiempo</option>
-                                        <option value="late">Tardanza</option>
+                                <div class="col-md-2">
+                                    <label class="form-label fw-bold">Ordenar por:</label>
+                                    <select class="form-select" id="punctuality-order">
+                                        <option value="late">Más tardanzas</option>
+                                        <option value="ontime">Más a tiempo</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3 d-flex align-items-end">
+                                <div class="col-md-2 d-flex align-items-end">
                                     <button class="btn btn-primary w-100" onclick="cargarReportePuntualidad()">
                                         <i class="bi bi-search me-1"></i>Buscar
                                     </button>
                                 </div>
                             </div>
                         </div>
-
                         <!-- Tabla de resultados -->
                         <div class="table-responsive">
                             <table class="table table-hover attendance-table">
@@ -716,18 +718,20 @@
                                     <tr>
                                         <th>Persona</th>
                                         <th>Tipo</th>
-                                        <th>Hora de Entrada</th>
-                                        <th>Estado</th>
-                                        <th>Diferencia</th>
+                                        <th>Días Registrados</th>
+                                        <th>A Tiempo</th>
+                                        <th>Tardanzas</th>
+                                        <th>Tiempo Acumulado</th>
                                     </tr>
                                 </thead>
                                 <tbody id="punctuality-table-body">
                                     <tr>
-                                        <td colspan="5" class="text-center text-muted">Seleccione una fecha y haga clic en Buscar</td>
+                                        <td colspan="6" class="text-center text-muted">Seleccione un rango de fechas y haga clic en Buscar</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
+                        
                     </div>
                 </div>
             </div>
@@ -814,13 +818,16 @@
                 const historyEndElement = document.getElementById('history-date-end');
                 const courseReportElement = document.getElementById('course-report-date');
                 const areaReportElement = document.getElementById('area-report-date');
-                const punctualityDateElement = document.getElementById('punctuality-date');
-        
+                const punctualityDateStartElement = document.getElementById('punctuality-date-start');
+                const punctualityDateEndElement = document.getElementById('punctuality-date-end');
+
+                
                 if (historyStartElement) historyStartElement.value = today;
                 if (historyEndElement) historyEndElement.value = today;
                 if (courseReportElement) courseReportElement.value = today;
                 if (areaReportElement) areaReportElement.value = today;
-                if (punctualityDateElement) punctualityDateElement.value = today;
+                if (punctualityDateStartElement) punctualityDateStartElement.value = today;
+                if (punctualityDateEndElement) punctualityDateEndElement.value = today;
         
                 // Cargar filtros
                 await cargarFiltros();
@@ -2043,95 +2050,135 @@
             try {
                 mostrarLoading();
                 
-                const fecha = document.getElementById('punctuality-date').value;
+                const fechaInicio = document.getElementById('punctuality-date-start').value;
+                const fechaFin = document.getElementById('punctuality-date-end').value;
                 const tipoFiltro = document.getElementById('punctuality-type').value;
-                const statusFiltro = document.getElementById('punctuality-status').value;
-
-                if (!fecha) {
+                const ordenarPor = document.getElementById('punctuality-order').value;
+        
+                if (!fechaInicio || !fechaFin) {
                     document.getElementById('punctuality-table-body').innerHTML = `
-                        <tr><td colspan="5" class="text-center text-muted">Seleccione una fecha</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted">Seleccione un rango de fechas</td></tr>
                     `;
                     ocultarLoading();
                     return;
                 }
-
-                // Obtener registros de la fecha (solo primeros registros = entradas)
-                let query = `/attendance?select=*&attendance_date=eq.${fecha}&order=person_id_document,attendance_timestamp.asc`;
+        
+                if (fechaInicio > fechaFin) {
+                    showMessage('La fecha de inicio debe ser menor o igual a la fecha fin', 'warning');
+                    ocultarLoading();
+                    return;
+                }
+        
+                // Obtener registros en el rango de fechas
+                let query = `/attendance?select=*&attendance_date=gte.${fechaInicio}&attendance_date=lte.${fechaFin}&order=person_id_document,attendance_date,attendance_timestamp.asc`;
                 const registros = await supabaseRequest(query);
-
+        
                 if (!registros || registros.length === 0) {
                     document.getElementById('punctuality-table-body').innerHTML = `
-                        <tr><td colspan="5" class="text-center text-muted">No hay registros en esta fecha</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted">No hay registros en este período</td></tr>
                     `;
                     ocultarLoading();
                     return;
                 }
-
-                // Obtener solo el primer registro de cada persona (entrada)
-                const entradas = {};
+        
+                // Agrupar por persona y fecha para obtener solo la primera entrada de cada día
+                const entradasPorPersona = {};
                 registros.forEach(reg => {
-                    if (!entradas[reg.person_id_document]) {
-                        entradas[reg.person_id_document] = reg;
+                    const key = `${reg.person_id_document}|${reg.attendance_date}`;
+                    if (!entradasPorPersona[key]) {
+                        entradasPorPersona[key] = reg; // Solo guardamos el primer registro (entrada)
                     }
                 });
-
-                // Procesar puntualidad
-                const resultados = [];
-                for (const [doc, reg] of Object.entries(entradas)) {
+        
+                // Agrupar estadísticas por persona
+                const estadisticasPorPersona = {};
+                
+                Object.values(entradasPorPersona).forEach(reg => {
+                    const doc = reg.person_id_document;
+                    const tipo = reg.person_type;
+                    
                     // Filtrar por tipo si es necesario
-                    if (tipoFiltro && reg.person_type !== tipoFiltro) continue;
-
+                    if (tipoFiltro && tipo !== tipoFiltro) return;
+                    
+                    if (!estadisticasPorPersona[doc]) {
+                        estadisticasPorPersona[doc] = {
+                            documento: doc,
+                            tipo: tipo,
+                            diasRegistrados: 0,
+                            aTiempo: 0,
+                            tardanzas: 0,
+                            minutosTotales: 0 // Positivo = tarde, negativo = temprano
+                        };
+                    }
+                    
+                    const stats = estadisticasPorPersona[doc];
+                    stats.diasRegistrados++;
+                    
+                    // Determinar hora de referencia según tipo
+                    const horaReferencia = tipo === 'student' 
+                        ? punctualityReferenceTimeStudents 
+                        : punctualityReferenceTimeWorkers;
+                    
                     const horaEntrada = reg.attendance_time;
-                    // Usar hora de referencia según el tipo de persona
-                    const horaReferencia = reg.person_type === 'student' ? punctualityReferenceTimeStudents : punctualityReferenceTimeWorkers;
                     const esTarde = horaEntrada > horaReferencia;
-                    // Filtrar por estado si es necesario
-                    if (statusFiltro === 'ontime' && esTarde) continue;
-                    if (statusFiltro === 'late' && !esTarde) continue;
-
-                    // Calcular diferencia
-                    // Calcular diferencia
+                    
+                    if (esTarde) {
+                        stats.tardanzas++;
+                    } else {
+                        stats.aTiempo++;
+                    }
+                    
+                    // Calcular diferencia en minutos
                     const refTime = new Date(`2000-01-01 ${horaReferencia}`);
                     const entradaTime = new Date(`2000-01-01 ${horaEntrada}`);
-                    const diff = Math.abs(entradaTime - refTime);
-                    const minutes = Math.floor(diff / 60000);
-                    const diferencia = esTarde ? `+${minutes} min` : `-${minutes} min`;
-
-                    resultados.push({
-                        documento: doc,
-                        tipo: reg.person_type,
-                        hora: horaEntrada.substring(0, 5),
-                        esTarde,
-                        diferencia
-                    });
+                    const diffMinutos = Math.round((entradaTime - refTime) / 60000);
+                    stats.minutosTotales += diffMinutos;
+                });
+        
+                // Convertir a array y ordenar
+                let resultados = Object.values(estadisticasPorPersona);
+                
+                if (ordenarPor === 'late') {
+                    resultados.sort((a, b) => b.tardanzas - a.tardanzas || b.minutosTotales - a.minutosTotales);
+                } else {
+                    resultados.sort((a, b) => b.aTiempo - a.aTiempo || a.minutosTotales - b.minutosTotales);
                 }
-
-                // Obtener nombres y generar tabla
+        
+                // Generar tabla
                 let html = '';
                 for (const item of resultados) {
-                    const nombre = await obtenerNombrePersona(item.documento, item.tipo);
+                    const nombre = obtenerNombrePersona(item.documento, item.tipo);
                     const tipoTexto = item.tipo === 'student' ? 'Estudiante' : 'Trabajador';
-                    const estadoBadge = item.esTarde ? 
-                        '<span class="badge badge-tardanza">Tardanza</span>' : 
-                        '<span class="badge badge-entrada">A tiempo</span>';
-
+                    
+                    // Formatear tiempo acumulado
+                    const signo = item.minutosTotales >= 0 ? '+' : '';
+                    const horas = Math.floor(Math.abs(item.minutosTotales) / 60);
+                    const minutos = Math.abs(item.minutosTotales) % 60;
+                    const tiempoFormateado = horas > 0 
+                        ? `${signo}${Math.sign(item.minutosTotales) * horas}h ${minutos}m`
+                        : `${signo}${item.minutosTotales}m`;
+                    
+                    // Color del tiempo acumulado
+                    const tiempoClass = item.minutosTotales > 0 ? 'text-danger' : 'text-success';
+        
                     html += `
                         <tr>
-                            <td>${nombre}</td>
+                            <td><strong>${nombre}</strong></td>
                             <td><span class="person-badge ${item.tipo}">${tipoTexto}</span></td>
-                            <td>${item.hora}</td>
-                            <td>${estadoBadge}</td>
-                            <td>${item.diferencia}</td>
+                            <td>${item.diasRegistrados}</td>
+                            <td><span class="badge badge-entrada">${item.aTiempo}</span></td>
+                            <td><span class="badge badge-tardanza">${item.tardanzas}</span></td>
+                            <td class="${tiempoClass} fw-bold">${tiempoFormateado}</td>
                         </tr>
                     `;
                 }
-
+        
                 document.getElementById('punctuality-table-body').innerHTML = html || `
-                    <tr><td colspan="5" class="text-center text-muted">No hay resultados con los filtros seleccionados</td></tr>
+                    <tr><td colspan="6" class="text-center text-muted">No hay resultados con los filtros seleccionados</td></tr>
                 `;
-
+        
                 ocultarLoading();
-
+        
             } catch (error) {
                 console.error('❌ Error cargando reporte de puntualidad:', error);
                 ocultarLoading();
@@ -2139,6 +2186,7 @@
             }
         }
 
+        
         // ==========================================
         // FUNCIONES DE UTILIDAD
         // ==========================================
