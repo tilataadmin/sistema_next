@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.05.14.28">
+    <meta name="page-version" content="25.12.10.08.08">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -349,11 +349,21 @@
 
         <!-- Sección de requerimientos -->
         <div class="table-section">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <h3 class="mb-0">
                     <i class="bi bi-list-check me-2"></i>Requerimientos Aprobados
                 </h3>
-                <span id="total-requerimientos" class="badge bg-primary">0 requerimientos</span>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="filtro-solicitante" class="form-label mb-0 text-nowrap">
+                            <i class="bi bi-funnel me-1"></i>Solicitante:
+                        </label>
+                        <select id="filtro-solicitante" class="form-select form-select-sm" style="min-width: 250px;">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <span id="total-requerimientos" class="badge bg-primary">0 requerimientos</span>
+                </div>
             </div>
             
             <div id="requerimientos-content">
@@ -543,6 +553,7 @@
         let valorAnterior = 0;
         let tipoAnterior = '';
         let modalInstance = null;
+        let requerimientosFiltrados = [];
 
         // Referencias DOM
         let elementos = {};
@@ -583,6 +594,7 @@
          */
         function inicializarElementos() {
             elementos = {
+                filtroSolicitante: document.getElementById('filtro-solicitante'),
                 totalRequerimientos: document.getElementById('total-requerimientos'),
                 totalFacturas: document.getElementById('total-facturas'),
                 requerimientosContent: document.getElementById('requerimientos-content'),
@@ -642,6 +654,13 @@
             
             // Eventos del modal
             elementos.modalAsociarFacturas.addEventListener('hidden.bs.modal', limpiarModal);
+
+            // Evento del filtro de solicitante
+            elementos.filtroSolicitante.addEventListener('change', function() {
+                const valorSeleccionado = this.value;
+                localStorage.setItem('filtroSolicitanteFacturas', valorSeleccionado);
+                aplicarFiltroSolicitante();
+            });
         }
 
         /**
@@ -698,15 +717,27 @@
                 // Obtener workers por email
                 const emails = [...new Set(requerimientosData.map(req => req.worker_email).filter(email => email))];
                 let workersMap = new Map();
+                let workersParaFiltro = [];
                 
                 if (emails.length > 0) {
                     const workersData = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&email=in.(${emails.join(',')})`);
                     
                     workersData.forEach(worker => {
                         const fullName = `${worker.worker_first_name} ${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}`.trim();
+                        const nombreOrdenado = `${worker.worker_last_name_1} ${worker.worker_last_name_2 || ''}, ${worker.worker_first_name}`.replace(/\s+/g, ' ').trim();
                         workersMap.set(worker.email, fullName);
+                        workersParaFiltro.push({
+                            email: worker.email,
+                            nombreMostrar: nombreOrdenado,
+                            apellido1: worker.worker_last_name_1 || '',
+                            apellido2: worker.worker_last_name_2 || '',
+                            nombre: worker.worker_first_name || ''
+                        });
                     });
                 }
+                
+                // Poblar select de solicitantes
+                poblarSelectSolicitantes(workersParaFiltro);
                 
                 // Combinar datos incluyendo rubro y subítem
                 datosCompletos.requerimientos = requerimientosData.map(req => ({
@@ -721,7 +752,8 @@
                     subitem_nombre: req.budget_assignments?.category_detail || 'Sin subítem'
                 }));
                 
-                renderizarTablaRequerimientos();
+                // Aplicar filtro guardado o mostrar todos
+                aplicarFiltroSolicitante();
                 ocultarLoading();
                 
                 showMessage(`Datos cargados: ${datosCompletos.requerimientos.length} requerimientos, ${datosCompletos.proveedores.length} proveedores`, 'success');
@@ -748,13 +780,64 @@
             });
         }
 
+
+        /**
+         * Pobla el select de solicitantes ordenado por apellidos
+         */
+        function poblarSelectSolicitantes(workers) {
+            elementos.filtroSolicitante.innerHTML = '<option value="">Todos</option>';
+            
+            // Ordenar por apellido1, apellido2, nombre
+            workers.sort((a, b) => {
+                const comparacion1 = a.apellido1.localeCompare(b.apellido1, 'es');
+                if (comparacion1 !== 0) return comparacion1;
+                const comparacion2 = a.apellido2.localeCompare(b.apellido2, 'es');
+                if (comparacion2 !== 0) return comparacion2;
+                return a.nombre.localeCompare(b.nombre, 'es');
+            });
+            
+            workers.forEach(worker => {
+                const option = document.createElement('option');
+                option.value = worker.email;
+                option.textContent = worker.nombreMostrar;
+                elementos.filtroSolicitante.appendChild(option);
+            });
+            
+            // Restaurar selección guardada
+            const filtroGuardado = localStorage.getItem('filtroSolicitanteFacturas');
+            if (filtroGuardado) {
+                elementos.filtroSolicitante.value = filtroGuardado;
+            }
+        }
+        
+        /**
+         * Aplica el filtro de solicitante a la tabla
+         */
+        function aplicarFiltroSolicitante() {
+            const emailSeleccionado = elementos.filtroSolicitante.value;
+            
+            if (emailSeleccionado === '') {
+                requerimientosFiltrados = [...datosCompletos.requerimientos];
+            } else {
+                requerimientosFiltrados = datosCompletos.requerimientos.filter(
+                    req => req.worker_email === emailSeleccionado
+                );
+            }
+            
+            renderizarTablaRequerimientos();
+        }
+
         /**
          * Renderiza la tabla de requerimientos (con rubro y subítem)
          */
         function renderizarTablaRequerimientos() {
-            elementos.totalRequerimientos.textContent = `${datosCompletos.requerimientos.length} requerimientos`;
+            const datos = requerimientosFiltrados.length > 0 || elementos.filtroSolicitante.value !== '' 
+                ? requerimientosFiltrados 
+                : datosCompletos.requerimientos;
             
-            if (!datosCompletos.requerimientos || datosCompletos.requerimientos.length === 0) {
+            elementos.totalRequerimientos.textContent = `${datos.length} requerimientos`;
+            
+            if (!datos || datos.length === 0) {
                 elementos.requerimientosContent.innerHTML = `
                     <div class="empty-state">
                         <i class="bi bi-inbox"></i>
@@ -784,7 +867,7 @@
             
             // Cuerpo con nueva columna
             const tbody = document.createElement('tbody');
-            datosCompletos.requerimientos.forEach((requerimiento, index) => {
+            datos.forEach((requerimiento, index) => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="col-solicitante">
@@ -805,7 +888,7 @@
                         <span class="valor-money">${formatearMoneda(requerimiento.requested_value)}</span>
                     </td>
                     <td class="col-accion">
-                        <button class="btn-asociar" onclick="abrirModalAsociarFacturas(${index})">
+                        <button class="btn-asociar" onclick="abrirModalAsociarFacturas('${requerimiento.request_id}')">
                             <i class="bi bi-receipt me-1"></i>Asociar Factura
                         </button>
                     </td>
@@ -821,8 +904,12 @@
         /**
          * Abre el modal para asociar facturas (con rubro y subítem)
          */
-        function abrirModalAsociarFacturas(index) {
-            requerimientoActual = datosCompletos.requerimientos[index];
+        function abrirModalAsociarFacturas(requestId) {
+            requerimientoActual = datosCompletos.requerimientos.find(r => r.request_id == requestId);
+            if (!requerimientoActual) {
+                showMessage('No se encontró el requerimiento', 'danger');
+                return;
+            }
             modoEdicion = false;
             facturaEditando = null;
             
