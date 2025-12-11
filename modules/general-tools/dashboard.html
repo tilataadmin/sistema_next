@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="25.12.11.07.44">
     <title>Dashboard de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -141,6 +142,43 @@
             margin-bottom: 1rem;
             color: #2c3e50;
         }
+
+        /* Sección de categorías */
+        .category-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.25rem 0.625rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: white;
+        }
+        
+        .category-alert-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .category-alert-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .category-alert-row.alert-danger {
+            background-color: #fff5f5;
+            border-left: 3px solid #dc3545;
+        }
+        
+        .category-alert-row.alert-warning {
+            background-color: #fffbf0;
+            border-left: 3px solid #ffc107;
+        }
+        
     </style>
 </head>
 
@@ -456,6 +494,34 @@
                 </div>
             </div>
         </div>
+
+        <!-- SECCIÓN: ANÁLISIS POR CATEGORÍA -->
+        <div class="dashboard-section" id="section-categories">
+            <h5 class="section-title">
+                <i class="bi bi-bookmark-star me-2"></i>Análisis por Categoría
+                <small class="text-muted fw-normal ms-2">(Solo Herramientas Generales)</small>
+            </h5>
+
+            <div class="row">
+                <!-- Gráfico Donut -->
+                <div class="col-md-5 mb-4">
+                    <h6 class="text-muted mb-3">Distribución de Tareas Activas</h6>
+                    <canvas id="chart-category-distribution" height="220"></canvas>
+                </div>
+
+                <!-- Alertas por Categoría -->
+                <div class="col-md-7 mb-4">
+                    <h6 class="text-muted mb-3">Puntos de Atención</h6>
+                    <div id="category-alerts">
+                        <div class="text-center py-4">
+                            <div class="spinner-border spinner-border-sm"></div>
+                            Cargando...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <!-- SECCIÓN 5: ANÁLISIS TEMPORAL -->
         <div class="dashboard-section">
             <h5 class="section-title">
@@ -565,6 +631,8 @@
         let chartPriority = null;
         let chartClosureTime = null;
         let chartModuleTime = null;
+        let chartCategoryDistribution = null;
+        let categoriesCache = [];
         
         // ==========================================
         // INICIALIZACIÓN
@@ -611,6 +679,8 @@
                 
                 // Cargar años académicos
                 await cargarAnosAcademicos();
+                // Cargar categorías
+                await cargarCategorias();
                 
                 // Cargar datos del dashboard
                 await cargarDashboard();
@@ -655,6 +725,25 @@
                 throw error;
             }
         }
+
+        // ==========================================
+        // CARGAR CATEGORÍAS
+        // ==========================================
+        async function cargarCategorias() {
+            try {
+                console.log('📡 Cargando categorías...');
+                
+                const data = await supabaseRequest('/indicator_categories?select=category_id,category_name,category_icon,category_color&is_active=eq.true&order=category_order.asc');
+                
+                categoriesCache = data || [];
+                
+                console.log(`✅ ${categoriesCache.length} categorías cargadas`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando categorías:', error);
+                categoriesCache = [];
+            }
+        }
         
         // ==========================================
         // CARGAR DASHBOARD COMPLETO
@@ -673,6 +762,7 @@
                 calcularSituacionesCriticas();
                 calcularDesempenoTrabajadores();
                 calcularAnalisisModulos();
+                calcularAnalisisCategorias();
                 calcularAnalisisTemporal();
                 calcularAging();
                 
@@ -681,6 +771,7 @@
                 renderizarSituacionesCriticas();
                 renderizarDesempenoTrabajadores();
                 renderizarAnalisisModulos();
+                renderizarAnalisisCategorias();
                 renderizarAnalisisTemporal();
                 renderizarAging();
                 
@@ -710,7 +801,7 @@
                 const endDate = yearData[0].end_of_classes;
                 
                 // Construir query con filtros solo si las fechas existen
-                let query = '/tasks?select=*,students(student_first_name,student_last_name_1)';
+                let query = '/tasks?select=*,students(student_first_name,student_last_name_1),indicator_categories(category_id,category_name,category_icon,category_color)';
                 
                 if (startDate) {
                     query += '&created_at=gte.' + startDate;
@@ -992,6 +1083,152 @@
             
             console.log('✅ Análisis por módulos calculado');
         }
+
+        // ==========================================
+        // CALCULAR ANÁLISIS POR CATEGORÍAS
+        // ==========================================
+        function calcularAnalisisCategorias() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const sevenDaysAgo = new Date(today);
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            // Solo tareas de general-tools
+            const generalToolsTasks = allTasks.filter(t => t.module_type === 'general-tools');
+            
+            // Inicializar estadísticas por categoría
+            const categoryStats = {};
+            
+            // Agregar categoría "Sin categoría"
+            categoryStats['sin-categoria'] = {
+                id: null,
+                name: 'Sin categoría',
+                icon: 'tag',
+                color: '#6c757d',
+                total: 0,
+                active: 0,
+                overdue: 0,
+                completed: 0,
+                noProgress: 0
+            };
+            
+            // Inicializar con categorías existentes
+            categoriesCache.forEach(cat => {
+                categoryStats[cat.category_id] = {
+                    id: cat.category_id,
+                    name: cat.category_name,
+                    icon: cat.category_icon,
+                    color: cat.category_color,
+                    total: 0,
+                    active: 0,
+                    overdue: 0,
+                    completed: 0,
+                    noProgress: 0
+                };
+            });
+            
+            // Procesar tareas
+            generalToolsTasks.forEach(t => {
+                const catId = t.category_id || 'sin-categoria';
+                
+                // Si la categoría no existe en el cache, usar sin-categoria
+                if (!categoryStats[catId]) {
+                    categoryStats['sin-categoria'].total++;
+                    return;
+                }
+                
+                const stats = categoryStats[catId];
+                stats.total++;
+                
+                if (t.task_state === 'Asignada' || t.task_state === 'En Progreso') {
+                    stats.active++;
+                    
+                    // Verificar vencidas
+                    if (t.due_date) {
+                        const dueDate = new Date(t.due_date);
+                        if (dueDate < today) {
+                            stats.overdue++;
+                        }
+                    }
+                    
+                    // Verificar sin progreso > 7 días
+                    if (t.created_at) {
+                        const created = new Date(t.created_at);
+                        if (created < sevenDaysAgo && (!t.task_progress || t.task_progress.trim() === '')) {
+                            stats.noProgress++;
+                        }
+                    }
+                } else if (t.task_state === 'Terminada') {
+                    stats.completed++;
+                }
+            });
+            
+            // Filtrar categorías con tareas y ordenar
+            const activeCategories = Object.values(categoryStats)
+                .filter(c => c.total > 0)
+                .sort((a, b) => b.active - a.active);
+            
+            // Identificar alertas
+            const alerts = [];
+            
+            // Categoría con más vencidas
+            const mostOverdue = [...activeCategories]
+                .filter(c => c.overdue > 0)
+                .sort((a, b) => b.overdue - a.overdue)[0];
+            
+            if (mostOverdue) {
+                alerts.push({
+                    type: 'danger',
+                    icon: 'exclamation-triangle-fill',
+                    label: 'Más vencidas',
+                    category: mostOverdue,
+                    value: mostOverdue.overdue,
+                    suffix: 'tareas vencidas'
+                });
+            }
+            
+            // Categoría con mayor backlog (activas)
+            const mostBacklog = [...activeCategories]
+                .filter(c => c.active > 0)
+                .sort((a, b) => b.active - a.active)[0];
+            
+            if (mostBacklog && mostBacklog.active > 3) {
+                alerts.push({
+                    type: 'warning',
+                    icon: 'inbox-fill',
+                    label: 'Mayor backlog',
+                    category: mostBacklog,
+                    value: mostBacklog.active,
+                    suffix: 'tareas activas'
+                });
+            }
+            
+            // Categoría con más tareas sin progreso
+            const mostNoProgress = [...activeCategories]
+                .filter(c => c.noProgress > 0)
+                .sort((a, b) => b.noProgress - a.noProgress)[0];
+            
+            if (mostNoProgress) {
+                alerts.push({
+                    type: 'warning',
+                    icon: 'hourglass-split',
+                    label: 'Sin movimiento',
+                    category: mostNoProgress,
+                    value: mostNoProgress.noProgress,
+                    suffix: 'sin progreso >7 días'
+                });
+            }
+            
+            dashboardData.categories = {
+                stats: categoryStats,
+                activeCategories,
+                alerts,
+                totalGeneralTools: generalToolsTasks.length
+            };
+            
+            console.log('✅ Análisis por categorías calculado:', dashboardData.categories);
+        }
+        
       // ==========================================
         // CALCULAR ANÁLISIS TEMPORAL
         // ==========================================
@@ -1255,6 +1492,98 @@
                     }
                 }
             });
+        }
+
+        // ==========================================
+        // RENDERIZAR ANÁLISIS CATEGORÍAS
+        // ==========================================
+        function renderizarAnalisisCategorias() {
+            const c = dashboardData.categories;
+            
+            // Si no hay tareas de general-tools, ocultar sección
+            if (c.totalGeneralTools === 0) {
+                document.getElementById('section-categories').style.display = 'none';
+                return;
+            }
+            
+            document.getElementById('section-categories').style.display = 'block';
+            
+            // Renderizar gráfico donut
+            const ctx = document.getElementById('chart-category-distribution');
+            if (chartCategoryDistribution) chartCategoryDistribution.destroy();
+            
+            // Solo categorías con tareas activas para el donut
+            const categoriesWithActive = c.activeCategories.filter(cat => cat.active > 0);
+            
+            if (categoriesWithActive.length > 0) {
+                chartCategoryDistribution = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: categoriesWithActive.map(cat => cat.name),
+                        datasets: [{
+                            data: categoriesWithActive.map(cat => cat.active),
+                            backgroundColor: categoriesWithActive.map(cat => cat.color + 'CC'),
+                            borderColor: categoriesWithActive.map(cat => cat.color),
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 15
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        const percentage = Math.round((context.raw / total) * 100);
+                                        return `${context.label}: ${context.raw} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                ctx.parentElement.innerHTML = '<p class="text-muted text-center py-4">No hay tareas activas con categoría</p>';
+            }
+            
+            // Renderizar alertas
+            const alertsContainer = document.getElementById('category-alerts');
+            
+            if (c.alerts.length > 0) {
+                const alertsHtml = c.alerts.map(alert => `
+                    <div class="category-alert-row alert-${alert.type}">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-${alert.icon} text-${alert.type}"></i>
+                            <span class="text-muted small">${alert.label}:</span>
+                            <span class="category-badge" style="background-color: ${alert.category.color};">
+                                <i class="bi bi-${alert.category.icon}"></i>
+                                ${escapeHtml(alert.category.name)}
+                            </span>
+                        </div>
+                        <div class="text-end">
+                            <strong class="text-${alert.type}">${alert.value}</strong>
+                            <small class="text-muted ms-1">${alert.suffix}</small>
+                        </div>
+                    </div>
+                `).join('');
+                
+                alertsContainer.innerHTML = alertsHtml;
+            } else {
+                alertsContainer.innerHTML = `
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-check-circle text-success me-2"></i>
+                        Sin alertas por categoría
+                    </div>
+                `;
+            }
         }
         
         // ==========================================
