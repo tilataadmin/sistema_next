@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.12.08.13">
+    <meta name="page-version" content="26.01.15.11.30">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -371,6 +371,7 @@
                     <button class="btn btn-primary" id="btn-nueva-tarea" onclick="abrirModalNuevaTarea()" style="display: none;">
                         <i class="bi bi-plus-circle me-1"></i>Nueva Tarea
                     </button>
+                    <span id="link-volver-proyecto"></span>
                 </div>
             </div>
         </div>
@@ -830,6 +831,20 @@
         let modalEditarProgreso = null;
         let modalVerDetalle = null;
         let modalColaboradores = null;
+
+        // ==========================================
+        // SOPORTE PARA INTEGRACIÓN CON PROYECTOS
+        // ==========================================
+        function obtenerParametrosURL() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                module: params.get('module'),      // 'projects', 'follow-ups', etc.
+                ref: params.get('ref'),            // ID del proyecto u otro módulo
+                action: params.get('action'),      // 'new' para abrir modal
+                projectName: params.get('name')    // Nombre del proyecto (opcional, para mostrar)
+            };
+        }
+
         
         // ==========================================
         // INICIALIZACIÓN - PATRÓN OBLIGATORIO
@@ -887,6 +902,32 @@
                 await cargarCategorias();
                 await cargarTrabajadores();
                 await cargarTareas();
+
+                // Aplicar filtros de URL si vienen de otro módulo
+                const urlParams = obtenerParametrosURL();
+                if (urlParams.module) {
+                    document.getElementById('filter-module').value = urlParams.module;
+                    aplicarFiltros();
+                    
+                    // Mostrar indicador de contexto
+                    if (urlParams.projectName) {
+                        showMessage(`Mostrando tareas del proyecto: ${urlParams.projectName}`, 'info');
+                    }
+                }
+                
+                // Abrir modal si viene action=new
+                if (urlParams.action === 'new' && userHasPermission) {
+                    abrirModalNuevaTarea();
+                }
+                
+                // Mostrar botón volver si viene de proyecto
+                if (urlParams.module === 'projects' && urlParams.ref) {
+                    document.getElementById('link-volver-proyecto').innerHTML = `
+                        <a href="project-detail.html?id=${urlParams.ref}" class="btn btn-outline-info">
+                            <i class="bi bi-arrow-left me-1"></i>Volver al Proyecto
+                        </a>
+                    `;
+                }
                 
                 ocultarLoading();
                 console.log('✅ Página inicializada correctamente');
@@ -1413,6 +1454,11 @@
             document.getElementById('filter-search').value = '';
             document.getElementById('filter-order').value = 'created_desc';
             renderizarTareas(tareasCache);
+            
+            // AGREGAR: Limpiar parámetros de URL
+            if (window.location.search) {
+                window.history.replaceState({}, '', window.location.pathname);
+            }
         }
         
         // ==========================================
@@ -1427,6 +1473,31 @@
             colaboradoresNuevaTarea = [];
             actualizarListaColaboradoresNueva();
             actualizarDropdownColaboradoresNueva();
+            
+            // PRE-LLENAR SI VIENE DE UN PROYECTO
+            const urlParams = obtenerParametrosURL();
+            if (urlParams.module && urlParams.ref) {
+                // Guardar en campos ocultos para usar al crear
+                if (!document.getElementById('nueva-module-type')) {
+                    // Crear campos ocultos si no existen
+                    const form = document.getElementById('form-nueva-tarea');
+                    form.insertAdjacentHTML('beforeend', `
+                        <input type="hidden" id="nueva-module-type" name="module_type" value="">
+                        <input type="hidden" id="nueva-reference-id" name="reference_id" value="">
+                    `);
+                }
+                document.getElementById('nueva-module-type').value = urlParams.module;
+                document.getElementById('nueva-reference-id').value = urlParams.ref;
+                
+                // Mostrar indicador visual
+                if (urlParams.projectName) {
+                    const modalTitle = document.getElementById('modalNuevaTareaLabel');
+                    modalTitle.innerHTML = `
+                        <i class="bi bi-plus-circle me-2"></i>Nueva Tarea
+                        <span class="badge bg-info ms-2">${escapeHtml(urlParams.projectName)}</span>
+                    `;
+                }
+            }
             
             modalNuevaTarea.show();
         }
@@ -1627,11 +1698,13 @@
                     student_id: null,
                     due_date: formData.get('due_date'),
                     task_priority: formData.get('task_priority'),
-                    module_type: 'general-tools',
                     task_progress: formData.get('task_progress') || null,
                     task_state: 'Asignada',
                     category_id: formData.get('category_id') || null,
-                    created_by: currentUser.user_id
+                    created_by: currentUser.user_id,
+                    // AGREGAR ESTAS DOS LÍNEAS:
+                    module_type: formData.get('module_type') || 'general-tools',
+                    reference_id: formData.get('reference_id') || null
                 };
                 
                 const today = new Date(); today.setHours(0, 0, 0, 0);
