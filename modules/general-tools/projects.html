@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.01.15.10.39">
+    <meta name="page-version" content="25.01.20.07.11">
     
     <title>Proyectos - SchoolNet</title>
     
@@ -678,16 +678,55 @@
             }
         }
         
+        // ==========================================
+        // CARGA DE MÉTRICAS - VERSIÓN OPTIMIZADA
+        // ==========================================
         async function cargarMetricasProyectos() {
+            // Si no hay proyectos, no hay nada que cargar
+            if (proyectosCache.length === 0) return;
+            
             const today = getCurrentDateColombia();
             
-            for (const proyecto of proyectosCache) {
-                try {
-                    // Cargar hitos
-                    const hitos = await supabaseRequest(
-                        `/project_milestones?select=milestone_id,milestone_status,committed_date&project_id=eq.${proyecto.project_id}`
-                    );
+            // Obtener todos los IDs de proyectos
+            const projectIds = proyectosCache.map(p => p.project_id);
+            const idsParam = projectIds.join(',');
+            
+            try {
+                // UNA sola llamada para TODOS los hitos
+                // UNA sola llamada para TODAS las tareas
+                const [todosHitos, todasTareas] = await Promise.all([
+                    supabaseRequest(
+                        `/project_milestones?select=project_id,milestone_id,milestone_status,committed_date&project_id=in.(${idsParam})`
+                    ),
+                    supabaseRequest(
+                        `/tasks?select=reference_id,task_id,task_state,due_date&module_type=eq.projects&reference_id=in.(${idsParam})`
+                    )
+                ]);
+                
+                // Agrupar hitos por proyecto
+                const hitosPorProyecto = {};
+                todosHitos.forEach(h => {
+                    if (!hitosPorProyecto[h.project_id]) {
+                        hitosPorProyecto[h.project_id] = [];
+                    }
+                    hitosPorProyecto[h.project_id].push(h);
+                });
+                
+                // Agrupar tareas por proyecto (reference_id)
+                const tareasPorProyecto = {};
+                todasTareas.forEach(t => {
+                    if (!tareasPorProyecto[t.reference_id]) {
+                        tareasPorProyecto[t.reference_id] = [];
+                    }
+                    tareasPorProyecto[t.reference_id].push(t);
+                });
+                
+                // Asignar métricas a cada proyecto
+                for (const proyecto of proyectosCache) {
+                    const hitos = hitosPorProyecto[proyecto.project_id] || [];
+                    const tareas = tareasPorProyecto[proyecto.project_id] || [];
                     
+                    // Calcular métricas de hitos
                     proyecto.milestones = {
                         total: hitos.length,
                         completed: hitos.filter(h => h.milestone_status === 'Cumplido').length,
@@ -704,26 +743,27 @@
                         }).length
                     };
                     
-                    // Cargar tareas
-                    const tareas = await supabaseRequest(
-                        `/tasks?select=task_id,task_status,task_due_date&module_type=eq.projects&reference_id=eq.${proyecto.project_id}`
-                    );
-                    
+                    // Calcular métricas de tareas (campos corregidos: task_state, due_date)
                     proyecto.tasks = {
                         total: tareas.length,
-                        pending: tareas.filter(t => t.task_status === 'Pendiente' || t.task_status === 'En progreso').length,
+                        pending: tareas.filter(t => t.task_state === 'Pendiente' || t.task_state === 'En progreso').length,
                         overdue: tareas.filter(t => 
-                            (t.task_status === 'Pendiente' || t.task_status === 'En progreso') && 
-                            t.task_due_date && 
-                            t.task_due_date < today
+                            (t.task_state === 'Pendiente' || t.task_state === 'En progreso') && 
+                            t.due_date && 
+                            t.due_date < today
                         ).length
                     };
                     
                     // Calcular salud del proyecto
                     proyecto.health = calcularSaludProyecto(proyecto);
-                    
-                } catch (error) {
-                    console.warn(`⚠️ Error cargando métricas de proyecto ${proyecto.project_id}:`, error);
+                }
+                
+                console.log(`✅ Métricas cargadas: ${todosHitos.length} hitos, ${todasTareas.length} tareas`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando métricas:', error);
+                // Asignar valores por defecto en caso de error
+                for (const proyecto of proyectosCache) {
                     proyecto.milestones = { total: 0, completed: 0, overdue: 0, dueSoon: 0 };
                     proyecto.tasks = { total: 0, pending: 0, overdue: 0 };
                     proyecto.health = 'unknown';
