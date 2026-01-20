@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.01.20.15.00">
+    <meta name="page-version" content="26.01.20.15.15">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -987,6 +987,18 @@
         // ==========================================
         let tareasCache = [];
         let trabajadoresCache = [];
+        // Variables para Quill editors
+        let quillNuevaDescripcion = null;
+        let quillNuevaContexto = null;
+        let quillEditarContexto = null;
+        let quillNuevaNota = null;
+        
+        // Variables para archivos
+        let archivosNuevaTarea = [];
+        let archivosNuevaNota = [];
+        let supabaseClient = null;
+        const BUCKET_NAME = 'TASKS_DOCS';
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
         let categoriasCache = [];     // Cache de categorías activas
         let estudiantesCache = [];
         let colaboradoresCache = {};  // Objeto: {task_id: cantidad}
@@ -1062,6 +1074,11 @@
                 modalEditarProgreso = new bootstrap.Modal(document.getElementById('modal-editar-progreso'));
                 modalVerDetalle = new bootstrap.Modal(document.getElementById('modal-ver-detalle'));
                 modalColaboradores = new bootstrap.Modal(document.getElementById('modal-colaboradores'));
+                // Inicializar cliente Supabase para Storage
+                supabaseClient = supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+                
+                // Inicializar editores Quill
+                inicializarEditoresQuill();
                 
                 // Configurar event listeners
                 configurarEventos();
@@ -1634,6 +1651,13 @@
         // ==========================================
         function abrirModalNuevaTarea() {
             document.getElementById('form-nueva-tarea').reset();
+            // Limpiar editores Quill
+            if (quillNuevaDescripcion) quillNuevaDescripcion.setContents([]);
+            if (quillNuevaContexto) quillNuevaContexto.setContents([]);
+            
+            // Limpiar archivos
+            archivosNuevaTarea = [];
+            renderizarArchivosNuevaTarea();
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('nueva-fecha-limite').setAttribute('min', today);
             
@@ -1860,13 +1884,13 @@
                 const selectedWorker = document.getElementById('nueva-asignada-a').selectedOptions[0];
                 
                 const datos = {
-                    task_description: formData.get('task_description'),
+                    task_description: quillNuevaDescripcion ? quillNuevaDescripcion.root.innerHTML : '',    
                     assigned_to_mail: formData.get('assigned_to_mail'),
                     assigned_to_name: selectedWorker.dataset.workerName,
                     student_id: null,
                     due_date: formData.get('due_date'),
                     task_priority: formData.get('task_priority'),
-                    task_progress: formData.get('task_progress') || null,
+                    task_progress: quillNuevaContexto && quillNuevaContexto.getText().trim() ? quillNuevaContexto.root.innerHTML : null,
                     task_state: 'Asignada',
                     category_id: formData.get('category_id') || null,
                     created_by: currentUser.user_id,
@@ -1884,6 +1908,18 @@
                     method: 'POST', 
                     body: JSON.stringify(datos)
                 });
+
+                // Subir archivos si hay
+                if (archivosNuevaTarea.length > 0) {
+                    // Buscar el task_id de la tarea recién creada
+                    const tareasRecientes = await supabaseRequest(
+                        `/tasks?select=task_id&created_by=eq.${currentUser.user_id}&order=created_at.desc&limit=1`
+                    );
+                    
+                    if (tareasRecientes && tareasRecientes[0]) {
+                        await subirArchivos(tareasRecientes[0].task_id, null);
+                    }
+                }
                 
                 // Enviar notificación al responsable principal
                 const emailSent = await enviarNotificacionTarea(datos.assigned_to_mail, datos.task_description, datos.due_date, datos.task_priority, currentUser.user_display_name || currentUser.user_mail);
@@ -2082,10 +2118,22 @@
             const studentName = tarea.students ? `${tarea.students.student_first_name} ${tarea.students.student_last_name_1} ${tarea.students.student_last_name_2 || ''}`.trim() : 'Sin estudiante';
             document.getElementById('progreso-estudiante').textContent = studentName;
             
-            document.getElementById('editar-progreso-text').value = tarea.task_progress || '';
+            // Cargar contenido en editor Quill
+            if (quillEditarContexto) {
+                if (tarea.task_progress) {
+                    quillEditarContexto.root.innerHTML = tarea.task_progress;
+                } else {
+                    quillEditarContexto.setContents([]);
+                }
+            }
             document.getElementById('editar-estado').value = tarea.task_state || 'Asignada';
             document.getElementById('editar-task-id').value = tarea.task_id;
-            document.getElementById('nueva-nota-progreso').value = '';
+            // Limpiar editor de nueva nota
+            if (quillNuevaNota) quillNuevaNota.setContents([]);
+            
+            // Limpiar archivos de nota
+            archivosNuevaNota = [];
+            renderizarArchivosNota();
             
             const esResponsable = tarea.assigned_to_mail === currentUser.user_mail || userHasPermission;
             const esCreador = tarea.created_by === currentUser.user_id;
@@ -2122,7 +2170,7 @@
                 contador.textContent = notas.length;
                 let html = '';
                 notas.forEach(nota => {
-                    html += `<div class="note-item"><div class="note-header"><span class="note-author"><i class="bi bi-person-circle me-1"></i>${escapeHtml(nota.worker_name)}</span><span class="note-date"><i class="bi bi-clock me-1"></i>${formatDateTime(nota.note_date)}</span></div><div class="note-content">${escapeHtml(nota.note_content)}</div></div>`;
+                    html += `<div class="note-item"><div class="note-header"><span class="note-author"><i class="bi bi-person-circle me-1"></i>${escapeHtml(nota.worker_name)}</span><span class="note-date"><i class="bi bi-clock me-1"></i>${formatDateTime(nota.note_date)}</span></div><div class="note-content html-content">${nota.note_content}</div></div>`;
                 });
                 container.innerHTML = html;
             } catch (error) { console.error('❌ Error cargando notas:', error); }
@@ -2133,9 +2181,13 @@
             try {
                 mostrarLoading();
                 const taskId = document.getElementById('editar-task-id').value;
-                const taskProgress = document.getElementById('editar-progreso-text').value.trim();
+                const taskProgress = quillEditarContexto && quillEditarContexto.getText().trim() 
+                    ? quillEditarContexto.root.innerHTML 
+                    : '';
                 const taskState = document.getElementById('editar-estado').value;
-                const nuevaNota = document.getElementById('nueva-nota-progreso').value.trim();
+                const nuevaNota = quillNuevaNota && quillNuevaNota.getText().trim() 
+                    ? quillNuevaNota.root.innerHTML 
+                    : '';
                 
                 const tarea = tareasCache.find(t => t.task_id == taskId);
                 const esCreador = tarea.created_by === currentUser.user_id;
@@ -2160,10 +2212,28 @@
                 }
                 
                 if (nuevaNota) {
+                    // Crear la nota
                     await supabaseRequest('/task_progress_notes', {
                         method: 'POST',
-                        body: JSON.stringify({ task_id: parseInt(taskId), worker_email: currentUser.user_mail, worker_name: currentUser.user_display_name || currentUser.user_mail, note_content: nuevaNota })
+                        body: JSON.stringify({ 
+                            task_id: parseInt(taskId), 
+                            worker_email: currentUser.user_mail, 
+                            worker_name: currentUser.user_display_name || currentUser.user_mail, 
+                            note_content: nuevaNota 
+                        })
                     });
+                    
+                    // Subir archivos de la nota si hay
+                    if (archivosNuevaNota.length > 0) {
+                        // Buscar el note_id recién creado
+                        const notasRecientes = await supabaseRequest(
+                            `/task_progress_notes?select=note_id&task_id=eq.${taskId}&worker_email=eq.${currentUser.user_mail}&order=created_at.desc&limit=1`
+                        );
+                        
+                        if (notasRecientes && notasRecientes[0]) {
+                            await subirArchivos(taskId, notasRecientes[0].note_id);
+                        }
+                    }
                     if (!notasCache[taskId]) notasCache[taskId] = 0;
                     notasCache[taskId]++;
                 }
@@ -2182,7 +2252,7 @@
             const tarea = tareasCache.find(t => t.task_id === taskId);
             if (!tarea) { showMessage('Tarea no encontrada', 'danger'); return; }
             
-            document.getElementById('detalle-descripcion').textContent = tarea.task_description || 'N/A';
+            document.getElementById('detalle-descripcion').innerHTML = tarea.task_description || 'N/A';
             
             const statusBadges = { 'Asignada': '<span class="badge bg-info text-dark">Asignada</span>', 'En Progreso': '<span class="badge bg-warning text-dark">En Progreso</span>', 'Terminada': '<span class="badge bg-success">Terminada</span>', 'Cancelada': '<span class="badge bg-secondary">Cancelada</span>' };
             document.getElementById('detalle-estado').innerHTML = statusBadges[tarea.task_state] || tarea.task_state;
@@ -2207,10 +2277,12 @@
             
             document.getElementById('detalle-fecha-limite').textContent = formatDate(tarea.due_date);
             document.getElementById('detalle-fecha-cierre').textContent = tarea.close_date ? formatDate(tarea.close_date) : 'No cerrada';
-            document.getElementById('detalle-progreso').textContent = tarea.task_progress || 'Sin contexto documentado';
+            document.getElementById('detalle-progreso').innerHTML = tarea.task_progress || 'Sin contexto documentado';
+
             
             await cargarColaboradoresDetalle(taskId);
             await cargarNotasDetalle(taskId);
+            await cargarArchivosDetalle(taskId);
             modalVerDetalle.show();
         }
         
@@ -2251,7 +2323,7 @@
                 contador.textContent = notas.length;
                 let html = '';
                 notas.forEach(nota => {
-                    html += `<div class="note-item"><div class="note-header"><span class="note-author"><i class="bi bi-person-circle me-1"></i>${escapeHtml(nota.worker_name)}</span><span class="note-date"><i class="bi bi-clock me-1"></i>${formatDateTime(nota.note_date)}</span></div><div class="note-content">${escapeHtml(nota.note_content)}</div></div>`;
+                    html += `<div class="note-item"><div class="note-header"><span class="note-author"><i class="bi bi-person-circle me-1"></i>${escapeHtml(nota.worker_name)}</span><span class="note-date"><i class="bi bi-clock me-1"></i>${formatDateTime(nota.note_date)}</span></div><div class="note-content html-content">${nota.note_content}</div></div>`;
                 });
                 container.innerHTML = html;
             } catch (error) { console.error('⚠️ Error cargando notas detalle:', error); }
@@ -2300,6 +2372,272 @@
             } catch (error) { console.error('❌ Error cancelando tarea:', error); showMessage('Error al cancelar tarea: ' + error.message, 'danger'); }
             finally { ocultarLoading(); }
         }
+
+        // ==========================================
+        // INICIALIZACIÓN DE EDITORES QUILL
+        // ==========================================
+        function inicializarEditoresQuill() {
+            const toolbarOptions = [
+                ['bold', 'italic', 'underline'],
+                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                ['link'],
+                ['clean']
+            ];
+        
+            // Editor para descripción en nueva tarea
+            if (document.getElementById('editor-nueva-descripcion')) {
+                quillNuevaDescripcion = new Quill('#editor-nueva-descripcion', {
+                    theme: 'snow',
+                    modules: { toolbar: toolbarOptions },
+                    placeholder: 'Describe la tarea...'
+                });
+            }
+        
+            // Editor para contexto en nueva tarea
+            if (document.getElementById('editor-nueva-contexto')) {
+                quillNuevaContexto = new Quill('#editor-nueva-contexto', {
+                    theme: 'snow',
+                    modules: { toolbar: toolbarOptions },
+                    placeholder: 'Contexto adicional (opcional)...'
+                });
+            }
+        
+            // Editor para contexto en editar progreso
+            if (document.getElementById('editor-editar-contexto')) {
+                quillEditarContexto = new Quill('#editor-editar-contexto', {
+                    theme: 'snow',
+                    modules: { toolbar: toolbarOptions },
+                    placeholder: 'Contexto general de la tarea...'
+                });
+            }
+        
+            // Editor para nueva nota de progreso
+            if (document.getElementById('editor-nueva-nota')) {
+                quillNuevaNota = new Quill('#editor-nueva-nota', {
+                    theme: 'snow',
+                    modules: { toolbar: toolbarOptions },
+                    placeholder: 'Escribe tu nota de progreso...'
+                });
+            }
+        
+            console.log('✅ Editores Quill inicializados');
+        }
+        
+        // ==========================================
+        // FUNCIONES DE ARCHIVOS - NUEVA TAREA
+        // ==========================================
+        function agregarArchivosNuevaTarea(files) {
+            for (const file of files) {
+                if (file.size > MAX_FILE_SIZE) {
+                    showMessage(`El archivo "${file.name}" excede el límite de 10 MB`, 'warning');
+                    continue;
+                }
+                if (!archivosNuevaTarea.find(f => f.name === file.name)) {
+                    archivosNuevaTarea.push(file);
+                }
+            }
+            renderizarArchivosNuevaTarea();
+        }
+        
+        function quitarArchivoNuevaTarea(index) {
+            archivosNuevaTarea.splice(index, 1);
+            renderizarArchivosNuevaTarea();
+        }
+        
+        function renderizarArchivosNuevaTarea() {
+            const container = document.getElementById('lista-archivos-nueva');
+            const badge = document.getElementById('badge-archivos-nueva');
+            
+            badge.textContent = archivosNuevaTarea.length;
+            
+            if (archivosNuevaTarea.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            container.innerHTML = archivosNuevaTarea.map((file, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <i class="bi ${getFileIcon(file.type)}"></i>
+                        <span class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                        <span class="file-size">(${formatFileSize(file.size)})</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="quitarArchivoNuevaTarea(${index})">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        // ==========================================
+        // FUNCIONES DE ARCHIVOS - NOTA DE PROGRESO
+        // ==========================================
+        function agregarArchivosNota(files) {
+            for (const file of files) {
+                if (file.size > MAX_FILE_SIZE) {
+                    showMessage(`El archivo "${file.name}" excede el límite de 10 MB`, 'warning');
+                    continue;
+                }
+                if (!archivosNuevaNota.find(f => f.name === file.name)) {
+                    archivosNuevaNota.push(file);
+                }
+            }
+            renderizarArchivosNota();
+        }
+        
+        function quitarArchivoNota(index) {
+            archivosNuevaNota.splice(index, 1);
+            renderizarArchivosNota();
+        }
+        
+        function renderizarArchivosNota() {
+            const container = document.getElementById('lista-archivos-nota');
+            
+            if (archivosNuevaNota.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            container.innerHTML = archivosNuevaNota.map((file, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <i class="bi ${getFileIcon(file.type)}"></i>
+                        <span class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                        <span class="file-size">(${formatFileSize(file.size)})</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="quitarArchivoNota(${index})">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        // ==========================================
+        // SUBIR ARCHIVOS A SUPABASE STORAGE
+        // ==========================================
+        async function subirArchivos(taskId, noteId = null) {
+            const archivos = noteId ? archivosNuevaNota : archivosNuevaTarea;
+            const resultados = [];
+            
+            for (const file of archivos) {
+                try {
+                    const timestamp = Date.now();
+                    const fileName = `${timestamp}_${file.name}`;
+                    const folderPath = noteId 
+                        ? `tasks/${taskId}/notes/${noteId}` 
+                        : `tasks/${taskId}/general`;
+                    const filePath = `${folderPath}/${fileName}`;
+                    
+                    // Subir a Storage
+                    const { data, error } = await supabaseClient
+                        .storage
+                        .from(BUCKET_NAME)
+                        .upload(filePath, file, { cacheControl: '3600', upsert: false });
+                    
+                    if (error) throw error;
+                    
+                    // Obtener URL pública
+                    const { data: urlData } = supabaseClient
+                        .storage
+                        .from(BUCKET_NAME)
+                        .getPublicUrl(filePath);
+                    
+                    // Registrar en base de datos
+                    await supabaseRequest('/task_documents', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            task_id: parseInt(taskId),
+                            note_id: noteId || null,
+                            file_name: file.name,
+                            file_path: filePath,
+                            file_size: file.size,
+                            file_type: file.type,
+                            uploaded_by: currentUser.user_mail,
+                            uploaded_by_name: currentUser.user_display_name || currentUser.user_mail
+                        })
+                    });
+                    
+                    resultados.push({ success: true, fileName: file.name });
+                    
+                } catch (error) {
+                    console.error('Error subiendo archivo:', file.name, error);
+                    resultados.push({ success: false, fileName: file.name, error: error.message });
+                }
+            }
+            
+            return resultados;
+        }
+        
+        // ==========================================
+        // CARGAR Y MOSTRAR ARCHIVOS
+        // ==========================================
+        async function cargarArchivosDetalle(taskId) {
+            try {
+                const archivos = await supabaseRequest(
+                    `/task_documents?select=*&task_id=eq.${taskId}&is_active=eq.true&order=uploaded_at.desc`
+                );
+                
+                const container = document.getElementById('detalle-lista-archivos');
+                const contador = document.getElementById('detalle-contador-archivos');
+                
+                if (!archivos || archivos.length === 0) {
+                    container.innerHTML = '<div class="text-center text-muted py-2"><small>Sin archivos adjuntos</small></div>';
+                    contador.textContent = '0';
+                    return;
+                }
+                
+                contador.textContent = archivos.length;
+                
+                container.innerHTML = archivos.map(archivo => {
+                    const publicUrl = supabaseClient.storage.from(BUCKET_NAME).getPublicUrl(archivo.file_path).data.publicUrl;
+                    
+                    return `
+                        <div class="file-item">
+                            <div class="file-info">
+                                <i class="bi ${getFileIcon(archivo.file_type)}"></i>
+                                <span class="file-name" title="${escapeHtml(archivo.file_name)}">${escapeHtml(archivo.file_name)}</span>
+                                <span class="file-size">(${formatFileSize(archivo.file_size)})</span>
+                            </div>
+                            <div class="file-actions">
+                                <a href="${publicUrl}" target="_blank" class="btn btn-sm btn-outline-primary" title="Ver">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="${publicUrl}" download="${escapeHtml(archivo.file_name)}" class="btn btn-sm btn-outline-secondary" title="Descargar">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+            } catch (error) {
+                console.error('Error cargando archivos:', error);
+            }
+        }
+        
+        // ==========================================
+        // UTILIDADES DE ARCHIVOS
+        // ==========================================
+        function getFileIcon(mimeType) {
+            if (!mimeType) return 'bi-file-earmark';
+            if (mimeType.startsWith('image/')) return 'bi-file-earmark-image';
+            if (mimeType.includes('pdf')) return 'bi-file-earmark-pdf';
+            if (mimeType.includes('word') || mimeType.includes('document')) return 'bi-file-earmark-word';
+            if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'bi-file-earmark-excel';
+            if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return 'bi-file-earmark-ppt';
+            if (mimeType.startsWith('video/')) return 'bi-file-earmark-play';
+            if (mimeType.startsWith('audio/')) return 'bi-file-earmark-music';
+            if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('compressed')) return 'bi-file-earmark-zip';
+            return 'bi-file-earmark';
+        }
+        
+        function formatFileSize(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
         
         // ==========================================
         // FUNCIONES DE UTILIDAD
@@ -2341,6 +2679,10 @@
         window.removerColaborador = removerColaborador;
         window.agregarColaboradorNuevaTarea = agregarColaboradorNuevaTarea;
         window.quitarColaboradorNuevaTarea = quitarColaboradorNuevaTarea;
+        window.agregarArchivosNuevaTarea = agregarArchivosNuevaTarea;
+window.quitarArchivoNuevaTarea = quitarArchivoNuevaTarea;
+window.agregarArchivosNota = agregarArchivosNota;
+window.quitarArchivoNota = quitarArchivoNota;
         
         console.log('🎉 tasks.html v2.0 con colaboradores y notas cargado correctamente');
     </script>
