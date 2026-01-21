@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.01.20.15.15">
+    <meta name="page-version" content="26.01.21.07.23">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1006,6 +1006,7 @@
         let colaboradoresNuevaTarea = []; // Array temporal para nueva tarea
         let currentUser = null;
         let userHasPermission = false;
+        let userCanViewAll = false;
         
         let modalNuevaTarea = null;
         let modalEditarProgreso = null;
@@ -1044,9 +1045,11 @@
                 currentUser = session.user;
                 console.log('✅ Usuario autenticado:', currentUser.user_display_name);
                 
-                // Verificar permiso "Gestionar tareas"
+                // Verificar permisos
                 userHasPermission = await checkUserPermission(currentUser.user_id, 'Gestionar tareas');
+                userCanViewAll = await checkUserPermission(currentUser.user_id, 'Ver todas las tareas');
                 console.log('🔑 Permiso "Gestionar tareas":', userHasPermission);
+                console.log('🔑 Permiso "Ver todas las tareas":', userCanViewAll);
                 
                 // Mostrar botón de nueva tarea solo si tiene permiso
                 if (userHasPermission) {
@@ -1263,20 +1266,28 @@
                 select.appendChild(option);
             });
         }
-         
+
         async function cargarTareas() {
             try {
                 console.log('📡 Cargando tareas...');
                 
                 let query = '/tasks?select=*,students(student_first_name,student_last_name_1,student_last_name_2,courses(course_name)),indicator_categories(category_id,category_name,category_icon,category_color)&order=created_at.desc';
-                // Todos los usuarios ven: tareas que crearon O tareas donde son responsables
-                query += '&or=(created_by.eq.' + currentUser.user_id + ',assigned_to_mail.eq.' + currentUser.user_mail + ')';
+                
+                // Si tiene permiso de gestionar O ver todas, cargar todas las tareas
+                if (userHasPermission || userCanViewAll) {
+                    // No agregar filtro, trae todas
+                } else {
+                    // Solo tareas propias: creó, le asignaron o es colaborador
+                    query += '&or=(created_by.eq.' + currentUser.user_id + ',assigned_to_mail.eq.' + currentUser.user_mail + ')';
+                }
                 
                 const data = await supabaseRequest(query);
                 tareasCache = data || [];
                 
-                // Cargar también tareas donde el usuario es colaborador
-                await cargarTareasComoColaborador();
+                // Cargar también tareas donde el usuario es colaborador (solo si NO tiene permiso de ver todas)
+                if (!userHasPermission && !userCanViewAll) {
+                    await cargarTareasComoColaborador();
+                }
                 
                 // Cargar conteos de colaboradores y notas
                 await cargarConteosTareas();
@@ -1292,7 +1303,7 @@
                 mostrarEstadoVacio('Error al cargar datos');
             }
         }
-
+        
         function llenarFiltroResponsables() {
             const select = document.getElementById('filter-responsable');
             const valorActual = select.value; // Preservar selección actual
@@ -1455,8 +1466,17 @@
                 };
                 
                 const esResponsable = tarea.assigned_to_mail === currentUser.user_mail;
-                const canEdit = userHasPermission || esResponsable;
-                const canManageCollaborators = userHasPermission || esResponsable;
+                const esCreador = tarea.created_by === currentUser.user_id;
+                const esColaborador = colaboradoresCache[tarea.task_id] > 0; // Simplificado, se refina abajo
+                const esTareaPropia = esResponsable || esCreador;
+                
+                // Determinar permisos de edición
+                // - userHasPermission: puede gestionar TODAS las tareas
+                // - esTareaPropia: puede gestionar sus propias tareas
+                // - userCanViewAll sin ser propia: solo puede VER
+                const canEdit = userHasPermission || esTareaPropia;
+                const canManageCollaborators = userHasPermission || esResponsable || esCreador;
+                const canAddProgress = userHasPermission || esTareaPropia || esColaborador;
                 
                 const numColaboradores = colaboradoresCache[tarea.task_id] || 0;
                 const numNotas = notasCache[tarea.task_id] || 0;
@@ -1540,7 +1560,7 @@
                                             <i class="bi bi-people"></i>
                                         </button>
                                     ` : ''}
-                                    ${tarea.task_state !== 'Terminada' && tarea.task_state !== 'Cancelada' ? `
+                                    ${canAddProgress && tarea.task_state !== 'Terminada' && tarea.task_state !== 'Cancelada' ? `
                                         <button class="btn btn-outline-success" onclick="editarProgreso(${tarea.task_id})" title="Editar progreso">
                                             <i class="bi bi-pencil"></i>
                                         </button>
