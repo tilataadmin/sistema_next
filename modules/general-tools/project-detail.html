@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.01.15.14.22">
+    <meta name="page-version" content="26.01.21.07.21">
     
     <title>Detalle de Proyecto - SchoolNet</title>
     
@@ -489,6 +489,25 @@
                                           rows="2" placeholder="Motivo del cambio (opcional)"></textarea>
                                 <button class="btn btn-primary w-100" onclick="cambiarEstadoProyecto()">
                                     <i class="bi bi-check-circle me-1"></i>Aplicar Cambio
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Cambiar líder (solo líder actual) -->
+                        <div class="card section-card" id="card-change-leader" style="display: none;">
+                            <div class="card-header">
+                                <h5><i class="bi bi-person-badge me-2"></i>Transferir Liderazgo</h5>
+                            </div>
+                            <div class="card-body">
+                                <p class="small text-muted mb-3">
+                                    Al transferir el liderazgo, tú quedarás como Colaborador del proyecto.
+                                </p>
+                                <label class="form-label">Nuevo Líder <span class="text-danger">*</span></label>
+                                <select class="form-select mb-3" id="select-new-leader">
+                                    <option value="">Seleccionar nuevo líder...</option>
+                                </select>
+                                <button class="btn btn-warning w-100" onclick="cambiarLiderProyecto()">
+                                    <i class="bi bi-arrow-left-right me-1"></i>Transferir Liderazgo
                                 </button>
                             </div>
                         </div>
@@ -1410,6 +1429,12 @@
                 document.getElementById('btn-edit-project').style.display = 'inline-block';
                 document.getElementById('btn-add-milestone').style.display = 'inline-block';
                 document.getElementById('btn-add-participant').style.display = 'inline-block';
+                
+                // Mostrar opción de cambiar líder si el proyecto está activo
+                if (!['Completado', 'Cancelado'].includes(proyecto.project_status)) {
+                    document.getElementById('card-change-leader').style.display = 'block';
+                    poblarSelectorNuevoLider();
+                }
             }
             
             if (puedeEditar) {
@@ -2160,6 +2185,154 @@
                 'completed': 'Proyecto finalizado'
             };
             return tooltips[health] || '';
+        }
+
+        // ==========================================
+        // CAMBIAR LÍDER DEL PROYECTO
+        // ==========================================
+        function poblarSelectorNuevoLider() {
+            const select = document.getElementById('select-new-leader');
+            select.innerHTML = '<option value="">Seleccionar nuevo líder...</option>';
+            
+            // Incluir participantes actuales (Colaboradores y Observadores)
+            participantes.forEach(p => {
+                select.innerHTML += `
+                    <option value="${p.worker_email}" data-nombre="${p.worker_name}">
+                        ${escapeHtml(p.worker_name)} (${p.participant_role})
+                    </option>
+                `;
+            });
+            
+            // Agregar separador si hay participantes
+            if (participantes.length > 0) {
+                select.innerHTML += '<option disabled>──────────────</option>';
+            }
+            
+            // Incluir otros trabajadores que no están en el proyecto
+            const emailsEnProyecto = [proyecto.leader_email, ...participantes.map(p => p.worker_email)];
+            
+            workersCache.filter(w => !emailsEnProyecto.includes(w.email)).forEach(w => {
+                const nombre = formatWorkerName(w);
+                select.innerHTML += `
+                    <option value="${w.email}" data-nombre="${nombre}">
+                        ${nombre} (Externo)
+                    </option>
+                `;
+            });
+        }
+        
+        async function cambiarLiderProyecto() {
+            const select = document.getElementById('select-new-leader');
+            const nuevoLiderEmail = select.value;
+            const nuevoLiderNombre = select.options[select.selectedIndex]?.dataset.nombre;
+            
+            if (!nuevoLiderEmail) {
+                showMessage('Selecciona el nuevo líder', 'warning');
+                return;
+            }
+            
+            const confirmacion = confirm(
+                `¿Estás seguro de transferir el liderazgo a ${nuevoLiderNombre}?\n\n` +
+                `Tú quedarás como Colaborador del proyecto.`
+            );
+            
+            if (!confirmacion) return;
+            
+            try {
+                mostrarLoading();
+                
+                const liderAnteriorEmail = proyecto.leader_email;
+                const liderAnteriorNombre = proyecto.leader_name;
+                
+                // 1. Verificar si el nuevo líder ya es participante
+                const participacionExistente = participantes.find(p => p.worker_email === nuevoLiderEmail);
+                
+                // 2. Si el nuevo líder era participante, eliminarlo de participantes
+                if (participacionExistente) {
+                    await supabaseRequest(
+                        `/project_participants?participant_id=eq.${participacionExistente.participant_id}`,
+                        {
+                            method: 'PATCH',
+                            body: JSON.stringify({
+                                participant_status: 'removed',
+                                removed_at: new Date().toISOString(),
+                                removed_by: currentUser.user_id
+                            })
+                        }
+                    );
+                }
+                
+                // 3. Agregar al líder anterior como Colaborador
+                await supabaseRequest('/project_participants', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        project_id: projectId,
+                        worker_email: liderAnteriorEmail,
+                        worker_name: liderAnteriorNombre,
+                        participant_role: 'Colaborador',
+                        added_by: currentUser.user_id,
+                        added_by_name: currentUser.user_display_name || currentUser.user_mail,
+                        added_at: new Date().toISOString(),
+                        participant_status: 'active'
+                    })
+                });
+                
+                // 4. Actualizar el proyecto con el nuevo líder
+                await supabaseRequest(`/projects?project_id=eq.${projectId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        leader_email: nuevoLiderEmail,
+                        leader_name: nuevoLiderNombre,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                
+                // 5. Enviar notificaciones
+                // Al nuevo líder
+                sendNotification(
+                    nuevoLiderEmail,
+                    `Ahora eres líder del proyecto: ${proyecto.project_name}`,
+                    `<p>Hola ${nuevoLiderNombre},</p>
+                     <p>Has sido designado como nuevo <strong>Líder</strong> del proyecto <strong>${proyecto.project_name}</strong>.</p>
+                     <p>Como líder, ahora eres responsable de:</p>
+                     <ul>
+                         <li>Gestionar los participantes del proyecto</li>
+                         <li>Definir y dar seguimiento a los hitos</li>
+                         <li>Coordinar las tareas y actividades</li>
+                         <li>Registrar las minutas de reuniones</li>
+                     </ul>
+                     <p>Puedes acceder al proyecto desde SchoolNet.</p>`
+                ).catch(e => console.warn('Error notificando nuevo líder:', e));
+                
+                // Al líder anterior (si no es el usuario actual, aunque en este caso siempre lo es)
+                if (liderAnteriorEmail !== nuevoLiderEmail) {
+                    sendNotification(
+                        liderAnteriorEmail,
+                        `Transferencia de liderazgo: ${proyecto.project_name}`,
+                        `<p>Hola ${liderAnteriorNombre},</p>
+                         <p>Has transferido el liderazgo del proyecto <strong>${proyecto.project_name}</strong> a <strong>${nuevoLiderNombre}</strong>.</p>
+                         <p>Ahora eres <strong>Colaborador</strong> del proyecto y mantienes acceso para:</p>
+                         <ul>
+                             <li>Crear y gestionar tareas</li>
+                             <li>Registrar minutas de reunión</li>
+                             <li>Subir documentos</li>
+                         </ul>
+                         <p>Gracias por tu liderazgo en este proyecto.</p>`
+                    ).catch(e => console.warn('Error notificando líder anterior:', e));
+                }
+                
+                showMessage('Liderazgo transferido exitosamente. Ahora eres Colaborador.', 'success');
+                
+                // Recargar la página para reflejar el cambio de rol
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+                
+            } catch (error) {
+                console.error('❌ Error cambiando líder:', error);
+                showMessage('Error al transferir liderazgo: ' + error.message, 'danger');
+                ocultarLoading();
+            }
         }
         
         console.log('✅ Script de detalle de proyecto cargado');
