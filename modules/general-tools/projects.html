@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="25.01.20.07.11">
+    <meta name="page-version" content="26.01.21.07.30">
     
     <title>Proyectos - SchoolNet</title>
     
@@ -533,6 +533,7 @@
         let currentUser = null;
         let proyectosCache = [];
         let canCreateProject = false;
+        let canViewAllProjects = false;
         let modalProyecto = null;
         let workersCache = [];
         
@@ -545,11 +546,20 @@
             try {
                 mostrarLoading();
                 
-                // Validar acceso
-                const hasAccess = await validatePageAccess('Proyectos');
-                if (!hasAccess) return;
+                // Verificar permisos
+                const tienePermisoProyectos = await checkUserPermission(currentUser?.user_id || (getStoredSession()?.user?.user_id), 'Proyectos');
+                const tienePermisoVerTodos = await checkUserPermission(currentUser?.user_id || (getStoredSession()?.user?.user_id), 'Ver todos los proyectos');
+                
+                // Debe tener al menos uno de los dos permisos
+                if (!tienePermisoProyectos && !tienePermisoVerTodos) {
+                    showMessage('No tienes permisos para acceder a esta página', 'danger');
+                    setTimeout(() => window.location.href = '../../dashboard.html', 2000);
+                    return;
+                }
                 
                 console.log('✅ Acceso permitido');
+                console.log('🔑 Permiso "Proyectos":', tienePermisoProyectos);
+                console.log('🔑 Permiso "Ver todos los proyectos":', tienePermisoVerTodos);
                 
                 // Obtener sesión
                 const session = getStoredSession();
@@ -562,8 +572,9 @@
                 currentUser = session.user;
                 console.log('👤 Usuario:', currentUser.user_mail);
                 
-                // Si tiene permiso 'Proyectos', puede crear proyectos
-                canCreateProject = true; // Ya validamos arriba que tiene permiso 'Proyectos'
+                // Asignar permisos verificados
+                canCreateProject = tienePermisoProyectos;
+                canViewAllProjects = tienePermisoVerTodos || tienePermisoProyectos;
                 configurarBotonNuevoProyecto();
                 
                 // Inicializar modal
@@ -629,39 +640,79 @@
                 
                 const userEmail = currentUser.user_mail;
                 
-                // Cargar proyectos donde el usuario es líder
-                const projectsAsLeader = await supabaseRequest(
-                    `/projects?select=*&leader_email=eq.${encodeURIComponent(userEmail)}&order=created_at.desc`
-                );
-                
-                // Cargar proyectos donde el usuario es participante
-                const participations = await supabaseRequest(
-                    `/project_participants?select=project_id,participant_role,projects(*)&worker_email=eq.${encodeURIComponent(userEmail)}&participant_status=eq.active`
-                );
-                
-                // Combinar y eliminar duplicados
-                const projectsMap = new Map();
-                
-                // Agregar proyectos como líder
-                projectsAsLeader.forEach(p => {
-                    projectsMap.set(p.project_id, {
-                        ...p,
-                        user_role: 'Líder'
+                // Si puede ver todos los proyectos, cargar todos
+                if (canViewAllProjects) {
+                    const todosProyectos = await supabaseRequest(
+                        `/projects?select=*&order=created_at.desc`
+                    );
+                    
+                    // Determinar el rol del usuario en cada proyecto
+                    const participaciones = await supabaseRequest(
+                        `/project_participants?select=project_id,participant_role&worker_email=eq.${encodeURIComponent(userEmail)}&participant_status=eq.active`
+                    );
+                    
+                    // Crear mapa de participaciones
+                    const participacionesMap = new Map();
+                    participaciones.forEach(p => {
+                        participacionesMap.set(p.project_id, p.participant_role);
                     });
-                });
-                
-                // Agregar proyectos como participante
-                participations.forEach(part => {
-                    if (part.projects && !projectsMap.has(part.project_id)) {
-                        projectsMap.set(part.project_id, {
-                            ...part.projects,
-                            user_role: part.participant_role
+                    
+                    // Asignar rol a cada proyecto
+                    proyectosCache = todosProyectos.map(p => {
+                        let userRole = 'Observador'; // Por defecto para proyectos que solo puede ver
+                        
+                        if (p.leader_email === userEmail) {
+                            userRole = 'Líder';
+                        } else if (participacionesMap.has(p.project_id)) {
+                            userRole = participacionesMap.get(p.project_id);
+                        }
+                        
+                        return {
+                            ...p,
+                            user_role: userRole,
+                            is_own_project: p.leader_email === userEmail || participacionesMap.has(p.project_id)
+                        };
+                    });
+                    
+                } else {
+                    // Solo cargar proyectos propios (comportamiento original)
+                    
+                    // Cargar proyectos donde el usuario es líder
+                    const projectsAsLeader = await supabaseRequest(
+                        `/projects?select=*&leader_email=eq.${encodeURIComponent(userEmail)}&order=created_at.desc`
+                    );
+                    
+                    // Cargar proyectos donde el usuario es participante
+                    const participations = await supabaseRequest(
+                        `/project_participants?select=project_id,participant_role,projects(*)&worker_email=eq.${encodeURIComponent(userEmail)}&participant_status=eq.active`
+                    );
+                    
+                    // Combinar y eliminar duplicados
+                    const projectsMap = new Map();
+                    
+                    // Agregar proyectos como líder
+                    projectsAsLeader.forEach(p => {
+                        projectsMap.set(p.project_id, {
+                            ...p,
+                            user_role: 'Líder',
+                            is_own_project: true
                         });
-                    }
-                });
-                
-                // Convertir a array
-                proyectosCache = Array.from(projectsMap.values());
+                    });
+                    
+                    // Agregar proyectos como participante
+                    participations.forEach(part => {
+                        if (part.projects && !projectsMap.has(part.project_id)) {
+                            projectsMap.set(part.project_id, {
+                                ...part.projects,
+                                user_role: part.participant_role,
+                                is_own_project: true
+                            });
+                        }
+                    });
+                    
+                    // Convertir a array
+                    proyectosCache = Array.from(projectsMap.values());
+                }
                 
                 // Cargar métricas adicionales para cada proyecto
                 await cargarMetricasProyectos();
