@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.01.21.07.23">
+    <meta name="page-version" content="26.01.21.09.22">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1004,6 +1004,8 @@
         let colaboradoresCache = {};  // Objeto: {task_id: cantidad}
         let notasCache = {};          // Objeto: {task_id: cantidad}
         let colaboradoresNuevaTarea = []; // Array temporal para nueva tarea
+        let misColaboraciones = []; // IDs de tareas donde el usuario actual es colaborador
+        
         let currentUser = null;
         let userHasPermission = false;
         let userCanViewAll = false;
@@ -1267,25 +1269,56 @@
             });
         }
 
+        // ==========================================
+        // VERIFICAR SI USUARIO ESTÁ IMPLICADO EN TAREA
+        // ==========================================
+        function esImplicadoEnTarea(tarea) {
+            const esCreador = tarea.created_by === currentUser.user_id;
+            const esResponsable = tarea.assigned_to_mail === currentUser.user_mail;
+            const esColaborador = misColaboraciones.includes(tarea.task_id);
+            return esCreador || esResponsable || esColaborador;
+        }
+
+        // ==========================================
+        // CARGAR COLABORACIONES DEL USUARIO ACTUAL
+        // ==========================================
+        async function cargarMisColaboraciones() {
+            try {
+                const colaboraciones = await supabaseRequest(
+                    `/task_collaborators?select=task_id&worker_email=eq.${currentUser.user_mail}&collaborator_status=eq.active`
+                );
+                misColaboraciones = colaboraciones ? colaboraciones.map(c => c.task_id) : [];
+                console.log(`📋 Usuario es colaborador en ${misColaboraciones.length} tareas`);
+            } catch (error) {
+                console.error('⚠️ Error cargando colaboraciones del usuario:', error);
+                misColaboraciones = [];
+            }
+        }
+
         async function cargarTareas() {
             try {
                 console.log('📡 Cargando tareas...');
                 
+                // Primero cargar las colaboraciones del usuario actual
+                await cargarMisColaboraciones();
+                
                 let query = '/tasks?select=*,students(student_first_name,student_last_name_1,student_last_name_2,courses(course_name)),indicator_categories(category_id,category_name,category_icon,category_color)&order=created_at.desc';
                 
-                // Si tiene permiso de gestionar O ver todas, cargar todas las tareas
-                if (false) {
+                // Si tiene permiso "Ver todas las tareas", cargar todas
+                if (userCanViewAll) {
+                    console.log('👁️ Usuario puede ver todas las tareas');
                     // No agregar filtro, trae todas
                 } else {
-                    // Solo tareas propias: creó, le asignaron o es colaborador
-                    query += '&or=(created_by.eq.' + currentUser.user_id + ',assigned_to_mail.eq.' + currentUser.user_mail + ')';
+                    // Solo tareas donde está implicado (creador o responsable)
+                    // Las de colaborador se agregan después
+                    query += `&or=(created_by.eq.${currentUser.user_id},assigned_to_mail.eq.${currentUser.user_mail})`;
                 }
                 
                 const data = await supabaseRequest(query);
                 tareasCache = data || [];
                 
-                // Cargar también tareas donde el usuario es colaborador (solo si NO tiene permiso de ver todas)
-                if (!userHasPermission && !userCanViewAll) {
+                // Si NO tiene "Ver todas", agregar tareas donde es colaborador
+                if (!userCanViewAll) {
                     await cargarTareasComoColaborador();
                 }
                 
@@ -1353,23 +1386,19 @@
                 select.appendChild(option);
             });
         }
- 
+
         async function cargarTareasComoColaborador() {
             try {
-                const colaboraciones = await supabaseRequest(
-                    `/task_collaborators?select=task_id&worker_email=eq.${currentUser.user_mail}&collaborator_status=eq.active`
-                );
+                if (misColaboraciones.length === 0) return;
                 
-                if (!colaboraciones || colaboraciones.length === 0) return;
-                
-                const taskIds = colaboraciones.map(c => c.task_id);
+                // Filtrar solo las que no están ya en cache
                 const tareasExistentes = new Set(tareasCache.map(t => t.task_id));
-                const taskIdsNuevos = taskIds.filter(id => !tareasExistentes.has(id));
+                const taskIdsNuevos = misColaboraciones.filter(id => !tareasExistentes.has(id));
                 
                 if (taskIdsNuevos.length === 0) return;
                 
                 const tareasColaborador = await supabaseRequest(
-                    `/tasks?select=*,students(student_first_name,student_last_name_1,student_last_name_2,courses(course_name))&task_id=in.(${taskIdsNuevos.join(',')})`
+                    `/tasks?select=*,students(student_first_name,student_last_name_1,student_last_name_2,courses(course_name)),indicator_categories(category_id,category_name,category_icon,category_color)&task_id=in.(${taskIdsNuevos.join(',')})`
                 );
                 
                 if (tareasColaborador && tareasColaborador.length > 0) {
@@ -1381,6 +1410,7 @@
                 console.error('⚠️ Error cargando tareas como colaborador:', error);
             }
         }
+ 
         
         async function cargarConteosTareas() {
             try {
@@ -1467,16 +1497,15 @@
                 
                 const esResponsable = tarea.assigned_to_mail === currentUser.user_mail;
                 const esCreador = tarea.created_by === currentUser.user_id;
-                const esColaborador = colaboradoresCache[tarea.task_id] > 0; // Simplificado, se refina abajo
-                const esTareaPropia = esResponsable || esCreador;
+                const esColaborador = misColaboraciones.includes(tarea.task_id);
+                const estaImplicado = esCreador || esResponsable || esColaborador;
                 
                 // Determinar permisos de edición
-                // - userHasPermission: puede gestionar TODAS las tareas
-                // - esTareaPropia: puede gestionar sus propias tareas
-                // - userCanViewAll sin ser propia: solo puede VER
-                const canEdit = userHasPermission || esTareaPropia;
-                const canManageCollaborators = userHasPermission || esResponsable || esCreador;
-                const canAddProgress = userHasPermission || esTareaPropia || esColaborador;
+                // - Solo puede editar si está implicado en la tarea
+                // - "Ver todas las tareas" NO da permiso de edición
+                const canEdit = estaImplicado;
+                const canManageCollaborators = esResponsable || esCreador;
+                const canAddProgress = estaImplicado;
                 
                 const numColaboradores = colaboradoresCache[tarea.task_id] || 0;
                 const numNotas = notasCache[tarea.task_id] || 0;
