@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.01.22.13.46">
     <title>Cerrar Traslados Presupuestales - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -540,12 +541,67 @@
             mostrarLoading('Cargando traslados pendientes...');
             
             try {
-                // Query para obtener traslados pendientes donde el usuario es el autorizador de la fuente
-                const query = `/budget_transfers?select=transfer_id,transfer_value,request_reason,source_assignment:budget_assignments!budget_transfers_source_fkey(assignment_id,category_detail,approved_value,executed_value,budget_item:budget_items(item_name)),destination_assignment:budget_assignments!budget_transfers_destination_fkey(assignment_id,category_detail,budget_item:budget_items(item_name))&transfer_status=eq.pending&source_assignment.worker_email=eq.${currentUserEmail}&order=created_at.desc`;
+                // PASO 1: Obtener todos los traslados pendientes con información completa
+                const query = `/budget_transfers?select=transfer_id,transfer_value,request_reason,source_assignment_id,destination_assignment_id&transfer_status=eq.pending&order=created_at.desc`;
                 
-                const data = await supabaseRequest(query);
+                const transfersData = await supabaseRequest(query);
                 
-                trasladosPendientes = data;
+                if (!transfersData || transfersData.length === 0) {
+                    trasladosPendientes = [];
+                    renderizarTablaTraslados();
+                    ocultarLoading();
+                    showMessage('No hay solicitudes de traslado pendientes.', 'success');
+                    return;
+                }
+
+                // PASO 2: Obtener IDs únicos de asignaciones
+                const sourceIds = [...new Set(transfersData.map(t => t.source_assignment_id).filter(id => id))];
+                const destIds = [...new Set(transfersData.map(t => t.destination_assignment_id).filter(id => id))];
+                const allAssignmentIds = [...new Set([...sourceIds, ...destIds])];
+
+                // PASO 3: Obtener información de las asignaciones
+                let assignmentsMap = {};
+                if (allAssignmentIds.length > 0) {
+                    const assignmentsQuery = `/budget_assignments?select=assignment_id,category_detail,worker_email,approved_value,executed_value,budget_item_id,budget_items(item_name)&assignment_id=in.(${allAssignmentIds.join(',')})`;
+                    const assignmentsData = await supabaseRequest(assignmentsQuery);
+                    
+                    assignmentsData.forEach(asig => {
+                        assignmentsMap[asig.assignment_id] = asig;
+                    });
+                }
+
+                // PASO 4: Combinar datos y filtrar por el usuario actual
+                const trasladosCompletos = transfersData.map(transfer => {
+                    const sourceAssignment = assignmentsMap[transfer.source_assignment_id] || null;
+                    const destAssignment = assignmentsMap[transfer.destination_assignment_id] || null;
+                    
+                    return {
+                        transfer_id: transfer.transfer_id,
+                        transfer_value: transfer.transfer_value,
+                        request_reason: transfer.request_reason,
+                        source_assignment: sourceAssignment ? {
+                            assignment_id: sourceAssignment.assignment_id,
+                            category_detail: sourceAssignment.category_detail,
+                            worker_email: sourceAssignment.worker_email,
+                            approved_value: sourceAssignment.approved_value,
+                            executed_value: sourceAssignment.executed_value,
+                            budget_item: sourceAssignment.budget_items
+                        } : null,
+                        destination_assignment: destAssignment ? {
+                            assignment_id: destAssignment.assignment_id,
+                            category_detail: destAssignment.category_detail,
+                            worker_email: destAssignment.worker_email,
+                            budget_item: destAssignment.budget_items
+                        } : null
+                    };
+                });
+
+                // PASO 5: Filtrar solo los traslados donde el usuario actual es el autorizador de la fuente
+                trasladosPendientes = trasladosCompletos.filter(t => 
+                    t.source_assignment && 
+                    t.source_assignment.worker_email && 
+                    t.source_assignment.worker_email.toLowerCase() === currentUserEmail.toLowerCase()
+                );
 
                 renderizarTablaTraslados();
                 
@@ -682,7 +738,8 @@
                 document.getElementById('justificacion-decision').focus();
             }, 300);
         }
-      // ==========================================
+
+        // ==========================================
         // MOSTRAR ADVERTENCIA SEGÚN DECISIÓN
         // ==========================================
         function mostrarAdvertenciaDecision(decision) {
@@ -954,7 +1011,8 @@
                 // No lanzar error para no afectar el proceso principal
             }
         }
-      // ==========================================
+
+        // ==========================================
         // FUNCIONES DEL EDITOR DE TEXTO ENRIQUECIDO
         // ==========================================
         function formatText(command) {
