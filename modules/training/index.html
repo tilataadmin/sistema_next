@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.01.27.09.20">
     <title>Formación - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1062,30 +1063,47 @@
         }
         
         // ==========================================
-        // OBTENER TODOS LOS PERMISOS EN UNA QUERY - OPTIMIZADO
+        // OBTENER TODOS LOS PERMISOS - MÉTODO CORREGIDO
         // ==========================================
         async function obtenerTodosLosPermisosUsuario(userId) {
             try {
+                console.log('🔐 Obteniendo permisos del usuario:', userId);
+                
+                // PASO 1: Verificar si es super admin
                 const isSuperAdmin = await checkUserIsSuperAdmin(userId);
                 if (isSuperAdmin) {
+                    console.log('👑 Super Admin - retornando todos los permisos');
                     return MODULE_CONFIG.modulePermissions;
                 }
                 
-                const data = await supabaseRequest(`/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
+                // PASO 2: Obtener roles del usuario
+                const userRolesData = await supabaseRequest(
+                    `/user_roles?select=role_id&user_id=eq.${userId}`
+                );
                 
-                if (!data || data.length === 0) {
+                if (!userRolesData || userRolesData.length === 0) {
+                    console.warn('⚠️ Usuario sin roles');
                     return [];
                 }
                 
-                const permissions = [];
-                data[0].user_roles?.forEach(userRole => {
-                    userRole.roles?.role_permissions?.forEach(rolePermission => {
-                        const permName = rolePermission.permissions?.permission_name;
-                        if (permName && !permissions.includes(permName)) {
-                            permissions.push(permName);
-                        }
-                    });
+                // PASO 3: Obtener permisos de los roles
+                const roleIds = userRolesData.map(ur => ur.role_id);
+                const roleIdsFilter = roleIds.map(id => `role_id.eq.${id}`).join(',');
+                
+                const rolePermissionsData = await supabaseRequest(
+                    `/role_permissions?select=permissions(permission_name)&or=(${roleIdsFilter})`
+                );
+                
+                // PASO 4: Extraer permisos únicos
+                const permissionsSet = new Set();
+                rolePermissionsData.forEach(rp => {
+                    if (rp.permissions && rp.permissions.permission_name) {
+                        permissionsSet.add(rp.permissions.permission_name);
+                    }
                 });
+                
+                const permissions = Array.from(permissionsSet);
+                console.log(`✅ ${permissions.length} permisos encontrados`);
                 
                 return permissions;
                 

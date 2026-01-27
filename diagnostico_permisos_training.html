@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico de Permisos - Training</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Diagnóstico de Permisos - Módulo Training</h1>
+        
+        <div class="alert alert-info">
+            <strong>Instrucciones:</strong> Abre la consola del navegador (F12) para ver los resultados del diagnóstico.
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Información del Usuario</h5>
+            </div>
+            <div class="card-body" id="user-info">
+                Cargando...
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Permisos del Módulo Training en BD</h5>
+            </div>
+            <div class="card-body">
+                <pre id="module-permissions"></pre>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">Permisos del Usuario</h5>
+            </div>
+            <div class="card-body">
+                <pre id="user-permissions"></pre>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Resultado del Diagnóstico</h5>
+            </div>
+            <div class="card-body" id="result">
+                Cargando...
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/config.js"></script>
+    <script>
+        // ==========================================
+        // DIAGNÓSTICO DE PERMISOS
+        // ==========================================
+        
+        let currentUser = null;
+        
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🔍 Iniciando diagnóstico de permisos...');
+            
+            try {
+                // PASO 1: Obtener sesión
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    alert('No hay sesión activa. Redirigiendo al login...');
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                currentUser = session.user;
+                console.log('✅ Usuario:', currentUser);
+                
+                document.getElementById('user-info').innerHTML = `
+                    <p><strong>ID:</strong> ${currentUser.user_id}</p>
+                    <p><strong>Email:</strong> ${currentUser.user_mail}</p>
+                    <p><strong>Nombre:</strong> ${currentUser.user_display_name}</p>
+                `;
+                
+                // PASO 2: Obtener permisos del módulo training desde BD
+                console.log('📦 Consultando permisos del módulo training...');
+                const modulePermissions = await supabaseRequest(
+                    '/permissions?select=permission_name&permission_module=eq.training&permission_status=eq.active'
+                );
+                
+                console.log('📦 Permisos del módulo training:', modulePermissions);
+                document.getElementById('module-permissions').textContent = 
+                    JSON.stringify(modulePermissions.map(p => p.permission_name), null, 2);
+                
+                // PASO 3: Obtener roles del usuario
+                console.log('🔑 Consultando roles del usuario...');
+                const userRolesData = await supabaseRequest(
+                    `/user_roles?select=role_id,roles(role_name,is_super_admin)&user_id=eq.${currentUser.user_id}`
+                );
+                
+                console.log('🔑 Roles del usuario:', userRolesData);
+                
+                if (!userRolesData || userRolesData.length === 0) {
+                    document.getElementById('result').innerHTML = `
+                        <div class="alert alert-danger">
+                            ❌ <strong>PROBLEMA ENCONTRADO:</strong> El usuario no tiene roles asignados.
+                            <br>Solución: Asignar rol al usuario en el módulo de Seguridad.
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Verificar si es super admin
+                const isSuperAdmin = userRolesData.some(ur => ur.roles?.is_super_admin === true);
+                console.log('👑 ¿Es Super Admin?', isSuperAdmin);
+                
+                if (isSuperAdmin) {
+                    document.getElementById('user-permissions').textContent = 
+                        'Super Admin - tiene TODOS los permisos';
+                    document.getElementById('result').innerHTML = `
+                        <div class="alert alert-success">
+                            ✅ <strong>ACCESO PERMITIDO:</strong> El usuario es Super Admin.
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // PASO 4: Obtener permisos del usuario - MÉTODO 1 (del dashboard)
+                console.log('🔐 Método 1: Consultando permisos (estilo dashboard)...');
+                const roleIds = userRolesData.map(ur => ur.role_id);
+                const roleIdsFilter = roleIds.map(id => `role_id.eq.${id}`).join(',');
+                
+                const rolePermissionsData1 = await supabaseRequest(
+                    `/role_permissions?select=permissions(permission_name)&or=(${roleIdsFilter})`
+                );
+                
+                const permissions1 = new Set();
+                rolePermissionsData1.forEach(rp => {
+                    if (rp.permissions && rp.permissions.permission_name) {
+                        permissions1.add(rp.permissions.permission_name);
+                    }
+                });
+                
+                const userPermissions1 = Array.from(permissions1);
+                console.log('🔐 Permisos del usuario (Método 1):', userPermissions1);
+                
+                // PASO 5: Obtener permisos del usuario - MÉTODO 2 (del index actual)
+                console.log('🔐 Método 2: Consultando permisos (estilo index actual)...');
+                const data2 = await supabaseRequest(
+                    `/users?select=user_roles(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${currentUser.user_id}`
+                );
+                
+                console.log('🔐 Respuesta cruda (Método 2):', data2);
+                
+                const permissions2 = [];
+                if (data2 && data2.length > 0) {
+                    data2[0].user_roles?.forEach(userRole => {
+                        userRole.roles?.role_permissions?.forEach(rolePermission => {
+                            const permName = rolePermission.permissions?.permission_name;
+                            if (permName && !permissions2.includes(permName)) {
+                                permissions2.push(permName);
+                            }
+                        });
+                    });
+                }
+                
+                console.log('🔐 Permisos del usuario (Método 2):', permissions2);
+                
+                // Mostrar resultados
+                document.getElementById('user-permissions').innerHTML = `
+                    <h6>Método 1 (Dashboard):</h6>
+                    <pre>${JSON.stringify(userPermissions1, null, 2)}</pre>
+                    <hr>
+                    <h6>Método 2 (Index Actual):</h6>
+                    <pre>${JSON.stringify(permissions2, null, 2)}</pre>
+                `;
+                
+                // PASO 6: Verificar si tiene al menos un permiso del módulo
+                const modulePermissionNames = modulePermissions.map(p => p.permission_name);
+                
+                const hasAccessMethod1 = modulePermissionNames.some(perm => 
+                    userPermissions1.includes(perm)
+                );
+                
+                const hasAccessMethod2 = modulePermissionNames.some(perm => 
+                    permissions2.includes(perm)
+                );
+                
+                console.log('✅ Tiene acceso (Método 1)?', hasAccessMethod1);
+                console.log('✅ Tiene acceso (Método 2)?', hasAccessMethod2);
+                
+                // Permisos coincidentes
+                const matchingPermissions1 = modulePermissionNames.filter(perm => 
+                    userPermissions1.includes(perm)
+                );
+                
+                const matchingPermissions2 = modulePermissionNames.filter(perm => 
+                    permissions2.includes(perm)
+                );
+                
+                console.log('🎯 Permisos coincidentes (Método 1):', matchingPermissions1);
+                console.log('🎯 Permisos coincidentes (Método 2):', matchingPermissions2);
+                
+                // Resultado final
+                let resultHtml = '';
+                
+                if (hasAccessMethod1 && hasAccessMethod2) {
+                    resultHtml = `
+                        <div class="alert alert-success">
+                            ✅ <strong>ACCESO PERMITIDO:</strong> El usuario tiene ${matchingPermissions1.length} permisos del módulo.
+                            <br><br>
+                            <strong>Permisos encontrados:</strong>
+                            <ul>
+                                ${matchingPermissions1.slice(0, 5).map(p => `<li>${p}</li>`).join('')}
+                                ${matchingPermissions1.length > 5 ? '<li>... y ' + (matchingPermissions1.length - 5) + ' más</li>' : ''}
+                            </ul>
+                        </div>
+                    `;
+                } else if (hasAccessMethod1 && !hasAccessMethod2) {
+                    resultHtml = `
+                        <div class="alert alert-warning">
+                            ⚠️ <strong>PROBLEMA ENCONTRADO:</strong> El Método 1 funciona pero el Método 2 NO.
+                            <br><br>
+                            El problema está en la consulta del index.html del módulo training.
+                            <br>
+                            <strong>Solución:</strong> Actualizar la función obtenerTodosLosPermisosUsuario() 
+                            para usar el Método 1.
+                        </div>
+                    `;
+                } else if (!hasAccessMethod1 && hasAccessMethod2) {
+                    resultHtml = `
+                        <div class="alert alert-warning">
+                            ⚠️ <strong>SITUACIÓN EXTRAÑA:</strong> El Método 2 funciona pero el Método 1 NO.
+                            <br><br>
+                            Esto es inesperado. Revisar configuración de la base de datos.
+                        </div>
+                    `;
+                } else {
+                    resultHtml = `
+                        <div class="alert alert-danger">
+                            ❌ <strong>ACCESO DENEGADO:</strong> El usuario NO tiene permisos del módulo training.
+                            <br><br>
+                            Verificar:
+                            <ul>
+                                <li>Que el rol "Coordinación administrativa" existe</li>
+                                <li>Que el usuario tiene asignado este rol</li>
+                                <li>Que los permisos están asignados al rol en role_permissions</li>
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('result').innerHTML = resultHtml;
+                
+                console.log('🎉 Diagnóstico completado');
+                
+            } catch (error) {
+                console.error('❌ Error en diagnóstico:', error);
+                document.getElementById('result').innerHTML = `
+                    <div class="alert alert-danger">
+                        ❌ <strong>ERROR:</strong> ${error.message}
+                        <br><br>
+                        Ver consola para más detalles.
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
