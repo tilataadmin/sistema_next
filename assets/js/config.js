@@ -15,7 +15,9 @@ function detectEnvironment() {
     
     if (hostname.includes('vercel.app') || hostname.includes('localhost')) {
         return 'development';
-    } else if (hostname.includes('colegiotilata.edu.co')) {
+    } else if (hostname.includes('presucorti.colegiotilata.edu.co')) {
+        return 'presucorti';
+    } else if (hostname.includes('schoolnet.colegiotilata.edu.co')) {
         return 'production';
     }
     
@@ -46,6 +48,20 @@ const ENVIRONMENT_CONFIGS = {
         supabase: {
             url: 'https://mrtuerkncqodhakuwjob.supabase.co',
             anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ydHVlcmtuY3FvZGhha3V3am9iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NjYyNjUsImV4cCI6MjA3MzM0MjI2NX0.BVTBqvTDMpzWSo5jDaiRRYP_oUMf2o3tl5yNwEfBYVk'
+        },
+        features: {
+            debugMode: false,
+            rlsEnabled: true,
+            testData: false,
+            logging: 'minimal'
+        }
+    },
+    // 🆕 NUEVO AMBIENTE - PRESUCORTI
+    presucorti: {
+        name: 'PresuCorti',
+        supabase: {
+            url: 'https://uxzhkyhgsgvqksmdwbim.supabase.co',
+            anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4emhreWhnc2d2cWtzbWR3YmltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1MjkzMDAsImV4cCI6MjA4NTEwNTMwMH0.BesT3KJvyAEQHQLryx959k2dE63NjJsGdiETRleECVM'
         },
         features: {
             debugMode: false,
@@ -182,7 +198,9 @@ const APP_CONFIG = {
     
     // URLs por ambiente
     baseUrl: CURRENT_ENVIRONMENT === 'production' 
-        ? 'https://schoolnet.colegiotilata.edu.co' 
+    ? 'https://schoolnet.colegiotilata.edu.co' 
+    : CURRENT_ENVIRONMENT === 'presucorti'
+        ? 'https://presucorti.colegiotilata.edu.co'
         : 'https://sistema-next.vercel.app',
     
     // Módulos del sistema
