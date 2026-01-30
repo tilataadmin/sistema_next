@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.01.30.07.10">
+    <meta name="page-version" content="26.01.30.07.20">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2377,36 +2377,82 @@
         // Parser para cédula amarilla (PDF417)
         function parsearCedulaAmarilla(codigo) {
             try {
-                // Formato observado: puede incluir guiones y caracteres especiales
-                // Ejemplo: P-XXXXX-XXXXX-M-NNNNNNNN-FECHA
+                console.log('🔍 Parseando cédula amarilla PDF417');
                 
-                // Buscar patrones de número de cédula
                 let documento = null;
+                let apellidos = null;
+                let nombres = null;
                 
-                // Patrón 1: Número después de -M- o similar
-                const matchPatron1 = codigo.match(/-([MF])-(\d{6,10})-/);
-                if (matchPatron1) {
-                    documento = matchPatron1[2];
+                // FORMATO PDF417 CÉDULA COLOMBIANA AMARILLA:
+                // El código tiene una estructura fija con campos de longitud específica
+                
+                // Patrón 1: Buscar secuencia de apellidos y nombres con espacios largos
+                // Formato típico: ...APELLIDO1     APELLIDO2     NOMBRE1     NOMBRE2     ...
+                const patronNombres = /([A-Z]+\s{2,})([A-Z]+\s{2,})([A-Z]+\s{2,})([A-Z]+\s{2,})/;
+                const matchNombres = codigo.match(patronNombres);
+                
+                if (matchNombres) {
+                    // Extraer y limpiar apellidos y nombres
+                    apellidos = (matchNombres[1].trim() + ' ' + matchNombres[2].trim()).trim();
+                    nombres = (matchNombres[3].trim() + ' ' + matchNombres[4].trim()).trim();
+                    
+                    console.log('✅ Apellidos extraídos:', apellidos);
+                    console.log('✅ Nombres extraídos:', nombres);
+                    
+                    // Buscar el número de cédula ANTES de los apellidos
+                    // Generalmente está en una secuencia larga de números
+                    const parteAntesNombres = codigo.substring(0, matchNombres.index);
+                    
+                    // Buscar secuencias de números (generalmente 8-10 dígitos)
+                    const numerosEncontrados = parteAntesNombres.match(/\d{7,10}/g);
+                    
+                    if (numerosEncontrados && numerosEncontrados.length > 0) {
+                        // La cédula suele ser el número más largo o el último número significativo
+                        // Filtrar números que parecen fechas (comienzan con 19 o 20 y tienen 8 dígitos)
+                        const posiblesCedulas = numerosEncontrados.filter(num => {
+                            // No es fecha completa (YYYYMMDD)
+                            if (num.length === 8 && (num.startsWith('19') || num.startsWith('20'))) {
+                                return false;
+                            }
+                            // Longitud típica de cédula colombiana (7-10 dígitos)
+                            return num.length >= 7 && num.length <= 10;
+                        });
+                        
+                        if (posiblesCedulas.length > 0) {
+                            // Tomar el último número encontrado (generalmente es la cédula)
+                            documento = posiblesCedulas[posiblesCedulas.length - 1];
+                            console.log('✅ Documento extraído:', documento);
+                        }
+                    }
                 }
                 
-                // Patrón 2: Buscar secuencia larga de números
+                // Patrón 2: Si no se encontró con el método anterior, intentar buscar
+                // el número de cédula en la secuencia que generalmente tiene el formato:
+                // [tipo][fecha][cédula] antes de los apellidos
                 if (!documento) {
-                    const numeros = codigo.match(/\d{6,10}/g);
-                    if (numeros) {
-                        // Filtrar números que parecen fechas (6 dígitos comenzando con 19 o 20)
-                        documento = numeros.find(n => !n.match(/^(19|20)\d{4}$/)) || numeros[0];
+                    // Buscar secuencia de 16-20 dígitos que suele contener la cédula
+                    const secuenciaLarga = codigo.match(/\d{16,20}/);
+                    if (secuenciaLarga) {
+                        const secuencia = secuenciaLarga[0];
+                        // Los últimos 7-10 dígitos suelen ser la cédula
+                        documento = secuencia.substring(secuencia.length - 10, secuencia.length - 2);
+                        // Limpiar ceros a la izquierda
+                        documento = documento.replace(/^0+/, '');
+                        console.log('✅ Documento extraído (método alternativo):', documento);
                     }
                 }
                 
                 if (documento) {
                     return {
                         documento: documento,
-                        nombres: null,
-                        apellidos: null,
+                        nombres: nombres || null,
+                        apellidos: apellidos || null,
                         tipoDocumento: 'CC',
-                        datosCompletos: false
+                        datosCompletos: !!(nombres && apellidos)
                     };
                 }
+                
+                console.warn('⚠️ No se pudo extraer el documento de la cédula amarilla');
                 
             } catch (error) {
                 console.error('Error parseando cédula amarilla:', error);
@@ -2414,7 +2460,7 @@
             
             return null;
         }
-
+        
         // ==========================================
         // SECCIÓN 6: REGISTRO DE VISITANTES
         // ==========================================
