@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.02.09.17">
+    <meta name="page-version" content="26.02.02.17.00">
     <title>Detalle del Evento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -789,6 +789,7 @@
         let isReadOnly = false;
         let registrations = [];
         let slots = [];
+        let slotModal = null;  // ← AGREGAR ESTA VARIABLE
         
         // Inicialización
         document.addEventListener('DOMContentLoaded', async function() {
@@ -819,6 +820,12 @@
                 // Cargar colores corporativos
                 await loadAndApplyBrandColors();
                 
+                // Inicializar modal de franjas
+                slotModal = new bootstrap.Modal(document.getElementById('slotModal'));
+                
+                // Configurar formulario de franjas
+                document.getElementById('slotForm').addEventListener('submit', handleSaveSlot);
+                
                 // Cargar evento
                 await loadEvent();
                 
@@ -828,6 +835,14 @@
                     document.getElementById('btnCreateRegistration')?.remove();
                     document.getElementById('btnSendSurvey')?.remove();
                 }
+                
+                // Configurar eventos de los tabs
+                const slotsTab = document.getElementById('slots-tab');
+                slotsTab.addEventListener('shown.bs.tab', function() {
+                    if (slots.length === 0) {
+                        loadSlots();
+                    }
+                });
                 
                 console.log('✅ Detalle del evento cargado');
                 
@@ -987,6 +1002,251 @@
         }
         
         // ==========================================
+        // ABRIR MODAL DE FRANJA
+        // ==========================================
+        function openSlotModal(slotId = null) {
+            document.getElementById('slotModalTitle').textContent = slotId ? 'Editar Franja' : 'Nueva Franja';
+            document.getElementById('slotForm').reset();
+            document.getElementById('slotId').value = slotId || '';
+            
+            // Establecer límites de fecha según el evento
+            if (currentEvent) {
+                document.getElementById('slotDate').min = currentEvent.event_start_date;
+                document.getElementById('slotDate').max = currentEvent.event_end_date;
+            }
+            
+            if (slotId) {
+                loadSlotData(slotId);
+            }
+            
+            slotModal.show();
+        }
+        
+        // ==========================================
+        // CARGAR DATOS DE FRANJA PARA EDICIÓN
+        // ==========================================
+        async function loadSlotData(slotId) {
+            try {
+                const slot = slots.find(s => s.slot_id === slotId);
+                
+                if (!slot) {
+                    showMessage('Franja no encontrada', 'warning');
+                    return;
+                }
+                
+                document.getElementById('slotTitle').value = slot.slot_title || '';
+                document.getElementById('slotType').value = slot.slot_type || 'plenaria';
+                document.getElementById('slotDate').value = slot.slot_date || '';
+                document.getElementById('slotStartTime').value = slot.slot_start_time || '';
+                document.getElementById('slotEndTime').value = slot.slot_end_time || '';
+                document.getElementById('slotDescription').value = slot.slot_description || '';
+                
+            } catch (error) {
+                console.error('❌ Error cargando franja:', error);
+                showMessage('Error al cargar la franja', 'danger');
+            }
+        }
+        
+        // ==========================================
+        // GUARDAR FRANJA
+        // ==========================================
+        async function handleSaveSlot(e) {
+            e.preventDefault();
+            
+            const slotId = document.getElementById('slotId').value;
+            const slotData = {
+                event_id: eventId,
+                slot_title: document.getElementById('slotTitle').value.trim(),
+                slot_type: document.getElementById('slotType').value,
+                slot_date: document.getElementById('slotDate').value,
+                slot_start_time: document.getElementById('slotStartTime').value,
+                slot_end_time: document.getElementById('slotEndTime').value,
+                slot_description: document.getElementById('slotDescription').value.trim() || null
+            };
+            
+            try {
+                if (slotId) {
+                    // Actualizar
+                    await supabaseRequest(`/event_slots?slot_id=eq.${slotId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({...slotData, updated_at: new Date().toISOString()})
+                    });
+                    showMessage('Franja actualizada exitosamente', 'success');
+                } else {
+                    // Crear
+                    await supabaseRequest('/event_slots', {
+                        method: 'POST',
+                        body: JSON.stringify(slotData)
+                    });
+                    showMessage('Franja creada exitosamente', 'success');
+                }
+                
+                slotModal.hide();
+                await loadSlots();
+                await loadEventStats();
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                showMessage('Error al guardar: ' + error.message, 'danger');
+            }
+        }
+        
+        // ==========================================
+        // CARGAR FRANJAS
+        // ==========================================
+        async function loadSlots() {
+            try {
+                const data = await supabaseRequest(
+                    `/event_slots?select=*&event_id=eq.${eventId}&order=slot_date.asc,slot_start_time.asc`
+                );
+                
+                slots = data || [];
+                renderSlots();
+                
+                console.log(`✅ ${slots.length} franjas cargadas`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando franjas:', error);
+                renderEmptySlots();
+            }
+        }
+        
+        // ==========================================
+        // RENDERIZAR FRANJAS
+        // ==========================================
+        function renderSlots() {
+            const container = document.getElementById('slotsContainer');
+            
+            if (slots.length === 0) {
+                renderEmptySlots();
+                return;
+            }
+            
+            let html = '';
+            
+            slots.forEach(slot => {
+                const date = new Date(slot.slot_date).toLocaleDateString('es-CO', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                
+                const typeLabel = slot.slot_type === 'plenaria' ? 'Plenaria (Todos juntos)' : 'Con Grupos';
+                
+                html += `
+                    <div class="slot-card">
+                        <div class="slot-header">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-2">${slot.slot_title}</h6>
+                                    <div class="mb-1">
+                                        <i class="bi bi-calendar3 me-1"></i>
+                                        ${date}
+                                    </div>
+                                    <div>
+                                        <i class="bi bi-clock me-1"></i>
+                                        ${slot.slot_start_time} - ${slot.slot_end_time}
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="slot-type-badge">
+                                        <i class="bi bi-${slot.slot_type === 'plenaria' ? 'people' : 'diagram-3'} me-1"></i>
+                                        ${typeLabel}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            ${slot.slot_description ? `<p class="text-muted mb-3">${slot.slot_description}</p>` : ''}
+                            
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    ${slot.slot_type === 'grupos' ? `
+                                        <button class="btn btn-sm btn-outline-primary me-1" onclick="manageGroups('${slot.slot_id}')">
+                                            <i class="bi bi-diagram-3 me-1"></i>
+                                            Gestionar Grupos
+                                        </button>
+                                    ` : ''}
+                                </div>
+                                <div>
+                                    ${!isReadOnly ? `
+                                        <button class="btn btn-sm btn-outline-primary me-1" onclick="openSlotModal('${slot.slot_id}')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteSlot('${slot.slot_id}', '${slot.slot_title}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // ==========================================
+        // RENDERIZAR ESTADO VACÍO DE FRANJAS
+        // ==========================================
+        function renderEmptySlots() {
+            const container = document.getElementById('slotsContainer');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-layout-three-columns"></i>
+                    <h5>No hay franjas creadas</h5>
+                    <p class="text-muted">
+                        Las franjas permiten organizar el evento en bloques horarios
+                    </p>
+                    ${!isReadOnly ? `
+                        <button class="btn btn-primary" onclick="openSlotModal()">
+                            <i class="bi bi-plus-circle me-2"></i>
+                            Crear Primera Franja
+                        </button>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
+        // ==========================================
+        // CONFIRMAR ELIMINAR FRANJA
+        // ==========================================
+        function confirmDeleteSlot(slotId, slotTitle) {
+            if (confirm(`¿Estás seguro de eliminar la franja "${slotTitle}"?\n\nEsto eliminará todos los grupos asociados.`)) {
+                deleteSlot(slotId);
+            }
+        }
+        
+        // ==========================================
+        // ELIMINAR FRANJA
+        // ==========================================
+        async function deleteSlot(slotId) {
+            try {
+                await supabaseRequest(`/event_slots?slot_id=eq.${slotId}`, {
+                    method: 'DELETE'
+                });
+                
+                showMessage('Franja eliminada exitosamente', 'success');
+                await loadSlots();
+                await loadEventStats();
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                showMessage('Error al eliminar: ' + error.message, 'danger');
+            }
+        }
+        
+        // ==========================================
+        // GESTIONAR GRUPOS DE UNA FRANJA
+        // ==========================================
+        function manageGroups(slotId) {
+            showMessage('Gestión de grupos en desarrollo', 'info');
+            // TODO: Implementar modal de gestión de grupos
+        }
+        
+        // ==========================================
         // FUNCIONES PLACEHOLDER (A IMPLEMENTAR)
         // ==========================================
         function generateQRCodes() {
@@ -997,10 +1257,6 @@
             if (confirm('¿Enviar encuesta a todos los participantes inscritos?')) {
                 showMessage('Funcionalidad de envío de encuestas en desarrollo', 'info');
             }
-        }
-        
-        function openSlotModal() {
-            showMessage('Modal de franjas en desarrollo', 'info');
         }
         
         function openRegistrationModal() {
