@@ -329,7 +329,16 @@ const APP_CONFIG = {
             icon: 'bi-diagram-3',
             path: '/modules/procedures/',
             status: 'active'
+        },
+        {
+            id: 'events',
+            name: 'Eventos',
+            description: 'Gestión de eventos institucionales con inscripciones, asistencia y grupos',
+            icon: 'bi-calendar-event',
+            path: '/modules/events/',
+            status: 'active'
         }
+        
     ],
     
     // Configuración de UI
