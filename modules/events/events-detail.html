@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.03.08.00">
+    <meta name="page-version" content="26.02.04.19.05"
     <title>Detalle del Evento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -3737,7 +3737,7 @@
         }
         
         // ==========================================
-        // IMPORTAR DATOS DEL CSV
+        // IMPORTAR DATOS DEL CSV (VERSIÓN MEJORADA - OPCIÓN 1)
         // ==========================================
         async function importCSVData() {
             const validData = csvData.filter(row => !row.hasError);
@@ -3747,7 +3747,7 @@
                 return;
             }
             
-            if (!confirm(`¿Importar ${validData.length} inscripciones?\n\nEsto creará registros para todos los participantes válidos.`)) {
+            if (!confirm(`¿Importar inscripciones desde CSV?\n\nSe verificarán duplicados antes de importar.`)) {
                 return;
             }
             
@@ -3755,10 +3755,57 @@
                 // Deshabilitar botón
                 const btn = document.getElementById('btnImportCSV');
                 btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importando...';
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verificando duplicados...';
                 
-                // Preparar datos para inserción
-                const registrationsToInsert = validData.map(row => ({
+                // ========================================
+                // PASO 1: Consultar documentos ya registrados en este evento
+                // ========================================
+                const existingRegistrations = await supabaseRequest(
+                    `/event_registrations?select=participant_document&event_id=eq.${eventId}`
+                );
+                
+                const existingDocuments = new Set(
+                    existingRegistrations.map(r => r.participant_document)
+                );
+                
+                console.log(`📋 Documentos ya registrados: ${existingDocuments.size}`);
+                
+                // ========================================
+                // PASO 2: Filtrar datos del CSV para excluir duplicados
+                // ========================================
+                const newRegistrations = [];
+                const duplicates = [];
+                
+                validData.forEach(row => {
+                    if (existingDocuments.has(row.participant_document)) {
+                        duplicates.push(row);
+                    } else {
+                        newRegistrations.push(row);
+                    }
+                });
+                
+                console.log(`✅ Nuevos registros a importar: ${newRegistrations.length}`);
+                console.log(`⚠️ Duplicados omitidos: ${duplicates.length}`);
+                
+                // Si no hay registros nuevos, informar y salir
+                if (newRegistrations.length === 0) {
+                    showMessage(
+                        `No hay registros nuevos para importar. Todos los ${duplicates.length} registros ya existen en el evento.`,
+                        'warning'
+                    );
+                    
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-upload me-1"></i>Importar <span id="importCount"></span> Inscripciones';
+                    return;
+                }
+                
+                // Actualizar mensaje del botón
+                btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Importando ${newRegistrations.length} registros...`;
+                
+                // ========================================
+                // PASO 3: Preparar datos para inserción
+                // ========================================
+                const registrationsToInsert = newRegistrations.map(row => ({
                     event_id: row.event_id,
                     participant_document: row.participant_document,
                     participant_full_name: row.participant_full_name,
@@ -3773,7 +3820,9 @@
                     registration_date: new Date().toISOString()
                 }));
                 
-                // Insertar en lotes de 50
+                // ========================================
+                // PASO 4: Insertar en lotes de 50
+                // ========================================
                 const batchSize = 50;
                 let imported = 0;
                 
@@ -3786,10 +3835,23 @@
                     });
                     
                     imported += batch.length;
-                    console.log(`✅ Importados ${imported} de ${validData.length}`);
+                    console.log(`✅ Importados ${imported} de ${newRegistrations.length}`);
+                    
+                    // Actualizar progreso en el botón
+                    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Importando ${imported}/${newRegistrations.length}...`;
                 }
                 
-                showMessage(`✅ ${imported} inscripciones importadas exitosamente`, 'success');
+                // ========================================
+                // PASO 5: Mostrar resumen de la operación
+                // ========================================
+                let message = `✅ Importación completada:\n`;
+                message += `• ${imported} registros importados exitosamente\n`;
+                
+                if (duplicates.length > 0) {
+                    message += `• ${duplicates.length} duplicados omitidos (ya existían en el evento)`;
+                }
+                
+                showMessage(message, 'success');
                 
                 // Cerrar modal y recargar
                 importCSVModal.hide();
