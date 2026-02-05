@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.04.19.05"
+    <meta name="page-version" content="26.02.04.19.11"
     <title>Detalle del Evento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -3775,24 +3775,48 @@
                 // ========================================
                 const newRegistrations = [];
                 const duplicates = [];
+                const csvDocuments = new Set(); // Para detectar duplicados internos del CSV
                 
                 validData.forEach(row => {
-                    if (existingDocuments.has(row.participant_document)) {
-                        duplicates.push(row);
-                    } else {
+                    const doc = row.participant_document;
+                    
+                    // Verificar si ya existe en la base de datos
+                    if (existingDocuments.has(doc)) {
+                        duplicates.push({...row, duplicateType: 'database'});
+                    }
+                    // Verificar si ya apareció antes en este mismo CSV
+                    else if (csvDocuments.has(doc)) {
+                        duplicates.push({...row, duplicateType: 'csv'});
+                    }
+                    // Es nuevo: agregarlo
+                    else {
+                        csvDocuments.add(doc);
                         newRegistrations.push(row);
                     }
                 });
                 
+                const dbDuplicates = duplicates.filter(d => d.duplicateType === 'database').length;
+                const csvDuplicates = duplicates.filter(d => d.duplicateType === 'csv').length;
+                
                 console.log(`✅ Nuevos registros a importar: ${newRegistrations.length}`);
-                console.log(`⚠️ Duplicados omitidos: ${duplicates.length}`);
+                console.log(`⚠️ Duplicados con la base de datos: ${dbDuplicates}`);
+                console.log(`⚠️ Duplicados internos del CSV: ${csvDuplicates}`);
+                console.log(`⚠️ Total duplicados omitidos: ${duplicates.length}`);
                 
                 // Si no hay registros nuevos, informar y salir
                 if (newRegistrations.length === 0) {
-                    showMessage(
-                        `No hay registros nuevos para importar. Todos los ${duplicates.length} registros ya existen en el evento.`,
-                        'warning'
-                    );
+                    let noImportMessage = `No hay registros nuevos para importar.\n\n`;
+                    
+                    if (dbDuplicates > 0 && csvDuplicates > 0) {
+                        noImportMessage += `• ${dbDuplicates} ya existían en el evento\n`;
+                        noImportMessage += `• ${csvDuplicates} están repetidos en el CSV`;
+                    } else if (dbDuplicates > 0) {
+                        noImportMessage += `Todos los ${dbDuplicates} registros ya existen en el evento.`;
+                    } else if (csvDuplicates > 0) {
+                        noImportMessage += `Todos los ${csvDuplicates} registros están repetidos en el CSV.`;
+                    }
+                    
+                    showMessage(noImportMessage, 'warning');
                     
                     btn.disabled = false;
                     btn.innerHTML = '<i class="bi bi-upload me-1"></i>Importar <span id="importCount"></span> Inscripciones';
@@ -3848,7 +3872,13 @@
                 message += `• ${imported} registros importados exitosamente\n`;
                 
                 if (duplicates.length > 0) {
-                    message += `• ${duplicates.length} duplicados omitidos (ya existían en el evento)`;
+                    message += `• ${duplicates.length} duplicados omitidos:\n`;
+                    if (dbDuplicates > 0) {
+                        message += `  - ${dbDuplicates} ya existían en el evento\n`;
+                    }
+                    if (csvDuplicates > 0) {
+                        message += `  - ${csvDuplicates} repetidos en el CSV`;
+                    }
                 }
                 
                 showMessage(message, 'success');
