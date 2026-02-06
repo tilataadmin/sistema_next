@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.02.06.09.32">
+    <meta name="page-version" content="26.02.06.11.57">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -918,7 +918,38 @@
             
             const timestamp = `${fecha}T${hora}-05:00`;
             
-            return { fecha, hora, timestamp };
+           return { fecha, hora, timestamp };
+        }
+
+        // ==========================================
+        // PROTECCIÓN CONTRA LECTURAS DUPLICADAS
+        // ==========================================
+        /**
+         * Verifica si el último registro fue hace menos de 2 minutos
+         * Usa los registrosHoy ya consultados (evita llamada extra a BD)
+         */
+        function verificarRegistroDuplicado(registrosHoy) {
+            const TIEMPO_MINIMO_SEGUNDOS = 120; // 2 minutos
+
+            if (!registrosHoy || registrosHoy.length === 0) {
+                return { duplicado: false, segundos: Infinity };
+            }
+
+            const { hora: horaActual } = obtenerFechaHoraColombia();
+            const [h1, m1, s1] = horaActual.split(':').map(Number);
+            const segActual = h1 * 3600 + m1 * 60 + s1;
+
+            let menorDiff = Infinity;
+            registrosHoy.forEach(reg => {
+                const partes = reg.attendance_time.split(':').map(Number);
+                const segReg = partes[0] * 3600 + partes[1] * 60 + (partes[2] || 0);
+                const diff = segActual - segReg;
+                if (diff >= 0 && diff < menorDiff) {
+                    menorDiff = diff;
+                }
+            });
+
+            return { duplicado: menorDiff < TIEMPO_MINIMO_SEGUNDOS, segundos: menorDiff };
         }
 
         // ==========================================
@@ -1401,6 +1432,15 @@
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${match.documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
+                // Protección contra lectura duplicada
+                const check = verificarRegistroDuplicado(registrosHoy);
+                if (check.duplicado) {
+                    ocultarLoading();
+                    mostrarFeedback('warning', 'Lectura duplicada', `${match.nombre} ya fue registrado(a) hace ${check.segundos} seg`);
+                    setTimeout(() => iniciarReconocimientoFacial(), 2000);
+                    return;
+                }
+
                 const nuevoRegistro = {
                     person_id_document: match.documento,
                     person_type: match.tipo,
@@ -1516,6 +1556,16 @@
                 const { fecha, hora, timestamp } = obtenerFechaHoraColombia();
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${documento}&attendance_date=eq.${fecha}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
+
+                // Protección contra lectura duplicada
+                const check = verificarRegistroDuplicado(registrosHoy);
+                if (check.duplicado) {
+                    ocultarLoading();
+                    mostrarFeedback('warning', 'Lectura duplicada', `${nombreCompleto} ya fue registrado(a) hace ${check.segundos} seg`);
+                    reproducirSonido('error');
+                    setTimeout(() => { document.getElementById('rfid-input').focus(); }, 2000);
+                    return;
+                }
 
                 const nuevoRegistro = {
                     person_id_document: documento,
@@ -1828,6 +1878,16 @@
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
 
+                // Protección contra lectura duplicada
+                const check = verificarRegistroDuplicado(registrosHoy);
+                if (check.duplicado) {
+                    ocultarLoading();
+                    mostrarFeedback('warning', 'Lectura duplicada', `${nombreCompleto} ya fue registrado(a) hace ${check.segundos} seg`);
+                    reproducirSonido('error');
+                    setTimeout(() => iniciarScanner(), 2000);
+                    return;
+                }
+
                 let registeredByWorkerId = null;
                 if (metodo === 'manual' && currentUser.user_mail) {
                     try {
@@ -2055,6 +2115,14 @@
                 const { fecha: today, hora, timestamp } = obtenerFechaHoraColombia();
                 const registrosHoy = await supabaseRequest(`/attendance?select=*&person_id_document=eq.${selectedPerson.documento}&attendance_date=eq.${today}`);
                 const tipoRegistro = registrosHoy.length % 2 === 0 ? 'Entrada' : 'Salida';
+
+                // Protección contra lectura duplicada
+                const check = verificarRegistroDuplicado(registrosHoy);
+                if (check.duplicado) {
+                    ocultarLoading();
+                    mostrarFeedback('warning', 'Registro reciente', `${selectedPerson.nombre} ya fue registrado(a) hace ${check.segundos} seg`);
+                    return;
+                }
 
                 let registeredByWorkerId = null;
                 if (currentUser.user_mail) {
