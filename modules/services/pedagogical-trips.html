@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.07.14.15">
+    <meta name="page-version" content="26.02.07.14.30">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -571,6 +571,9 @@
                                                 <span>Transporte:</span>
                                                 <span id="wizardCostoTransporte">$0</span>
                                             </div>
+                                            <div id="detalleVehiculosContainer" style="display: none; margin-left: 20px; font-size: 0.85em; color: #666;">
+                                                <!-- Aquí se mostrará el detalle de vehículos -->
+                                            </div>
                                             <div class="cost-item">
                                                 <span>Refrigerios:</span>
                                                 <span id="wizardCostoRefrigerios">$0</span>
@@ -769,7 +772,8 @@
             destinos: [],
             menus: [],
             aprobadores: [],
-            salidas: []
+            salidas: [],
+            detalleTransporte: null // Info de vehículos calculados para optimización
         };
         
         // ==================== INICIALIZACIÓN ====================
@@ -947,6 +951,11 @@
             // Actualizar cálculos al cambiar grados
             document.getElementById('wizardGrados').addEventListener('change', async function() {
                 await calcularEstudiantes();
+                calcularCostosWizard();
+            });
+            
+            // Actualizar cálculos al cambiar destino
+            document.getElementById('wizardDestino').addEventListener('change', function() {
                 calcularCostosWizard();
             });
             
@@ -1350,15 +1359,57 @@
                 let costoRefrigerios = 0;
                 let costoEntradas = 0;
                 
-                // TRANSPORTE
+                // TRANSPORTE - Usar función RPC del backend para optimización
                 if (destinoId && totalParticipantes > 0) {
-                    // Obtener tarifa de transporte según destino y capacidad
-                    const tarifasQuery = `/svc_transport_rates_students?select=*&destination_id=eq.${destinoId}&min_capacity=lte.${totalParticipantes}&max_capacity=gte.${totalParticipantes}`;
-                    const tarifas = await supabaseRequest(tarifasQuery);
+                    console.log('🚌 Calculando transporte:', {
+                        destinoId,
+                        totalParticipantes
+                    });
                     
-                    if (tarifas && tarifas.length > 0) {
-                        costoTransporte = parseFloat(tarifas[0].rate_value);
+                    try {
+                        // Llamar a función RPC que optimiza el cálculo
+                        const resultado = await supabaseRequest('/rpc/calculate_transport_cost', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                destination_id_param: destinoId,
+                                total_participants: totalParticipantes
+                            })
+                        });
+                        
+                        console.log('📊 Resultado del cálculo:', resultado);
+                        
+                        if (resultado && !resultado.error) {
+                            costoTransporte = parseFloat(resultado.total_cost);
+                            
+                            // Guardar detalle para mostrar en UI y para guardar luego
+                            datosGlobales.detalleTransporte = {
+                                costoTotal: resultado.total_cost,
+                                numeroVehiculos: resultado.vehicle_count,
+                                tarifaCongelada: resultado.frozen_rate,
+                                capacidadCongelada: resultado.frozen_capacity,
+                                vehiculos: resultado.breakdown || []
+                            };
+                            
+                            console.log('✅ Costo transporte calculado:', {
+                                costo: costoTransporte,
+                                vehiculos: resultado.vehicle_count
+                            });
+                        } else {
+                            console.error('❌ Error en cálculo de transporte:', resultado.message);
+                            showMessage(resultado.message || 'Error al calcular costo de transporte', 'warning');
+                            datosGlobales.detalleTransporte = null;
+                        }
+                    } catch (error) {
+                        console.error('❌ Error llamando a calculate_transport_cost:', error);
+                        showMessage('Error al calcular costo de transporte', 'danger');
+                        datosGlobales.detalleTransporte = null;
                     }
+                } else {
+                    console.log('ℹ️ Transporte no calculado:', {
+                        destinoId: destinoId || 'NO SELECCIONADO',
+                        totalParticipantes
+                    });
+                    datosGlobales.detalleTransporte = null;
                 }
                 
                 // REFRIGERIOS
@@ -1384,6 +1435,23 @@
                 
                 // Actualizar UI
                 document.getElementById('wizardCostoTransporte').textContent = '$' + formatNumber(costoTransporte);
+                
+                // Mostrar detalle de vehículos si hay información
+                const detalleContainer = document.getElementById('detalleVehiculosContainer');
+                if (datosGlobales.detalleTransporte && datosGlobales.detalleTransporte.vehiculos && datosGlobales.detalleTransporte.vehiculos.length > 0) {
+                    const detalle = datosGlobales.detalleTransporte;
+                    let detalleHTML = `<div style="margin-top: 5px; padding: 5px; background: #f8f9fa; border-radius: 4px;">`;
+                    detalleHTML += `<i class="bi bi-bus-front me-1"></i><strong>${detalle.numeroVehiculos} vehículo${detalle.numeroVehiculos > 1 ? 's' : ''} requerido${detalle.numeroVehiculos > 1 ? 's' : ''}:</strong><br>`;
+                    detalle.vehiculos.forEach((v) => {
+                        detalleHTML += `<span style="display: block; margin-left: 15px; font-size: 0.9em;">• Vehículo ${v.vehicle_number}: ${v.passengers} pasajeros (cap. ${v.capacity_range}) = $${formatNumber(v.rate_value)}</span>`;
+                    });
+                    detalleHTML += `</div>`;
+                    detalleContainer.innerHTML = detalleHTML;
+                    detalleContainer.style.display = 'block';
+                } else {
+                    detalleContainer.style.display = 'none';
+                }
+                
                 document.getElementById('wizardCostoRefrigerios').textContent = '$' + formatNumber(costoRefrigerios);
                 document.getElementById('wizardCostoEntradas').textContent = '$' + formatNumber(costoEntradas);
                 document.getElementById('wizardCostoTotal').textContent = '$' + formatNumber(costoTotal);
