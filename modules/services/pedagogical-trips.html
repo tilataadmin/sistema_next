@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.07.14.05">
+    <meta name="page-version" content="26.02.07.14.15">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -510,7 +510,8 @@
                                                 </div>
                                                 <div class="col-md-4">
                                                     <label class="form-label">Cantidad</label>
-                                                    <input type="number" class="form-control" id="wizardCantidadRefrigerios" min="1">
+                                                    <input type="number" class="form-control" id="wizardCantidadRefrigerios" min="1" placeholder="Se auto-llena con total de participantes">
+                                                    <small class="text-muted">Auto-llenado. Puedes modificarlo si necesitas.</small>
                                                 </div>
                                             </div>
                                         </div>
@@ -842,9 +843,23 @@
                 const menus = await supabaseRequest('/svc_catering_menus?select=menu_id,menu_name,unit_price&is_active=eq.true&order=menu_name');
                 datosGlobales.menus = menus || [];
                 
-                // Cargar aprobadores - TEMPORAL: todos los workers activos
-                // TODO: Crear función RPC get_workers_with_permission en backend
+                // Cargar aprobadores (workers con permiso "Resolución de solicitudes")
+                // ID del permiso: 5c503ff3-559f-4755-9d47-b63fe7f561a2
+                
+                // VERSIÓN TEMPORAL: Carga todos los workers activos
+                // Descomentar versión de abajo cuando se ejecute el script SQL get_workers_with_permission.sql
                 const aprobadores = await supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active&order=worker_first_name');
+                
+                // VERSIÓN DEFINITIVA (comentada por ahora - requiere ejecutar get_workers_with_permission.sql en backend):
+                /*
+                const aprobadores = await supabaseRequest('/rpc/get_workers_with_permission', {
+                    method: 'POST',
+                    body: JSON.stringify({ 
+                        permission_name: 'Resolución de solicitudes' 
+                    })
+                });
+                */
+                
                 datosGlobales.aprobadores = aprobadores || [];
                 
                 // Llenar selects
@@ -909,7 +924,17 @@
         function configurarEventListeners() {
             // Toggle refrigerios
             document.getElementById('wizardIncluirRefrigerios').addEventListener('change', function() {
-                document.getElementById('wizardRefrigeriosFields').style.display = this.checked ? 'block' : 'none';
+                const mostrar = this.checked;
+                document.getElementById('wizardRefrigeriosFields').style.display = mostrar ? 'block' : 'none';
+                
+                // Auto-llenar cantidad con total de participantes al activar
+                if (mostrar) {
+                    const totalParticipantes = parseInt(document.getElementById('wizardTotalParticipantes').textContent) || 0;
+                    if (totalParticipantes > 0) {
+                        document.getElementById('wizardCantidadRefrigerios').value = totalParticipantes;
+                    }
+                }
+                
                 calcularCostosWizard();
             });
             
@@ -927,6 +952,7 @@
             
             // Actualizar cálculos al cambiar adultos
             document.getElementById('wizardNumAdultos').addEventListener('input', function() {
+                actualizarTotalParticipantes();
                 calcularCostosWizard();
             });
             
@@ -949,8 +975,8 @@
                 showLoading('tablaSalidasBody');
                 
                 // Construir query con filtros
-                // ✅ SINTAXIS CORRECTA
                 let query = '/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),destination:svc_transport_destinations(destination_name)';
+                
                 // Aplicar filtros
                 if (filtrosActivos.fechaInicio) {
                     query += `&trip_date=gte.${filtrosActivos.fechaInicio}`;
@@ -1306,6 +1332,12 @@
             const total = estudiantes + adultos;
             
             document.getElementById('wizardTotalParticipantes').textContent = total;
+            
+            // Auto-llenar cantidad de refrigerios con el total de participantes
+            const cantidadRefrigeriosInput = document.getElementById('wizardCantidadRefrigerios');
+            if (cantidadRefrigeriosInput && total > 0) {
+                cantidadRefrigeriosInput.value = total;
+            }
         }
         
         // ==================== CALCULAR COSTOS WIZARD ====================
