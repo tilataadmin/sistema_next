@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.07.11.17">
+    <meta name="page-version" content="26.02.07.11.25">
     <title>Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -294,23 +294,16 @@
                             <label class="form-label">Vigente desde <span class="text-danger">*</span></label>
                             <input type="date" class="form-control" id="vehiculo-vigencia" required>
                         </div>
-                        <div class="row">
-                            <div class="col-6 mb-3">
-                                <label class="form-label">Capacidad del vehículo <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control" id="vehiculo-capacidad" min="1" required>
-                            </div>
-                            <div class="col-6 mb-3">
-                                <label class="form-label">Cantidad de vehículos <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control" id="vehiculo-cantidad" min="1" required>
-                            </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tipo de vehículo (tarifario) <span class="text-danger">*</span></label>
+                            <select class="form-select" id="vehiculo-tarifa-select" required onchange="onSelectTarifa()">
+                                <option value="">Seleccionar...</option>
+                            </select>
+                            <small class="text-muted" id="vehiculo-tarifa-info"></small>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Tarifa por recorrido <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <span class="input-group-text">$</span>
-                                <input type="text" class="form-control" id="vehiculo-tarifa" required placeholder="0" oninput="formatearInputMoneda(this)">
-                            </div>
-                            <small class="text-muted">Se congela al crear. Consulte el tarifario de extracurriculares.</small>
+                            <label class="form-label">Cantidad de vehículos <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="vehiculo-cantidad" min="1" required>
                         </div>
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="vehiculo-activo" checked>
@@ -339,6 +332,7 @@
         let cacheCycleDays = {};       // { cycle_id: [1,3,5] }
         let cacheVehiculos = [];
         let cacheAniosAcademicos = [];
+        let cacheTarifasExtra = [];
         let cacheRegistrosDia = [];
         let modalCiclo, modalVehiculo;
 
@@ -407,6 +401,7 @@
                 selectAnio.value = anioActual;
 
                 await cargarAniosAcademicos();
+                await cargarTarifasExtracurriculares();
                 await cargarCiclos();
                 await cargarRegistroDiario();
                 await cargarResumenMensual();
@@ -427,6 +422,33 @@
                 const data = await supabaseRequest('/academic_years?select=year_id,year_name,is_current&order=start_year.desc,start_month.desc');
                 cacheAniosAcademicos = data || [];
             } catch (e) { console.error('❌ Error años académicos:', e); }
+        }
+
+        // ==========================================
+        // TARIFAS EXTRACURRICULARES
+        // ==========================================
+        async function cargarTarifasExtracurriculares() {
+            try {
+                const data = await supabaseRequest('/svc_transport_rates_extracurricular?select=*&is_active=eq.true&order=vehicle_capacity.asc');
+                cacheTarifasExtra = data || [];
+            } catch (e) { console.error('❌ Error tarifas extracurriculares:', e); }
+        }
+
+        function poblarSelectTarifas() {
+            const select = document.getElementById('vehiculo-tarifa-select');
+            select.innerHTML = '<option value="">Seleccionar...</option>' +
+                cacheTarifasExtra.map(t => `<option value="${t.rate_id}" data-capacity="${t.vehicle_capacity}" data-rate="${t.rate_value}">${t.vehicle_capacity} pasajeros</option>`).join('');
+        }
+
+        function onSelectTarifa() {
+            const select = document.getElementById('vehiculo-tarifa-select');
+            const opt = select.options[select.selectedIndex];
+            const info = document.getElementById('vehiculo-tarifa-info');
+            if (opt && opt.value) {
+                info.textContent = `Capacidad: ${opt.dataset.capacity} pas. — Tarifa: ${fmtCOP(opt.dataset.rate)}`;
+            } else {
+                info.textContent = '';
+            }
         }
 
         // ==========================================
@@ -618,12 +640,15 @@
             document.getElementById('vehiculo-id').value = '';
             document.getElementById('vehiculo-activo').checked = true;
             document.getElementById('vehiculo-vigencia').value = getCurrentDateColombia();
+            document.getElementById('vehiculo-tarifa-info').textContent = '';
 
             // Poblar días del ciclo seleccionado
             const dias = cacheCycleDays[cycleId] || [];
             const selectDia = document.getElementById('vehiculo-dia');
             selectDia.innerHTML = '<option value="">Seleccionar...</option>' +
                 dias.sort().map(d => `<option value="${d}">${DIAS_SEMANA[d]}</option>`).join('');
+
+            poblarSelectTarifas();
 
             document.getElementById('modal-vehiculo-title').innerHTML = '<i class="bi bi-truck me-2"></i>Nueva Configuración';
             modalVehiculo.show();
@@ -639,13 +664,21 @@
             selectDia.innerHTML = '<option value="">Seleccionar...</option>' +
                 dias.sort().map(d => `<option value="${d}">${DIAS_SEMANA[d]}</option>`).join('');
 
+            poblarSelectTarifas();
+
             document.getElementById('vehiculo-id').value = v.config_id;
             document.getElementById('vehiculo-dia').value = v.day_of_week;
             document.getElementById('vehiculo-vigencia').value = v.effective_from;
-            document.getElementById('vehiculo-capacidad').value = v.vehicle_capacity;
             document.getElementById('vehiculo-cantidad').value = v.vehicle_count;
-            document.getElementById('vehiculo-tarifa').value = parseInt(v.frozen_rate_value).toLocaleString('es-CO');
             document.getElementById('vehiculo-activo').checked = v.is_active;
+
+            // Seleccionar tarifa que coincida en capacidad y valor
+            const select = document.getElementById('vehiculo-tarifa-select');
+            const match = cacheTarifasExtra.find(t => t.vehicle_capacity === v.vehicle_capacity && parseFloat(t.rate_value) === parseFloat(v.frozen_rate_value));
+            if (match) {
+                select.value = match.rate_id;
+            }
+            onSelectTarifa();
 
             document.getElementById('modal-vehiculo-title').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Configuración';
             modalVehiculo.show();
@@ -656,13 +689,20 @@
             const id = document.getElementById('vehiculo-id').value;
             const cycleId = document.getElementById('filtro-ciclo-vehiculos').value;
 
+            const select = document.getElementById('vehiculo-tarifa-select');
+            const opt = select.options[select.selectedIndex];
+            if (!opt || !opt.value) {
+                showMessage('Seleccione un tipo de vehículo del tarifario', 'warning');
+                return;
+            }
+
             const payload = {
                 cycle_id: cycleId,
                 day_of_week: parseInt(document.getElementById('vehiculo-dia').value),
                 effective_from: document.getElementById('vehiculo-vigencia').value,
-                vehicle_capacity: parseInt(document.getElementById('vehiculo-capacidad').value),
+                vehicle_capacity: parseInt(opt.dataset.capacity),
                 vehicle_count: parseInt(document.getElementById('vehiculo-cantidad').value),
-                frozen_rate_value: obtenerValorNumerico('vehiculo-tarifa'),
+                frozen_rate_value: parseFloat(opt.dataset.rate),
                 is_active: document.getElementById('vehiculo-activo').checked
             };
 
