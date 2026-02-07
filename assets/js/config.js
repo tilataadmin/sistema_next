@@ -337,6 +337,14 @@ const APP_CONFIG = {
             icon: 'bi-calendar-event',
             path: '/modules/events/',
             status: 'active'
+        },
+        {
+            id: 'services',
+            name: 'Servicios',
+            description: 'Gestión de servicios institucionales, transporte, eventos y salidas',
+            icon: 'bi-bus-front',
+            path: '/modules/services/',
+            status: 'active'
         }
         
     ],
