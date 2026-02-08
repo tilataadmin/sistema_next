@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, init5al-scale=1.0">
-    <meta name="page-version" content="26.02.08.08.10">
+    <meta name="page-version" content="26.02.08.25.40">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -146,6 +146,14 @@
                     <form id="formFiltros">
                         <div class="row g-3">
                             <div class="col-md-3">
+                                <label class="form-label">Tipo de servicio</label>
+                                <select class="form-select" id="filtroTipo">
+                                    <option value="">Todos los tipos</option>
+                                    <option value="pedagogical_trip">Salidas pedagógicas</option>
+                                    <option value="internal_event">Eventos internos</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
                                 <label class="form-label">Estado</label>
                                 <select class="form-select" id="filtroEstado">
                                     <option value="pending">Solo pendientes</option>
@@ -154,19 +162,18 @@
                                     <option value="rejected">Solo rechazadas</option>
                                 </select>
                             </div>
-                            <div class="col-md-3">
-                                <label class="form-label">Fecha de salida (desde)</label>
+                            <div class="col-md-2">
+                                <label class="form-label">Fecha (desde)</label>
                                 <input type="date" class="form-control" id="filtroFechaDesde">
                             </div>
-                            <div class="col-md-3">
-                                <label class="form-label">Fecha de salida (hasta)</label>
+                            <div class="col-md-2">
+                                <label class="form-label">Fecha (hasta)</label>
                                 <input type="date" class="form-control" id="filtroFechaHasta">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Solicitante</label>
                                 <select class="form-select" id="filtroSolicitante">
                                     <option value="">Todos los solicitantes</option>
-                                    <!-- Se carga dinámicamente -->
                                 </select>
                             </div>
                         </div>
@@ -273,7 +280,8 @@
         let currentUser = null;
         let solicitudesData = [];
         let filtrosActivos = {
-            estado: 'pending' // Por defecto mostrar pendientes
+            tipo: '',
+            estado: 'pending'
         };
         
         // ==================== INICIALIZACIÓN ====================
@@ -335,41 +343,79 @@
             try {
                 showLoading('listaSolicitudes');
                 
-                // Construir query: Solo solicitudes donde el usuario actual es el aprobador
-                let query = `/svc_service_requests?select=*,trip:svc_pedagogical_trips!request_id(*,grades:svc_pedagogical_trip_grades(grade:grades(grade_name)),destination:svc_transport_destinations(destination_name)),solicitante:workers!svc_service_requests_requested_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&service_type=eq.pedagogical_trip&approver_id=eq.${currentUser.worker_id}`;
+                let todasLasSolicitudes = [];
                 
-                // Aplicar filtros
-                if (filtrosActivos.estado) {
-                    query += `&request_status=eq.${filtrosActivos.estado}`;
+                // Determinar qué tipos cargar según filtro
+                const tiposACargar = [];
+                if (!filtrosActivos.tipo || filtrosActivos.tipo === 'pedagogical_trip') {
+                    tiposACargar.push('pedagogical_trip');
+                }
+                if (!filtrosActivos.tipo || filtrosActivos.tipo === 'internal_event') {
+                    tiposACargar.push('internal_event');
                 }
                 
-                // Ordenar por fecha de creación (más recientes primero)
-                query += '&order=created_at.desc';
+                // Cargar salidas pedagógicas
+                if (tiposACargar.includes('pedagogical_trip')) {
+                    let queryTrips = `/svc_service_requests?select=*,trip:svc_pedagogical_trips!request_id(*,grades:svc_pedagogical_trip_grades(grade:grades(grade_name)),destination:svc_transport_destinations(destination_name)),solicitante:workers!svc_service_requests_requested_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&service_type=eq.pedagogical_trip&approver_id=eq.${currentUser.worker_id}`;
+                    
+                    if (filtrosActivos.estado) {
+                        queryTrips += `&request_status=eq.${filtrosActivos.estado}`;
+                    }
+                    queryTrips += '&order=created_at.desc';
+                    
+                    const trips = await supabaseRequest(queryTrips);
+                    if (trips && trips.length > 0) {
+                        trips.forEach(s => s._tipo = 'pedagogical_trip');
+                        todasLasSolicitudes = todasLasSolicitudes.concat(trips);
+                    }
+                }
                 
-                const solicitudes = await supabaseRequest(query);
-                solicitudesData = solicitudes || [];
+                // Cargar eventos internos
+                if (tiposACargar.includes('internal_event')) {
+                    let queryEvents = `/svc_service_requests?select=*,evento:svc_internal_events!request_id(*),solicitante:workers!svc_service_requests_requested_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&service_type=eq.internal_event&approver_id=eq.${currentUser.worker_id}`;
+                    
+                    if (filtrosActivos.estado) {
+                        queryEvents += `&request_status=eq.${filtrosActivos.estado}`;
+                    }
+                    queryEvents += '&order=created_at.desc';
+                    
+                    const events = await supabaseRequest(queryEvents);
+                    if (events && events.length > 0) {
+                        events.forEach(s => s._tipo = 'internal_event');
+                        todasLasSolicitudes = todasLasSolicitudes.concat(events);
+                    }
+                }
                 
-                // Filtrar por fecha de salida (client-side porque es campo anidado)
+                // Ordenar todas por fecha de creación (más recientes primero)
+                todasLasSolicitudes.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                
+                solicitudesData = todasLasSolicitudes;
+                
+                // Filtrar por fecha (client-side)
                 if (filtrosActivos.fechaDesde) {
-                    solicitudesData = solicitudesData.filter(s => 
-                        s.trip?.trip_date >= filtrosActivos.fechaDesde
-                    );
+                    solicitudesData = solicitudesData.filter(s => {
+                        const fecha = s._tipo === 'pedagogical_trip'
+                            ? (Array.isArray(s.trip) ? s.trip[0]?.trip_date : s.trip?.trip_date)
+                            : (Array.isArray(s.evento) ? s.evento[0]?.event_date : s.evento?.event_date);
+                        return fecha >= filtrosActivos.fechaDesde;
+                    });
                 }
                 if (filtrosActivos.fechaHasta) {
-                    solicitudesData = solicitudesData.filter(s => 
-                        s.trip?.trip_date <= filtrosActivos.fechaHasta
-                    );
+                    solicitudesData = solicitudesData.filter(s => {
+                        const fecha = s._tipo === 'pedagogical_trip'
+                            ? (Array.isArray(s.trip) ? s.trip[0]?.trip_date : s.trip?.trip_date)
+                            : (Array.isArray(s.evento) ? s.evento[0]?.event_date : s.evento?.event_date);
+                        return fecha <= filtrosActivos.fechaHasta;
+                    });
                 }
                 
                 // Filtrar por solicitante
                 if (filtrosActivos.solicitante) {
-                    solicitudesData = solicitudesData.filter(s => 
-                        s.requested_by === filtrosActivos.solicitante
-                    );
+                    solicitudesData = solicitudesData.filter(s => s.requested_by === filtrosActivos.solicitante);
                 }
                 
                 // Cargar lista de solicitantes únicos para el filtro
-                const solicitantesUnicos = [...new Set(solicitudes.map(s => s.requested_by))];
+                const solicitantesUnicos = [...new Set(todasLasSolicitudes.map(s => s.requested_by))];
                 await cargarFiltroSolicitantes(solicitantesUnicos);
                 
                 // Renderizar
@@ -378,7 +424,7 @@
                 actualizarContador();
                 
             } catch (error) {
-                console.error('❌ Error cargando solicitudes:', error);
+                console.error('Error cargando solicitudes:', error);
                 showMessage('Error al cargar las solicitudes', 'danger');
                 document.getElementById('listaSolicitudes').innerHTML = 
                     '<div class="alert alert-danger">Error al cargar datos</div>';
@@ -420,133 +466,233 @@
             mensajeVacio.style.display = 'none';
             
             const html = solicitudesData.map(solicitud => {
-                // Manejar trip como array o objeto
-                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
-                if (!trip) {
-                    console.warn('⚠️ Solicitud sin trip asociado:', solicitud.request_id);
-                    return ''; // Skip si no hay datos de la salida
+                if (solicitud._tipo === 'internal_event') {
+                    return renderTarjetaEvento(solicitud);
+                } else {
+                    return renderTarjetaTrip(solicitud);
                 }
-                
-                const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || 'N/A';
-                const destino = trip.destination?.destination_name || 'N/A';
-                const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
-                const fechaSolicitud = formatDate(solicitud.requested_at);
-                const fechaSalida = formatDateLong(trip.trip_date);
-                
-                const totalParticipantes = (trip.planned_students || 0) + (trip.num_adults || 0);
-                
-                const costoTransporte = trip.total_transport_value || 0;
-                const costoRefrigerios = trip.total_catering_value || 0;
-                const costoEntradas = trip.total_entrance_value || 0;
-                const costoTotal = costoTransporte + costoRefrigerios + costoEntradas;
-                
-                const estadoClass = solicitud.request_status === 'approved' ? 'approved' : 
-                                   solicitud.request_status === 'rejected' ? 'rejected' : 'pending';
-                
-                const badgeEstado = getBadgeEstadoSolicitud(solicitud.request_status);
-                
-                // Botones según estado
-                let botonesAccion = '';
-                if (solicitud.request_status === 'pending') {
-                    botonesAccion = `
-                        <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
-                            <i class="bi bi-check-circle me-1"></i>Aprobar
-                        </button>
-                        <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
-                            <i class="bi bi-x-circle me-1"></i>Rechazar
-                        </button>
-                    `;
-                }
-                
-                return `
-                    <div class="card request-card ${estadoClass} mb-3">
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-8">
-                                    <div class="d-flex justify-content-between align-items-start mb-3">
-                                        <div>
-                                            <h5 class="card-title mb-1">
-                                                <i class="bi bi-backpack3 me-2"></i>${destino}
-                                            </h5>
-                                            <p class="text-muted mb-0">
-                                                <small>
-                                                    <i class="bi bi-calendar3 me-1"></i>${fechaSalida}
-                                                    <span class="mx-2">•</span>
-                                                    <i class="bi bi-people me-1"></i>${grados}
-                                                </small>
-                                            </p>
-                                        </div>
-                                        <div>
-                                            ${badgeEstado}
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="row g-2 mb-3">
-                                        <div class="col-md-6">
-                                            <small class="text-muted">Participantes:</small><br>
-                                            <strong>${trip.planned_students || 0} estudiantes + ${trip.num_adults || 0} adultos = ${totalParticipantes} total</strong>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <small class="text-muted">Solicitado por:</small><br>
-                                            <strong>${solicitante}</strong>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-2">
-                                        <small class="text-muted">Descripción:</small><br>
-                                        <span>${trip.trip_description || 'Sin descripción'}</span>
-                                    </div>
-                                    
-                                    <small class="text-muted">
-                                        <i class="bi bi-clock me-1"></i>Solicitado el ${fechaSolicitud}
-                                    </small>
-                                </div>
-                                
-                                <div class="col-md-4">
-                                    <div class="cost-breakdown">
-                                        <h6 class="mb-3">
-                                            <i class="bi bi-calculator me-2"></i>Costos
-                                        </h6>
-                                        <div class="cost-item">
-                                            <span>Transporte:</span>
-                                            <span>${formatCurrency(costoTransporte)}</span>
-                                        </div>
-                                        <div class="cost-item">
-                                            <span>Refrigerios:</span>
-                                            <span>${costoRefrigerios > 0 ? formatCurrency(costoRefrigerios) : 'No incluye'}</span>
-                                        </div>
-                                        <div class="cost-item">
-                                            <span>Entradas:</span>
-                                            <span>${costoEntradas > 0 ? formatCurrency(costoEntradas) : 'No incluye'}</span>
-                                        </div>
-                                        <div class="cost-item">
-                                            <span>TOTAL:</span>
-                                            <span class="text-primary">${formatCurrency(costoTotal)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
-                                <div class="alert alert-danger mb-0 mt-3">
-                                    <strong>Motivo del rechazo:</strong><br>
-                                    ${solicitud.rejection_reason}
-                                </div>
-                            ` : ''}
-                            
-                            <div class="mt-3 d-flex justify-content-end gap-2">
-                                <button class="btn btn-outline-info" onclick="verDetalleSolicitud('${solicitud.request_id}')">
-                                    <i class="bi bi-eye me-1"></i>Ver detalle completo
-                                </button>
-                                ${botonesAccion}
-                            </div>
-                        </div>
-                    </div>
-                `;
             }).join('');
             
             container.innerHTML = html;
         }
+        
+        function renderTarjetaTrip(solicitud) {
+            const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+            if (!trip) return '';
+            
+            const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || 'N/A';
+            const destino = trip.destination?.destination_name || 'N/A';
+            const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
+            const fechaSolicitud = formatDate(solicitud.requested_at);
+            const fechaSalida = formatDateLong(trip.trip_date);
+            const totalParticipantes = (trip.planned_students || 0) + (trip.num_adults || 0);
+            
+            const costoTransporte = trip.total_transport_value || 0;
+            const costoRefrigerios = trip.total_catering_value || 0;
+            const costoEntradas = trip.total_entrance_value || 0;
+            const costoTotal = costoTransporte + costoRefrigerios + costoEntradas;
+            
+            const estadoClass = solicitud.request_status === 'approved' ? 'approved' : 
+                               solicitud.request_status === 'rejected' ? 'rejected' : 'pending';
+            const badgeEstado = getBadgeEstadoSolicitud(solicitud.request_status);
+            
+            let botonesAccion = '';
+            if (solicitud.request_status === 'pending') {
+                botonesAccion = `
+                    <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
+                        <i class="bi bi-check-circle me-1"></i>Aprobar
+                    </button>
+                    <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
+                        <i class="bi bi-x-circle me-1"></i>Rechazar
+                    </button>
+                `;
+            }
+            
+            return `
+                <div class="card request-card ${estadoClass} mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <span class="badge bg-info mb-2">Salida Pedagogica</span>
+                                        <h5 class="card-title mb-1">
+                                            <i class="bi bi-backpack3 me-2"></i>${destino}
+                                        </h5>
+                                        <p class="text-muted mb-0">
+                                            <small>
+                                                <i class="bi bi-calendar3 me-1"></i>${fechaSalida}
+                                                <span class="mx-2">|</span>
+                                                <i class="bi bi-people me-1"></i>${grados}
+                                            </small>
+                                        </p>
+                                    </div>
+                                    <div>${badgeEstado}</div>
+                                </div>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-md-6">
+                                        <small class="text-muted">Participantes:</small><br>
+                                        <strong>${trip.planned_students || 0} estudiantes + ${trip.num_adults || 0} adultos = ${totalParticipantes} total</strong>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <small class="text-muted">Solicitado por:</small><br>
+                                        <strong>${solicitante}</strong>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">Descripcion:</small><br>
+                                    <span>${trip.trip_description || 'Sin descripcion'}</span>
+                                </div>
+                                <small class="text-muted">
+                                    <i class="bi bi-clock me-1"></i>Solicitado el ${fechaSolicitud}
+                                </small>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="cost-breakdown">
+                                    <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
+                                    <div class="cost-item">
+                                        <span>Transporte:</span>
+                                        <span>${formatCurrency(costoTransporte)}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Refrigerios:</span>
+                                        <span>${costoRefrigerios > 0 ? formatCurrency(costoRefrigerios) : 'No incluye'}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Entradas:</span>
+                                        <span>${costoEntradas > 0 ? formatCurrency(costoEntradas) : 'No incluye'}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>TOTAL:</span>
+                                        <span class="text-primary">${formatCurrency(costoTotal)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
+                            <div class="alert alert-danger mb-0 mt-3">
+                                <strong>Motivo del rechazo:</strong><br>
+                                ${solicitud.rejection_reason}
+                            </div>
+                        ` : ''}
+                        <div class="mt-3 d-flex justify-content-end gap-2">
+                            <button class="btn btn-outline-info" onclick="verDetalleSolicitud('${solicitud.request_id}')">
+                                <i class="bi bi-eye me-1"></i>Ver detalle completo
+                            </button>
+                            ${botonesAccion}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderTarjetaEvento(solicitud) {
+            const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+            if (!evento) return '';
+            
+            const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
+            const fechaSolicitud = formatDate(solicitud.requested_at);
+            const fechaEvento = formatDateLong(evento.event_date);
+            const totalParticipantes = (evento.num_students || 0) + (evento.num_adults || 0);
+            
+            const estadoClass = solicitud.request_status === 'approved' ? 'approved' : 
+                               solicitud.request_status === 'rejected' ? 'rejected' : 'pending';
+            const badgeEstado = getBadgeEstadoSolicitud(solicitud.request_status);
+            
+            let botonesAccion = '';
+            if (solicitud.request_status === 'pending') {
+                botonesAccion = `
+                    <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
+                        <i class="bi bi-check-circle me-1"></i>Aprobar
+                    </button>
+                    <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
+                        <i class="bi bi-x-circle me-1"></i>Rechazar
+                    </button>
+                `;
+            }
+            
+            return `
+                <div class="card request-card ${estadoClass} mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <span class="badge bg-primary mb-2">Evento Interno</span>
+                                        <h5 class="card-title mb-1">
+                                            <i class="bi bi-calendar-event me-2"></i>${evento.event_name}
+                                        </h5>
+                                        <p class="text-muted mb-0">
+                                            <small>
+                                                <i class="bi bi-calendar3 me-1"></i>${fechaEvento}
+                                                <span class="mx-2">|</span>
+                                                <i class="bi bi-clock me-1"></i>${evento.start_time?.substring(0,5)} - ${evento.end_time?.substring(0,5)}
+                                            </small>
+                                        </p>
+                                    </div>
+                                    <div>${badgeEstado}</div>
+                                </div>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Participantes:</small><br>
+                                        <strong>${evento.num_students || 0} estudiantes + ${evento.num_adults || 0} adultos = ${totalParticipantes} total</strong>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Ubicacion:</small><br>
+                                        <strong>${evento.event_location || 'N/A'}</strong>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted">Solicitado por:</small><br>
+                                        <strong>${solicitante}</strong>
+                                    </div>
+                                </div>
+                                <small class="text-muted">
+                                    <i class="bi bi-clock me-1"></i>Solicitado el ${fechaSolicitud}
+                                </small>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="cost-breakdown">
+                                    <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
+                                    <div class="cost-item">
+                                        <span>Costos detallados:</span>
+                                        <span class="text-muted"><em>Ver detalle</em></span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>ESTADO:</span>
+                                        <span>${getBadgeEstadoEvento(evento.event_status)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
+                            <div class="alert alert-danger mb-0 mt-3">
+                                <strong>Motivo del rechazo:</strong><br>
+                                ${solicitud.rejection_reason}
+                            </div>
+                        ` : ''}
+                        <div class="mt-3 d-flex justify-content-end gap-2">
+                            <button class="btn btn-outline-info" onclick="verDetalleSolicitud('${solicitud.request_id}')">
+                                <i class="bi bi-eye me-1"></i>Ver detalle completo
+                            </button>
+                            ${botonesAccion}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function getBadgeEstadoEvento(estado) {
+            const estados = {
+                'scheduled': '<span class="badge bg-primary">Programado</span>',
+                'completed': '<span class="badge bg-success">Completado</span>',
+                'suspended': '<span class="badge bg-warning">Suspendido</span>',
+                'cancelled': '<span class="badge bg-danger">Cancelado</span>'
+            };
+            return estados[estado] || '<span class="badge bg-secondary">Desconocido</span>';
+        }
+        
+
+        
       // ==================== APROBAR SOLICITUD ====================
         async function aprobarSolicitud(requestId) {
             // Confirmación
@@ -642,307 +788,198 @@
       // ==================== ENVIAR NOTIFICACIONES ====================
         async function enviarNotificacionAprobacion(solicitud, esAprobada, motivoRechazo = null) {
             try {
-                console.log('📧 Enviando notificaciones...', esAprobada ? 'APROBADA' : 'RECHAZADA');
-                
-                const trip = solicitud.trip;
-                if (!trip) {
-                    console.warn('⚠️ No hay datos de la salida para notificar');
-                    return;
-                }
+                console.log('Enviando notificaciones...', esAprobada ? 'APROBADA' : 'RECHAZADA');
                 
                 // Obtener email del solicitante
-                const solicitante = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1,worker_last_name_2&worker_id=eq.${solicitud.requested_by}`);
+                const solicitante = await supabaseRequest(`/workers?select=email,worker_first_name,worker_last_name_1&worker_id=eq.${solicitud.requested_by}`);
                 const emailSolicitante = solicitante?.[0]?.email;
                 const nombreSolicitante = solicitante?.[0] ? `${solicitante[0].worker_first_name} ${solicitante[0].worker_last_name_1}` : 'Usuario';
-
                 
                 if (!emailSolicitante) {
-                    console.warn('⚠️ No se encontró email del solicitante');
+                    console.warn('No se encontro email del solicitante');
                 }
                 
-                // Obtener email de coordinación de servicios desde configuración
-                const configEmail = await supabaseRequest(`/svc_module_config?select=config_value&config_key=eq.email_services_coordination`);
+                // Obtener email de coordinación
+                const configEmail = await supabaseRequest(`/svc_module_config?select=config_value&config_key=eq.email_coordination`);
                 const emailCoordinacion = configEmail?.[0]?.config_value;
                 
-                if (!emailCoordinacion) {
-                    console.warn('⚠️ No se encontró email de coordinación de servicios');
-                }
-                
-                // Datos de la salida
-                const destino = trip.destination?.destination_name || 'Destino no especificado';
-                const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || 'N/A';
-                const fechaSalida = formatDateLong(trip.trip_date);
                 const aprobador = currentUser.user_display_name || currentUser.user_name;
                 
-                // Construir asunto y contenido según estado
-                let asunto, htmlContent;
-                
-                if (esAprobada) {
-                    // SOLICITUD APROBADA
-                    asunto = `Solicitud Aprobada: Salida Pedagogica - ${destino}`;
-                    
-                    htmlContent = `
-                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
-                            <div style="background-color: #28a745; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                                <h1 style="margin: 0; font-size: 24px;">Solicitud Aprobada</h1>
-                            </div>
-                            
-                            <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
-                                    Hola <strong>${nombreSolicitante}</strong>,
-                                </p>
-                                
-                                <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
-                                    <p style="margin: 0; color: #155724; font-size: 16px; font-weight: bold;">
-                                        Tu solicitud de salida pedagogica ha sido APROBADA
-                                    </p>
-                                </div>
-                                
-                                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
-                                    <h3 style="color: #1b365d; margin-top: 0; margin-bottom: 15px; font-size: 18px;">Detalles de la Salida</h3>
-                                    
-                                    <table style="width: 100%; border-collapse: collapse;">
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Destino:</td>
-                                            <td style="padding: 8px 0; color: #333;">${destino}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td>
-                                            <td style="padding: 8px 0; color: #333;">${fechaSalida}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Grados:</td>
-                                            <td style="padding: 8px 0; color: #333;">${grados}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Aprobado por:</td>
-                                            <td style="padding: 8px 0; color: #333;">${aprobador}</td>
-                                        </tr>
-                                    </table>
-                                </div>
-                                
-                                <div style="background-color: #cfe2ff; border-left: 4px solid #0d6efd; padding: 15px; border-radius: 4px; margin-top: 20px;">
-                                    <p style="margin: 0; color: #084298; font-size: 14px;">
-                                        <strong>Proximos pasos:</strong><br>
-                                        Puedes continuar con la gestion de la salida en el modulo de <strong>Salidas Pedagogicas</strong> en SchoolNet.
-                                    </p>
-                                </div>
-                                
-                                <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
-                                    Este es un mensaje automatico del sistema SchoolNet.<br>
-                                    Por favor, no responder a este correo.
-                                </p>
-                            </div>
-                        </div>
-                    `;
-                    
+                if (solicitud._tipo === 'internal_event') {
+                    await notificarEvento(solicitud, esAprobada, motivoRechazo, emailSolicitante, nombreSolicitante, emailCoordinacion, aprobador);
                 } else {
-                    // SOLICITUD RECHAZADA
-                    asunto = `Solicitud Rechazada: Salida Pedagogica - ${destino}`;
-                    
-                    htmlContent = `
-                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
-                            <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                                <h1 style="margin: 0; font-size: 24px;">Solicitud Rechazada</h1>
-                            </div>
-                            
-                            <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
-                                    Hola <strong>${nombreSolicitante}</strong>,
-                                </p>
-                                
-                                <div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
-                                    <p style="margin: 0; color: #721c24; font-size: 16px; font-weight: bold;">
-                                        Tu solicitud de salida pedagogica ha sido RECHAZADA
-                                    </p>
-                                </div>
-                                
-                                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
-                                    <h3 style="color: #1b365d; margin-top: 0; margin-bottom: 15px; font-size: 18px;">Detalles de la Salida</h3>
-                                    
-                                    <table style="width: 100%; border-collapse: collapse;">
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Destino:</td>
-                                            <td style="padding: 8px 0; color: #333;">${destino}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td>
-                                            <td style="padding: 8px 0; color: #333;">${fechaSalida}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Grados:</td>
-                                            <td style="padding: 8px 0; color: #333;">${grados}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style="padding: 8px 0; color: #666; font-weight: bold;">Rechazado por:</td>
-                                            <td style="padding: 8px 0; color: #333;">${aprobador}</td>
-                                        </tr>
-                                    </table>
-                                </div>
-                                
-                                <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
-                                    <p style="margin: 0 0 10px 0; color: #856404; font-weight: bold;">Motivo del rechazo:</p>
-                                    <p style="margin: 0; color: #856404;">${motivoRechazo || 'No especificado'}</p>
-                                </div>
-                                
-                                <div style="background-color: #cfe2ff; border-left: 4px solid #0d6efd; padding: 15px; border-radius: 4px;">
-                                    <p style="margin: 0; color: #084298; font-size: 14px;">
-                                        <strong>Que puedes hacer?</strong><br>
-                                        Si tienes dudas sobre el motivo del rechazo, puedes contactar al aprobador o crear una nueva solicitud con los ajustes necesarios.
-                                    </p>
-                                </div>
-                                
-                                <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
-                                    Este es un mensaje automatico del sistema SchoolNet.<br>
-                                    Por favor, no responder a este correo.
-                                </p>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                // Enviar a solicitante
-                if (emailSolicitante) {
-                    await sendNotification(emailSolicitante, asunto, htmlContent, true);
-                    console.log('✅ Notificación enviada al solicitante:', emailSolicitante);
-                }
-                
-                // Enviar a coordinación de servicios
-                if (emailCoordinacion) {
-                    await sendNotification(emailCoordinacion, asunto, htmlContent, true);
-                    console.log('✅ Notificación enviada a coordinación:', emailCoordinacion);
+                    await notificarTrip(solicitud, esAprobada, motivoRechazo, emailSolicitante, nombreSolicitante, emailCoordinacion, aprobador);
                 }
                 
                 return true;
                 
             } catch (error) {
-                console.error('❌ Error enviando notificaciones:', error);
+                console.error('Error enviando notificaciones:', error);
                 return false;
             }
         }
+        
+        async function notificarTrip(solicitud, esAprobada, motivoRechazo, emailSolicitante, nombreSolicitante, emailCoordinacion, aprobador) {
+            const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+            if (!trip) return;
+            
+            const destino = trip.destination?.destination_name || 'Destino no especificado';
+            const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || 'N/A';
+            const fechaSalida = formatDateLong(trip.trip_date);
+            
+            const estadoTexto = esAprobada ? 'APROBADA' : 'RECHAZADA';
+            const colorHeader = esAprobada ? '#28a745' : '#dc3545';
+            const colorAlerta = esAprobada ? '#d4edda' : '#f8d7da';
+            const colorTextoAlerta = esAprobada ? '#155724' : '#721c24';
+            const asunto = `Solicitud ${estadoTexto}: Salida Pedagogica - ${destino}`;
+            
+            let htmlContent = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+                    <div style="background-color: ${colorHeader}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                        <h1 style="margin: 0; font-size: 24px;">Solicitud ${estadoTexto}</h1>
+                    </div>
+                    <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <p style="font-size: 16px; color: #333;">Hola <strong>${nombreSolicitante}</strong>,</p>
+                        <div style="background-color: ${colorAlerta}; border-left: 4px solid ${colorHeader}; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                            <p style="margin: 0; color: ${colorTextoAlerta}; font-size: 16px; font-weight: bold;">
+                                Tu solicitud de salida pedagogica ha sido ${estadoTexto}
+                            </p>
+                        </div>
+                        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1b365d; margin-top: 0; font-size: 18px;">Detalles de la Salida</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Destino:</td><td style="padding: 8px 0;">${destino}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td><td style="padding: 8px 0;">${fechaSalida}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Grados:</td><td style="padding: 8px 0;">${grados}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">${esAprobada ? 'Aprobado' : 'Rechazado'} por:</td><td style="padding: 8px 0;">${aprobador}</td></tr>
+                            </table>
+                        </div>
+                        ${!esAprobada && motivoRechazo ? `
+                        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                            <p style="margin: 0 0 10px 0; color: #856404; font-weight: bold;">Motivo del rechazo:</p>
+                            <p style="margin: 0; color: #856404;">${motivoRechazo}</p>
+                        </div>` : ''}
+                        <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
+                            Este es un mensaje automatico del sistema SchoolNet.<br>Por favor, no responder a este correo.
+                        </p>
+                    </div>
+                </div>
+            `;
+            
+            if (emailSolicitante) {
+                await sendNotification(emailSolicitante, asunto, htmlContent, true);
+                console.log('Notificacion enviada al solicitante:', emailSolicitante);
+            }
+            if (emailCoordinacion) {
+                await sendNotification(emailCoordinacion, asunto, htmlContent, true);
+                console.log('Notificacion enviada a coordinacion:', emailCoordinacion);
+            }
+        }
+        
+        async function notificarEvento(solicitud, esAprobada, motivoRechazo, emailSolicitante, nombreSolicitante, emailCoordinacion, aprobador) {
+            const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+            if (!evento) return;
+            
+            const fechaEvento = formatDateLong(evento.event_date);
+            const estadoTexto = esAprobada ? 'APROBADA' : 'RECHAZADA';
+            const colorHeader = esAprobada ? '#28a745' : '#dc3545';
+            const colorAlerta = esAprobada ? '#d4edda' : '#f8d7da';
+            const colorTextoAlerta = esAprobada ? '#155724' : '#721c24';
+            const asunto = `Solicitud ${estadoTexto}: Evento Interno - ${evento.event_name}`;
+            
+            let htmlContent = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+                    <div style="background-color: ${colorHeader}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                        <h1 style="margin: 0; font-size: 24px;">Solicitud ${estadoTexto}</h1>
+                    </div>
+                    <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <p style="font-size: 16px; color: #333;">Hola <strong>${nombreSolicitante}</strong>,</p>
+                        <div style="background-color: ${colorAlerta}; border-left: 4px solid ${colorHeader}; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                            <p style="margin: 0; color: ${colorTextoAlerta}; font-size: 16px; font-weight: bold;">
+                                Tu solicitud de evento interno ha sido ${estadoTexto}
+                            </p>
+                        </div>
+                        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                            <h3 style="color: #1b365d; margin-top: 0; font-size: 18px;">Detalles del Evento</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Evento:</td><td style="padding: 8px 0;">${evento.event_name}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td><td style="padding: 8px 0;">${fechaEvento}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Horario:</td><td style="padding: 8px 0;">${evento.start_time?.substring(0,5)} - ${evento.end_time?.substring(0,5)}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Ubicacion:</td><td style="padding: 8px 0;">${evento.event_location || 'N/A'}</td></tr>
+                                <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">${esAprobada ? 'Aprobado' : 'Rechazado'} por:</td><td style="padding: 8px 0;">${aprobador}</td></tr>
+                            </table>
+                        </div>
+                        ${!esAprobada && motivoRechazo ? `
+                        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                            <p style="margin: 0 0 10px 0; color: #856404; font-weight: bold;">Motivo del rechazo:</p>
+                            <p style="margin: 0; color: #856404;">${motivoRechazo}</p>
+                        </div>` : ''}
+                        <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
+                            Este es un mensaje automatico del sistema SchoolNet.<br>Por favor, no responder a este correo.
+                        </p>
+                    </div>
+                </div>
+            `;
+            
+            // 1. Notificar al solicitante
+            if (emailSolicitante) {
+                await sendNotification(emailSolicitante, asunto, htmlContent, true);
+                console.log('Notificacion enviada al solicitante:', emailSolicitante);
+            }
+            
+            // 2. Notificar a coordinación
+            if (emailCoordinacion) {
+                await sendNotification(emailCoordinacion, asunto, htmlContent, true);
+                console.log('Notificacion enviada a coordinacion:', emailCoordinacion);
+            }
+            
+            // 3. Si es RECHAZADA, notificar a todas las áreas de apoyo implicadas
+            if (!esAprobada) {
+                try {
+                    const services = await supabaseRequest(`/svc_internal_event_services?event_id=eq.${evento.event_id}&select=service_type,notified_email`);
+                    
+                    if (services && services.length > 0) {
+                        for (const svc of services) {
+                            if (svc.notified_email) {
+                                await sendNotification(svc.notified_email, asunto, htmlContent, true);
+                                console.log(`Notificacion de rechazo enviada a ${svc.service_type}: ${svc.notified_email}`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error notificando a areas de apoyo:', error);
+                }
+            }
+        }
+
+        
       // ==================== VER DETALLE SOLICITUD ====================
         async function verDetalleSolicitud(requestId) {
             try {
                 const solicitud = solicitudesData.find(s => s.request_id === requestId);
-                
-                if (!solicitud || !solicitud.trip) {
-                    showMessage('No se encontró la solicitud', 'danger');
+                if (!solicitud) {
+                    showMessage('No se encontro la solicitud', 'danger');
                     return;
                 }
                 
-                // Manejar trip como array o objeto
-                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
-                const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || 'N/A';
-                const destino = trip.destination?.destination_name || 'N/A';
-                const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
+                let detalleHTML = '';
                 
-                const detalleHTML = `
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <strong>Fecha de salida:</strong><br>
-                            ${formatDateLong(trip.trip_date)}
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Estado de solicitud:</strong><br>
-                            ${getBadgeEstadoSolicitud(solicitud.request_status)}
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Grados:</strong><br>
-                            ${grados}
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Destino:</strong><br>
-                            ${destino}
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Hora salida:</strong><br>
-                            ${trip.departure_time || 'N/A'}
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Hora regreso:</strong><br>
-                            ${trip.return_time || 'N/A'}
-                        </div>
-                        <div class="col-12">
-                            <strong>Descripcion:</strong><br>
-                            ${trip.trip_description || 'N/A'}
-                        </div>
-                        ${trip.inquiry_unit ? `
-                        <div class="col-12">
-                            <strong>Unidad de indagacion:</strong><br>
-                            ${trip.inquiry_unit}
-                        </div>
-                        ` : ''}
-                        ${trip.observations ? `
-                        <div class="col-12">
-                            <strong>Observaciones:</strong><br>
-                            ${trip.observations}
-                        </div>
-                        ` : ''}
-                        <div class="col-md-4">
-                            <strong>Estudiantes:</strong><br>
-                            ${trip.planned_students || 0}
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Adultos:</strong><br>
-                            ${trip.num_adults || 0}
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Total participantes:</strong><br>
-                            ${(trip.planned_students || 0) + (trip.num_adults || 0)}
-                        </div>
-                        ${trip.accompanying_adults ? `
-                        <div class="col-12">
-                            <strong>Adultos acompanantes:</strong><br>
-                            ${trip.accompanying_adults}
-                        </div>
-                        ` : ''}
-                        
-                        <div class="col-12 mt-4">
-                            <h6 class="border-bottom pb-2">Costos</h6>
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Transporte:</strong><br>
-                            ${formatCurrency(trip.total_transport_value || 0)}
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Refrigerios:</strong><br>
-                            ${trip.total_catering_value ? formatCurrency(trip.total_catering_value) : 'No incluye'}
-                        </div>
-                        <div class="col-md-4">
-                            <strong>Entradas:</strong><br>
-                            ${trip.total_entrance_value ? formatCurrency(trip.total_entrance_value) : 'No incluye'}
-                        </div>
-                        <div class="col-12">
-                            <strong class="fs-5">Costo Total:</strong>
-                            <span class="fs-4 text-primary fw-bold">${formatCurrency((trip.total_transport_value || 0) + (trip.total_catering_value || 0) + (trip.total_entrance_value || 0))}</span>
-                        </div>
-                        
-                        <div class="col-12 mt-4">
-                            <h6 class="border-bottom pb-2">Informacion de Solicitud</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Solicitado por:</strong><br>
-                            ${solicitante}
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Fecha de solicitud:</strong><br>
-                            ${formatDate(solicitud.requested_at)}
-                        </div>
-                        
-                        ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
-                        <div class="col-12">
-                            <div class="alert alert-danger">
-                                <strong>Motivo del rechazo:</strong><br>
-                                ${solicitud.rejection_reason}
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                `;
+                if (solicitud._tipo === 'internal_event') {
+                    detalleHTML = await renderDetalleEvento(solicitud);
+                } else {
+                    detalleHTML = renderDetalleTrip(solicitud);
+                }
                 
                 document.getElementById('detalleContent').innerHTML = detalleHTML;
-                const modal = new bootstrap.Modal(document.getElementById('modalDetalle'));
-                modal.show();
+                
+                const modalEl = document.getElementById('modalDetalle');
+                const existingModal = bootstrap.Modal.getInstance(modalEl);
+                if (existingModal) {
+                    existingModal.show();
+                } else {
+                    const modal = new bootstrap.Modal(modalEl);
+                    modal.show();
+                }
                 
             } catch (error) {
                 console.error('Error al ver detalle:', error);
@@ -950,9 +987,265 @@
             }
         }
         
+        function renderDetalleTrip(solicitud) {
+            const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+            if (!trip) return '<p>No hay datos de la salida</p>';
+            
+            const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || 'N/A';
+            const destino = trip.destination?.destination_name || 'N/A';
+            const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
+            
+            return `
+                <div class="row g-3">
+                    <div class="col-12">
+                        <span class="badge bg-info mb-2">Salida Pedagogica</span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Fecha de salida:</strong><br>
+                        ${formatDateLong(trip.trip_date)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Estado de solicitud:</strong><br>
+                        ${getBadgeEstadoSolicitud(solicitud.request_status)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Grados:</strong><br>
+                        ${grados}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Destino:</strong><br>
+                        ${destino}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Hora salida:</strong><br>
+                        ${trip.departure_time || 'N/A'}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Hora regreso:</strong><br>
+                        ${trip.return_time || 'N/A'}
+                    </div>
+                    <div class="col-12">
+                        <strong>Descripcion:</strong><br>
+                        ${trip.trip_description || 'N/A'}
+                    </div>
+                    ${trip.inquiry_unit ? `
+                    <div class="col-12">
+                        <strong>Unidad de indagacion:</strong><br>
+                        ${trip.inquiry_unit}
+                    </div>` : ''}
+                    ${trip.observations ? `
+                    <div class="col-12">
+                        <strong>Observaciones:</strong><br>
+                        ${trip.observations}
+                    </div>` : ''}
+                    <div class="col-md-4">
+                        <strong>Estudiantes:</strong><br>
+                        ${trip.planned_students || 0}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Adultos:</strong><br>
+                        ${trip.num_adults || 0}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Total participantes:</strong><br>
+                        ${(trip.planned_students || 0) + (trip.num_adults || 0)}
+                    </div>
+                    ${trip.accompanying_adults ? `
+                    <div class="col-12">
+                        <strong>Adultos acompanantes:</strong><br>
+                        ${trip.accompanying_adults}
+                    </div>` : ''}
+                    <div class="col-12 mt-4">
+                        <h6 class="border-bottom pb-2">Costos</h6>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Transporte:</strong><br>
+                        ${formatCurrency(trip.total_transport_value || 0)}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Refrigerios:</strong><br>
+                        ${trip.total_catering_value ? formatCurrency(trip.total_catering_value) : 'No incluye'}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Entradas:</strong><br>
+                        ${trip.total_entrance_value ? formatCurrency(trip.total_entrance_value) : 'No incluye'}
+                    </div>
+                    <div class="col-12">
+                        <strong class="fs-5">Costo Total:</strong>
+                        <span class="fs-4 text-primary fw-bold">${formatCurrency((trip.total_transport_value || 0) + (trip.total_catering_value || 0) + (trip.total_entrance_value || 0))}</span>
+                    </div>
+                    <div class="col-12 mt-4">
+                        <h6 class="border-bottom pb-2">Informacion de Solicitud</h6>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Solicitado por:</strong><br>
+                        ${solicitante}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Fecha de solicitud:</strong><br>
+                        ${formatDate(solicitud.requested_at)}
+                    </div>
+                    ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <strong>Motivo del rechazo:</strong><br>
+                            ${solicitud.rejection_reason}
+                        </div>
+                    </div>` : ''}
+                </div>
+            `;
+        }
+        
+        async function renderDetalleEvento(solicitud) {
+            const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+            if (!evento) return '<p>No hay datos del evento</p>';
+            
+            const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
+            
+            // Cargar datos adicionales del evento
+            let cateringHTML = '';
+            let staffHTML = '';
+            let servicesHTML = '';
+            let costoTotal = 0;
+            
+            try {
+                // Refrigerios
+                const catering = await supabaseRequest(`/svc_internal_event_catering?event_id=eq.${evento.event_id}&select=*,menu:svc_catering_menus(menu_name)`);
+                if (catering && catering.length > 0) {
+                    cateringHTML = '<div class="col-12 mt-3"><h6 class="border-bottom pb-2">Refrigerios</h6></div>';
+                    catering.forEach(item => {
+                        const grupo = item.target_group === 'students' ? 'Estudiantes' : 'Adultos';
+                        costoTotal += item.total_value || 0;
+                        cateringHTML += `
+                            <div class="col-md-6">
+                                <strong>${grupo}:</strong><br>
+                                ${item.menu?.menu_name || 'N/A'} x ${item.quantity} = ${formatCurrency(item.total_value)}
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Personal de apoyo
+                const staff = await supabaseRequest(`/svc_internal_event_support_staff?event_id=eq.${evento.event_id}&select=*`);
+                if (staff && staff.length > 0) {
+                    const staffLabels = {
+                        'cleaning': 'Aseo', 'cafeteria': 'Cafeteria',
+                        'maintenance': 'Mantenimiento', 'technology': 'Tecnologia'
+                    };
+                    staffHTML = '<div class="col-12 mt-3"><h6 class="border-bottom pb-2">Personal de Apoyo</h6></div>';
+                    staff.forEach(item => {
+                        staffHTML += `
+                            <div class="col-md-3">
+                                <strong>${staffLabels[item.area] || item.area}:</strong><br>
+                                ${item.staff_count} persona(s)
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Servicios de apoyo
+                const services = await supabaseRequest(`/svc_internal_event_services?event_id=eq.${evento.event_id}&select=*`);
+                if (services && services.length > 0) {
+                    const serviceLabels = {
+                        'staffing': 'Personal de Apoyo (Staffing)', 'communications': 'Comunicaciones',
+                        'technology': 'Recursos Tecnologicos', 'site_organization': 'Organizacion del Sitio',
+                        'resources': 'Recursos (Papeleria, Materiales)'
+                    };
+                    servicesHTML = '<div class="col-12 mt-3"><h6 class="border-bottom pb-2">Servicios de Apoyo</h6></div>';
+                    services.forEach(svc => {
+                        const costoRegistrado = svc.cost_value ? formatCurrency(svc.cost_value) : '<em class="text-muted">Pendiente de registro</em>';
+                        if (svc.cost_value) costoTotal += svc.cost_value;
+                        servicesHTML += `
+                            <div class="col-12 mb-2">
+                                <strong>${serviceLabels[svc.service_type] || svc.service_type}:</strong><br>
+                                <span>${svc.description || 'Sin descripcion'}</span><br>
+                                <small class="text-muted">Costo: ${costoRegistrado}</small>
+                            </div>
+                        `;
+                    });
+                }
+            } catch (error) {
+                console.error('Error cargando detalles del evento:', error);
+            }
+            
+            return `
+                <div class="row g-3">
+                    <div class="col-12">
+                        <span class="badge bg-primary mb-2">Evento Interno</span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Nombre del evento:</strong><br>
+                        ${evento.event_name}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Estado de solicitud:</strong><br>
+                        ${getBadgeEstadoSolicitud(solicitud.request_status)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Fecha:</strong><br>
+                        ${formatDateLong(evento.event_date)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Horario:</strong><br>
+                        ${evento.start_time?.substring(0,5)} - ${evento.end_time?.substring(0,5)}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Ubicacion:</strong><br>
+                        ${evento.event_location || 'N/A'}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Estado del evento:</strong><br>
+                        ${getBadgeEstadoEvento(evento.event_status)}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Estudiantes:</strong><br>
+                        ${evento.num_students || 0}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Adultos:</strong><br>
+                        ${evento.num_adults || 0}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Total participantes:</strong><br>
+                        ${(evento.num_students || 0) + (evento.num_adults || 0)}
+                    </div>
+                    ${cateringHTML}
+                    ${staffHTML}
+                    ${servicesHTML}
+                    <div class="col-12 mt-4">
+                        <h6 class="border-bottom pb-2">Costo Estimado</h6>
+                    </div>
+                    <div class="col-12">
+                        <strong class="fs-5">Total:</strong>
+                        <span class="fs-4 text-primary fw-bold">${formatCurrency(costoTotal)}</span>
+                        ${servicesHTML ? '<br><small class="text-muted"><em>* Algunos costos de servicios de apoyo pueden estar pendientes de registro</em></small>' : ''}
+                    </div>
+                    <div class="col-12 mt-4">
+                        <h6 class="border-bottom pb-2">Informacion de Solicitud</h6>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Solicitado por:</strong><br>
+                        ${solicitante}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Fecha de solicitud:</strong><br>
+                        ${formatDate(solicitud.requested_at)}
+                    </div>
+                    ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <strong>Motivo del rechazo:</strong><br>
+                            ${solicitud.rejection_reason}
+                        </div>
+                    </div>` : ''}
+                </div>
+            `;
+        }
+        
         // ==================== FILTROS ====================
         function aplicarFiltros() {
             filtrosActivos = {
+                tipo: document.getElementById('filtroTipo').value,
                 estado: document.getElementById('filtroEstado').value,
                 fechaDesde: document.getElementById('filtroFechaDesde').value,
                 fechaHasta: document.getElementById('filtroFechaHasta').value,
@@ -964,8 +1257,10 @@
         
         function limpiarFiltros() {
             document.getElementById('formFiltros').reset();
-            document.getElementById('filtroEstado').value = 'pending'; // Volver al default
+            document.getElementById('filtroTipo').value = '';
+            document.getElementById('filtroEstado').value = 'pending';
             filtrosActivos = {
+                tipo: '',
                 estado: 'pending'
             };
             
