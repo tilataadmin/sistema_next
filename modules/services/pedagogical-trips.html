@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.05.33">
+    <meta name="page-version" content="26.02.08.05.41">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1176,6 +1176,12 @@
         function abrirWizardNuevaSalida() {
             // Resetear formulario
             document.getElementById('formWizardSalida').reset();
+
+            document.getElementById('formWizardSalida').removeAttribute('data-editing-trip-id');
+            document.querySelector('#modalWizardSalida .modal-title').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Nueva Salida Pedagógica';
+            document.getElementById('btnWizardGuardar').innerHTML = '<i class="bi bi-check-circle me-1"></i>Guardar y Solicitar Aprobación';
+
+            
             currentWizardStep = 1;
             
             // Resetear wizard UI
@@ -1602,6 +1608,13 @@
             try {
                 showLoading('btnWizardGuardar');
                 
+                // Detectar si estamos editando o creando
+                const formulario = document.getElementById('formWizardSalida');
+                const tripIdEdicion = formulario.getAttribute('data-editing-trip-id');
+                const esEdicion = !!tripIdEdicion;
+                
+                console.log(esEdicion ? '📝 Modo: EDICIÓN' : '✨ Modo: CREAR NUEVA');
+                
                 // Validar campos requeridos
                 const gradosSeleccionados = Array.from(document.getElementById('wizardGrados').selectedOptions).map(o => o.value);
                 const destinoId = document.getElementById('wizardDestino').value;
@@ -1649,9 +1662,8 @@
                 const capacidadCongelada = detalleTransporte.capacidadCongelada || 0;
                 const numVehiculos = detalleTransporte.numeroVehiculos || 0;
                 
-                // Preparar datos para enviar (orden correcto: obligatorios primero, opcionales después)
+                // Preparar datos para enviar
                 const datosFormulario = {
-                    // ============ OBLIGATORIOS ============
                     // Información general
                     p_fecha: fecha,
                     p_hora_salida: horaSalida,
@@ -1686,50 +1698,66 @@
                     // Usuario actual
                     p_user_id: currentUser.user_id,
                     
-                    // ============ OPCIONALES (con DEFAULT) ============
-                    // Refrigerios
+                    // Opcionales
                     p_menu_id: menuId,
                     p_cantidad_refrigerios: cantidadRefrigerios,
                     p_precio_unitario_refrigerio: precioUnitarioRefrigerio,
                     p_costo_refrigerios: costoRefrigerios,
-                    
-                    // Entradas
                     p_valor_entrada: valorEntrada,
                     p_costo_entradas: costoEntradas,
-                    
-                    // Comentarios
                     p_comentarios: document.getElementById('wizardComentarios').value || null
                 };
                 
-                console.log('📤 Enviando datos de salida:', datosFormulario);
+                let resultado;
                 
-                // Enviar al backend
-                const resultado = await supabaseRequest('/rpc/create_pedagogical_trip', {
-                    method: 'POST',
-                    body: JSON.stringify(datosFormulario)
-                });
-                
-                console.log('📥 Respuesta del backend:', resultado);
-                
-                if (resultado && resultado.success) {
-                    showMessage('✅ ' + resultado.message, 'success');
+                if (esEdicion) {
+                    // MODO EDICIÓN: Actualizar salida existente
+                    datosFormulario.p_trip_id = tripIdEdicion;
                     
-                    // Enviar notificación al aprobador
-                    await enviarNotificacionAprobador(resultado.trip_id, resultado.request_id, aprobadorId, datosFormulario);
+                    console.log('📤 Actualizando salida:', datosFormulario);
+                    resultado = await supabaseRequest('/rpc/update_pedagogical_trip', {
+                        method: 'POST',
+                        body: JSON.stringify(datosFormulario)
+                    });
                     
-                    // Cerrar modal
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('modalWizardSalida'));
-                    if (modal) modal.hide();
+                    console.log('📥 Respuesta del backend:', resultado);
                     
-                    // Limpiar formulario
-                    const formulario = document.getElementById('formWizardSalida');
-                    if (formulario) formulario.reset();
+                    if (resultado && resultado.success) {
+                        showMessage('✅ ' + resultado.message, 'success');
+                    } else {
+                        throw new Error(resultado?.error || 'No se recibió respuesta del servidor');
+                    }
                     
-                    // Recargar tabla
-                    await cargarSalidas();
                 } else {
-                    throw new Error(resultado?.error || 'No se recibió respuesta del servidor');
+                    // MODO CREAR: Nueva salida
+                    console.log('📤 Creando nueva salida:', datosFormulario);
+                    resultado = await supabaseRequest('/rpc/create_pedagogical_trip', {
+                        method: 'POST',
+                        body: JSON.stringify(datosFormulario)
+                    });
+                    
+                    console.log('📥 Respuesta del backend:', resultado);
+                    
+                    if (resultado && resultado.success) {
+                        showMessage('✅ ' + resultado.message, 'success');
+                        
+                        // Enviar notificación al aprobador solo en creación
+                        await enviarNotificacionAprobador(resultado.trip_id, resultado.request_id, aprobadorId, datosFormulario);
+                    } else {
+                        throw new Error(resultado?.error || 'No se recibió respuesta del servidor');
+                    }
                 }
+                
+                // Cerrar modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('modalWizardSalida'));
+                if (modal) modal.hide();
+                
+                // Limpiar formulario
+                formulario.reset();
+                formulario.removeAttribute('data-editing-trip-id');
+                
+                // Recargar tabla
+                await cargarSalidas();
                 
             } catch (error) {
                 console.error('❌ Error guardando salida:', error);
@@ -2182,18 +2210,119 @@
         async function editarSalida(tripId) {
             try {
                 console.log('✏️ Editar salida:', tripId);
-                showMessage('La función de edición estará disponible próximamente. Por ahora, puede cancelar la salida y crear una nueva.', 'info');
+                showLoading('tablaSalidasBody');
                 
-                // TODO: Implementar edición completa
-                // Requiere:
-                // 1. Cargar datos de la salida en el wizard
-                // 2. Manejar la actualización (no creación nueva)
-                // 3. Actualizar grados asociados
-                // 4. Manejar cambios en la solicitud de aprobación
+                // Cargar datos completos de la salida
+                const salida = await supabaseRequest(`/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id)),request:svc_service_requests(approver_id)&trip_id=eq.${tripId}`);
+                
+                if (!salida || salida.length === 0) {
+                    throw new Error('No se encontró la salida');
+                }
+                
+                const datos = salida[0];
+                console.log('📥 Datos cargados:', datos);
+                
+                // Resetear wizard
+                document.getElementById('formWizardSalida').reset();
+                currentWizardStep = 1;
+                
+                // Llenar STEP 1: Información General
+                // Grados (múltiple selección)
+                const gradosIds = datos.svc_pedagogical_trip_grades.map(g => g.grades.grade_id);
+                const selectGrados = document.getElementById('wizardGrados');
+                Array.from(selectGrados.options).forEach(option => {
+                    option.selected = gradosIds.includes(option.value);
+                });
+                
+                // Destino
+                document.getElementById('wizardDestino').value = datos.destination_id;
+                
+                // Fecha
+                document.getElementById('wizardFecha').value = datos.trip_date;
+                
+                // Horas
+                document.getElementById('wizardHoraSalida').value = datos.departure_time;
+                document.getElementById('wizardHoraRegreso').value = datos.return_time;
+                
+                // Modalidad
+                document.querySelector(`input[name="wizardModalidad"][value="${datos.transport_modality}"]`).checked = true;
+                
+                // STEP 2: Descripción
+                document.getElementById('wizardDescripcion').value = datos.trip_description || '';
+                document.getElementById('wizardUnidadIndagacion').value = datos.inquiry_unit || '';
+                document.getElementById('wizardObservaciones').value = datos.observations || '';
+                
+                // STEP 3: Participantes
+                await calcularEstudiantes(); // Recalcula estudiantes según grados
+                document.getElementById('wizardNumAdultos').value = datos.num_adults;
+                document.getElementById('wizardAdultosNombres').value = datos.accompanying_adults || '';
+                actualizarTotalParticipantes();
+                
+                // STEP 4: Servicios Opcionales
+                // Refrigerios
+                if (datos.catering_menu_id) {
+                    document.getElementById('wizardIncluirRefrigerios').checked = true;
+                    document.getElementById('wizardRefrigeriosFields').style.display = 'block';
+                    document.getElementById('wizardMenuRefrigerio').value = datos.catering_menu_id;
+                    document.getElementById('wizardCantidadRefrigerios').value = datos.catering_quantity || 0;
+                } else {
+                    document.getElementById('wizardIncluirRefrigerios').checked = false;
+                    document.getElementById('wizardRefrigeriosFields').style.display = 'none';
+                }
+                
+                // Entradas
+                if (datos.entrance_unit_value) {
+                    document.getElementById('wizardIncluirEntradas').checked = true;
+                    document.getElementById('wizardEntradasFields').style.display = 'block';
+                    document.getElementById('wizardValorEntrada').value = datos.entrance_unit_value;
+                } else {
+                    document.getElementById('wizardIncluirEntradas').checked = false;
+                    document.getElementById('wizardEntradasFields').style.display = 'none';
+                }
+                
+                // STEP 5: Aprobación
+                if (datos.request && datos.request.approver_id) {
+                    document.getElementById('wizardAprobador').value = datos.request.approver_id;
+                }
+                
+                // Resetear UI del wizard
+                document.querySelectorAll('.wizard-step').forEach(step => {
+                    step.classList.remove('active', 'completed');
+                });
+                document.querySelectorAll('.wizard-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                document.querySelector('.wizard-step[data-step="1"]').classList.add('active');
+                document.querySelector('.wizard-content[data-step="1"]').classList.add('active');
+                
+                actualizarBotonesWizard();
+                actualizarProgressBar();
+                
+                // Calcular costos con los datos cargados
+                await calcularCostosWizard();
+                
+                // Guardar el trip_id en un atributo del formulario para saber que estamos editando
+                document.getElementById('formWizardSalida').setAttribute('data-editing-trip-id', tripId);
+                
+                // Cambiar título del modal
+                document.querySelector('#modalWizardSalida .modal-title').innerHTML = 
+                    '<i class="bi bi-pencil me-2"></i>Editar Salida Pedagógica';
+                
+                // Cambiar texto del botón de guardar
+                document.getElementById('btnWizardGuardar').innerHTML = 
+                    '<i class="bi bi-check-circle me-1"></i>Actualizar Salida';
+                
+                // Mostrar modal
+                const modal = new bootstrap.Modal(document.getElementById('modalWizardSalida'));
+                modal.show();
+                
+                hideLoading('tablaSalidasBody');
                 
             } catch (error) {
                 console.error('❌ Error al editar:', error);
                 showMessage('Error al cargar datos para edición: ' + error.message, 'danger');
+                hideLoading('tablaSalidasBody');
             }
         }
         
