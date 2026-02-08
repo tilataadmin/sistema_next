@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.15.05">
+    <meta name="page-version" content="26.02.08.15.15">
     
     <title>Eventos Internos - SchoolNet</title>
     
@@ -1052,7 +1052,7 @@
                     select.innerHTML = '<option value="">No hay aprobadores disponibles</option>';
                 } else {
                     const optionsHTML = approvers.map(approver => 
-                        `<option value="${approver.worker_id}">
+                        `<option value="${approver.worker_id}" data-email="${approver.email || ''}">
                             ${approver.worker_first_name} ${approver.worker_last_name_1}
                         </option>`
                     ).join('');
@@ -1064,13 +1064,13 @@
                 
                 // Intentar carga alternativa
                 try {
-                    const workers = await supabaseRequest('/workers?worker_status=eq.active&select=worker_id,worker_first_name,worker_last_name_1&order=worker_first_name');
+                    const workers = await supabaseRequest('/workers?worker_status=eq.active&select=worker_id,worker_first_name,worker_last_name_1,email&order=worker_first_name');
                     
                     if (workers) {
                         approvers = workers;
                         const select = document.getElementById('approverSelect');
                         const optionsHTML = workers.map(w => 
-                            `<option value="${w.worker_id}">${w.worker_first_name} ${w.worker_last_name_1}</option>`
+                            `<option value="${w.worker_id}" data-email="${w.email || ''}">${w.worker_first_name} ${w.worker_last_name_1}</option>`
                         ).join('');
                         select.innerHTML = '<option value="">Seleccione un aprobador...</option>' + optionsHTML;
                         console.log('✅ Aprobadores cargados (modo alternativo)');
@@ -1931,8 +1931,11 @@
                     console.log('✅ Servicios de apoyo insertados');
                 }
                 
-                // 6. TODO: Enviar notificaciones
-                console.log('📧 Notificaciones pendientes de implementar');
+                // 6. Enviar notificaciones
+                const notifResult = await sendEventNotifications(wizardData);
+                if (notifResult.failed > 0) {
+                    console.warn(`⚠️ ${notifResult.failed} notificación(es) no pudieron enviarse`);
+                }
                 
                 // Éxito
                 showMessage('Evento creado exitosamente. Se ha enviado la solicitud de aprobación.', 'success');
@@ -2189,6 +2192,244 @@
                 showMessage('Error al cambiar el estado del evento', 'danger');
             }
         }
+
+        // ==========================================
+        // NOTIFICACIONES DE EVENTOS
+        // ==========================================
+        
+        function generateEventEmailHTML(data, recipientContext) {
+            let contextHeader = '';
+            
+            if (recipientContext === 'approver') {
+                contextHeader = `
+                    <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+                        <h2 style="color: #856404; margin-top: 0; margin-bottom: 5px;">📋 Solicitud de Aprobación</h2>
+                        <p style="margin: 0; color: #856404;">Se requiere su aprobación para el siguiente evento interno.</p>
+                    </div>`;
+            } else if (recipientContext === 'coordination') {
+                contextHeader = `
+                    <div style="background-color: #cff4fc; border-left: 4px solid #0dcaf0; padding: 15px; margin-bottom: 20px;">
+                        <h2 style="color: #055160; margin-top: 0; margin-bottom: 5px;">📌 Nuevo Evento Programado</h2>
+                        <p style="margin: 0; color: #055160;">Se ha programado un nuevo evento interno. A continuación el detalle.</p>
+                    </div>`;
+            } else if (recipientContext === 'service_area') {
+                contextHeader = `
+                    <div style="background-color: #d1e7dd; border-left: 4px solid #198754; padding: 15px; margin-bottom: 20px;">
+                        <h2 style="color: #0f5132; margin-top: 0; margin-bottom: 5px;">🔔 Servicio de Apoyo Solicitado</h2>
+                        <p style="margin: 0; color: #0f5132;">Se ha solicitado su apoyo para el siguiente evento interno.</p>
+                    </div>`;
+            }
+        
+            // Información básica
+            let html = `
+            <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                ${contextHeader}
+                <div style="background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h3 style="color: #1b365d; margin-top: 0;">Información del Evento</h3>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #dee2e6; background: #f8f9fa; font-weight: bold; width: 35%;">Nombre</td>
+                            <td style="padding: 8px; border: 1px solid #dee2e6;">${data.eventName}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #dee2e6; background: #f8f9fa; font-weight: bold;">Fecha</td>
+                            <td style="padding: 8px; border: 1px solid #dee2e6;">${formatDateDisplay(data.eventDate)}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #dee2e6; background: #f8f9fa; font-weight: bold;">Horario</td>
+                            <td style="padding: 8px; border: 1px solid #dee2e6;">${data.startTime} - ${data.endTime}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #dee2e6; background: #f8f9fa; font-weight: bold;">Ubicación</td>
+                            <td style="padding: 8px; border: 1px solid #dee2e6;">${data.eventLocation}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #dee2e6; background: #f8f9fa; font-weight: bold;">Estudiantes</td>
+                            <td style="padding: 8px; border: 1px solid #dee2e6;">${data.numStudents}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #dee2e6; background: #f8f9fa; font-weight: bold;">Adultos</td>
+                            <td style="padding: 8px; border: 1px solid #dee2e6;">${data.numAdults}</td>
+                        </tr>
+                    </table>`;
+        
+            // Refrigerios
+            const hasCatering = data.cateringStudents.enabled || data.cateringAdults.enabled;
+            if (hasCatering) {
+                html += `<h3 style="color: #1b365d;">Refrigerios</h3>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
+                        <tr style="background: #1b365d; color: white;">
+                            <th style="padding: 8px; border: 1px solid #dee2e6;">Grupo</th>
+                            <th style="padding: 8px; border: 1px solid #dee2e6;">Menú</th>
+                            <th style="padding: 8px; border: 1px solid #dee2e6; text-align: center;">Cantidad</th>
+                            <th style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">Total</th>
+                        </tr>`;
+                
+                if (data.cateringStudents.enabled) {
+                    html += `<tr>
+                        <td style="padding: 8px; border: 1px solid #dee2e6;">Estudiantes</td>
+                        <td style="padding: 8px; border: 1px solid #dee2e6;">${data.cateringStudents.menuName}</td>
+                        <td style="padding: 8px; border: 1px solid #dee2e6; text-align: center;">${data.cateringStudents.quantity}</td>
+                        <td style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">$${formatCurrency(data.cateringStudents.total)}</td>
+                    </tr>`;
+                }
+                if (data.cateringAdults.enabled) {
+                    html += `<tr>
+                        <td style="padding: 8px; border: 1px solid #dee2e6;">Adultos</td>
+                        <td style="padding: 8px; border: 1px solid #dee2e6;">${data.cateringAdults.menuName}</td>
+                        <td style="padding: 8px; border: 1px solid #dee2e6; text-align: center;">${data.cateringAdults.quantity}</td>
+                        <td style="padding: 8px; border: 1px solid #dee2e6; text-align: right;">$${formatCurrency(data.cateringAdults.total)}</td>
+                    </tr>`;
+                }
+                html += `</table>`;
+            }
+        
+            // Personal de apoyo
+            const hasSupportStaff = Object.values(data.supportStaff).some(s => s.enabled);
+            if (hasSupportStaff) {
+                html += `<h3 style="color: #1b365d;">Personal de Apoyo</h3><ul style="margin-bottom: 15px;">`;
+                Object.keys(data.supportStaff).forEach(type => {
+                    if (data.supportStaff[type].enabled) {
+                        html += `<li>${getStaffLabel(type)}: ${data.supportStaff[type].count} persona(s)</li>`;
+                    }
+                });
+                html += `</ul>`;
+            }
+        
+            // Servicios de apoyo
+            const hasServices = Object.values(data.services).some(s => s.enabled);
+            if (hasServices) {
+                html += `<h3 style="color: #1b365d;">Servicios de Apoyo Solicitados</h3>`;
+                Object.keys(data.services).forEach(type => {
+                    if (data.services[type].enabled) {
+                        html += `<p style="margin-bottom: 10px;"><strong>${getServiceLabel(type)}:</strong><br>${data.services[type].description}</p>`;
+                    }
+                });
+            }
+        
+            // Costo estimado
+            let totalCost = 0;
+            if (data.cateringStudents.enabled) totalCost += data.cateringStudents.total;
+            if (data.cateringAdults.enabled) totalCost += data.cateringAdults.total;
+        
+            html += `
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                        <h3 style="color: #1b365d; margin-top: 0;">Costo Estimado</h3>
+                        <p style="font-size: 1.2em; font-weight: bold; color: #1b365d; margin: 0;">$${formatCurrency(totalCost)}</p>
+                        ${hasServices ? '<p style="color: #6c757d; font-size: 0.85em; margin: 5px 0 0 0;"><em>* Costos de servicios de apoyo pendientes de registro por cada área.</em></p>' : ''}
+                    </div>
+                </div>
+                <p style="text-align: center; color: #6c757d; font-size: 0.8em; margin-top: 15px;">
+                    Este es un mensaje automático del sistema SchoolNet.<br>
+                    Por favor, no responder a este mensaje.<br>
+                    Colegio Tilata - Sistema de Gestión Educativa
+                </p>
+            </div>`;
+        
+            return html;
+        }
+
+        async function sendEventNotifications(data) {
+            console.log('📧 Iniciando envío de notificaciones...');
+            let sent = 0;
+            let failed = 0;
+        
+            // 1. Notificación al aprobador
+            try {
+                const approverSelect = document.getElementById('approverSelect');
+                const selectedOption = approverSelect.options[approverSelect.selectedIndex];
+                const approverEmail = selectedOption.dataset.email;
+                const approverName = selectedOption.text.trim();
+        
+                if (approverEmail) {
+                    const subject = `SchoolNet - Solicitud de aprobación: ${data.eventName}`;
+                    const html = generateEventEmailHTML(data, 'approver');
+                    const result = await sendNotification(approverEmail, subject, html);
+                    if (result) {
+                        console.log(`✅ Notificación enviada al aprobador: ${approverName} (${approverEmail})`);
+                        sent++;
+                    } else {
+                        console.warn(`⚠️ No se pudo notificar al aprobador: ${approverEmail}`);
+                        failed++;
+                    }
+                } else {
+                    console.warn('⚠️ El aprobador no tiene email registrado');
+                    failed++;
+                }
+            } catch (error) {
+                console.error('Error notificando al aprobador:', error);
+                failed++;
+            }
+        
+            // 2. Notificaciones fijas: coordinación, recepción, portería
+            const fixedRecipients = [
+                { key: 'coordination', label: 'Coordinación de servicios' },
+                { key: 'reception', label: 'Recepción' },
+                { key: 'security', label: 'Portería' }
+            ];
+        
+            for (const recipient of fixedRecipients) {
+                try {
+                    const email = serviceEmails[recipient.key];
+                    if (email) {
+                        const subject = `SchoolNet - Evento programado: ${data.eventName}`;
+                        const html = generateEventEmailHTML(data, 'coordination');
+                        const result = await sendNotification(email, subject, html);
+                        if (result) {
+                            console.log(`✅ Notificación enviada a ${recipient.label}: ${email}`);
+                            sent++;
+                        } else {
+                            console.warn(`⚠️ No se pudo notificar a ${recipient.label}: ${email}`);
+                            failed++;
+                        }
+                    } else {
+                        console.warn(`⚠️ No hay email configurado para ${recipient.label}`);
+                    }
+                } catch (error) {
+                    console.error(`Error notificando a ${recipient.label}:`, error);
+                    failed++;
+                }
+            }
+        
+            // 3. Notificaciones a áreas de servicios de apoyo solicitados
+            const serviceEmailMap = {
+                'staffing': 'hr',
+                'communications': 'communications',
+                'technology': 'technology',
+                'site_organization': 'site_organization',
+                'resources': 'resources'
+            };
+        
+            for (const [serviceType, emailKey] of Object.entries(serviceEmailMap)) {
+                if (data.services[serviceType].enabled) {
+                    try {
+                        const email = serviceEmails[emailKey];
+                        if (email) {
+                            const subject = `SchoolNet - Apoyo solicitado para evento: ${data.eventName}`;
+                            const html = generateEventEmailHTML(data, 'service_area');
+                            const result = await sendNotification(email, subject, html);
+                            if (result) {
+                                console.log(`✅ Notificación enviada a ${getServiceLabel(serviceType)}: ${email}`);
+                                sent++;
+                            } else {
+                                console.warn(`⚠️ No se pudo notificar a ${getServiceLabel(serviceType)}: ${email}`);
+                                failed++;
+                            }
+                        } else {
+                            console.warn(`⚠️ No hay email configurado para ${getServiceLabel(serviceType)}`);
+                        }
+                    } catch (error) {
+                        console.error(`Error notificando a ${getServiceLabel(serviceType)}:`, error);
+                        failed++;
+                    }
+                }
+            }
+        
+            console.log(`📧 Notificaciones completadas: ${sent} enviadas, ${failed} fallidas`);
+            return { sent, failed };
+        }
+
+        
         // ==========================================
         // CONTROL DEL WIZARD
         // ==========================================
