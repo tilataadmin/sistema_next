@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.05.47">
+    <meta name="page-version" content="26.02.08.06.40">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -773,7 +773,8 @@
             menus: [],
             aprobadores: [],
             salidas: [],
-            detalleTransporte: null // Info de vehículos calculados para optimización
+            detalleTransporte: null, // Info de vehículos calculados para optimización
+            diasMinimosAntelacion: 7 // Días mínimos de antelación (se carga de config)
         };
         
         // ==================== INICIALIZACIÓN ====================
@@ -864,6 +865,20 @@
                     console.warn('⚠️ Fallback: Cargando todos los workers activos');
                     const todosWorkers = await supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active&order=worker_first_name');
                     datosGlobales.aprobadores = todosWorkers || [];
+                }
+                
+                // Cargar parámetros del módulo (días mínimos de antelación)
+                try {
+                    const configDias = await supabaseRequest('/svc_module_config?select=config_value&config_key=eq.min_days_advance');
+                    if (configDias && configDias.length > 0) {
+                        datosGlobales.diasMinimosAntelacion = parseInt(configDias[0].config_value) || 7;
+                    } else {
+                        datosGlobales.diasMinimosAntelacion = 7; // Default
+                    }
+                    console.log('✅ Días mínimos de antelación:', datosGlobales.diasMinimosAntelacion);
+                } catch (error) {
+                    console.warn('⚠️ Error cargando configuración de días mínimos, usando default 7:', error);
+                    datosGlobales.diasMinimosAntelacion = 7;
                 }
                 
                 // Llenar selects
@@ -975,6 +990,41 @@
             // Búsqueda de estudiantes en asistencia
             document.getElementById('buscarEstudiante').addEventListener('input', function() {
                 filtrarEstudiantesAsistencia(this.value);
+            });
+            
+            // Validar fecha en tiempo real al cambiar
+            document.getElementById('wizardFecha').addEventListener('change', function() {
+                const fechaSalida = new Date(this.value + 'T00:00:00');
+                const hoy = new Date();
+                hoy.setHours(0, 0, 0, 0);
+                fechaSalida.setHours(0, 0, 0, 0);
+                
+                const diasDiferencia = Math.ceil((fechaSalida - hoy) / (1000 * 60 * 60 * 24));
+                const diasMinimos = datosGlobales.diasMinimosAntelacion || 7;
+                
+                // Crear o actualizar mensaje de ayuda
+                let helpText = this.parentElement.querySelector('.fecha-help-text');
+                if (!helpText) {
+                    helpText = document.createElement('small');
+                    helpText.className = 'fecha-help-text';
+                    helpText.style.display = 'block';
+                    helpText.style.marginTop = '5px';
+                    this.parentElement.appendChild(helpText);
+                }
+                
+                if (diasDiferencia < diasMinimos) {
+                    this.classList.add('is-invalid');
+                    helpText.className = 'fecha-help-text text-danger';
+                    helpText.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>Faltan ${diasMinimos - diasDiferencia} día${(diasMinimos - diasDiferencia) !== 1 ? 's' : ''} para cumplir el mínimo de ${diasMinimos} días de anticipación`;
+                } else if (diasDiferencia === diasMinimos) {
+                    this.classList.remove('is-invalid');
+                    helpText.className = 'fecha-help-text text-warning';
+                    helpText.innerHTML = `<i class="bi bi-check-circle me-1"></i>Fecha válida (justo en el mínimo de ${diasMinimos} días)`;
+                } else {
+                    this.classList.remove('is-invalid');
+                    helpText.className = 'fecha-help-text text-success';
+                    helpText.innerHTML = `<i class="bi bi-check-circle me-1"></i>Fecha válida (${diasDiferencia} días de anticipación)`;
+                }
             });
         }
         
@@ -1225,6 +1275,36 @@
             if (!valido) {
                 showMessage('Por favor complete todos los campos requeridos', 'warning');
                 return;
+            }
+            
+            // VALIDACIÓN ESPECIAL PARA PASO 1: Fecha mínima de antelación
+            if (currentWizardStep === 1) {
+                const fechaSalidaInput = document.getElementById('wizardFecha');
+                const fechaSalida = new Date(fechaSalidaInput.value + 'T00:00:00');
+                const hoy = new Date();
+                hoy.setHours(0, 0, 0, 0);
+                fechaSalida.setHours(0, 0, 0, 0);
+                
+                const diasDiferencia = Math.ceil((fechaSalida - hoy) / (1000 * 60 * 60 * 24));
+                const diasMinimos = datosGlobales.diasMinimosAntelacion || 7;
+                
+                if (diasDiferencia < diasMinimos) {
+                    showMessage(
+                        `❌ La fecha de la salida debe ser con al menos ${diasMinimos} días de anticipación. ` +
+                        `Actualmente hay ${diasDiferencia} día${diasDiferencia !== 1 ? 's' : ''} de diferencia.`,
+                        'warning'
+                    );
+                    fechaSalidaInput.classList.add('is-invalid');
+                    
+                    // Scroll hacia el campo con error
+                    fechaSalidaInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    fechaSalidaInput.focus();
+                    
+                    return; // Detener avance del wizard
+                }
+                
+                // Si la fecha pasa la validación, remover clase invalid
+                fechaSalidaInput.classList.remove('is-invalid');
             }
             
             // Marcar como completado
@@ -2049,163 +2129,228 @@
             }
         }
         
-        // Funciones placeholder (se implementarán según necesidad)
+        // ==================== VER DETALLE DE SALIDA ====================
         async function verDetalleSalida(tripId) {
             try {
                 console.log('📋 Ver detalle:', tripId);
                 
-                // Obtener detalles completos de la salida
+                // Cargar datos de la salida
                 const salida = await supabaseRequest(`/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),destination:svc_transport_destinations(destination_name,destination_address),menu:svc_catering_menus(menu_name,unit_price),request:svc_service_requests(request_status,approver_id,workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1))&trip_id=eq.${tripId}`);
+                
                 if (!salida || salida.length === 0) {
-                    throw new Error('No se encontró la salida');
+                    showMessage('No se encontró la salida', 'danger');
+                    return;
                 }
                 
                 const datos = salida[0];
                 
-                // Formatear fecha
-                const fecha = new Date(datos.trip_date + 'T00:00:00').toLocaleDateString('es-CO', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
+                // Cargar lista de estudiantes (solo si el estado es Inminente, En proceso o Realizada)
+                let estudiantesHTML = '';
+                if (['imminent', 'in_progress', 'completed'].includes(datos.trip_status)) {
+                    try {
+                        const estudiantes = await supabaseRequest(`/rpc/get_pedagogical_trip_students?trip_id_param=${tripId}`);
+                        
+                        if (estudiantes && estudiantes.length > 0) {
+                            // Separar asistentes y desvinculados
+                            const asistentes = estudiantes.filter(e => e.is_attending);
+                            const desvinculados = estudiantes.filter(e => !e.is_attending);
+                            
+                            estudiantesHTML = `
+                                <div class="mt-4">
+                                    <h6 class="border-bottom pb-2">
+                                        <i class="bi bi-people-fill me-2"></i>Estudiantes
+                                        <span class="badge bg-success ms-2">${asistentes.length} asistentes</span>
+                                        ${desvinculados.length > 0 ? `<span class="badge bg-warning ms-1">${desvinculados.length} desvinculados</span>` : ''}
+                                    </h6>
+                                    
+                                    ${asistentes.length > 0 ? `
+                                        <div class="mb-3">
+                                            <strong class="text-success">
+                                                <i class="bi bi-check-circle-fill me-1"></i>Asistentes (${asistentes.length})
+                                            </strong>
+                                            <div class="mt-2" style="max-height: 300px; overflow-y: auto;">
+                                                ${agruparEstudiantesPorCurso(asistentes, true)}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    ${desvinculados.length > 0 ? `
+                                        <div class="mb-3">
+                                            <strong class="text-warning">
+                                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Desvinculados (${desvinculados.length})
+                                            </strong>
+                                            <div class="mt-2" style="max-height: 200px; overflow-y: auto;">
+                                                ${agruparEstudiantesPorCurso(desvinculados, false)}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ No se pudieron cargar los estudiantes:', error);
+                        // No mostrar error al usuario, solo omitir la sección
+                    }
+                }
                 
-                // Obtener grados
-                const grados = datos.svc_pedagogical_trip_grades.map(g => g.grades.grade_name).join(', ');
-                
-                // Obtener aprobador
+                // Construir HTML del detalle
+                const grados = datos.svc_pedagogical_trip_grades?.map(g => g.grades.grade_name).join(', ') || 'N/A';
+                const destino = datos.destination?.destination_name || 'N/A';
+                const direccion = datos.destination?.destination_address || '';
+                const menu = datos.menu?.menu_name || 'No incluye';
                 const aprobador = datos.request?.workers ? 
                     `${datos.request.workers.worker_first_name} ${datos.request.workers.worker_last_name_1}` : 
-                    'No especificado';
+                    'N/A';
+                const estadoSolicitud = datos.request?.request_status || 'N/A';
                 
-                // Estado de la solicitud
-                const estadoSolicitud = datos.request?.request_status || 'pending';
-                const estadoBadge = {
-                    'pending': '<span class="badge bg-warning">Pendiente</span>',
-                    'approved': '<span class="badge bg-success">Aprobada</span>',
-                    'rejected': '<span class="badge bg-danger">Rechazada</span>'
-                }[estadoSolicitud] || '<span class="badge bg-secondary">Desconocido</span>';
-                
-                // Estado de la salida
-                const estadoSalida = {
-                    'scheduled': '<span class="badge bg-info">Programada</span>',
-                    'imminent': '<span class="badge bg-warning">Inminente</span>',
-                    'in_progress': '<span class="badge bg-primary">En progreso</span>',
-                    'completed': '<span class="badge bg-success">Completada</span>',
-                    'suspended': '<span class="badge bg-danger">Suspendida</span>',
-                    'cancelled': '<span class="badge bg-secondary">Cancelada</span>'
-                }[datos.trip_status] || '<span class="badge bg-secondary">Desconocido</span>';
-                
-                // Construir HTML del modal
                 const detalleHTML = `
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <strong>Destino:</strong><br>
-                            ${datos.destination?.destination_name || 'No especificado'}
-                        </div>
-                        <div class="col-md-6 mb-3">
+                    <div class="row g-3">
+                        <div class="col-md-6">
                             <strong>Fecha:</strong><br>
-                            ${fecha}
+                            ${formatearFecha(datos.trip_date)}
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <strong>Horario:</strong><br>
-                            ${datos.departure_time} - ${datos.return_time}
+                        <div class="col-md-6">
+                            <strong>Estado:</strong><br>
+                            ${getBadgeEstado(datos.trip_status)}
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <strong>Modalidad:</strong><br>
-                            ${datos.transport_modality === 'round_trip' ? 'Ida y vuelta' : datos.transport_modality === 'outbound' ? 'Solo ida' : 'Solo vuelta'}
-                        </div>
-                        <div class="col-md-12 mb-3">
+                        <div class="col-md-6">
                             <strong>Grados:</strong><br>
                             ${grados}
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <strong>Estudiantes planeados:</strong><br>
-                            ${datos.planned_students}
+                        <div class="col-md-6">
+                            <strong>Destino:</strong><br>
+                            ${destino}
+                            ${direccion ? `<br><small class="text-muted">${direccion}</small>` : ''}
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <strong>Adultos acompañantes:</strong><br>
-                            ${datos.num_adults}
+                        <div class="col-md-6">
+                            <strong>Hora salida:</strong><br>
+                            ${datos.departure_time || 'N/A'}
                         </div>
-                        ${datos.accompanying_adults ? `
-                        <div class="col-md-12 mb-3">
-                            <strong>Nombres de adultos:</strong><br>
-                            ${datos.accompanying_adults}
+                        <div class="col-md-6">
+                            <strong>Hora regreso:</strong><br>
+                            ${datos.return_time || 'N/A'}
                         </div>
-                        ` : ''}
-                        ${datos.trip_description ? `
-                        <div class="col-md-12 mb-3">
+                        <div class="col-12">
                             <strong>Descripción:</strong><br>
-                            ${datos.trip_description}
+                            ${datos.trip_description || 'N/A'}
                         </div>
-                        ` : ''}
                         ${datos.inquiry_unit ? `
-                        <div class="col-md-12 mb-3">
-                            <strong>Unidad de Indagación:</strong><br>
+                        <div class="col-12">
+                            <strong>Unidad de indagación:</strong><br>
                             ${datos.inquiry_unit}
                         </div>
                         ` : ''}
                         ${datos.observations ? `
-                        <div class="col-md-12 mb-3">
+                        <div class="col-12">
                             <strong>Observaciones:</strong><br>
                             ${datos.observations}
                         </div>
                         ` : ''}
-                        
-                        <div class="col-md-12 mb-3">
-                            <hr>
-                            <h6>Costos</h6>
+                        <div class="col-md-4">
+                            <strong>Estudiantes planeados:</strong><br>
+                            ${datos.planned_students || 0}
                         </div>
+                        <div class="col-md-4">
+                            <strong>Estudiantes reales:</strong><br>
+                            ${datos.actual_students || datos.planned_students || 0}
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Adultos:</strong><br>
+                            ${datos.num_adults || 0}
+                        </div>
+                        ${datos.accompanying_adults ? `
+                        <div class="col-12">
+                            <strong>Adultos acompañantes:</strong><br>
+                            ${datos.accompanying_adults}
+                        </div>
+                        ` : ''}
                         
-                        <div class="col-md-6 mb-2">
+                        <div class="col-12 mt-4">
+                            <h6 class="border-bottom pb-2"><i class="bi bi-currency-dollar me-2"></i>Costos</h6>
+                        </div>
+                        <div class="col-md-4">
                             <strong>Transporte:</strong><br>
-                            $${formatNumber(datos.total_transport_value || 0)}
-                            ${datos.frozen_vehicle_count ? `<small class="text-muted">(${datos.frozen_vehicle_count} vehículo${datos.frozen_vehicle_count > 1 ? 's' : ''})</small>` : ''}
+                            ${formatearMoneda(datos.transport_cost || 0)}
                         </div>
-                        <div class="col-md-6 mb-2">
+                        <div class="col-md-4">
                             <strong>Refrigerios:</strong><br>
-                            $${formatNumber(datos.total_catering_value || 0)}
-                            ${datos.catering_quantity ? `<small class="text-muted">(${datos.catering_quantity} unidades)</small>` : ''}
+                            ${datos.catering_menu_id ? formatearMoneda(datos.catering_cost || 0) : 'No incluye'}
+                            ${datos.catering_menu_id ? `<br><small class="text-muted">${menu}</small>` : ''}
                         </div>
-                        <div class="col-md-6 mb-2">
+                        <div class="col-md-4">
                             <strong>Entradas:</strong><br>
-                            $${formatNumber(datos.total_entrance_value || 0)}
+                            ${datos.entrance_unit_value ? formatearMoneda(datos.entrance_cost || 0) : 'No incluye'}
                         </div>
-                        <div class="col-md-6 mb-2">
-                            <strong class="text-primary">TOTAL:</strong><br>
-                            <strong class="text-primary">$${formatNumber((datos.total_transport_value || 0) + (datos.total_catering_value || 0) + (datos.total_entrance_value || 0))}</strong>
-                        </div>
-                        
-                        <div class="col-md-12 mb-3">
-                            <hr>
-                            <h6>Estado de Aprobación</h6>
+                        <div class="col-12">
+                            <strong class="fs-5">Costo Total:</strong>
+                            <span class="fs-4 text-primary fw-bold">${formatearMoneda(datos.total_cost || 0)}</span>
                         </div>
                         
-                        <div class="col-md-6 mb-2">
-                            <strong>Estado de solicitud:</strong><br>
-                            ${estadoBadge}
+                        <div class="col-12 mt-4">
+                            <h6 class="border-bottom pb-2"><i class="bi bi-clipboard-check me-2"></i>Aprobación</h6>
                         </div>
-                        <div class="col-md-6 mb-2">
-                            <strong>Estado de salida:</strong><br>
-                            ${estadoSalida}
-                        </div>
-                        <div class="col-md-12 mb-2">
-                            <strong>Aprobador asignado:</strong><br>
+                        <div class="col-md-6">
+                            <strong>Aprobador:</strong><br>
                             ${aprobador}
                         </div>
+                        <div class="col-md-6">
+                            <strong>Estado:</strong><br>
+                            ${getBadgeEstadoSolicitud(estadoSolicitud)}
+                        </div>
+                        
+                        ${estudiantesHTML}
                     </div>
                 `;
                 
-                // Mostrar en modal de Bootstrap
+                // Mostrar en modal
                 document.getElementById('detalleContent').innerHTML = detalleHTML;
                 const modal = new bootstrap.Modal(document.getElementById('modalDetalle'));
                 modal.show();
                 
             } catch (error) {
-                console.error('❌ Error cargando detalle:', error);
-                showMessage('Error al cargar detalle: ' + error.message, 'danger');
+                console.error('❌ Error al ver detalle:', error);
+                showMessage('Error al cargar los detalles de la salida', 'danger');
             }
         }
+        
+        // ==================== FUNCIÓN AUXILIAR: Agrupar estudiantes por curso ====================
+        function agruparEstudiantesPorCurso(estudiantes, esAsistente) {
+            // Agrupar por curso
+            const porCurso = {};
+            estudiantes.forEach(est => {
+                if (!porCurso[est.course_name]) {
+                    porCurso[est.course_name] = [];
+                }
+                porCurso[est.course_name].push(est);
+            });
+            
+            // Generar HTML
+            let html = '';
+            Object.keys(porCurso).sort().forEach(curso => {
+                const estudiantesCurso = porCurso[curso];
+                html += `
+                    <div class="mb-2">
+                        <strong class="text-muted">${curso}</strong> (${estudiantesCurso.length})
+                        <ul class="list-unstyled ms-3 mb-0">
+                            ${estudiantesCurso.map(est => `
+                                <li class="small ${esAsistente ? '' : 'text-warning'}">
+                                    <i class="bi bi-${esAsistente ? 'check-circle' : 'x-circle'} me-1"></i>
+                                    ${est.first_name} ${est.last_name}
+                                    ${!esAsistente && est.unlinked_reason ? 
+                                        `<br><span class="ms-3 text-muted fst-italic" style="font-size: 0.85em;">
+                                            Razón: ${est.unlinked_reason}
+                                        </span>` 
+                                        : ''}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                `;
+            });
+            
+            return html;
+        }
+        
         
         async function editarSalida(tripId) {
             try {
