@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.09.10">
+    <meta name="page-version" content="26.02.08.09.30">
     
     <title>Eventos Internos - SchoolNet</title>
     
@@ -850,6 +850,9 @@
         
         // Aprobadores disponibles
         let approvers = [];
+        // Configuración del módulo
+        let minAdvanceDays = 7; // Valor por defecto
+        let serviceEmails = {}; // Correos de notificación desde BD
 
         // ==========================================
         // INICIALIZACIÓN - PATRÓN OBLIGATORIO
@@ -880,6 +883,7 @@
                 initializePage('Eventos Internos', 'services');
                 
                 // PASO 4: Inicializar componentes
+                await loadModuleConfig(); // ← AGREGAR PRIMERO
                 initializeFlatpickr();
                 await loadMenusCatalog();
                 await loadApprovers();
@@ -903,19 +907,29 @@
         // ==========================================
         
         function initializeFlatpickr() {
+            // Calcular fecha mínima según configuración
+            const today = new Date();
+            const minDate = new Date(today);
+            minDate.setDate(today.getDate() + minAdvanceDays);
+            
             // Fecha del evento
             flatpickr('#eventDate', {
                 locale: 'es',
                 dateFormat: 'Y-m-d',
-                minDate: 'today',
+                minDate: minDate, // ← Usar fecha calculada
                 altInput: true,
                 altFormat: 'F j, Y',
                 onChange: function(selectedDates, dateStr) {
                     wizardData.eventDate = dateStr;
+                },
+                onReady: function(selectedDates, dateStr, instance) {
+                    // Mensaje informativo
+                    const input = instance.altInput;
+                    input.placeholder = `Mínimo ${minAdvanceDays} días de antelación`;
                 }
             });
             
-            // Filtros de fecha
+            // Filtros de fecha (sin restricción)
             flatpickr('#filterDateFrom', {
                 locale: 'es',
                 dateFormat: 'Y-m-d',
@@ -940,6 +954,36 @@
         // ==========================================
         // CARGA DE DATOS
         // ==========================================
+
+        async function loadModuleConfig() {
+            try {
+                // Cargar TODAS las configuraciones del módulo de una vez
+                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value');
+                
+                if (configs && configs.length > 0) {
+                    configs.forEach(config => {
+                        // Días mínimos de antelación
+                        if (config.config_key === 'min_days_advance') {
+                            minAdvanceDays = parseInt(config.config_value) || 7;
+                        }
+                        
+                        // Correos de notificación
+                        if (config.config_key.startsWith('email_')) {
+                            const emailKey = config.config_key.replace('email_', '');
+                            serviceEmails[emailKey] = config.config_value;
+                        }
+                    });
+                    
+                    console.log(`✅ Días mínimos de antelación: ${minAdvanceDays} (desde BD)`);
+                    console.log(`✅ ${Object.keys(serviceEmails).length} correos de notificación cargados`);
+                } else {
+                    console.warn('⚠️ No se encontró configuración del módulo, usando valores por defecto');
+                }
+            } catch (error) {
+                console.error('Error cargando configuración del módulo:', error);
+                console.warn('⚠️ Usando valores por defecto');
+            }
+        }
         
         async function loadMenusCatalog() {
             try {
@@ -1236,6 +1280,19 @@
             
             if (!eventDate) {
                 showMessage('Por favor seleccione la fecha del evento', 'warning');
+                document.getElementById('eventDate').focus();
+                return false;
+            }
+
+            // Validar días mínimos de antelación
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const selectedDate = new Date(eventDate + 'T00:00:00');
+            const diffTime = selectedDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays < minAdvanceDays) {
+                showMessage(`La fecha del evento debe ser al menos ${minAdvanceDays} días en el futuro`, 'warning');
                 document.getElementById('eventDate').focus();
                 return false;
             }
@@ -2254,16 +2311,19 @@
         }
 
         function getServiceNotificationEmail(serviceType) {
-            // Estos correos deberían cargarse desde svc_module_config
-            // Por ahora retornamos valores por defecto
-            const emails = {
-                'staffing': 'coordinacion.servicios@colegiotilata.edu.co',
-                'communications': 'comunicaciones@colegiotilata.edu.co',
-                'technology': 'tecnologia@colegiotilata.edu.co',
-                'site_organization': 'coordinacion.servicios@colegiotilata.edu.co',
-                'resources': 'recursos@colegiotilata.edu.co'
+            // Mapear tipo de servicio a clave de email en svc_module_config
+            const emailKeyMap = {
+                'staffing': 'hr',  // email_hr
+                'communications': 'communications',  // email_communications
+                'technology': 'technology',  // email_technology
+                'site_organization': 'site_organization',  // email_site_organization
+                'resources': 'resources'  // email_resources
             };
-            return emails[serviceType] || 'coordinacion.servicios@colegiotilata.edu.co';
+            
+            const emailKey = emailKeyMap[serviceType];
+            
+            // Retornar desde la configuración cargada o usar coordinación como fallback
+            return serviceEmails[emailKey] || serviceEmails['coordination'] || 'serviciosgenerales@colegiotilata.edu.co';
         }
 
         // ==========================================
