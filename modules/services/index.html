@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.16.00">
+    <meta name="page-version" content="26.02.10.14.40">
     <title>Servicios y Eventos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -693,6 +693,8 @@
         // VARIABLES GLOBALES
         // ==========================================
         let currentUser = null;
+        let currentWorkerId = null;
+        let currentUserEmail = null;
         let userRoles = [];
         let moduleData = {};
         let metricsLoaded = false;
@@ -733,6 +735,32 @@
                 showMessage('Error de validación de permisos', 'danger');
             }
         });
+
+        // ==========================================
+        // OBTENER WORKER_ID Y EMAIL DEL USUARIO
+        // ==========================================
+        async function obtenerDatosWorker() {
+            try {
+                // Obtener email del usuario
+                const userData = await supabaseRequest(`/users?select=user_id,user_mail&user_id=eq.${currentUser.user_id}`);
+                if (userData && userData.length > 0) {
+                    currentUserEmail = userData[0].user_mail;
+                }
+        
+                // Obtener worker_id usando el email
+                if (currentUserEmail) {
+                    const workerData = await supabaseRequest(`/workers?select=worker_id&email=eq.${currentUserEmail}`);
+                    if (workerData && workerData.length > 0) {
+                        currentWorkerId = workerData[0].worker_id;
+                    }
+                }
+        
+                console.log('✅ Worker ID:', currentWorkerId);
+                console.log('✅ Email:', currentUserEmail);
+            } catch (error) {
+                console.error('⚠️ Error obteniendo datos de worker:', error);
+            }
+        }
         
         // ==========================================
         // INICIALIZACIÓN PRINCIPAL
@@ -743,6 +771,7 @@
                 
                 configurarColoresModulo();
                 await cargarDatosUsuario();
+                await obtenerDatosWorker();
                 await cargarBadges();
                 await configurarFunciones();
                 await cargarBadgesTarjetas();
@@ -835,23 +864,36 @@
         // ==========================================
         async function cargarBadgesTarjetas() {
             try {
-                // Badge: Salidas pedagógicas activas (scheduled o imminent)
-                const pedagogical = await supabaseRequest('/svc_pedagogical_trips?select=trip_id&trip_status=in.(scheduled,imminent)');
+                // Badge: Salidas pedagógicas activas — creadas por MÍ
+                const pedagogical = await supabaseRequest(`/svc_pedagogical_trips?select=trip_id&trip_status=in.(scheduled,imminent)&created_by=eq.${currentUser.user_id}`);
                 mostrarBadgeTarjeta('badge-pedagogical', pedagogical.length, 'bg-info');
                 
-                // Badge: Salidas deportivas activas (scheduled o imminent)
-                const sports = await supabaseRequest('/svc_sports_trips?select=trip_id&trip_status=in.(scheduled,imminent)');
+                // Badge: Salidas deportivas activas — creadas por MÍ
+                const sports = await supabaseRequest(`/svc_sports_trips?select=trip_id&trip_status=in.(scheduled,imminent)&created_by=eq.${currentUser.user_id}`);
                 mostrarBadgeTarjeta('badge-sports', sports.length, 'bg-info');
                 
-                // Badge: Eventos internos en programación (scheduled)
-                const events = await supabaseRequest('/svc_internal_events?select=event_id&event_status=eq.scheduled');
+                // Badge: Eventos internos en programación — creados por MÍ
+                const events = await supabaseRequest(`/svc_internal_events?select=event_id&event_status=eq.scheduled&created_by=eq.${currentUser.user_id}`);
                 mostrarBadgeTarjeta('badge-events', events.length, 'bg-info');
                 
-                // Badge: Aprobaciones pendientes
-                const approvals = await supabaseRequest('/svc_service_requests?select=request_id&request_status=eq.pending');
-                mostrarBadgeTarjeta('badge-approvals', approvals.length, 'bg-warning text-dark');
+                // Badge: Aprobaciones pendientes — donde YO soy aprobador
+                if (currentWorkerId) {
+                    const approvals = await supabaseRequest(`/svc_service_requests?select=request_id&request_status=eq.pending&approver_id=eq.${currentWorkerId}`);
+                    mostrarBadgeTarjeta('badge-approvals', approvals.length, 'bg-warning text-dark');
+                }
                 
-                console.log('✅ Badges de tarjetas cargados');
+                // Badge: Costos de eventos — asignados a MI email
+                if (currentUserEmail) {
+                    const costs = await supabaseRequest(`/svc_internal_event_services?select=service_id,evento:svc_internal_events!event_id(event_status)&notified_email=eq.${currentUserEmail}&cost_value=is.null`);
+                    // Solo contar los que tienen evento en estado scheduled
+                    const pendientes = (costs || []).filter(c => {
+                        const evento = Array.isArray(c.evento) ? c.evento[0] : c.evento;
+                        return evento && evento.event_status === 'scheduled';
+                    });
+                    mostrarBadgeTarjeta('badge-event-costs', pendientes.length, 'bg-info');
+                }
+                
+                console.log('✅ Badges de tarjetas cargados (filtrados por usuario)');
                 
             } catch (error) {
                 console.error('❌ Error cargando badges de tarjetas:', error);
@@ -938,14 +980,16 @@
         
         // Métrica 1: Total solicitudes del año académico activo
         async function queryTotalSolicitudesAno() {
+            if (!currentWorkerId) return 0;
             const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
-            const data = await supabaseRequest(`/svc_service_requests?select=request_id&requested_at=gte.${yearStart}`);
+            const data = await supabaseRequest(`/svc_service_requests?select=request_id&requested_at=gte.${yearStart}&requested_by=eq.${currentWorkerId}`);
             return Array.isArray(data) ? data.length : 0;
         }
         
         // Métrica 2: Solicitudes pendientes de aprobación
         async function queryPendientesAprobacion() {
-            const data = await supabaseRequest('/svc_service_requests?select=request_id&request_status=eq.pending');
+            if (!currentWorkerId) return 0;
+            const data = await supabaseRequest(`/svc_service_requests?select=request_id&request_status=eq.pending&approver_id=eq.${currentWorkerId}`);
             return Array.isArray(data) ? data.length : 0;
         }
         
@@ -955,8 +999,8 @@
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
             const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
             
-            const pedagogical = await supabaseRequest(`/svc_pedagogical_trips?select=trip_id&trip_status=eq.completed&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}`);
-            const sports = await supabaseRequest(`/svc_sports_trips?select=trip_id&trip_status=eq.completed&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}`);
+            const pedagogical = await supabaseRequest(`/svc_pedagogical_trips?select=trip_id&trip_status=eq.completed&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}&created_by=eq.${currentUser.user_id}`);
+            const sports = await supabaseRequest(`/svc_sports_trips?select=trip_id&trip_status=eq.completed&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}&created_by=eq.${currentUser.user_id}`);
             
             return (Array.isArray(pedagogical) ? pedagogical.length : 0) + (Array.isArray(sports) ? sports.length : 0);
         }
@@ -967,11 +1011,11 @@
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
             const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
             
-            // Salidas pedagógicas del mes
-            const pedagogical = await supabaseRequest(`/svc_pedagogical_trips?select=total_transport_value&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}&trip_status=neq.cancelled`);
+            // Salidas pedagógicas del mes — creadas por MÍ
+            const pedagogical = await supabaseRequest(`/svc_pedagogical_trips?select=total_transport_value&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}&trip_status=neq.cancelled&created_by=eq.${currentUser.user_id}`);
             
-            // Salidas deportivas del mes
-            const sports = await supabaseRequest(`/svc_sports_trips?select=total_transport_value&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}&trip_status=neq.cancelled`);
+            // Salidas deportivas del mes — creadas por MÍ
+            const sports = await supabaseRequest(`/svc_sports_trips?select=total_transport_value&trip_date=gte.${monthStart}&trip_date=lte.${monthEnd}&trip_status=neq.cancelled&created_by=eq.${currentUser.user_id}`);
             
             let total = 0;
             if (Array.isArray(pedagogical)) {
