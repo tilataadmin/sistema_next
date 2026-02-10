@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.02.10.08.35">
+    <meta name="page-version" content="26.02.10.08.45">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2426,7 +2426,7 @@
 
                 // 3. Construir payload para Phidias
                 const payload = [];
-                const registrosPorCode = {}; // Mapear student_code → attendance_ids
+                const registrosPorIndice = []; // Array paralelo a payload: cada posición tiene {studentCode, attendanceId, documento}
                 const sinCodigo = []; // Estudiantes sin student_code
 
                 pendientes.forEach(reg => {
@@ -2447,12 +2447,13 @@
                         timestamp: unixTimestamp
                     });
 
-                    if (!registrosPorCode[studentCode]) {
-                        registrosPorCode[studentCode] = [];
-                    }
-                    registrosPorCode[studentCode].push(reg.attendance_id);
+                    registrosPorIndice.push({
+                        studentCode: studentCode,
+                        attendanceId: reg.attendance_id,
+                        documento: reg.person_id_document
+                    });
                 });
-
+                
                 if (payload.length === 0) {
                     resultContent.innerHTML = `
                         <div class="alert alert-warning mb-0">
@@ -2483,27 +2484,53 @@
                 let fallidos = 0;
                 const erroresDetalle = [];
 
-                for (const [clave, resultado] of Object.entries(respuestaPhidias)) {
-                    const attendanceIds = registrosPorCode[clave] || [];
+                if (Array.isArray(respuestaPhidias)) {
+                    // Respuesta real de Phidias: Array paralelo al payload
+                    for (let i = 0; i < respuestaPhidias.length; i++) {
+                        const resultado = respuestaPhidias[i];
+                        const registro = registrosPorIndice[i];
+                        if (!registro) continue;
 
-                    if (resultado.success || (!resultado.error && resultado.text)) {
-                        // Éxito
-                        exitosos++;
-                        for (const attId of attendanceIds) {
-                            await marcarSyncExitoso(attId);
+                        if (typeof resultado === 'object' && resultado !== null && resultado.id) {
+                            // Éxito: Phidias devolvió un objeto con id
+                            exitosos++;
+                            await marcarSyncExitoso(registro.attendanceId);
+                        } else {
+                            // Error: Phidias devolvió un string o un objeto con error
+                            fallidos++;
+                            const mensajeError = typeof resultado === 'string'
+                                ? resultado
+                                : (resultado?.subtext || resultado?.message || 'Error desconocido');
+                            erroresDetalle.push({ code: registro.studentCode, error: mensajeError });
+                            await marcarSyncError(registro.attendanceId, mensajeError);
                         }
-                    } else {
-                        // Error
-                        fallidos++;
-                        const mensajeError = resultado.subtext || resultado.message || 'Error desconocido';
-                        erroresDetalle.push({ code: clave, error: mensajeError });
+                    }
 
-                        for (const attId of attendanceIds) {
-                            await marcarSyncError(attId, mensajeError);
+                    // Registros enviados pero sin respuesta de Phidias
+                    for (let i = respuestaPhidias.length; i < registrosPorIndice.length; i++) {
+                        const registro = registrosPorIndice[i];
+                        fallidos++;
+                        erroresDetalle.push({ code: registro.studentCode, error: 'Sin respuesta de Phidias' });
+                        await marcarSyncError(registro.attendanceId, 'Sin respuesta de Phidias');
+                    }
+
+                } else {
+                    // Respuesta como objeto (según documentación oficial)
+                    for (const [clave, resultado] of Object.entries(respuestaPhidias)) {
+                        const registro = registrosPorIndice.find(r => r.studentCode === clave);
+
+                        if (resultado.success || (!resultado.error && resultado.text)) {
+                            exitosos++;
+                            if (registro) await marcarSyncExitoso(registro.attendanceId);
+                        } else {
+                            fallidos++;
+                            const mensajeError = resultado.subtext || resultado.message || 'Error desconocido';
+                            erroresDetalle.push({ code: clave, error: mensajeError });
+                            if (registro) await marcarSyncError(registro.attendanceId, mensajeError);
                         }
                     }
                 }
-
+                
                 // Sumar los sin código como fallidos
                 fallidos += sinCodigo.length;
                 sinCodigo.forEach(reg => {
