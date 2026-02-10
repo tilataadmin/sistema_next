@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.09.13.05">
+    <meta name="page-version" content="26.02.09.19.10">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -777,7 +777,9 @@
             detalleTransporte: null, // Info de vehículos calculados para optimización
             diasMinimosAntelacion: 7,
             emailSecretariaPreescolarPrimaria: '',
-            emailSecretariaBachillerato: ''
+            emailSecretariaBachillerato: '',
+            emailChef: '',
+            emailSupervisor: ''
             
         };
         
@@ -888,17 +890,23 @@
                 // Cargar correos de secretarías
                 try {
                     const configSecretarias = await supabaseRequest(
-                        '/svc_module_config?select=config_key,config_value&config_key=in.(email_secretary_preschool_primary,email_secretary_high_school)'
+                        '/svc_module_config?select=config_key,config_value&config_key=in.(email_secretary_preschool_primary,email_secretary_high_school,email_chef,email_supervisor)'
                     );
                     if (configSecretarias) {
                         configSecretarias.forEach(c => {
-                            if (c.config_key === 'email_secretary_preschool_primary') {
-                                datosGlobales.emailSecretariaPreescolarPrimaria = c.config_value || '';
-                            }
-                            if (c.config_key === 'email_secretary_high_school') {
-                                datosGlobales.emailSecretariaBachillerato = c.config_value || '';
-                            }
-                        });
+                        if (c.config_key === 'email_secretary_preschool_primary') {
+                            datosGlobales.emailSecretariaPreescolarPrimaria = c.config_value || '';
+                        }
+                        if (c.config_key === 'email_secretary_high_school') {
+                            datosGlobales.emailSecretariaBachillerato = c.config_value || '';
+                        }
+                        if (c.config_key === 'email_chef') {
+                            datosGlobales.emailChef = c.config_value || '';
+                        }
+                        if (c.config_key === 'email_supervisor') {
+                            datosGlobales.emailSupervisor = c.config_value || '';
+                        }
+                    });
                     }
                     console.log('✅ Correos de secretarías cargados');
                 } catch (error) {
@@ -1844,6 +1852,76 @@
                 console.error('❌ Error enviando notificación a secretarías:', error);
             }
         }
+
+        /**
+         * Envía notificación a destinatarios fijos (chef, supervisora) para toda salida pedagógica
+         */
+        async function enviarNotificacionFijos(datosSalida) {
+            try {
+                console.log('📧 Enviando notificaciones a destinatarios fijos...');
+        
+                const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
+                const nombreDestino = destino ? destino.destination_name : 'Destino no especificado';
+                const nombresGrados = datosSalida.p_grados.map(gId => {
+                    const grado = datosGlobales.grados.find(g => g.grade_id === gId);
+                    return grado ? grado.grade_name : gId;
+                }).join(', ');
+                const fechaFormateada = new Date(datosSalida.p_fecha + 'T00:00:00').toLocaleDateString('es-CO', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                });
+                const solicitante = currentUser.user_display_name || currentUser.user_name;
+        
+                const asunto = `Salida Pedagógica programada — ${nombreDestino} — ${fechaFormateada}`;
+        
+                const buildHTML = (destinatario) => `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+                        <div style="background-color: #1b365d; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; font-size: 22px;">Notificación de Salida Pedagógica</h1>
+                        </div>
+                        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <p style="font-size: 16px; color: #333;">
+                                Estimada <strong>${destinatario}</strong>,
+                            </p>
+                            <p style="font-size: 14px; color: #666;">
+                                Se ha registrado una nueva salida pedagógica:
+                            </p>
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Destino:</td><td style="padding: 8px 0; color: #333;">${nombreDestino}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td><td style="padding: 8px 0; color: #333;">${fechaFormateada}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Horario:</td><td style="padding: 8px 0; color: #333;">${datosSalida.p_hora_salida} - ${datosSalida.p_hora_regreso}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Grados:</td><td style="padding: 8px 0; color: #333;">${nombresGrados}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Estudiantes:</td><td style="padding: 8px 0; color: #333;">${datosSalida.p_num_estudiantes}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Adultos:</td><td style="padding: 8px 0; color: #333;">${datosSalida.p_num_adultos}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Solicitado por:</td><td style="padding: 8px 0; color: #333;">${solicitante}</td></tr>
+                                </table>
+                            </div>
+                            <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
+                                Este es un mensaje automático del sistema SchoolNet.<br>
+                                Por favor, no responder a este correo.
+                            </p>
+                        </div>
+                    </div>
+                `;
+        
+                const destinatarios = [
+                    { email: datosGlobales.emailChef, label: 'Chef' },
+                    { email: datosGlobales.emailSupervisor, label: 'Supervisora' }
+                ];
+        
+                for (const dest of destinatarios) {
+                    if (dest.email) {
+                        await sendNotification(dest.email, asunto, buildHTML(dest.label), true);
+                        console.log(`✅ Notificación enviada a ${dest.label}: ${dest.email}`);
+                    } else {
+                        console.warn(`⚠️ No hay email configurado para ${dest.label}`);
+                    }
+                }
+        
+            } catch (error) {
+                console.error('❌ Error enviando notificaciones fijas:', error);
+            }
+        }
         
         // ==================== GUARDAR NUEVA SALIDA ====================
         async function guardarNuevaSalida() {
@@ -1987,6 +2065,8 @@
                         await enviarNotificacionAprobador(resultado.trip_id, resultado.request_id, aprobadorId, datosFormulario);
                         // Enviar notificación a secretaría(s) según secciones de los grados
                         await enviarNotificacionSecretarias(datosFormulario);
+                        // Enviar notificación a chef y supervisora
+                        await enviarNotificacionFijos(datosFormulario);
                     } else {
                         throw new Error(resultado?.error || 'No se recibió respuesta del servidor');
                     }
