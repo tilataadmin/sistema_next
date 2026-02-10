@@ -548,6 +548,10 @@ async function phidiasRequest(endpoint, options = {}) {
             }
         };
         
+        if (options.body) {
+            config.body = options.body;
+        }
+        
         console.log(`📡 PHIDIAS: ${config.method} ${endpoint}`);
         
         const response = await fetch(url, config);
