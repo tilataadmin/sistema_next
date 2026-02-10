@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.10.14.20">
+    <meta name="page-version" content="26.02.10.14.25">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -491,6 +491,13 @@
             }).join('');
             
             container.innerHTML = html;
+
+            // Cargar estado de costos para eventos internos pendientes
+            solicitudesData.forEach(s => {
+                if (s._tipo === 'internal_event' && s.request_status === 'pending') {
+                    cargarEstadoCostos(s);
+                }
+            });
         }
         
         function renderTarjetaTrip(solicitud) {
@@ -565,26 +572,22 @@
                                 </small>
                             </div>
                             <div class="col-md-4">
-                                <div class="cost-breakdown">
-                                    <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
-                                    <div class="cost-item">
-                                        <span>Transporte:</span>
-                                        <span>${formatCurrency(costoTransporte)}</span>
+                                <div class="col-md-4">
+                                    <div class="cost-breakdown">
+                                        <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
+                                        <div class="cost-item">
+                                            <span>Costos detallados:</span>
+                                            <span class="text-muted"><em>Ver detalle</em></span>
+                                        </div>
+                                        <div class="cost-item">
+                                            <span>ESTADO:</span>
+                                            <span>${getBadgeEstadoEvento(evento.event_status)}</span>
+                                        </div>
                                     </div>
-                                    <div class="cost-item">
-                                        <span>Refrigerios:</span>
-                                        <span>${costoRefrigerios > 0 ? formatCurrency(costoRefrigerios) : 'No incluye'}</span>
-                                    </div>
-                                    <div class="cost-item">
-                                        <span>Entradas:</span>
-                                        <span>${costoEntradas > 0 ? formatCurrency(costoEntradas) : 'No incluye'}</span>
-                                    </div>
-                                    <div class="cost-item">
-                                        <span>TOTAL:</span>
-                                        <span class="text-primary">${formatCurrency(costoTotal)}</span>
+                                    <div id="costStatus_${solicitud.request_id}" class="mt-2">
+                                        <small class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Cargando costos...</small>
                                     </div>
                                 </div>
-                            </div>
                         </div>
                         ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
                             <div class="alert alert-danger mb-0 mt-3">
@@ -730,7 +733,48 @@
             };
             return estados[estado] || '<span class="badge bg-secondary">Desconocido</span>';
         }
+
+        // ==================== CARGAR ESTADO DE COSTOS ====================
+        async function cargarEstadoCostos(solicitud) {
+            const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+            if (!evento) return;
         
+            const container = document.getElementById(`costStatus_${solicitud.request_id}`);
+            if (!container) return;
+        
+            try {
+                const services = await supabaseRequest(`/svc_internal_event_services?event_id=eq.${evento.event_id}&select=service_type,cost_value`);
+        
+                if (!services || services.length === 0) {
+                    container.innerHTML = '<small class="text-muted">Sin servicios de apoyo</small>';
+                    return;
+                }
+        
+                const total = services.length;
+                const registrados = services.filter(s => s.cost_value !== null && s.cost_value !== undefined).length;
+                const pendientes = total - registrados;
+        
+                let badgeClass, iconClass, texto;
+                if (pendientes === 0) {
+                    badgeClass = 'bg-success bg-opacity-10 text-success border border-success';
+                    iconClass = 'bi-check-circle-fill';
+                    texto = `${registrados}/${total} costos registrados`;
+                } else {
+                    badgeClass = 'bg-warning bg-opacity-10 text-warning border border-warning';
+                    iconClass = 'bi-exclamation-triangle-fill';
+                    texto = `${registrados}/${total} costos registrados (${pendientes} pendiente${pendientes > 1 ? 's' : ''})`;
+                }
+        
+                container.innerHTML = `
+                    <div class="rounded px-2 py-1 ${badgeClass}">
+                        <small><i class="bi ${iconClass} me-1"></i>${texto}</small>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error cargando estado de costos:', error);
+                container.innerHTML = '';
+            }
+        }
 
         
       // ==================== APROBAR SOLICITUD ====================
