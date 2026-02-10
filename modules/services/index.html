@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.10.14.40">
+    <meta name="page-version" content="26.02.10.14.45">
     <title>Servicios y Eventos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -696,6 +696,7 @@
         let currentWorkerId = null;
         let currentUserEmail = null;
         let userRoles = [];
+        let userPermissionsCache = null; // Caché de permisos — se consulta UNA sola vez
         let moduleData = {};
         let metricsLoaded = false;
         
@@ -741,13 +742,18 @@
         // ==========================================
         async function obtenerDatosWorker() {
             try {
-                // Obtener email del usuario
-                const userData = await supabaseRequest(`/users?select=user_id,user_mail&user_id=eq.${currentUser.user_id}`);
-                if (userData && userData.length > 0) {
-                    currentUserEmail = userData[0].user_mail;
+                // El email ya viene en la sesión del usuario
+                currentUserEmail = currentUser.user_mail || currentUser.email || null;
+        
+                // Si no está en sesión, consultar
+                if (!currentUserEmail) {
+                    const userData = await supabaseRequest(`/users?select=user_mail&user_id=eq.${currentUser.user_id}`);
+                    if (userData && userData.length > 0) {
+                        currentUserEmail = userData[0].user_mail;
+                    }
                 }
         
-                // Obtener worker_id usando el email
+                // Una sola query para obtener worker_id
                 if (currentUserEmail) {
                     const workerData = await supabaseRequest(`/workers?select=worker_id&email=eq.${currentUserEmail}`);
                     if (workerData && workerData.length > 0) {
@@ -755,8 +761,7 @@
                     }
                 }
         
-                console.log('✅ Worker ID:', currentWorkerId);
-                console.log('✅ Email:', currentUserEmail);
+                console.log('✅ Worker ID:', currentWorkerId, '| Email:', currentUserEmail);
             } catch (error) {
                 console.error('⚠️ Error obteniendo datos de worker:', error);
             }
@@ -770,11 +775,19 @@
                 mostrarLoading();
                 
                 configurarColoresModulo();
-                await cargarDatosUsuario();
-                await obtenerDatosWorker();
-                await cargarBadges();
-                await configurarFunciones();
-                await cargarBadgesTarjetas();
+        
+                // FASE 1: Datos base en paralelo (independientes entre sí)
+                await Promise.all([
+                    cargarDatosUsuario(),
+                    obtenerDatosWorker(),
+                    cargarBadges()
+                ]);
+        
+                // FASE 2: Dependen de Fase 1 (permisos y worker_id ya disponibles)
+                await Promise.all([
+                    configurarFunciones(),
+                    cargarBadgesTarjetas()
+                ]);
                 
                 ocultarLoading();
                 console.log(`✅ Módulo ${MODULE_CONFIG.name} inicializado correctamente`);
@@ -864,37 +877,35 @@
         // ==========================================
         async function cargarBadgesTarjetas() {
             try {
-                // Badge: Salidas pedagógicas activas — creadas por MÍ
-                const pedagogical = await supabaseRequest(`/svc_pedagogical_trips?select=trip_id&trip_status=in.(scheduled,imminent)&created_by=eq.${currentUser.user_id}`);
-                mostrarBadgeTarjeta('badge-pedagogical', pedagogical.length, 'bg-info');
-                
-                // Badge: Salidas deportivas activas — creadas por MÍ
-                const sports = await supabaseRequest(`/svc_sports_trips?select=trip_id&trip_status=in.(scheduled,imminent)&created_by=eq.${currentUser.user_id}`);
-                mostrarBadgeTarjeta('badge-sports', sports.length, 'bg-info');
-                
-                // Badge: Eventos internos en programación — creados por MÍ
-                const events = await supabaseRequest(`/svc_internal_events?select=event_id&event_status=eq.scheduled&created_by=eq.${currentUser.user_id}`);
-                mostrarBadgeTarjeta('badge-events', events.length, 'bg-info');
-                
-                // Badge: Aprobaciones pendientes — donde YO soy aprobador
-                if (currentWorkerId) {
-                    const approvals = await supabaseRequest(`/svc_service_requests?select=request_id&request_status=eq.pending&approver_id=eq.${currentWorkerId}`);
-                    mostrarBadgeTarjeta('badge-approvals', approvals.length, 'bg-warning text-dark');
-                }
-                
-                // Badge: Costos de eventos — asignados a MI email
-                if (currentUserEmail) {
-                    const costs = await supabaseRequest(`/svc_internal_event_services?select=service_id,evento:svc_internal_events!event_id(event_status)&notified_email=eq.${currentUserEmail}&cost_value=is.null`);
-                    // Solo contar los que tienen evento en estado scheduled
-                    const pendientes = (costs || []).filter(c => {
-                        const evento = Array.isArray(c.evento) ? c.evento[0] : c.evento;
-                        return evento && evento.event_status === 'scheduled';
-                    });
-                    mostrarBadgeTarjeta('badge-event-costs', pendientes.length, 'bg-info');
-                }
-                
-                console.log('✅ Badges de tarjetas cargados (filtrados por usuario)');
-                
+                // Preparar todas las queries en paralelo
+                const queries = [
+                    supabaseRequest(`/svc_pedagogical_trips?select=trip_id&trip_status=in.(scheduled,imminent)&created_by=eq.${currentUser.user_id}`),
+                    supabaseRequest(`/svc_sports_trips?select=trip_id&trip_status=in.(scheduled,imminent)&created_by=eq.${currentUser.user_id}`),
+                    supabaseRequest(`/svc_internal_events?select=event_id&event_status=eq.scheduled&created_by=eq.${currentUser.user_id}`),
+                    currentWorkerId
+                        ? supabaseRequest(`/svc_service_requests?select=request_id&request_status=eq.pending&approver_id=eq.${currentWorkerId}`)
+                        : Promise.resolve([]),
+                    currentUserEmail
+                        ? supabaseRequest(`/svc_internal_event_services?select=service_id,evento:svc_internal_events!event_id(event_status)&notified_email=eq.${currentUserEmail}&cost_value=is.null`)
+                        : Promise.resolve([])
+                ];
+        
+                const [pedagogical, sports, events, approvals, costs] = await Promise.all(queries);
+        
+                mostrarBadgeTarjeta('badge-pedagogical', (pedagogical || []).length, 'bg-info');
+                mostrarBadgeTarjeta('badge-sports', (sports || []).length, 'bg-info');
+                mostrarBadgeTarjeta('badge-events', (events || []).length, 'bg-info');
+                mostrarBadgeTarjeta('badge-approvals', (approvals || []).length, 'bg-warning text-dark');
+        
+                // Costos: filtrar solo eventos en estado scheduled
+                const pendientes = (costs || []).filter(c => {
+                    const evento = Array.isArray(c.evento) ? c.evento[0] : c.evento;
+                    return evento && evento.event_status === 'scheduled';
+                });
+                mostrarBadgeTarjeta('badge-event-costs', pendientes.length, 'bg-info');
+        
+                console.log('✅ Badges de tarjetas cargados (paralelo, filtrados por usuario)');
+        
             } catch (error) {
                 console.error('❌ Error cargando badges de tarjetas:', error);
             }
@@ -926,18 +937,17 @@
                 
                 console.log('📊 Cargando métricas...');
                 
-                for (const metric of MODULE_CONFIG.metrics) {
+                const metricPromises = MODULE_CONFIG.metrics.map(async (metric) => {
                     try {
                         const tieneAcceso = verificarAccesoMetrica(metric, userRoles);
                         
                         if (!tieneAcceso) {
                             ocultarTarjetaMetrica(metric.id);
-                            continue;
+                            return;
                         }
                         
                         let value = 0;
                         
-                        // Ejecutar función de query específica
                         if (metric.queryFn && typeof window[metric.queryFn] === 'function') {
                             value = await window[metric.queryFn]();
                         }
@@ -955,7 +965,9 @@
                             elemento.innerHTML = '<span class="text-danger">Error</span>';
                         }
                     }
-                }
+                });
+                
+                await Promise.all(metricPromises);
                 
                 reorganizarGridMetricas();
                 metricsLoaded = true;
@@ -1058,15 +1070,24 @@
         // OBTENER TODOS LOS PERMISOS — OPTIMIZADO
         // ==========================================
         async function obtenerTodosLosPermisosUsuario(userId) {
+            // Retornar caché si ya se consultó
+            if (userPermissionsCache !== null) {
+                return userPermissionsCache;
+            }
+        
             try {
                 const isSuperAdmin = await checkUserIsSuperAdmin(userId);
                 if (isSuperAdmin) {
-                    return MODULE_CONFIG.modulePermissions;
+                    userPermissionsCache = MODULE_CONFIG.modulePermissions;
+                    return userPermissionsCache;
                 }
                 
                 const data = await supabaseRequest(`/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`);
                 
-                if (!data || data.length === 0) return [];
+                if (!data || data.length === 0) {
+                    userPermissionsCache = [];
+                    return userPermissionsCache;
+                }
                 
                 const permissions = [];
                 data[0].user_roles?.forEach(userRole => {
@@ -1078,11 +1099,13 @@
                     });
                 });
                 
-                return permissions;
+                userPermissionsCache = permissions;
+                return userPermissionsCache;
                 
             } catch (error) {
                 console.error('❌ Error obteniendo permisos:', error);
-                return [];
+                userPermissionsCache = [];
+                return userPermissionsCache;
             }
         }
         
