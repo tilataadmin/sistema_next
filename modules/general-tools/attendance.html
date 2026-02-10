@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.02.10.08.45">
+    <meta name="page-version" content="26.02.10.11.20">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2469,67 +2469,95 @@
                     return;
                 }
 
-                // 4. Enviar a Phidias (usa phidiasRequest de config.js)
-                console.log(`📡 Enviando ${payload.length} registros a Phidias...`);
+                // 4. Enviar a Phidias EN LOTES
+                const TAMAÑO_LOTE = 100;
+                const totalLotes = Math.ceil(payload.length / TAMAÑO_LOTE);
+                console.log(`📡 Enviando ${payload.length} registros a Phidias en ${totalLotes} lote(s) de máx ${TAMAÑO_LOTE}...`);
 
-                const respuestaPhidias = await phidiasRequest('/attendance/absence/register', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
-                console.log('📡 Respuesta Phidias:', respuestaPhidias);
-                console.log('📡 Estructura Phidias:', JSON.stringify(respuestaPhidias).substring(0, 2000));
-
-                // 5. Procesar respuesta individual
                 let exitosos = 0;
                 let fallidos = 0;
                 const erroresDetalle = [];
 
-                if (Array.isArray(respuestaPhidias)) {
-                    // Respuesta real de Phidias: Array paralelo al payload
-                    for (let i = 0; i < respuestaPhidias.length; i++) {
-                        const resultado = respuestaPhidias[i];
-                        const registro = registrosPorIndice[i];
-                        if (!registro) continue;
+                for (let lote = 0; lote < totalLotes; lote++) {
+                    const inicio = lote * TAMAÑO_LOTE;
+                    const fin = Math.min(inicio + TAMAÑO_LOTE, payload.length);
+                    const payloadLote = payload.slice(inicio, fin);
+                    const registrosLote = registrosPorIndice.slice(inicio, fin);
 
-                        if (typeof resultado === 'object' && resultado !== null && resultado.id) {
-                            // Éxito: Phidias devolvió un objeto con id
-                            exitosos++;
-                            await marcarSyncExitoso(registro.attendanceId);
-                        } else {
-                            // Error: Phidias devolvió un string o un objeto con error
+                    console.log(`📦 Lote ${lote + 1}/${totalLotes}: enviando ${payloadLote.length} registros (${inicio}-${fin - 1})...`);
+
+                    // Actualizar botón con progreso
+                    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Lote ${lote + 1}/${totalLotes}...`;
+
+                    try {
+                        const respuestaPhidias = await phidiasRequest('/attendance/absence/register', {
+                            method: 'POST',
+                            body: JSON.stringify(payloadLote)
+                        });
+                        console.log(`📡 Respuesta lote ${lote + 1}:`, respuestaPhidias);
+
+                        // 5. Procesar respuesta del lote
+                        if (Array.isArray(respuestaPhidias)) {
+                            for (let i = 0; i < respuestaPhidias.length; i++) {
+                                const resultado = respuestaPhidias[i];
+                                const registro = registrosLote[i];
+                                if (!registro) continue;
+
+                                if (typeof resultado === 'object' && resultado !== null && resultado.id) {
+                                    exitosos++;
+                                    await marcarSyncExitoso(registro.attendanceId);
+                                } else {
+                                    fallidos++;
+                                    const mensajeError = typeof resultado === 'string'
+                                        ? resultado
+                                        : (resultado?.subtext || resultado?.message || 'Error desconocido');
+                                    erroresDetalle.push({ code: registro.studentCode, error: mensajeError });
+                                    await marcarSyncError(registro.attendanceId, mensajeError);
+                                }
+                            }
+
+                            // Registros del lote sin respuesta de Phidias
+                            for (let i = respuestaPhidias.length; i < registrosLote.length; i++) {
+                                const registro = registrosLote[i];
+                                fallidos++;
+                                erroresDetalle.push({ code: registro.studentCode, error: 'Sin respuesta de Phidias' });
+                                await marcarSyncError(registro.attendanceId, 'Sin respuesta de Phidias');
+                            }
+
+                        } else if (respuestaPhidias && typeof respuestaPhidias === 'object') {
+                            for (const [clave, resultado] of Object.entries(respuestaPhidias)) {
+                                const registro = registrosLote.find(r => r.studentCode === clave);
+
+                                if (resultado.success || (!resultado.error && resultado.text)) {
+                                    exitosos++;
+                                    if (registro) await marcarSyncExitoso(registro.attendanceId);
+                                } else {
+                                    fallidos++;
+                                    const mensajeError = resultado.subtext || resultado.message || 'Error desconocido';
+                                    erroresDetalle.push({ code: clave, error: mensajeError });
+                                    if (registro) await marcarSyncError(registro.attendanceId, mensajeError);
+                                }
+                            }
+                        }
+
+                    } catch (errorLote) {
+                        console.error(`❌ Error en lote ${lote + 1}:`, errorLote);
+                        // Marcar todos los registros del lote como fallidos
+                        for (const registro of registrosLote) {
                             fallidos++;
-                            const mensajeError = typeof resultado === 'string'
-                                ? resultado
-                                : (resultado?.subtext || resultado?.message || 'Error desconocido');
-                            erroresDetalle.push({ code: registro.studentCode, error: mensajeError });
-                            await marcarSyncError(registro.attendanceId, mensajeError);
+                            erroresDetalle.push({ code: registro.studentCode, error: `Error lote ${lote + 1}: ${errorLote.message}` });
+                            await marcarSyncError(registro.attendanceId, `Error de conexión: ${errorLote.message}`);
                         }
                     }
 
-                    // Registros enviados pero sin respuesta de Phidias
-                    for (let i = respuestaPhidias.length; i < registrosPorIndice.length; i++) {
-                        const registro = registrosPorIndice[i];
-                        fallidos++;
-                        erroresDetalle.push({ code: registro.studentCode, error: 'Sin respuesta de Phidias' });
-                        await marcarSyncError(registro.attendanceId, 'Sin respuesta de Phidias');
-                    }
-
-                } else {
-                    // Respuesta como objeto (según documentación oficial)
-                    for (const [clave, resultado] of Object.entries(respuestaPhidias)) {
-                        const registro = registrosPorIndice.find(r => r.studentCode === clave);
-
-                        if (resultado.success || (!resultado.error && resultado.text)) {
-                            exitosos++;
-                            if (registro) await marcarSyncExitoso(registro.attendanceId);
-                        } else {
-                            fallidos++;
-                            const mensajeError = resultado.subtext || resultado.message || 'Error desconocido';
-                            erroresDetalle.push({ code: clave, error: mensajeError });
-                            if (registro) await marcarSyncError(registro.attendanceId, mensajeError);
-                        }
+                    // Pausa entre lotes para no saturar Phidias
+                    if (lote < totalLotes - 1) {
+                        console.log('⏳ Esperando 2 segundos antes del siguiente lote...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     }
                 }
+
+                console.log(`✅ Sync completado: ${exitosos} exitosos, ${fallidos} fallidos de ${payload.length} enviados`);
                 
                 // Sumar los sin código como fallidos
                 fallidos += sinCodigo.length;
