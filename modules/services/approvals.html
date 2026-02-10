@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.15.55">
+    <meta name="page-version" content="26.02.10.14.25">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -279,6 +279,7 @@
       // ==================== VARIABLES GLOBALES ====================
         let currentUser = null;
         let solicitudesData = [];
+        let minAdvanceDays = 7; // Valor por defecto, se carga desde svc_module_config
         let filtrosActivos = {
             tipo: '',
             estado: 'pending'
@@ -338,6 +339,22 @@
                 showMessage('Error al cargar el módulo: ' + error.message, 'danger');
             }
         });
+
+        // ==================== CARGAR CONFIGURACIÓN DEL MÓDULO ====================
+        async function loadModuleConfig() {
+            try {
+                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value&config_key=eq.min_days_advance');
+                if (configs && configs.length > 0) {
+                    minAdvanceDays = parseInt(configs[0].config_value) || 7;
+                }
+                console.log(`✅ Días mínimos de antelación para aprobar: ${minAdvanceDays}`);
+            } catch (error) {
+                console.error('Error cargando configuración del módulo:', error);
+                console.warn('⚠️ Usando valor por defecto:', minAdvanceDays);
+            }
+        }
+
+        
       // ==================== CARGAR SOLICITUDES ====================
         async function cargarSolicitudes() {
             try {
@@ -474,6 +491,13 @@
             }).join('');
             
             container.innerHTML = html;
+
+            // Cargar estado de costos para eventos internos pendientes
+            solicitudesData.forEach(s => {
+                if (s._tipo === 'internal_event' && s.request_status === 'pending') {
+                    cargarEstadoCostos(s);
+                }
+            });
         }
         
         function renderTarjetaTrip(solicitud) {
@@ -548,26 +572,22 @@
                                 </small>
                             </div>
                             <div class="col-md-4">
-                                <div class="cost-breakdown">
-                                    <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
-                                    <div class="cost-item">
-                                        <span>Transporte:</span>
-                                        <span>${formatCurrency(costoTransporte)}</span>
+                                <div class="col-md-4">
+                                    <div class="cost-breakdown">
+                                        <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
+                                        <div class="cost-item">
+                                            <span>Costos detallados:</span>
+                                            <span class="text-muted"><em>Ver detalle</em></span>
+                                        </div>
+                                        <div class="cost-item">
+                                            <span>ESTADO:</span>
+                                            <span>${getBadgeEstadoEvento(evento.event_status)}</span>
+                                        </div>
                                     </div>
-                                    <div class="cost-item">
-                                        <span>Refrigerios:</span>
-                                        <span>${costoRefrigerios > 0 ? formatCurrency(costoRefrigerios) : 'No incluye'}</span>
-                                    </div>
-                                    <div class="cost-item">
-                                        <span>Entradas:</span>
-                                        <span>${costoEntradas > 0 ? formatCurrency(costoEntradas) : 'No incluye'}</span>
-                                    </div>
-                                    <div class="cost-item">
-                                        <span>TOTAL:</span>
-                                        <span class="text-primary">${formatCurrency(costoTotal)}</span>
+                                    <div id="costStatus_${solicitud.request_id}" class="mt-2">
+                                        <small class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Cargando costos...</small>
                                     </div>
                                 </div>
-                            </div>
                         </div>
                         ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
                             <div class="alert alert-danger mb-0 mt-3">
@@ -601,10 +621,33 @@
             
             let botonesAccion = '';
             if (solicitud.request_status === 'pending') {
-                botonesAccion = `
-                    <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
-                        <i class="bi bi-check-circle me-1"></i>Aprobar
-                    </button>
+                // Calcular si la aprobación está habilitada por fecha
+                const hoy = new Date();
+                hoy.setHours(0, 0, 0, 0);
+                const fechaEventoDate = new Date(evento.event_date + 'T00:00:00');
+                const diasRestantes = Math.ceil((fechaEventoDate - hoy) / (1000 * 60 * 60 * 24));
+                const puedeAprobar = diasRestantes <= minAdvanceDays;
+            
+                if (puedeAprobar) {
+                    botonesAccion += `
+                        <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
+                            <i class="bi bi-check-circle me-1"></i>Aprobar
+                        </button>
+                    `;
+                } else {
+                    const fechaHabilitacion = new Date(fechaEventoDate);
+                    fechaHabilitacion.setDate(fechaHabilitacion.getDate() - minAdvanceDays);
+                    botonesAccion += `
+                        <span class="badge bg-info text-wrap me-2 py-2 px-3" style="max-width: 280px; line-height: 1.4;">
+                            <i class="bi bi-clock-history me-1"></i>
+                            Aprobación disponible a partir del ${formatDateLong(fechaHabilitacion.toISOString().split('T')[0])}
+                            <br><small>(faltan ${diasRestantes} días para el evento)</small>
+                        </span>
+                    `;
+                }
+            
+                // Rechazar siempre disponible
+                botonesAccion += `
                     <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
                         <i class="bi bi-x-circle me-1"></i>Rechazar
                     </button>
@@ -690,11 +733,69 @@
             };
             return estados[estado] || '<span class="badge bg-secondary">Desconocido</span>';
         }
+
+        // ==================== CARGAR ESTADO DE COSTOS ====================
+        async function cargarEstadoCostos(solicitud) {
+            const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+            if (!evento) return;
         
+            const container = document.getElementById(`costStatus_${solicitud.request_id}`);
+            if (!container) return;
+        
+            try {
+                const services = await supabaseRequest(`/svc_internal_event_services?event_id=eq.${evento.event_id}&select=service_type,cost_value`);
+        
+                if (!services || services.length === 0) {
+                    container.innerHTML = '<small class="text-muted">Sin servicios de apoyo</small>';
+                    return;
+                }
+        
+                const total = services.length;
+                const registrados = services.filter(s => s.cost_value !== null && s.cost_value !== undefined).length;
+                const pendientes = total - registrados;
+        
+                let badgeClass, iconClass, texto;
+                if (pendientes === 0) {
+                    badgeClass = 'bg-success bg-opacity-10 text-success border border-success';
+                    iconClass = 'bi-check-circle-fill';
+                    texto = `${registrados}/${total} costos registrados`;
+                } else {
+                    badgeClass = 'bg-warning bg-opacity-10 text-warning border border-warning';
+                    iconClass = 'bi-exclamation-triangle-fill';
+                    texto = `${registrados}/${total} costos registrados (${pendientes} pendiente${pendientes > 1 ? 's' : ''})`;
+                }
+        
+                container.innerHTML = `
+                    <div class="rounded px-2 py-1 ${badgeClass}">
+                        <small><i class="bi ${iconClass} me-1"></i>${texto}</small>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error cargando estado de costos:', error);
+                container.innerHTML = '';
+            }
+        }
 
         
       // ==================== APROBAR SOLICITUD ====================
         async function aprobarSolicitud(requestId) {
+            // Validar restricción de fecha para eventos internos
+            const solicitud = solicitudesData.find(s => s.request_id === requestId);
+            if (solicitud && solicitud._tipo === 'internal_event') {
+                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                if (evento) {
+                    const hoy = new Date();
+                    hoy.setHours(0, 0, 0, 0);
+                    const fechaEvento = new Date(evento.event_date + 'T00:00:00');
+                    const diasRestantes = Math.ceil((fechaEvento - hoy) / (1000 * 60 * 60 * 24));
+        
+                    if (diasRestantes > minAdvanceDays) {
+                        showMessage(`No es posible aprobar aún. Faltan ${diasRestantes} días para el evento. La aprobación se habilitará cuando falten ${minAdvanceDays} días o menos.`, 'warning');
+                        return;
+                    }
+                }
+            }
+        
             // Confirmación
             if (!confirm('¿Está seguro de aprobar esta solicitud?')) return;
             
@@ -720,7 +821,10 @@
                 
                 showMessage('✅ Solicitud aprobada correctamente', 'success');
                 
-                // Recargar solicitudes
+                // Cargar configuración del módulo
+                await loadModuleConfig();
+                
+                // Cargar solicitudes
                 await cargarSolicitudes();
                 
             } catch (error) {

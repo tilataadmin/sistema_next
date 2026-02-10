@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.09.19.35">
+    <meta name="page-version" content="26.02.10.14.21">
     <title>Costos de Eventos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -379,30 +379,36 @@
                     return evento?.request_id;
                 }).filter(Boolean))];
                 
-                let requestsAprobadas = [];
+                let requestsValidas = {};
                 if (eventIds.length > 0) {
-                    const requests = await supabaseRequest(`/svc_service_requests?select=request_id&request_status=eq.approved&request_id=in.(${eventIds.join(',')})`);
-                    requestsAprobadas = (requests || []).map(r => r.request_id);
+                    const requests = await supabaseRequest(`/svc_service_requests?select=request_id,request_status&request_status=in.(pending,approved)&request_id=in.(${eventIds.join(',')})`);
+                    (requests || []).forEach(r => {
+                        requestsValidas[r.request_id] = r.request_status;
+                    });
                 }
                 
-                // Filtrar: solo servicios con solicitud aprobada
+                // Filtrar: servicios con solicitud pendiente o aprobada
                 serviciosData = servicios.filter(s => {
                     const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
-                    return evento && requestsAprobadas.includes(evento.request_id);
+                    return evento && requestsValidas[evento.request_id];
+                }).map(s => {
+                    const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
+                    s._requestStatus = requestsValidas[evento.request_id];
+                    return s;
                 });
                 
                 // Aplicar filtros locales
                 if (filtrosActivos.estadoCosto === 'pending') {
                     serviciosData = serviciosData.filter(s => {
                         const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
-                        return !s.cost_value && evento?.event_status === 'scheduled';
+                        return !s.cost_value && evento?.event_status === 'scheduled' && s._requestStatus !== 'approved';
                     });
                 } else if (filtrosActivos.estadoCosto === 'registered') {
                     serviciosData = serviciosData.filter(s => s.cost_value !== null && s.cost_value !== undefined);
                 } else if (filtrosActivos.estadoCosto === 'closed') {
                     serviciosData = serviciosData.filter(s => {
                         const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
-                        return evento?.event_status !== 'scheduled';
+                        return evento?.event_status !== 'scheduled' || s._requestStatus === 'approved';
                     });
                 }
                 
@@ -447,6 +453,7 @@
                 
                 const tieneCosto = servicio.cost_value !== null && servicio.cost_value !== undefined;
                 const eventoAbierto = evento.event_status === 'scheduled';
+                const solicitudAprobada = servicio._requestStatus === 'approved';
                 
                 let cardClass = '';
                 let estadoHTML = '';
@@ -468,12 +475,17 @@
                                     <strong>Costo registrado:</strong> ${formatCurrency(servicio.cost_value)}<br>
                                     <small class="text-muted">Por: ${registrador} el ${fechaRegistro}</small>
                                 </div>
-                                ${eventoAbierto ? `
+                                ${eventoAbierto && !solicitudAprobada ? `
                                 <button class="btn btn-sm btn-outline-warning" onclick="mostrarModalEditar('${servicio.service_id}')">
                                     <i class="bi bi-pencil me-1"></i>Editar
                                 </button>` : ''}
                             </div>
                         </div>
+                        ${solicitudAprobada ? `
+                        <div class="alert alert-info mb-0 mt-2 py-2">
+                            <i class="bi bi-shield-check me-1"></i>
+                            Evento autorizado — Los costos están congelados
+                        </div>` : ''}
                     `;
                 } else if (!eventoAbierto) {
                     cardClass = 'event-closed';
@@ -481,6 +493,14 @@
                         <div class="alert alert-secondary mb-0 mt-3 py-2">
                             <i class="bi bi-lock me-1"></i>
                             Evento ${evento.event_status === 'completed' ? 'finalizado' : 'suspendido/cancelado'} - No se pueden registrar costos
+                        </div>
+                    `;
+                } else if (solicitudAprobada) {
+                    cardClass = 'event-closed';
+                    estadoHTML = `
+                        <div class="alert alert-info mb-0 mt-3 py-2">
+                            <i class="bi bi-shield-check me-1"></i>
+                            Evento autorizado — Ya no se pueden registrar costos
                         </div>
                     `;
                 } else {
@@ -565,6 +585,16 @@
                 return;
             }
             
+            // Validación: verificar que la solicitud no haya sido aprobada mientras se llenaba el formulario
+            const servicio = serviciosData.find(s => s.service_id === serviceId);
+            if (servicio && servicio._requestStatus === 'approved') {
+                showMessage('El evento ya fue autorizado. No se pueden registrar nuevos costos.', 'warning');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('modalRegistrarCosto'));
+                if (modal) modal.hide();
+                await cargarServicios();
+                return;
+            }
+            
             try {
                 await supabaseRequest(`/svc_internal_event_services?service_id=eq.${serviceId}`, {
                     method: 'PATCH',
@@ -618,6 +648,16 @@
             
             if (isNaN(costValue) || costValue < 0) {
                 showMessage('Ingrese un valor valido', 'warning');
+                return;
+            }
+            
+            // Validación: verificar que la solicitud no haya sido aprobada mientras se editaba
+            const servicio = serviciosData.find(s => s.service_id === serviceId);
+            if (servicio && servicio._requestStatus === 'approved') {
+                showMessage('El evento ya fue autorizado. No se pueden modificar costos.', 'warning');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('modalEditarCosto'));
+                if (modal) modal.hide();
+                await cargarServicios();
                 return;
             }
             
@@ -677,6 +717,20 @@
                     return;
                 }
                 
+                // Obtener estados de solicitudes vinculadas
+                const requestIds = [...new Set(todos.map(s => {
+                    const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
+                    return evento?.request_id;
+                }).filter(Boolean))];
+                
+                let requestStatuses = {};
+                if (requestIds.length > 0) {
+                    const requests = await supabaseRequest(`/svc_service_requests?select=request_id,request_status&request_id=in.(${requestIds.join(',')})`);
+                    (requests || []).forEach(r => {
+                        requestStatuses[r.request_id] = r.request_status;
+                    });
+                }
+                
                 let pendientes = 0;
                 let registrados = 0;
                 let cerrados = 0;
@@ -687,14 +741,16 @@
                     
                     const tieneCosto = s.cost_value !== null && s.cost_value !== undefined;
                     const abierto = evento.event_status === 'scheduled';
+                    const reqStatus = requestStatuses[evento.request_id];
+                    const solicitudAprobada = reqStatus === 'approved';
                     
                     if (tieneCosto) {
                         registrados++;
-                    } else if (abierto) {
+                    } else if (abierto && !solicitudAprobada) {
                         pendientes++;
                     }
                     
-                    if (!abierto) {
+                    if (!abierto || solicitudAprobada) {
                         cerrados++;
                     }
                 });
