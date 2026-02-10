@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.15.55">
+    <meta name="page-version" content="26.02.10.14.20">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -279,6 +279,7 @@
       // ==================== VARIABLES GLOBALES ====================
         let currentUser = null;
         let solicitudesData = [];
+        let minAdvanceDays = 7; // Valor por defecto, se carga desde svc_module_config
         let filtrosActivos = {
             tipo: '',
             estado: 'pending'
@@ -338,6 +339,22 @@
                 showMessage('Error al cargar el módulo: ' + error.message, 'danger');
             }
         });
+
+        // ==================== CARGAR CONFIGURACIÓN DEL MÓDULO ====================
+        async function loadModuleConfig() {
+            try {
+                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value&config_key=eq.min_days_advance');
+                if (configs && configs.length > 0) {
+                    minAdvanceDays = parseInt(configs[0].config_value) || 7;
+                }
+                console.log(`✅ Días mínimos de antelación para aprobar: ${minAdvanceDays}`);
+            } catch (error) {
+                console.error('Error cargando configuración del módulo:', error);
+                console.warn('⚠️ Usando valor por defecto:', minAdvanceDays);
+            }
+        }
+
+        
       // ==================== CARGAR SOLICITUDES ====================
         async function cargarSolicitudes() {
             try {
@@ -601,10 +618,33 @@
             
             let botonesAccion = '';
             if (solicitud.request_status === 'pending') {
-                botonesAccion = `
-                    <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
-                        <i class="bi bi-check-circle me-1"></i>Aprobar
-                    </button>
+                // Calcular si la aprobación está habilitada por fecha
+                const hoy = new Date();
+                hoy.setHours(0, 0, 0, 0);
+                const fechaEventoDate = new Date(evento.event_date + 'T00:00:00');
+                const diasRestantes = Math.ceil((fechaEventoDate - hoy) / (1000 * 60 * 60 * 24));
+                const puedeAprobar = diasRestantes <= minAdvanceDays;
+            
+                if (puedeAprobar) {
+                    botonesAccion += `
+                        <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
+                            <i class="bi bi-check-circle me-1"></i>Aprobar
+                        </button>
+                    `;
+                } else {
+                    const fechaHabilitacion = new Date(fechaEventoDate);
+                    fechaHabilitacion.setDate(fechaHabilitacion.getDate() - minAdvanceDays);
+                    botonesAccion += `
+                        <span class="badge bg-info text-wrap me-2 py-2 px-3" style="max-width: 280px; line-height: 1.4;">
+                            <i class="bi bi-clock-history me-1"></i>
+                            Aprobación disponible a partir del ${formatDateLong(fechaHabilitacion.toISOString().split('T')[0])}
+                            <br><small>(faltan ${diasRestantes} días para el evento)</small>
+                        </span>
+                    `;
+                }
+            
+                // Rechazar siempre disponible
+                botonesAccion += `
                     <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
                         <i class="bi bi-x-circle me-1"></i>Rechazar
                     </button>
@@ -695,6 +735,23 @@
         
       // ==================== APROBAR SOLICITUD ====================
         async function aprobarSolicitud(requestId) {
+            // Validar restricción de fecha para eventos internos
+            const solicitud = solicitudesData.find(s => s.request_id === requestId);
+            if (solicitud && solicitud._tipo === 'internal_event') {
+                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                if (evento) {
+                    const hoy = new Date();
+                    hoy.setHours(0, 0, 0, 0);
+                    const fechaEvento = new Date(evento.event_date + 'T00:00:00');
+                    const diasRestantes = Math.ceil((fechaEvento - hoy) / (1000 * 60 * 60 * 24));
+        
+                    if (diasRestantes > minAdvanceDays) {
+                        showMessage(`No es posible aprobar aún. Faltan ${diasRestantes} días para el evento. La aprobación se habilitará cuando falten ${minAdvanceDays} días o menos.`, 'warning');
+                        return;
+                    }
+                }
+            }
+        
             // Confirmación
             if (!confirm('¿Está seguro de aprobar esta solicitud?')) return;
             
@@ -720,7 +777,10 @@
                 
                 showMessage('✅ Solicitud aprobada correctamente', 'success');
                 
-                // Recargar solicitudes
+                // Cargar configuración del módulo
+                await loadModuleConfig();
+                
+                // Cargar solicitudes
                 await cargarSolicitudes();
                 
             } catch (error) {
