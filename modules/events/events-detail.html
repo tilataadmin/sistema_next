@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.11.14.05">
+    <meta name="page-version" content="26.02.11.14.20">
     <title>Detalle del Evento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -179,10 +179,12 @@
         }
         
         .slot-type-badge {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.85);
+            color: #1B365D;
             padding: 0.25rem 0.75rem;
             border-radius: 20px;
             font-size: 0.85rem;
+            font-weight: 500;
         }
         
         .group-item {
@@ -1257,6 +1259,31 @@
         </div>
     </div>
 
+    <!-- Modal: Inscritos en un Taller/Grupo -->
+    <div class="modal fade" id="groupEnrollmentsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header" style="background: var(--module-primary); color: white;">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people me-2"></i>
+                        <span id="groupEnrollmentsTitle">Inscritos en el taller</span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="groupEnrollmentsContent">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: Enviar Certificados de Asistencia -->
     <div class="modal fade" id="certificateModal" tabindex="-1">
         <div class="modal-dialog modal-xl">
@@ -1890,16 +1917,19 @@
                                         ${statusText} - ${spotsLeft} cupos disponibles
                                     </small>
                                 </div>
-                                ${!isReadOnly ? `
-                                    <div class="d-flex gap-1 mt-3">
+                                <div class="d-flex gap-1 mt-3">
+                                    <button class="btn btn-sm btn-outline-info" onclick="viewGroupEnrollments('${group.group_id}', '${group.group_title.replace(/'/g, "\\'")}')">
+                                        <i class="bi bi-people me-1"></i>Ver inscritos
+                                    </button>
+                                    ${!isReadOnly ? `
                                         <button class="btn btn-sm btn-outline-primary" onclick="editGroup('${group.group_id}')">
                                             <i class="bi bi-pencil me-1"></i>Editar
                                         </button>
                                         <button class="btn btn-sm btn-outline-danger" onclick="confirmDeleteGroup('${group.group_id}', '${group.group_title}')">
                                             <i class="bi bi-trash me-1"></i>Eliminar
                                         </button>
-                                    </div>
-                                ` : ''}
+                                    ` : ''}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3057,6 +3087,77 @@
             } catch (error) {
                 console.error('Error generando tabla de grupos:', error);
                 document.getElementById('groupsOccupancy').innerHTML = '<p class="text-danger text-center py-4">Error al cargar tabla</p>';
+            }
+        }
+
+        // ==========================================
+        // VER INSCRITOS EN UN TALLER/GRUPO
+        // ==========================================
+        async function viewGroupEnrollments(groupId, groupTitle) {
+            document.getElementById('groupEnrollmentsTitle').textContent = 'Inscritos en: ' + groupTitle;
+            document.getElementById('groupEnrollmentsContent').innerHTML = `
+                <div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Cargando inscritos...</p></div>
+            `;
+            
+            const enrollModal = new bootstrap.Modal(document.getElementById('groupEnrollmentsModal'));
+            enrollModal.show();
+            
+            try {
+                const enrollments = await supabaseRequest(
+                    `/event_group_enrollments?select=enrollment_id,enrolled_at,event_registrations(participant_document,participant_full_name,participant_email,institutions(institution_name))&group_id=eq.${groupId}&order=enrolled_at.asc`
+                );
+                
+                if (!enrollments || enrollments.length === 0) {
+                    document.getElementById('groupEnrollmentsContent').innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-people"></i>
+                            <h5>Sin inscritos</h5>
+                            <p class="text-muted">Aún no hay participantes inscritos en este taller.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = `
+                    <div class="alert alert-info mb-3">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>${enrollments.length}</strong> participante${enrollments.length !== 1 ? 's' : ''} inscrito${enrollments.length !== 1 ? 's' : ''} en este taller.
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Documento</th>
+                                    <th>Nombre</th>
+                                    <th>Institución</th>
+                                    <th>Email</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                enrollments.forEach((enr, index) => {
+                    const reg = enr.event_registrations || {};
+                    html += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${reg.participant_document || '-'}</td>
+                            <td>${reg.participant_full_name || '-'}</td>
+                            <td>${reg.institutions ? reg.institutions.institution_name : '-'}</td>
+                            <td>${reg.participant_email || '-'}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table></div>';
+                document.getElementById('groupEnrollmentsContent').innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error cargando inscritos:', error);
+                document.getElementById('groupEnrollmentsContent').innerHTML = `
+                    <div class="alert alert-danger">Error al cargar inscritos: ${error.message}</div>
+                `;
             }
         }
 
