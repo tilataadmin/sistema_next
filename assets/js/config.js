@@ -1268,7 +1268,7 @@ console.log('✅ Sistema de gestión de permisos de módulos cargado');
 // URL del Google Apps Script para envío de emails
 // REEMPLAZAR 'TU_SCRIPT_ID' con el ID real del script desplegado
 const NOTIFICATION_CONFIG = {
-    endpoint: 'https://script.google.com/macros/s/AKfycbzhfLGSk8WYPRTDxMTNwj3IPE_gfhUbkmhnaKT8k-hf2pjjdD1570oncw1t8XLb-yIC/exec',
+    endpoint: 'https://script.google.com/macros/s/AKfycbyHG4_9ckpJ2A1O-wok0djm7QMq8UtBz-yKXNFQvNvqkEv_A3pniY_bnCOF6KrM8I8P/exec',
     enabled: true,
     timeout: 10000, // 10 segundos timeout
     retries: 2
