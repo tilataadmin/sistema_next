@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Admisiones</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.0/Recharts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'DM Sans', sans-serif; background: #FAFAF7; color: #1A1A1A; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #B7E4C7; border-radius: 3px; }
+input:focus, button:focus { outline: 2px solid #52B788; outline-offset: 1px; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fadeIn 0.4s ease forwards; }
+@keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useMemo, useEffect } = React;
+const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, CartesianGrid, AreaChart, Area } = Recharts;
+
+const COLORS = ["#2D6A4F","#40916C","#52B788","#74C69D","#95D5B2","#B7E4C7","#D8F3DC","#1B4332","#081C15","#264653","#E76F51","#F4A261"];
+const ACCENT = "#2D6A4F";
+const ACCENT_LIGHT = "#52B788";
+const TEXT_MUTED = "#6B7280";
+const BORDER = "#E5E7EB";
+
+const SQL_QUERIES = [
+  {
+    name: "📊 Inscritos por Convocatoria",
+    key: "inscritos_convocatoria",
+    description: "Total de inscritos, activos y desistidos por cada convocatoria",
+    sql: `SELECT ca.name AS convocatoria, ca.start_academic_year AS año_academico,
+    COUNT(r.id) AS total_inscritos,
+    SUM(CASE WHEN r.give_up IS NOT NULL THEN 1 ELSE 0 END) AS desistieron,
+    COUNT(r.id) - SUM(CASE WHEN r.give_up IS NOT NULL THEN 1 ELSE 0 END) AS activos
+FROM registered_for_call_applications r
+JOIN call_for_applications ca ON ca.id = r.call_application_id
+WHERE r.deleted_at IS NULL
+GROUP BY ca.name, ca.start_academic_year
+ORDER BY ca.start_academic_year DESC;`,
+    chartType: "bar", xKey: "convocatoria",
+    bars: [
+      { key: "total_inscritos", color: "#2D6A4F", name: "Total Inscritos" },
+      { key: "activos", color: "#52B788", name: "Activos" },
+      { key: "desistieron", color: "#E76F51", name: "Desistieron" }
+    ]
+  },
+  {
+    name: "🎓 Inscritos por Grado",
+    key: "inscritos_grado",
+    description: "Distribución de inscritos y desistidos por grado académico",
+    sql: `SELECT lo.name AS grado,
+    COUNT(r.id) AS total_inscritos,
+    SUM(CASE WHEN r.give_up IS NOT NULL THEN 1 ELSE 0 END) AS desistieron
+FROM registered_for_call_applications r
+LEFT JOIN list_options lo ON lo.id = r.selected_grade_id
+WHERE r.deleted_at IS NULL
+GROUP BY lo.name
+ORDER BY total_inscritos DESC;`,
+    chartType: "horizontal_bar", xKey: "grado",
+    bars: [
+      { key: "total_inscritos", color: "#2D6A4F", name: "Inscritos" },
+      { key: "desistieron", color: "#E76F51", name: "Desistieron" }
+    ]
+  },
+  {
+    name: "🏛️ Decisiones del Comité",
+    key: "decisiones_comite",
+    description: "Distribución de decisiones tomadas por el comité de admisión",
+    sql: `SELECT decision, COUNT(*) AS total
+FROM committee_responses
+WHERE deleted_at IS NULL
+GROUP BY decision
+ORDER BY total DESC;`,
+    chartType: "pie", nameKey: "decision", valueKey: "total"
+  },
+  {
+    name: "📈 Inscripciones por Mes",
+    key: "inscripciones_mes",
+    description: "Tendencia mensual de inscripciones",
+    sql: `SELECT TO_CHAR(registration_date, 'YYYY-MM') AS mes,
+    COUNT(*) AS inscripciones
+FROM registered_for_call_applications
+WHERE deleted_at IS NULL AND registration_date IS NOT NULL
+GROUP BY TO_CHAR(registration_date, 'YYYY-MM')
+ORDER BY mes;`,
+    chartType: "area", xKey: "mes",
+    bars: [{ key: "inscripciones", color: "#2D6A4F", name: "Inscripciones" }]
+  },
+  {
+    name: "✅ Evaluaciones por Resultado",
+    key: "evaluaciones_resultado",
+    description: "Resultados de evaluaciones por tipo",
+    sql: `SELECT e.name AS evaluacion, es.approved AS resultado,
+    COUNT(*) AS total
+FROM evaluation_student es
+JOIN evaluations e ON e.id = es.evaluation_id
+GROUP BY e.name, es.approved
+ORDER BY e.name, es.approved;`,
+    chartType: "bar", xKey: "evaluacion",
+    bars: [{ key: "total", color: "#2D6A4F", name: "Total" }]
+  },
+  {
+    name: "🎪 Asistencia a Eventos",
+    key: "asistencia_eventos",
+    description: "Registrados vs asistentes por evento",
+    sql: `SELECT ev.name AS evento, ev.date AS fecha,
+    COUNT(re.id) AS registrados,
+    SUM(CASE WHEN re.attendance = true THEN 1 ELSE 0 END) AS asistieron
+FROM registered_event re
+JOIN events ev ON ev.id = re.event_id
+WHERE re.deleted_at IS NULL
+GROUP BY ev.name, ev.date
+ORDER BY ev.date DESC;`,
+    chartType: "bar", xKey: "evento",
+    bars: [
+      { key: "registrados", color: "#2D6A4F", name: "Registrados" },
+      { key: "asistieron", color: "#52B788", name: "Asistieron" }
+    ]
+  },
+  {
+    name: "📊 Cupos vs Inscritos",
+    key: "cupos_vs_inscritos",
+    description: "Cupos disponibles vs inscritos por grado",
+    sql: `SELECT lo.name AS grado,
+    pca.available_places AS cupos_disponibles,
+    pca.inscribed AS inscritos,
+    pca.warning_places AS cupos_alerta
+FROM places_call_applications pca
+JOIN list_options lo ON lo.id = pca.academic_grade_id
+WHERE pca.deleted_at IS NULL
+ORDER BY lo.name;`,
+    chartType: "bar", xKey: "grado",
+    bars: [
+      { key: "cupos_disponibles", color: "#2D6A4F", name: "Cupos" },
+      { key: "inscritos", color: "#E76F51", name: "Inscritos" },
+      { key: "cupos_alerta", color: "#F4A261", name: "Alerta" }
+    ]
+  },
+  {
+    name: "🔄 Embudo de Admisión",
+    key: "funnel_admision",
+    description: "Funnel completo del proceso de admisión",
+    sql: `SELECT 'Pre-registros' AS etapa, COUNT(*) AS total FROM pre_registrations WHERE status IS NOT NULL
+UNION ALL
+SELECT 'Inscritos', COUNT(*) FROM registered_for_call_applications WHERE deleted_at IS NULL
+UNION ALL
+SELECT 'Evaluados', COUNT(DISTINCT student_id) FROM evaluation_student
+UNION ALL
+SELECT 'En Comité', COUNT(DISTINCT student_id) FROM students_in_committee WHERE deleted_at IS NULL
+UNION ALL
+SELECT 'Decisión Comité', COUNT(*) FROM committee_responses WHERE deleted_at IS NULL
+UNION ALL
+SELECT 'Aceptaron Cupo', COUNT(*) FROM acceptances_study_place WHERE acceptance = true;`,
+    chartType: "funnel", nameKey: "etapa", valueKey: "total"
+  },
+  {
+    name: "📋 Paso Actual",
+    key: "paso_actual",
+    description: "Distribución de estudiantes por paso actual del proceso",
+    sql: `SELECT actual_step AS paso, COUNT(*) AS total
+FROM registered_for_call_applications
+WHERE deleted_at IS NULL AND give_up IS NULL
+GROUP BY actual_step
+ORDER BY total DESC;`,
+    chartType: "pie", nameKey: "paso", valueKey: "total"
+  },
+  {
+    name: "📝 Detalle de Inscritos",
+    key: "detalle_inscritos",
+    description: "Tabla detallada de todos los inscritos con filtros",
+    sql: `SELECT r.id, r.registration_date AS fecha_registro,
+    r.actual_step AS paso_actual, r.student_id, r.family_id,
+    lo_sel.name AS grado_seleccionado,
+    lo_sug.name AS grado_sugerido,
+    r.give_up AS fecha_desistimiento,
+    r.reason_give_up AS razon_desistimiento,
+    r.alert, ca.name AS convocatoria
+FROM registered_for_call_applications r
+LEFT JOIN list_options lo_sel ON lo_sel.id = r.selected_grade_id
+LEFT JOIN list_options lo_sug ON lo_sug.id = r.suggested_grade_id
+LEFT JOIN call_for_applications ca ON ca.id = r.call_application_id
+WHERE r.deleted_at IS NULL
+ORDER BY r.registration_date DESC
+LIMIT 500;`,
+    chartType: "table"
+  }
+];
+
+function DataTable({ data, maxRows = 100 }) {
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [filter, setFilter] = useState("");
+  const columns = data.length > 0 ? Object.keys(data[0]) : [];
+
+  const filtered = useMemo(() => {
+    if (!filter) return data;
+    return data.filter(row =>
+      columns.some(col => String(row[col] || "").toLowerCase().includes(filter.toLowerCase()))
+    );
+  }, [data, filter, columns]);
+
+  const sorted = useMemo(() => {
+    if (!sortCol) return filtered;
+    return [...filtered].sort((a, b) => {
+      const va = a[sortCol] || "", vb = b[sortCol] || "";
+      const na = Number(va), nb = Number(vb);
+      if (!isNaN(na) && !isNaN(nb) && va !== "" && vb !== "") return sortDir === "asc" ? na - nb : nb - na;
+      return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+  }, [filtered, sortCol, sortDir]);
+
+  const displayed = sorted.slice(0, maxRows);
+
+  return (
+    <div>
+      <input type="text" placeholder="🔍 Filtrar datos..." value={filter}
+        onChange={e => setFilter(e.target.value)}
+        style={{ width:"100%", padding:"10px 14px", borderRadius:"8px", border:"1px solid #E5E7EB",
+          marginBottom:"12px", fontSize:"14px", fontFamily:"'DM Sans',sans-serif" }} />
+      <div style={{ overflowX:"auto", borderRadius:"8px", border:"1px solid #E5E7EB" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"12px", fontFamily:"'DM Mono',monospace" }}>
+          <thead>
+            <tr>{columns.map(col => (
+              <th key={col} onClick={() => { if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc"); else {setSortCol(col);setSortDir("asc");} }}
+                style={{ padding:"10px 12px", textAlign:"left", background:"#F3F4F6", cursor:"pointer",
+                  whiteSpace:"nowrap", fontWeight:"600", borderBottom:"2px solid #E5E7EB", userSelect:"none", fontSize:"11px" }}>
+                {col} {sortCol===col?(sortDir==="asc"?"↑":"↓"):""}
+              </th>
+            ))}</tr>
+          </thead>
+          <tbody>{displayed.map((row, i) => (
+            <tr key={i} style={{ background: i%2===0?"#fff":"#F9FAFB" }}>
+              {columns.map(col => (
+                <td key={col} style={{ padding:"7px 12px", borderBottom:"1px solid #E5E7EB", whiteSpace:"nowrap" }}>
+                  {row[col]==null||row[col]===""? <span style={{color:"#D1D5DB"}}>—</span> : String(row[col])}
+                </td>
+              ))}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div style={{ fontSize:"11px", color:"#6B7280", marginTop:"6px" }}>
+        {displayed.length} de {filtered.length} filas {filter && `(de ${data.length} totales)`}
+      </div>
+    </div>
+  );
+}
+
+function ChartRenderer({ config, data }) {
+  if (!data || data.length === 0) return <div style={{color:"#6B7280",textAlign:"center",padding:"40px"}}>Sin datos</div>;
+
+  const numericData = data.map(row => {
+    const r = {...row};
+    Object.keys(r).forEach(k => { const n = Number(r[k]); if(!isNaN(n) && r[k]!=="" && r[k]!==null) r[k]=n; });
+    return r;
+  });
+
+  if (config.chartType === "table") return <DataTable data={numericData} maxRows={200} />;
+
+  if (config.chartType === "pie") {
+    return (
+      <ResponsiveContainer width="100%" height={320}>
+        <PieChart>
+          <Pie data={numericData} dataKey={config.valueKey} nameKey={config.nameKey}
+            cx="50%" cy="50%" outerRadius={110} innerRadius={45}
+            label={({name,percent})=>`${name} (${(percent*100).toFixed(0)}%)`} stroke="#fff" strokeWidth={2}>
+            {numericData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]} />)}
+          </Pie>
+          <Tooltip formatter={v=>v.toLocaleString()} />
+          <Legend />
+        </PieChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  if (config.chartType === "funnel") {
+    const maxVal = Math.max(...numericData.map(d => Number(d[config.valueKey])||0));
+    return (
+      <div style={{padding:"8px 0"}}>
+        {numericData.map((item, i) => {
+          const val = Number(item[config.valueKey])||0;
+          const pct = maxVal>0?(val/maxVal)*100:0;
+          return (
+            <div key={i} style={{display:"flex",alignItems:"center",marginBottom:"10px",gap:"12px"}} className="fade-in">
+              <div style={{width:"130px",textAlign:"right",fontSize:"13px",fontWeight:"500",flexShrink:0}}>{item[config.nameKey]}</div>
+              <div style={{flex:1,height:"38px",background:"#F3F4F6",borderRadius:"6px",overflow:"hidden",position:"relative"}}>
+                <div style={{width:`${pct}%`,height:"100%",background:COLORS[i%COLORS.length],borderRadius:"6px",
+                  display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:"12px",minWidth:"50px",
+                  transition:"width 1s ease"}}>
+                  <span style={{color:"#fff",fontSize:"13px",fontWeight:"700"}}>{val.toLocaleString()}</span>
+                </div>
+              </div>
+              <div style={{width:"50px",fontSize:"12px",color:"#6B7280"}}>{pct.toFixed(0)}%</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (config.chartType === "area") {
+    return (
+      <ResponsiveContainer width="100%" height={320}>
+        <AreaChart data={numericData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis dataKey={config.xKey} tick={{fontSize:11}} angle={-30} textAnchor="end" height={60} />
+          <YAxis tick={{fontSize:12}} />
+          <Tooltip formatter={v=>v.toLocaleString()} />
+          {config.bars.map(b => <Area key={b.key} type="monotone" dataKey={b.key} stroke={b.color} fill={b.color} fillOpacity={0.15} name={b.name} />)}
+          <Legend />
+        </AreaChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  if (config.chartType === "horizontal_bar") {
+    return (
+      <ResponsiveContainer width="100%" height={Math.max(280, numericData.length*42)}>
+        <BarChart data={numericData} layout="vertical" margin={{left:10}}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+          <XAxis type="number" tick={{fontSize:12}} />
+          <YAxis dataKey={config.xKey} type="category" tick={{fontSize:11}} width={130} />
+          <Tooltip formatter={v=>v.toLocaleString()} />
+          {config.bars.map(b => <Bar key={b.key} dataKey={b.key} fill={b.color} name={b.name} radius={[0,4,4,0]} />)}
+          <Legend />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={numericData}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+        <XAxis dataKey={config.xKey} tick={{fontSize:11}} angle={-20} textAnchor="end" height={60} />
+        <YAxis tick={{fontSize:12}} />
+        <Tooltip formatter={v=>v.toLocaleString()} />
+        {config.bars.map(b => <Bar key={b.key} dataKey={b.key} fill={b.color} name={b.name} radius={[4,4,0,0]} />)}
+        <Legend />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function App() {
+  const [reports, setReports] = useState({});
+  const [activeReport, setActiveReport] = useState(null);
+  const [showSQL, setShowSQL] = useState({});
+  const [customData, setCustomData] = useState(null);
+  const [customName, setCustomName] = useState("");
+  const [view, setView] = useState("reports");
+  const [copied, setCopied] = useState({});
+
+  const handleFile = (key) => (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    Papa.parse(file, { header:true, skipEmptyLines:true, complete: r => { setReports(p=>({...p,[key]:r.data})); setActiveReport(key); }});
+  };
+
+  const handleCustom = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setCustomName(file.name.replace(/\.csv$/i,""));
+    Papa.parse(file, { header:true, skipEmptyLines:true, complete: r => setCustomData(r.data) });
+  };
+
+  const copySQL = (key, sql) => {
+    navigator.clipboard.writeText(sql);
+    setCopied(p=>({...p,[key]:true}));
+    setTimeout(()=>setCopied(p=>({...p,[key]:false})),2000);
+  };
+
+  const exportCSV = (data, filename) => {
+    const csv = Papa.unparse(data);
+    const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename+".csv";
+    a.click();
+  };
+
+  const loaded = Object.keys(reports).filter(k=>reports[k]?.length>0).length;
+
+  const stats = useMemo(()=>{
+    const s = {};
+    if(reports.inscritos_convocatoria) {
+      s.ins = reports.inscritos_convocatoria.reduce((a,r)=>a+(Number(r.total_inscritos)||0),0);
+      s.act = reports.inscritos_convocatoria.reduce((a,r)=>a+(Number(r.activos)||0),0);
+      s.des = reports.inscritos_convocatoria.reduce((a,r)=>a+(Number(r.desistieron)||0),0);
+    }
+    if(reports.decisiones_comite) s.com = reports.decisiones_comite.reduce((a,r)=>a+(Number(r.total)||0),0);
+    if(reports.asistencia_eventos) s.evt = reports.asistencia_eventos.length;
+    return s;
+  },[reports]);
+
+  const btnStyle = (active) => ({
+    background: active ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)",
+    color: "#fff", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "8px",
+    padding: "9px 18px", cursor: "pointer", fontSize: "13px", fontWeight: "600", fontFamily: "'DM Sans',sans-serif",
+    transition: "all 0.2s"
+  });
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#1B4332 0%,#2D6A4F 50%,#40916C 100%)",padding:"28px 32px",color:"#fff"}}>
+        <div style={{maxWidth:"1200px",margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"16px"}}>
+          <div>
+            <h1 style={{margin:0,fontSize:"26px",fontWeight:"700",letterSpacing:"-0.5px"}}>📊 Dashboard de Admisiones</h1>
+            <p style={{margin:"5px 0 0",opacity:0.8,fontSize:"13px"}}>{loaded} reporte{loaded!==1?"s":""} cargado{loaded!==1?"s":""} · Los datos se procesan localmente</p>
+          </div>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button onClick={()=>setView("reports")} style={btnStyle(view==="reports")}>Reportes</button>
+            <button onClick={()=>setView("custom")} style={btnStyle(view==="custom")}>CSV Libre</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:"1200px",margin:"0 auto",padding:"24px 20px"}}>
+
+        {/* Stats */}
+        {loaded > 0 && (
+          <div style={{display:"flex",gap:"14px",marginBottom:"24px",flexWrap:"wrap"}} className="fade-in">
+            {stats.ins!==undefined && <div style={{background:"#fff",borderRadius:"12px",border:"1px solid #E5E7EB",padding:"18px 24px",textAlign:"center",minWidth:"140px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:"26px"}}>👥</div><div style={{fontSize:"28px",fontWeight:"700",color:ACCENT}}>{stats.ins.toLocaleString()}</div><div style={{fontSize:"12px",color:"#6B7280",marginTop:"2px"}}>Total Inscritos</div></div>}
+            {stats.act!==undefined && <div style={{background:"#fff",borderRadius:"12px",border:"1px solid #E5E7EB",padding:"18px 24px",textAlign:"center",minWidth:"140px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:"26px"}}>✅</div><div style={{fontSize:"28px",fontWeight:"700",color:"#52B788"}}>{stats.act.toLocaleString()}</div><div style={{fontSize:"12px",color:"#6B7280",marginTop:"2px"}}>Activos</div></div>}
+            {stats.des!==undefined && <div style={{background:"#fff",borderRadius:"12px",border:"1px solid #E5E7EB",padding:"18px 24px",textAlign:"center",minWidth:"140px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:"26px"}}>❌</div><div style={{fontSize:"28px",fontWeight:"700",color:"#E76F51"}}>{stats.des.toLocaleString()}</div><div style={{fontSize:"12px",color:"#6B7280",marginTop:"2px"}}>Desistieron</div></div>}
+            {stats.com!==undefined && <div style={{background:"#fff",borderRadius:"12px",border:"1px solid #E5E7EB",padding:"18px 24px",textAlign:"center",minWidth:"140px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:"26px"}}>🏛️</div><div style={{fontSize:"28px",fontWeight:"700",color:ACCENT}}>{stats.com.toLocaleString()}</div><div style={{fontSize:"12px",color:"#6B7280",marginTop:"2px"}}>Decisiones Comité</div></div>}
+          </div>
+        )}
+
+        {view === "reports" && (
+          <div>
+            {/* Instructions */}
+            <div style={{background:"#F0FFF4",border:"1px solid #B7E4C7",borderRadius:"12px",padding:"20px 24px",marginBottom:"24px"}} className="fade-in">
+              <h3 style={{fontSize:"15px",fontWeight:"600",marginBottom:"8px"}}>📌 ¿Cómo usar este dashboard?</h3>
+              <div style={{fontSize:"13px",color:"#4B5563",lineHeight:"1.7"}}>
+                <strong>1.</strong> Haz clic en <em>"Ver SQL"</em> en cualquier reporte y copia la consulta<br/>
+                <strong>2.</strong> Pégala en el <strong>Query Tool</strong> de pgAdmin y ejecútala<br/>
+                <strong>3.</strong> Exporta el resultado como CSV (botón de descarga ⬇ en pgAdmin)<br/>
+                <strong>4.</strong> Sube el CSV aquí → el gráfico se genera automáticamente
+              </div>
+            </div>
+
+            {/* Report grid */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))",gap:"16px"}}>
+              {SQL_QUERIES.map(q => (
+                <div key={q.key} className="fade-in" style={{
+                  background:"#fff",borderRadius:"12px",border:activeReport===q.key?`2px solid ${ACCENT}`:`1px solid #E5E7EB`,
+                  padding:"22px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)",transition:"border 0.2s"
+                }}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
+                    <h3 style={{fontSize:"15px",fontWeight:"600",margin:0}}>{q.name}</h3>
+                    {reports[q.key]?.length>0 && <span style={{background:"#D1FAE5",color:"#065F46",fontSize:"11px",fontWeight:"600",padding:"2px 8px",borderRadius:"99px"}}>✓ {reports[q.key].length}</span>}
+                  </div>
+                  <p style={{fontSize:"12px",color:"#6B7280",margin:"0 0 12px"}}>{q.description}</p>
+
+                  <button onClick={()=>setShowSQL(p=>({...p,[q.key]:!p[q.key]}))}
+                    style={{background:"none",border:"none",color:ACCENT,fontSize:"12px",cursor:"pointer",padding:0,fontWeight:"600",fontFamily:"'DM Sans',sans-serif",marginBottom:"8px"}}>
+                    {showSQL[q.key]?"▾ Ocultar SQL":"▸ Ver SQL"}
+                  </button>
+
+                  {showSQL[q.key] && (
+                    <div style={{marginBottom:"12px"}}>
+                      <pre style={{background:"#1B4332",color:"#B7E4C7",padding:"14px",borderRadius:"8px",fontSize:"11px",
+                        overflow:"auto",maxHeight:"200px",fontFamily:"'DM Mono',monospace",lineHeight:"1.5",margin:"0 0 8px",whiteSpace:"pre-wrap"}}>
+                        {q.sql}
+                      </pre>
+                      <button onClick={()=>copySQL(q.key,q.sql)}
+                        style={{background:copied[q.key]?ACCENT:"#F3F4F6",color:copied[q.key]?"#fff":"#1A1A1A",
+                          border:"none",borderRadius:"6px",padding:"6px 14px",fontSize:"12px",fontWeight:"600",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",transition:"all 0.2s"}}>
+                        {copied[q.key]?"✓ Copiado":"📋 Copiar SQL"}
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+                    <label style={{background:ACCENT,color:"#fff",borderRadius:"6px",padding:"7px 14px",fontSize:"12px",fontWeight:"600",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
+                      📁 Subir CSV
+                      <input type="file" accept=".csv" onChange={handleFile(q.key)} style={{display:"none"}} />
+                    </label>
+                    {reports[q.key]?.length>0 && (
+                      <button onClick={()=>exportCSV(reports[q.key],q.key)}
+                        style={{background:"#F3F4F6",border:"none",borderRadius:"6px",padding:"7px 14px",fontSize:"12px",fontWeight:"600",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
+                        ⬇ Exportar
+                      </button>
+                    )}
+                  </div>
+
+                  {reports[q.key]?.length>0 && (
+                    <div style={{marginTop:"18px"}}><ChartRenderer config={q} data={reports[q.key]} /></div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view === "custom" && (
+          <div>
+            <div style={{background:"#fff",borderRadius:"12px",border:"1px solid #E5E7EB",padding:"24px",marginBottom:"24px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}} className="fade-in">
+              <h3 style={{fontSize:"16px",fontWeight:"600",marginBottom:"8px"}}>📂 Explorador de CSV libre</h3>
+              <p style={{fontSize:"13px",color:"#6B7280",marginBottom:"16px"}}>Sube cualquier CSV exportado desde pgAdmin para explorarlo con filtros, ordenamiento y búsqueda.</p>
+              <label style={{background:ACCENT,color:"#fff",borderRadius:"8px",padding:"10px 20px",fontSize:"14px",fontWeight:"600",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
+                📁 Seleccionar CSV
+                <input type="file" accept=".csv" onChange={handleCustom} style={{display:"none"}} />
+              </label>
+            </div>
+            {customData && (
+              <div style={{background:"#fff",borderRadius:"12px",border:"1px solid #E5E7EB",padding:"24px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}} className="fade-in">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"8px"}}>
+                  <h3 style={{fontSize:"16px",fontWeight:"600"}}>📋 {customName} <span style={{fontSize:"13px",color:"#6B7280",fontWeight:"400"}}>({customData.length} filas)</span></h3>
+                  <button onClick={()=>exportCSV(customData,customName)}
+                    style={{background:"#F3F4F6",border:"none",borderRadius:"6px",padding:"7px 14px",fontSize:"12px",fontWeight:"600",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>⬇ Exportar</button>
+                </div>
+                <DataTable data={customData} maxRows={300} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div style={{textAlign:"center",padding:"24px",fontSize:"11px",color:"#9CA3AF"}}>
+        Dashboard de Admisiones · Todos los datos se procesan localmente en tu navegador · Ningún dato sale de tu equipo
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
