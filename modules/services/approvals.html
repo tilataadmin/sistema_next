@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.10.14.25">
+    <meta name="page-version" content="26.02.12.10.50">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -279,7 +279,7 @@
       // ==================== VARIABLES GLOBALES ====================
         let currentUser = null;
         let solicitudesData = [];
-        let minAdvanceDays = 7; // Valor por defecto, se carga desde svc_module_config
+        let daysBeforeImminent = 2; // Días antes del evento para habilitar aprobación (se carga desde svc_module_config)
         let filtrosActivos = {
             tipo: '',
             estado: 'pending'
@@ -329,6 +329,9 @@
                     throw new Error('getStoredSession no está disponible');
                 }
                 
+                // Cargar configuración del módulo
+                await loadModuleConfig();
+                
                 // Cargar solicitudes
                 await cargarSolicitudes();
                 
@@ -343,14 +346,14 @@
         // ==================== CARGAR CONFIGURACIÓN DEL MÓDULO ====================
         async function loadModuleConfig() {
             try {
-                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value&config_key=eq.min_days_advance');
+                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value&config_key=eq.days_before_imminent');
                 if (configs && configs.length > 0) {
-                    minAdvanceDays = parseInt(configs[0].config_value) || 7;
+                    daysBeforeImminent = parseInt(configs[0].config_value) || 2;
                 }
-                console.log(`✅ Días mínimos de antelación para aprobar: ${minAdvanceDays}`);
+                console.log(`✅ Días de inminencia para aprobar: ${daysBeforeImminent}`);
             } catch (error) {
                 console.error('Error cargando configuración del módulo:', error);
-                console.warn('⚠️ Usando valor por defecto:', minAdvanceDays);
+                console.warn('⚠️ Usando valor por defecto:', daysBeforeImminent);
             }
         }
 
@@ -522,14 +525,28 @@
             
             let botonesAccion = '';
             if (solicitud.request_status === 'pending') {
-                botonesAccion = `
-                    <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
-                        <i class="bi bi-check-circle me-1"></i>Aprobar
-                    </button>
-                    <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
-                        <i class="bi bi-x-circle me-1"></i>Rechazar
-                    </button>
-                `;
+                const hoy = new Date();
+                hoy.setHours(0, 0, 0, 0);
+                const fechaTripDate = new Date(trip.trip_date + 'T00:00:00');
+                const diasRestantes = Math.ceil((fechaTripDate - hoy) / (1000 * 60 * 60 * 24));
+            
+                if (diasRestantes < 0) {
+                    botonesAccion = `
+                        <span class="badge bg-secondary text-wrap me-2 py-2 px-3" style="max-width: 280px; line-height: 1.4;">
+                            <i class="bi bi-calendar-x me-1"></i>
+                            Salida ya pasó — no se puede aprobar
+                        </span>
+                    `;
+                } else {
+                    botonesAccion = `
+                        <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
+                            <i class="bi bi-check-circle me-1"></i>Aprobar
+                        </button>
+                        <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
+                            <i class="bi bi-x-circle me-1"></i>Rechazar
+                        </button>
+                    `;
+                }
             }
             
             return `
@@ -572,22 +589,26 @@
                                 </small>
                             </div>
                             <div class="col-md-4">
-                                <div class="col-md-4">
-                                    <div class="cost-breakdown">
-                                        <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
-                                        <div class="cost-item">
-                                            <span>Costos detallados:</span>
-                                            <span class="text-muted"><em>Ver detalle</em></span>
-                                        </div>
-                                        <div class="cost-item">
-                                            <span>ESTADO:</span>
-                                            <span>${getBadgeEstadoEvento(evento.event_status)}</span>
-                                        </div>
+                                <div class="cost-breakdown">
+                                    <h6 class="mb-3"><i class="bi bi-calculator me-2"></i>Costos</h6>
+                                    <div class="cost-item">
+                                        <span>Transporte:</span>
+                                        <span>${formatCurrency(costoTransporte)}</span>
                                     </div>
-                                    <div id="costStatus_${solicitud.request_id}" class="mt-2">
-                                        <small class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Cargando costos...</small>
+                                    <div class="cost-item">
+                                        <span>Refrigerios:</span>
+                                        <span>${costoRefrigerios ? formatCurrency(costoRefrigerios) : 'No incluye'}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Entradas:</span>
+                                        <span>${costoEntradas ? formatCurrency(costoEntradas) : 'No incluye'}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>TOTAL:</span>
+                                        <span>${formatCurrency(costoTotal)}</span>
                                     </div>
                                 </div>
+                            </div>
                         </div>
                         ${solicitud.request_status === 'rejected' && solicitud.rejection_reason ? `
                             <div class="alert alert-danger mb-0 mt-3">
@@ -621,22 +642,23 @@
             
             let botonesAccion = '';
             if (solicitud.request_status === 'pending') {
-                // Calcular si la aprobación está habilitada por fecha
                 const hoy = new Date();
                 hoy.setHours(0, 0, 0, 0);
                 const fechaEventoDate = new Date(evento.event_date + 'T00:00:00');
                 const diasRestantes = Math.ceil((fechaEventoDate - hoy) / (1000 * 60 * 60 * 24));
-                const puedeAprobar = diasRestantes <= minAdvanceDays;
             
-                if (puedeAprobar) {
+                if (diasRestantes < 0) {
+                    // Fecha ya pasó — no se puede aprobar ni rechazar
                     botonesAccion += `
-                        <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
-                            <i class="bi bi-check-circle me-1"></i>Aprobar
-                        </button>
+                        <span class="badge bg-secondary text-wrap me-2 py-2 px-3" style="max-width: 280px; line-height: 1.4;">
+                            <i class="bi bi-calendar-x me-1"></i>
+                            Evento ya pasó — no se puede aprobar
+                        </span>
                     `;
-                } else {
+                } else if (diasRestantes > daysBeforeImminent) {
+                    // Aún no se abre la ventana de aprobación
                     const fechaHabilitacion = new Date(fechaEventoDate);
-                    fechaHabilitacion.setDate(fechaHabilitacion.getDate() - minAdvanceDays);
+                    fechaHabilitacion.setDate(fechaHabilitacion.getDate() - daysBeforeImminent);
                     botonesAccion += `
                         <span class="badge bg-info text-wrap me-2 py-2 px-3" style="max-width: 280px; line-height: 1.4;">
                             <i class="bi bi-clock-history me-1"></i>
@@ -644,14 +666,23 @@
                             <br><small>(faltan ${diasRestantes} días para el evento)</small>
                         </span>
                     `;
+                    // Rechazar sí está disponible aunque no se pueda aprobar aún
+                    botonesAccion += `
+                        <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
+                            <i class="bi bi-x-circle me-1"></i>Rechazar
+                        </button>
+                    `;
+                } else {
+                    // Dentro de la ventana de aprobación
+                    botonesAccion += `
+                        <button class="btn btn-success me-2" onclick="aprobarSolicitud('${solicitud.request_id}')">
+                            <i class="bi bi-check-circle me-1"></i>Aprobar
+                        </button>
+                        <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
+                            <i class="bi bi-x-circle me-1"></i>Rechazar
+                        </button>
+                    `;
                 }
-            
-                // Rechazar siempre disponible
-                botonesAccion += `
-                    <button class="btn btn-danger me-2" onclick="mostrarModalRechazar('${solicitud.request_id}')">
-                        <i class="bi bi-x-circle me-1"></i>Rechazar
-                    </button>
-                `;
             }
             
             return `
@@ -779,19 +810,37 @@
         
       // ==================== APROBAR SOLICITUD ====================
         async function aprobarSolicitud(requestId) {
-            // Validar restricción de fecha para eventos internos
+            // Validar restricciones de fecha
             const solicitud = solicitudesData.find(s => s.request_id === requestId);
-            if (solicitud && solicitud._tipo === 'internal_event') {
-                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
-                if (evento) {
-                    const hoy = new Date();
-                    hoy.setHours(0, 0, 0, 0);
-                    const fechaEvento = new Date(evento.event_date + 'T00:00:00');
-                    const diasRestantes = Math.ceil((fechaEvento - hoy) / (1000 * 60 * 60 * 24));
-        
-                    if (diasRestantes > minAdvanceDays) {
-                        showMessage(`No es posible aprobar aún. Faltan ${diasRestantes} días para el evento. La aprobación se habilitará cuando falten ${minAdvanceDays} días o menos.`, 'warning');
-                        return;
+            if (solicitud) {
+                const hoy = new Date();
+                hoy.setHours(0, 0, 0, 0);
+            
+                if (solicitud._tipo === 'internal_event') {
+                    const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                    if (evento) {
+                        const fechaEvento = new Date(evento.event_date + 'T00:00:00');
+                        const diasRestantes = Math.ceil((fechaEvento - hoy) / (1000 * 60 * 60 * 24));
+            
+                        if (diasRestantes < 0) {
+                            showMessage('No se puede aprobar: la fecha del evento ya pasó.', 'warning');
+                            return;
+                        }
+                        if (diasRestantes > daysBeforeImminent) {
+                            showMessage(`No es posible aprobar aún. Faltan ${diasRestantes} días para el evento. La aprobación se habilitará cuando falten ${daysBeforeImminent} días o menos.`, 'warning');
+                            return;
+                        }
+                    }
+                } else if (solicitud._tipo === 'pedagogical_trip') {
+                    const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                    if (trip) {
+                        const fechaTrip = new Date(trip.trip_date + 'T00:00:00');
+                        const diasRestantes = Math.ceil((fechaTrip - hoy) / (1000 * 60 * 60 * 24));
+            
+                        if (diasRestantes < 0) {
+                            showMessage('No se puede aprobar: la fecha de la salida ya pasó.', 'warning');
+                            return;
+                        }
                     }
                 }
             }
@@ -821,10 +870,7 @@
                 
                 showMessage('✅ Solicitud aprobada correctamente', 'success');
                 
-                // Cargar configuración del módulo
-                await loadModuleConfig();
-                
-                // Cargar solicitudes
+                // Recargar solicitudes
                 await cargarSolicitudes();
                 
             } catch (error) {
