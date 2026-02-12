@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.01.22.13.15">
+    <meta name="page-version" content="26.02.12.13.40">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1257,7 +1257,7 @@
             
             // Validar fecha mínima al abrir modal
             document.getElementById('modal-nueva-tarea').addEventListener('show.bs.modal', function() {
-                const today = new Date().toISOString().split('T')[0];
+                const today = getCurrentDateColombia();
                 document.getElementById('nueva-fecha-limite').setAttribute('min', today);
             });
             
@@ -1574,7 +1574,8 @@
             let html = '';
             
             tareas.forEach(tarea => {
-                const dueDate = new Date(tarea.due_date);
+                const [yy, mm, dd] = (tarea.due_date || '').split('-');
+                const dueDate = new Date(parseInt(yy), parseInt(mm) - 1, parseInt(dd));
                 const isOverdue = tarea.task_state !== 'Terminada' && tarea.task_state !== 'Cancelada' && dueDate < today;
                 
                 const priorityClass = `priority-${tarea.task_priority || 'normal'}`;
@@ -1660,7 +1661,7 @@
                                 <div class="mb-2">
                                     <small class="${isOverdue ? 'text-danger fw-bold' : 'text-muted'}">
                                         <i class="bi bi-calendar-event me-1"></i>
-                                        <strong>Fecha límite:</strong> ${formatDate(tarea.due_date)}
+                                        <strong>Fecha límite:</strong> ${formatDateSafe(tarea.due_date)}
                                         ${isOverdue ? '<span class="badge bg-danger ms-1">VENCIDA</span>' : ''}
                                     </small>
                                 </div>
@@ -1817,7 +1818,7 @@
             // Limpiar archivos
             archivosNuevaTarea = [];
             renderizarArchivosNuevaTarea();
-            const today = new Date().toISOString().split('T')[0];
+            const today = getCurrentDateColombia();
             document.getElementById('nueva-fecha-limite').setAttribute('min', today);
             
             // Limpiar colaboradores
@@ -1943,7 +1944,8 @@
         function getTaskAssignmentEmailTemplate(taskDescription, dueDate, priority, assignedBy) {
             const priorityColors = { 'Alta': '#dc3545', 'Normal': '#0d6efd', 'Baja': '#6c757d' };
             const priorityColor = priorityColors[priority] || '#0d6efd';
-            const dueDateFormatted = formatDate(dueDate);
+            const dueDateFormatted = formatDateSafe(dueDate);
+
             
             return `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
@@ -1977,7 +1979,7 @@
         function getCollaboratorEmailTemplate(taskDescription, dueDate, priority, responsable, addedBy) {
             const priorityColors = { 'Alta': '#dc3545', 'Normal': '#0d6efd', 'Baja': '#6c757d' };
             const priorityColor = priorityColors[priority] || '#0d6efd';
-            const dueDateFormatted = formatDate(dueDate);
+            const dueDateFormatted = formatDateSafe(dueDate);
             
             return `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
@@ -2047,7 +2049,7 @@
                     assigned_to_mail: formData.get('assigned_to_mail'),
                     assigned_to_name: selectedWorker.dataset.workerName,
                     student_id: null,
-                    due_date: formData.get('due_date'),
+                    due_date: formatDateForDatabase(formData.get('due_date')),
                     task_priority: formData.get('task_priority'),
                     task_progress: quillNuevaContexto && quillNuevaContexto.getText().trim() ? quillNuevaContexto.root.innerHTML : null,
                     task_state: 'Asignada',
@@ -2058,9 +2060,8 @@
                     reference_id: formData.get('reference_id') || null
                 };
                 
-                const today = new Date(); today.setHours(0, 0, 0, 0);
-                const selectedDate = new Date(datos.due_date);
-                if (selectedDate < today) { showMessage('La fecha límite no puede ser anterior a hoy', 'warning'); ocultarLoading(); return; }
+                const todayStr = getCurrentDateColombia();
+                if (datos.due_date < todayStr) {
                 
                 // Crear la tarea
                 await supabaseRequest('/tasks', { 
@@ -2270,7 +2271,7 @@
             
             document.getElementById('progreso-descripcion').textContent = tarea.task_description || 'N/A';
             document.getElementById('progreso-asignada').textContent = tarea.assigned_to_name || tarea.assigned_to_mail || 'N/A';
-            document.getElementById('progreso-fecha').textContent = formatDate(tarea.due_date);
+            document.getElementById('progreso-fecha').textContent = formatDateSafe(tarea.due_date);
             document.getElementById('progreso-prioridad').textContent = tarea.task_priority || 'Normal';
             document.getElementById('progreso-estado').textContent = tarea.task_state || 'Asignada';
             
@@ -2316,7 +2317,7 @@
             if (esCreadorTarea) {
                 document.getElementById('editar-fecha-limite').value = tarea.due_date || '';
                 // Fecha mínima: hoy
-                const today = new Date().toISOString().split('T')[0];
+                const today = getCurrentDateColombia();
                 document.getElementById('editar-fecha-limite').setAttribute('min', today);
             }
             
@@ -2376,7 +2377,7 @@
                         datos.category_id = nuevaCategoria || null;
                     }
                     
-                    if (taskState === 'Terminada') datos.close_date = new Date().toISOString().split('T')[0];
+                    if (taskState === 'Terminada') datos.close_date = getCurrentDateColombia();
                     await supabaseRequest('/tasks?task_id=eq.' + taskId, { method: 'PATCH', body: JSON.stringify(datos) });
                 }
                 
@@ -2388,7 +2389,7 @@
                         await supabaseRequest('/tasks?task_id=eq.' + taskId, { 
                             method: 'PATCH', 
                             body: JSON.stringify({ 
-                                due_date: nuevaFechaLimite,
+                                due_date: formatDateForDatabase(nuevaFechaLimite),
                                 updated_at: new Date().toISOString() 
                             }) 
                         });
@@ -2459,8 +2460,8 @@
                 document.getElementById('detalle-categoria').textContent = 'Sin categoría';
             }
             
-            document.getElementById('detalle-fecha-limite').textContent = formatDate(tarea.due_date);
-            document.getElementById('detalle-fecha-cierre').textContent = tarea.close_date ? formatDate(tarea.close_date) : 'No cerrada';
+            document.getElementById('detalle-fecha-limite').textContent = formatDateSafe(tarea.due_date);
+            document.getElementById('detalle-fecha-cierre').textContent = tarea.close_date ? formatDateSafe(tarea.close_date) : 'No cerrada';
             document.getElementById('detalle-progreso').innerHTML = tarea.task_progress || 'Sin contexto documentado';
 
             
@@ -2534,7 +2535,7 @@
                 mostrarLoading();
                 await supabaseRequest('/tasks?task_id=eq.' + taskId, {
                     method: 'PATCH',
-                    body: JSON.stringify({ task_state: 'Terminada', close_date: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() })
+                    body: JSON.stringify({ task_state: 'Terminada', close_date: getCurrentDateColombia(), updated_at: new Date().toISOString() })
                 });
                 showMessage('Tarea cerrada exitosamente', 'success');
                 await cargarTareas();
@@ -2549,7 +2550,7 @@
                 mostrarLoading();
                 await supabaseRequest('/tasks?task_id=eq.' + taskId, {
                     method: 'PATCH',
-                    body: JSON.stringify({ task_state: 'Cancelada', close_date: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() })
+                    body: JSON.stringify({ task_state: 'Cancelada', close_date: getCurrentDateColombia(), updated_at: new Date().toISOString() })
                 });
                 showMessage('Tarea cancelada', 'info');
                 await cargarTareas();
@@ -2857,6 +2858,25 @@
             if (!dateString) return 'N/A';
             const date = new Date(dateString);
             return date.toLocaleString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+
+        // ==========================================
+        // UTILIDAD: FORMATO SEGURO DE FECHAS (sin desfase timezone)
+        // ==========================================
+        function formatDateSafe(dateString) {
+            if (!dateString) return '-';
+            // Si es formato YYYY-MM-DD (solo fecha), parsear manualmente
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+                const [year, month, day] = dateString.split('-');
+                return `${day}/${month}/${year}`;
+            }
+            // Si tiene 'T' (es timestamp completo), también extraer solo la fecha
+            if (dateString.includes('T')) {
+                const soloFecha = dateString.split('T')[0];
+                const [year, month, day] = soloFecha.split('-');
+                return `${day}/${month}/${year}`;
+            }
+            return formatDate(dateString);
         }
         
         // ==========================================
