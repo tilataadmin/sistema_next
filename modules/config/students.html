@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.01.11.39">
+    <meta name="page-version" content="26.02.16.22.00">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -237,14 +237,24 @@
                                        name="student_code" required>
                             </div>
 
-                            <div class="col-md-6">
+                            <!-- Tipo de documento -->
+                            <div class="col-md-3">
+                                <label for="documentTypeId" class="form-label">
+                                    Tipo de documento
+                                </label>
+                                <select class="form-select" id="documentTypeId" name="document_type_id">
+                                    <option value="">Seleccione...</option>
+                                </select>
+                            </div>
+
+                            <!-- Número de documento -->
+                            <div class="col-md-3">
                                 <label for="studentIdDocument" class="form-label">
-                                    Documento de identidad
+                                    Nº de documento
                                 </label>
                                 <input type="text" class="form-control" id="studentIdDocument" 
                                        name="student_id_document" maxlength="50"
                                        placeholder="Ej: 1234567890">
-                                <small class="text-muted">Cédula, TI, pasaporte, etc.</small>
                             </div>
                             
                             <!-- Familia -->
@@ -329,6 +339,16 @@
                                     <option value="">Seleccione un estado...</option>
                                 </select>
                             </div>
+                            
+                            <!-- EPS -->
+                            <div class="col-md-6">
+                                <label for="epsId" class="form-label">
+                                    EPS
+                                </label>
+                                <select class="form-select" id="epsId" name="eps_id">
+                                    <option value="">Seleccione una EPS...</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -355,6 +375,8 @@
         let courses = [];
         let statuses = [];
         let genders = [];
+        let documentTypes = [];
+        let epsEntities = [];
         let currentStatusFilter = '1'; 
         let isEditing = false;
         let currentStudentId = null;
@@ -482,17 +504,21 @@
         
         async function loadDropdownData() {
             try {
-                const [familiesData, coursesData, statusesData, gendersData] = await Promise.all([
+                const [familiesData, coursesData, statusesData, gendersData, documentTypesData, epsData] = await Promise.all([
                     supabaseRequest('/families?select=family_code,family_name&order=family_name.asc'),
                     supabaseRequest('/courses?select=course_id,course_name,course_order&course_status=eq.active&order=course_order.asc'),
                     supabaseRequest('/student_status?select=status_id,status_code,status_description&order=status_code.asc'),
-                    supabaseRequest('/genders?select=gender_id,gender_name&order=gender_name.asc')
+                    supabaseRequest('/genders?select=gender_id,gender_name&order=gender_name.asc'),
+                    supabaseRequest('/document_types?select=document_type_id,document_type_name,document_type_abbr&document_type_status=eq.active&order=document_type_order.asc'),
+                    supabaseRequest('/eps_entities?select=eps_id,eps_name&eps_status=eq.active&order=eps_name.asc')
                 ]);
                 
                 families = familiesData || [];
                 courses = coursesData || [];
                 statuses = statusesData || [];
                 genders = gendersData || [];
+                documentTypes = documentTypesData || [];
+                epsEntities = epsData || [];
                 
                 populateDropdowns();
                 
@@ -539,6 +565,20 @@
             genderSelect.innerHTML = '<option value="">Seleccione un género...</option>';
             genders.forEach(gender => {
                 genderSelect.innerHTML += `<option value="${gender.gender_id}">${gender.gender_name}</option>`;
+            });
+            
+            // Document Types
+            const docTypeSelect = document.getElementById('documentTypeId');
+            docTypeSelect.innerHTML = '<option value="">Seleccione...</option>';
+            documentTypes.forEach(dt => {
+                docTypeSelect.innerHTML += `<option value="${dt.document_type_id}">${dt.document_type_abbr} - ${dt.document_type_name}</option>`;
+            });
+            
+            // EPS Entities
+            const epsSelect = document.getElementById('epsId');
+            epsSelect.innerHTML = '<option value="">Seleccione una EPS...</option>';
+            epsEntities.forEach(eps => {
+                epsSelect.innerHTML += `<option value="${eps.eps_id}">${eps.eps_name}</option>`;
             });
         }
         
@@ -783,7 +823,7 @@
                     await loadDropdownData();
                 }
                 
-                const data = await supabaseRequest('/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,student_entry_date,family_id,course_id,status_id,gender_id&student_id=eq.' + studentId);
+                const data = await supabaseRequest('/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,student_entry_date,family_id,course_id,status_id,gender_id,student_id_document,document_type_id,eps_id&student_id=eq.' + studentId);
                 
                 if (!data || data.length === 0) {
                     throw new Error('Estudiante no encontrado');
@@ -810,6 +850,8 @@
                     document.getElementById('courseId').value = student.course_id || '';
                     document.getElementById('statusId').value = student.status_id || '';
                     document.getElementById('gender').value = student.gender_id || '';
+                    document.getElementById('documentTypeId').value = student.document_type_id || '';
+                    document.getElementById('epsId').value = student.eps_id || '';
                 }, 100);
                 
                 document.getElementById('studentCode').readOnly = true;
@@ -860,9 +902,13 @@
                     }
                 }
                 
+                // Campos opcionales: enviar null explícito si están vacíos (para que PATCH los limpie)
+                const nullableFields = ['student_last_name_2', 'student_id_document', 'document_type_id', 'eps_id'];
+                
                 Object.keys(studentData).forEach(key => {
                     if (studentData[key] === '' || studentData[key] === null || studentData[key] === undefined) {
-                        if (key === 'student_last_name_2') {
+                        if (nullableFields.includes(key)) {
+                            studentData[key] = null;
                             return;
                         }
                         delete studentData[key];
