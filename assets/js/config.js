@@ -187,7 +187,7 @@ const APP_CONFIG = {
     
     // Información de la institución
     institution: {
-        name: 'Colegio Tilata',
+        name: 'Colegio Tilatá',
         domain: 'colegiotilata.edu.co',
         logo: '/assets/images/logo.png'
     },
