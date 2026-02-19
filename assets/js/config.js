@@ -187,7 +187,7 @@ const APP_CONFIG = {
     
     // Información de la institución
     institution: {
-        name: 'Colegio Tilata',
+        name: 'Colegio Tilatá',
         domain: 'colegiotilata.edu.co',
         logo: '/assets/images/logo.png'
     },
@@ -344,6 +344,15 @@ const APP_CONFIG = {
             description: 'Gestión de servicios institucionales, transporte, eventos y salidas',
             icon: 'bi-bus-front',
             path: '/modules/services/',
+            status: 'active'
+        },
+        {
+            id: 'suppliers',
+            moduleId: 'suppliers',
+            name: 'Proveedores',
+            description: 'Gestión de proveedores, registro público y portal de proveedores',
+            icon: 'bi-building',
+            path: '/modules/suppliers/',
             status: 'active'
         }
         
