@@ -345,6 +345,15 @@ const APP_CONFIG = {
             icon: 'bi-bus-front',
             path: '/modules/services/',
             status: 'active'
+        },
+        {
+            id: 'suppliers',
+            moduleId: 'suppliers',
+            name: 'Proveedores',
+            description: 'Gestión de proveedores, registro público y portal de proveedores',
+            icon: 'bi-building',
+            path: '/modules/suppliers/',
+            status: 'active'
         }
         
     ],
