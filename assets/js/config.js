@@ -88,52 +88,52 @@ console.log(`🔒 RLS Enabled: ${ENV_CONFIG.features.rlsEnabled}`);
 /**
  * Renderiza un badge discreto con la versión de la página individual
  * Lee el meta tag: <meta name="page-version" content="YY.MM.DD.HH.MM">
+ * Se inyecta en el navbar, a la izquierda del botón Manual
  * Si no existe el meta tag, no muestra nada (retrocompatible)
  */
 function renderPageVersion() {
-    // Buscar el meta tag de versión
     const versionMeta = document.querySelector('meta[name="page-version"]');
-    
-    if (!versionMeta) return; // Si no tiene versión, no mostrar nada (retrocompatible)
-    
+    if (!versionMeta) return;
+
     const version = versionMeta.content;
     const envLabel = CURRENT_ENVIRONMENT === 'development' ? ' [DEV]' : '';
-    
-    // Crear badge discreto en esquina inferior derecha
-    const badge = document.createElement('div');
+
+    // Buscar el botón de Manual en el navbar para insertar antes de él
+    const manualButton = document.getElementById('manual-button');
+    if (!manualButton) {
+        console.warn('⚠️ No se encontró el navbar para inyectar versión');
+        return;
+    }
+
+    const badge = document.createElement('span');
     badge.id = 'page-version-badge';
     badge.style.cssText = `
-        position: fixed;
-        bottom: 10px;
-        right: 10px;
-        background: rgba(0, 0, 0, 0.7);
-        color: #fff;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        color: rgba(255, 255, 255, 0.7);
+        padding: 0.35rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
         font-family: 'Courier New', monospace;
-        z-index: 9999;
-        backdrop-filter: blur(5px);
         cursor: help;
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        transition: all 0.2s;
+        white-space: nowrap;
     `;
-    
+
     badge.textContent = `v${version}${envLabel}`;
     badge.title = `Última modificación: ${version}\nAmbiente: ${CURRENT_ENVIRONMENT}`;
-    
-    // Hover effect
+
     badge.addEventListener('mouseenter', () => {
-        badge.style.background = 'rgba(0, 0, 0, 0.9)';
-        badge.style.transform = 'scale(1.05)';
+        badge.style.background = 'rgba(255, 255, 255, 0.2)';
+        badge.style.color = 'rgba(255, 255, 255, 0.95)';
     });
-    
+
     badge.addEventListener('mouseleave', () => {
-        badge.style.background = 'rgba(0, 0, 0, 0.7)';
-        badge.style.transform = 'scale(1)';
+        badge.style.background = 'rgba(255, 255, 255, 0.1)';
+        badge.style.color = 'rgba(255, 255, 255, 0.7)';
     });
-    
-    document.body.appendChild(badge);
+
+    manualButton.parentNode.insertBefore(badge, manualButton);
     console.log(`📌 Versión de página: v${version}`);
 }
 
