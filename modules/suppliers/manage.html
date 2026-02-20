@@ -48,6 +48,15 @@
         .attachment-item a { text-decoration: none; flex: 1; }
         .attachment-item .file-size { font-size: 0.8rem; color: #6c757d; }
 
+        /* Notification bell */
+        .notif-bell { position: relative; display: inline-block; color: #dc3545; }
+        .notif-bell .notif-count {
+            position: absolute; top: -6px; right: -10px;
+            background: #dc3545; color: white; font-size: 0.65rem; font-weight: 700;
+            width: 16px; height: 16px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+        }
+
         /* Counter badges */
         .counter-badge { font-size: 1.5rem; font-weight: 700; }
         .counter-card { border-radius: 10px; border: none; transition: transform 0.2s; }
@@ -343,6 +352,74 @@
         </div>
     </div>
 
+    <!-- ============================================ -->
+    <!-- MODAL: ENVIAR NOTIFICACIÓN                  -->
+    <!-- ============================================ -->
+    <div class="modal fade" id="modal-notify" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title"><i class="bi bi-bell me-2"></i>Enviar Notificación</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form onsubmit="confirmarNotificacion(event)">
+                    <div class="modal-body">
+                        <input type="hidden" id="notify-id">
+                        <p>Enviar notificación al proveedor: <strong id="notify-name"></strong></p>
+                        
+                        <div class="mb-3">
+                            <label for="notify-message" class="form-label">
+                                Mensaje <span class="text-danger">*</span>
+                            </label>
+                            <textarea class="form-control" id="notify-message" rows="5" required
+                                      placeholder="Describa el motivo de la notificación..."></textarea>
+                            <div class="form-text">Este mensaje será enviado por correo electrónico al proveedor</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-warning" id="btn-confirm-notify">
+                            <i class="bi bi-send me-1"></i>Enviar Notificación
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ============================================ -->
+    <!-- MODAL: CERRAR NOTIFICACIÓN                  -->
+    <!-- ============================================ -->
+    <div class="modal fade" id="modal-close-notif" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title"><i class="bi bi-check-circle me-2"></i>Cerrar Notificación</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form onsubmit="confirmarCerrarNotificacion(event)">
+                    <div class="modal-body">
+                        <input type="hidden" id="close-notif-id">
+                        <p>¿Desea cerrar esta notificación?</p>
+                        
+                        <div class="mb-3">
+                            <label for="close-notif-notes" class="form-label">Observaciones de cierre</label>
+                            <textarea class="form-control" id="close-notif-notes" rows="2"
+                                      placeholder="Opcional: motivo del cierre..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="btn-confirm-close-notif">
+                            <i class="bi bi-check-circle me-1"></i>Cerrar Notificación
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
 
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -352,10 +429,11 @@
         // ==========================================
         // VARIABLES GLOBALES
         // ==========================================
-        let cacheSuppliers = [];
+       let cacheSuppliers = [];
         let cacheWorkers = [];
+        let cacheOpenNotifications = {};
         let currentSession = null;
-        let modalDetail, modalApprove, modalReject;
+        let modalDetail, modalApprove, modalReject, modalNotify, modalCloseNotif;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -379,13 +457,17 @@
                 modalDetail = new bootstrap.Modal(document.getElementById('modal-detail'));
                 modalApprove = new bootstrap.Modal(document.getElementById('modal-approve'));
                 modalReject = new bootstrap.Modal(document.getElementById('modal-reject'));
+                modalNotify = new bootstrap.Modal(document.getElementById('modal-notify'));
+                modalCloseNotif = new bootstrap.Modal(document.getElementById('modal-close-notif'));
 
                 // Cargar datos
                 await Promise.all([
                     cargarProveedores(),
-                    cargarWorkers()
+                    cargarWorkers(),
+                    cargarNotificacionesAbiertas()
                 ]);
 
+                
             } catch (error) {
                 console.error('❌ Error en inicialización:', error);
                 showMessage('Error al inicializar: ' + error.message, 'danger');
@@ -440,6 +522,25 @@
                     
             } catch (error) {
                 console.error('❌ Error cargando workers:', error);
+            }
+        }
+
+        // ==========================================
+        // NOTIFICACIONES ABIERTAS
+        // ==========================================
+
+        async function cargarNotificacionesAbiertas() {
+            try {
+                const data = await supabaseRequest(
+                    '/sup_supplier_notifications?select=supplier_id&notification_status=eq.open'
+                );
+                cacheOpenNotifications = {};
+                (data || []).forEach(n => {
+                    cacheOpenNotifications[n.supplier_id] = (cacheOpenNotifications[n.supplier_id] || 0) + 1;
+                });
+                console.log('🔔 Notificaciones abiertas cargadas');
+            } catch (error) {
+                console.error('❌ Error cargando notificaciones:', error);
             }
         }
 
@@ -553,10 +654,15 @@
                     : '<span class="text-muted">—</span>';
                 const fecha = s.created_at ? formatDate(s.created_at) : '—';
                 
+                const openNotifs = cacheOpenNotifications[s.supplier_id] || 0;
+                const bellHtml = openNotifs > 0 
+                    ? `<span class="notif-bell ms-2" title="${openNotifs} notificación(es) abierta(s)"><i class="bi bi-bell-fill"></i><span class="notif-count">${openNotifs}</span></span>` 
+                    : '';
+
                 return `
                 <tr class="row-clickable" ondblclick="verDetalle('${s.supplier_id}')">
                     <td>
-                        <div class="supplier-name">${nombre}</div>
+                        <div class="supplier-name">${nombre}${bellHtml}</div>
                         ${s.email ? `<div class="supplier-doc">${s.email}</div>` : ''}
                     </td>
                     <td><span class="supplier-doc">${documento}</span></td>
@@ -569,6 +675,11 @@
                             <button class="btn btn-outline-primary" onclick="verDetalle('${s.supplier_id}')" title="Ver detalle">
                                 <i class="bi bi-eye"></i>
                             </button>
+                            ${s.supplier_status === 'approved' ? `
+                            <button class="btn btn-outline-warning" onclick="abrirNotificacion('${s.supplier_id}')" title="Enviar notificación">
+                                <i class="bi bi-bell"></i>
+                            </button>
+                            ` : ''}
                             ${s.supplier_status === 'pending' ? `
                             <button class="btn btn-outline-success" onclick="abrirAprobacion('${s.supplier_id}')" title="Aprobar">
                                 <i class="bi bi-check-lg"></i>
@@ -825,6 +936,14 @@
                     ${htmlAcep}
                 </div>
 
+                <!-- Historial de Notificaciones -->
+                <div class="detail-section" style="border-left-color: #ffc107;">
+                    <h6 style="color: #ffc107;"><i class="bi bi-bell me-2"></i>Notificaciones</h6>
+                    <div id="detail-notifications">
+                        <div class="text-center py-2"><div class="spinner-border spinner-border-sm text-warning"></div> Cargando...</div>
+                    </div>
+                </div>
+
                 <!-- Gestión Interna -->
                 ${s.supplier_status !== 'pending' ? `
                 <div class="detail-section" style="border-left-color: #6c757d;">
@@ -868,6 +987,59 @@
             }
 
             modalDetail.show();
+            cargarHistorialNotificaciones(id);
+        }
+
+        // ==========================================
+        // HISTORIAL DE NOTIFICACIONES EN DETALLE
+        // ==========================================
+
+        async function cargarHistorialNotificaciones(supplierId) {
+            const container = document.getElementById('detail-notifications');
+            try {
+                const data = await supabaseRequest(
+                    `/sup_supplier_notifications?select=*,sent_by_user:users!sup_supplier_notifications_sent_by_fkey(user_name),closed_by_user:users!sup_supplier_notifications_closed_by_fkey(user_name)&supplier_id=eq.${supplierId}&order=sent_at.desc`
+                );
+
+                if (!data || data.length === 0) {
+                    container.innerHTML = '<span class="text-muted">Sin notificaciones registradas</span>';
+                    return;
+                }
+
+                container.innerHTML = data.map(n => {
+                    const isOpen = n.notification_status === 'open';
+                    const statusBadge = isOpen
+                        ? '<span class="badge bg-warning text-dark">Abierta</span>'
+                        : '<span class="badge bg-secondary">Cerrada</span>';
+                    const sentDate = n.sent_at ? formatDate(n.sent_at) : '—';
+                    const sentBy = n.sent_by_user?.user_name || '—';
+                    const closeBtn = isOpen
+                        ? `<button class="btn btn-outline-secondary btn-sm ms-2" onclick="abrirCerrarNotificacion('${n.notification_id}')" title="Cerrar notificación"><i class="bi bi-check-circle me-1"></i>Cerrar</button>`
+                        : '';
+                    const closedInfo = !isOpen
+                        ? `<div class="mt-1"><small class="text-muted">Cerrada por ${n.closed_by_user?.user_name || '—'} el ${n.closed_at ? formatDate(n.closed_at) : '—'}${n.closure_notes ? ' — ' + n.closure_notes : ''}</small></div>`
+                        : '';
+
+                    return `
+                    <div class="p-2 mb-2 rounded" style="background: ${isOpen ? '#fff8e1' : '#f8f9fa'}; border-left: 3px solid ${isOpen ? '#ffc107' : '#6c757d'};">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    ${statusBadge}
+                                    <small class="text-muted">${sentDate} — ${sentBy}</small>
+                                    ${closeBtn}
+                                </div>
+                                <p class="mb-0" style="white-space: pre-line;">${n.message}</p>
+                                ${closedInfo}
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error cargando historial:', error);
+                container.innerHTML = '<span class="text-danger">Error al cargar notificaciones</span>';
+            }
         }
 
         // ==========================================
@@ -1068,6 +1240,158 @@
                             <li>Corrija la información señalada</li>
                             <li>Presione "Corregir y Reenviar" para enviar nuevamente su solicitud</li>
                         </ol>
+                    </div>
+                </div>
+                <div style="padding: 15px; border: 1px solid #e9ecef; border-top: none; border-radius: 0 0 12px 12px; background: #f8f9fa;">
+                    <p style="color: #adb5bd; font-size: 0.75rem; text-align: center; margin: 0;">
+                        Este correo fue generado automáticamente por ${institution}. No responda a este mensaje.
+                    </p>
+                </div>
+            </div>`;
+        }
+
+        // ==========================================
+        // ENVIAR NOTIFICACIÓN
+        // ==========================================
+
+        function abrirNotificacion(id) {
+            const s = cacheSuppliers.find(x => x.supplier_id === id);
+            if (!s) return;
+
+            document.getElementById('notify-id').value = id;
+            document.getElementById('notify-name').textContent = getNombreProveedor(s);
+            document.getElementById('notify-message').value = '';
+            modalNotify.show();
+        }
+
+        async function confirmarNotificacion(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-confirm-notify');
+            btn.disabled = true;
+
+            try {
+                const id = document.getElementById('notify-id').value;
+                const message = document.getElementById('notify-message').value.trim();
+
+                if (!message) {
+                    showMessage('Escriba el mensaje de la notificación', 'warning');
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Guardar en BD
+                await supabaseRequest('/sup_supplier_notifications', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        supplier_id: id,
+                        message: message,
+                        sent_by: currentSession.user.user_id
+                    })
+                });
+
+                // Enviar correo
+                const supplier = cacheSuppliers.find(x => x.supplier_id === id);
+                if (supplier?.email) {
+                    const nombre = getNombreProveedor(supplier);
+                    const portalUrl = `${APP_CONFIG.baseUrl}/modules/suppliers/portal.html`;
+                    const htmlEmail = getNotificationEmailTemplate(nombre, message, portalUrl);
+                    sendNotification(supplier.email, 'Notificación del área de proveedores', htmlEmail);
+                }
+
+                modalNotify.hide();
+                showMessage('Notificación enviada exitosamente', 'success');
+                await cargarNotificacionesAbiertas();
+                filtrarProveedores();
+
+            } catch (error) {
+                showMessage('Error al enviar notificación: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ==========================================
+        // CERRAR NOTIFICACIÓN
+        // ==========================================
+
+        function abrirCerrarNotificacion(notifId) {
+            document.getElementById('close-notif-id').value = notifId;
+            document.getElementById('close-notif-notes').value = '';
+            modalCloseNotif.show();
+        }
+
+        async function confirmarCerrarNotificacion(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-confirm-close-notif');
+            btn.disabled = true;
+
+            try {
+                const notifId = document.getElementById('close-notif-id').value;
+                const notes = document.getElementById('close-notif-notes').value.trim();
+
+                await supabaseRequest(`/sup_supplier_notifications?notification_id=eq.${notifId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        notification_status: 'closed',
+                        closed_by: currentSession.user.user_id,
+                        closed_at: new Date().toISOString(),
+                        closure_notes: notes || null
+                    })
+                });
+
+                modalCloseNotif.hide();
+                showMessage('Notificación cerrada', 'success');
+                await cargarNotificacionesAbiertas();
+                filtrarProveedores();
+
+                // Refrescar historial si el modal de detalle está abierto
+                const detailBody = document.getElementById('detail-notifications');
+                if (detailBody) {
+                    const supplierId = document.getElementById('approve-id')?.value || 
+                        detailBody.closest('.modal-body')?.dataset?.supplierId;
+                    // Recargar desde el caché de proveedores visibles
+                    const openModal = document.getElementById('modal-detail');
+                    if (openModal.classList.contains('show')) {
+                        const notifData = await supabaseRequest(`/sup_supplier_notifications?select=supplier_id&notification_id=eq.${notifId}`);
+                        if (notifData && notifData.length > 0) {
+                            cargarHistorialNotificaciones(notifData[0].supplier_id);
+                        }
+                    }
+                }
+
+            } catch (error) {
+                showMessage('Error al cerrar notificación: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ==========================================
+        // PLANTILLA DE CORREO NOTIFICACIÓN
+        // ==========================================
+
+        function getNotificationEmailTemplate(nombre, mensaje, portalUrl) {
+            const institution = APP_CONFIG.institution?.name || 'SchoolNet';
+            return `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: #1B365D; color: white; padding: 25px; text-align: center; border-radius: 12px 12px 0 0;">
+                    <h2 style="margin: 0;">Portal de Proveedores</h2>
+                    <p style="margin: 5px 0 0; opacity: 0.8;">${institution}</p>
+                </div>
+                <div style="background: white; padding: 30px; border: 1px solid #e9ecef; border-top: none;">
+                    <div style="background: #fff8e1; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                        <strong style="color: #856404;">📋 Notificación</strong>
+                    </div>
+                    <p>Estimado(a) <strong>${nombre}</strong>,</p>
+                    <p>Le informamos sobre lo siguiente:</p>
+                    <div style="background: #f8f9fa; border: 1px solid #e9ecef; padding: 20px; border-radius: 8px; margin: 20px 0; white-space: pre-line;">
+                        ${mensaje}
+                    </div>
+                    <p>Si necesita realizar alguna corrección o actualización de su información, puede acceder al Portal de Proveedores:</p>
+                    <div style="text-align: center; margin: 25px 0;">
+                        <a href="${portalUrl}" style="background: #ffc107; color: #000; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
+                            Acceder al Portal
+                        </a>
                     </div>
                 </div>
                 <div style="padding: 15px; border: 1px solid #e9ecef; border-top: none; border-radius: 0 0 12px 12px; background: #f8f9fa;">
