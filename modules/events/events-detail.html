@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.11.13.45">
+    <meta name="page-version" content="26.02.20.07.20">
     <title>Detalle del Evento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -2662,70 +2662,86 @@
         // ==========================================
         // ASISTENCIAS
         // ==========================================
-        async function loadAttendanceByDate() {
-            const date = document.getElementById('attendanceDate').value;
-            if (!date) {
-                document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-4"><span class="text-muted">Selecciona una fecha para ver las asistencias</span></td></tr>';
-                document.getElementById('dayAttendanceCount').textContent = '0';
-                return;
+        // ==========================================
+// ASISTENCIAS (OPTIMIZADO - 2 queries en vez de N+1)
+// ==========================================
+async function loadAttendanceByDate() {
+    const date = document.getElementById('attendanceDate').value;
+    if (!date) {
+        document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-4"><span class="text-muted">Selecciona una fecha para ver las asistencias</span></td></tr>';
+        document.getElementById('dayAttendanceCount').textContent = '0';
+        return;
+    }
+    
+    try {
+        document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+        
+        // Query 1: Asistencias del día con datos del participante
+        const data = await supabaseRequest(
+            `/event_attendance?select=*,event_registrations(participant_document,participant_full_name,participant_email)&event_id=eq.${eventId}&attendance_date=eq.${date}&order=attendance_time.asc`
+        );
+        
+        document.getElementById('dayAttendanceCount').textContent = data ? data.length : 0;
+        
+        if (!data || data.length === 0) {
+            document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#ccc;"></i><p class="text-muted mt-2 mb-0">No hay asistencias registradas para esta fecha</p></td></tr>';
+            return;
+        }
+        
+        // Query 2: TODOS los enrollments de estos asistentes en UNA sola llamada
+        const registrationIds = [...new Set(data.map(a => a.registration_id))];
+        const enrollments = await supabaseRequest(
+            `/event_group_enrollments?select=registration_id,event_groups(group_title)&registration_id=in.(${registrationIds.join(',')})`
+        );
+        
+        // Construir mapa: registration_id -> [nombres de grupos]
+        const enrollmentMap = {};
+        (enrollments || []).forEach(enr => {
+            const rid = enr.registration_id;
+            if (!enrollmentMap[rid]) enrollmentMap[rid] = [];
+            if (enr.event_groups) {
+                enrollmentMap[rid].push(enr.event_groups.group_title);
+            }
+        });
+        
+        // Renderizar tabla
+        let html = '';
+        for (const attendance of data) {
+            let timeDisplay = '';
+            if (attendance.attendance_time) {
+                const timeStr = attendance.attendance_time.toString();
+                timeDisplay = timeStr.includes('T') ? timeStr.split('T')[1].substring(0, 5) : timeStr.substring(0, 5);
             }
             
-            try {
-                document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
-                
-                const data = await supabaseRequest(
-                    `/event_attendance?select=*,event_registrations(participant_document,participant_full_name,participant_email)&event_id=eq.${eventId}&attendance_date=eq.${date}&order=attendance_time.asc`
-                );
-                
-                document.getElementById('dayAttendanceCount').textContent = data ? data.length : 0;
-                
-                if (!data || data.length === 0) {
-                    document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#ccc;"></i><p class="text-muted mt-2 mb-0">No hay asistencias registradas para esta fecha</p></td></tr>';
-                    return;
-                }
-                
-                let html = '';
-                for (const attendance of data) {
-                    let timeDisplay = '';
-                    if (attendance.attendance_time) {
-                        const timeStr = attendance.attendance_time.toString();
-                        timeDisplay = timeStr.includes('T') ? timeStr.split('T')[1].substring(0, 5) : timeStr.substring(0, 5);
-                    }
-                    
-                    const enrollments = await supabaseRequest(
-                        `/event_group_enrollments?select=event_groups(group_title)&registration_id=eq.${attendance.registration_id}`
-                    );
-                    
-                    let groupsHtml = '<span class="text-muted">Sin talleres</span>';
-                    if (enrollments && enrollments.length > 0) {
-                        const groupNames = enrollments.map(e => e.event_groups ? e.event_groups.group_title : '').filter(Boolean).join(', ');
-                        groupsHtml = `<small>${groupNames}</small>`;
-                    }
-                    
-                    let originBadge = '';
-                    switch(attendance.registered_from) {
-                        case 'qr': originBadge = '<span class="badge bg-success">QR</span>'; break;
-                        case 'manual': originBadge = '<span class="badge bg-primary">Manual</span>'; break;
-                        default: originBadge = '<span class="badge bg-secondary">Otro</span>';
-                    }
-                    
-                    html += `
-                        <tr>
-                            <td><strong>${timeDisplay}</strong></td>
-                            <td>${attendance.event_registrations ? attendance.event_registrations.participant_document : '-'}</td>
-                            <td>${attendance.event_registrations ? attendance.event_registrations.participant_full_name : '-'}</td>
-                            <td>${originBadge}</td>
-                            <td>${groupsHtml}</td>
-                        </tr>
-                    `;
-                }
-                document.getElementById('attendanceTableBody').innerHTML = html;
-            } catch (error) {
-                console.error('❌ Error cargando asistencias:', error);
-                document.getElementById('attendanceTableBody').innerHTML = `<tr><td colspan="5" class="text-center py-4"><div class="alert alert-danger m-0">Error al cargar asistencias: ${error.message}</div></td></tr>`;
-                document.getElementById('dayAttendanceCount').textContent = '0';
+            const groupNames = enrollmentMap[attendance.registration_id];
+            const groupsHtml = groupNames && groupNames.length > 0
+                ? `<small>${groupNames.join(', ')}</small>`
+                : '<span class="text-muted">Sin talleres</span>';
+            
+            let originBadge = '';
+            switch(attendance.registered_from) {
+                case 'qr': originBadge = '<span class="badge bg-success">QR</span>'; break;
+                case 'manual': originBadge = '<span class="badge bg-primary">Manual</span>'; break;
+                default: originBadge = '<span class="badge bg-secondary">Otro</span>';
             }
+            
+            html += `
+                <tr>
+                    <td><strong>${timeDisplay}</strong></td>
+                    <td>${attendance.event_registrations ? attendance.event_registrations.participant_document : '-'}</td>
+                    <td>${attendance.event_registrations ? attendance.event_registrations.participant_full_name : '-'}</td>
+                    <td>${originBadge}</td>
+                    <td>${groupsHtml}</td>
+                </tr>
+            `;
         }
+        document.getElementById('attendanceTableBody').innerHTML = html;
+    } catch (error) {
+        console.error('❌ Error cargando asistencias:', error);
+        document.getElementById('attendanceTableBody').innerHTML = `<tr><td colspan="5" class="text-center py-4"><div class="alert alert-danger m-0">Error al cargar asistencias: ${error.message}</div></td></tr>`;
+        document.getElementById('dayAttendanceCount').textContent = '0';
+    }
+}
         
         async function initAttendanceTab() {
             if (currentEvent) {
