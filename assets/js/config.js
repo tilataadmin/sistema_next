@@ -137,12 +137,8 @@ function renderPageVersion() {
     console.log(`📌 Versión de página: v${version}`);
 }
 
-// Auto-ejecutar cuando el DOM esté listo
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', renderPageVersion);
-} else {
-    renderPageVersion();
-}
+// La versión se inyecta desde injectUserNavbar() después de crear el navbar
+
 
 // ==========================================
 // CONFIGURACIÓN DE SUPABASE UNIFICADA
@@ -1875,6 +1871,9 @@ function injectUserNavbar() {
     // Configurar event listeners
     setupNavbarEventListeners();
     setupChangePasswordModal();
+    
+    // Inyectar badge de versión de página (debe ir DESPUÉS de crear el navbar)
+    renderPageVersion();
     
     console.log('✅ Navbar de usuario inyectado correctamente');
 }
