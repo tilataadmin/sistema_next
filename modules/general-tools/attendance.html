@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.02.10.11.50">
+    <meta name="page-version" content="26.02.23.15.00">
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -1452,8 +1452,9 @@
                     registro_tipo: tipoRegistro.toLowerCase()
                 };
                 
-                await supabaseRequest('/attendance', {
+               const resultadoPost = await supabaseRequest('/attendance', {
                     method: 'POST',
+                    headers: { 'Prefer': 'return=representation' },
                     body: JSON.stringify(nuevoRegistro)
                 });
 
@@ -1480,7 +1481,13 @@
                 await cargarUltimosRegistros();
                 await contarPendientesPhidias();
 
+                // Sync individual con Phidias si es estudiante + entrada
+                if (match.tipo === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
+                    sincronizarRegistroIndividualPhidias(resultadoPost[0].attendance_id, match.documento);
+                }
+
                 // Reiniciar reconocimiento después de 2 segundos
+
                 setTimeout(() => iniciarReconocimientoFacial(), 2000);
 
             } catch (error) {
@@ -1578,8 +1585,9 @@
                     registro_tipo: tipoRegistro.toLowerCase()
                 };
                 
-                await supabaseRequest('/attendance', {
+                const resultadoPost = await supabaseRequest('/attendance', {
                     method: 'POST',
+                    headers: { 'Prefer': 'return=representation' },
                     body: JSON.stringify(nuevoRegistro)
                 });
 
@@ -1590,6 +1598,11 @@
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
                 await contarPendientesPhidias();
+
+                // Sync individual con Phidias si es estudiante + entrada
+                if (tipoPersona === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
+                    sincronizarRegistroIndividualPhidias(resultadoPost[0].attendance_id, documento);
+                }
 
                 setTimeout(() => {
                     document.getElementById('rfid-input').focus();
@@ -1911,8 +1924,9 @@
                     attendance_timestamp: timestamp,
                     registro_tipo: tipoRegistro.toLowerCase()
                 };
-                await supabaseRequest('/attendance', {
+                const resultadoPost = await supabaseRequest('/attendance', {
                     method: 'POST',
+                    headers: { 'Prefer': 'return=representation' },
                     body: JSON.stringify(nuevoRegistro)
                 });
 
@@ -1924,6 +1938,10 @@
                 await cargarUltimosRegistros();
                 await contarPendientesPhidias();
 
+                // Sync individual con Phidias si es estudiante + entrada
+                if (tipoPersona === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
+                    sincronizarRegistroIndividualPhidias(resultadoPost[0].attendance_id, documento);
+                }
                 setTimeout(() => iniciarScanner(), 2000);
 
             } catch (error) {
@@ -2148,8 +2166,9 @@
                     registro_tipo: tipoRegistro.toLowerCase()
                 };
 
-                await supabaseRequest('/attendance', {
+               const resultadoPost = await supabaseRequest('/attendance', {
                     method: 'POST',
+                    headers: { 'Prefer': 'return=representation' },
                     body: JSON.stringify(nuevoRegistro)
                 });
 
@@ -2161,6 +2180,11 @@
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
                 await contarPendientesPhidias();
+
+                // Sync individual con Phidias si es estudiante + entrada
+                if (selectedPerson.tipo === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
+                    sincronizarRegistroIndividualPhidias(resultadoPost[0].attendance_id, selectedPerson.documento);
+                }
 
             } catch (error) {
                 console.error('❌ Error registrando asistencia manual:', error);
@@ -2636,6 +2660,71 @@
                 });
             } catch (error) {
                 console.error('Error marcando sync error:', error);
+            }
+        }
+
+        /**
+         * Sincroniza UN registro individual con Phidias (post 8:20)
+         * Se llama automáticamente al registrar asistencia de un estudiante
+         */
+        async function sincronizarRegistroIndividualPhidias(attendanceId, documento) {
+            try {
+                if (!PHIDIAS_CONFIG.loaded || !isPhidiasTokenValid()) return;
+
+                const estudiantes = await supabaseRequest(
+                    `/students?select=student_code&student_id_document=eq.${documento}&limit=1`
+                );
+
+                if (!estudiantes || !estudiantes[0]?.student_code) {
+                    console.warn('⚠️ Phidias individual: sin student_code para', documento);
+                    await marcarSyncError(attendanceId, 'Sin student_code en SchoolNet');
+                    return;
+                }
+
+                const studentCode = estudiantes[0].student_code;
+
+                const regData = await supabaseRequest(
+                    `/attendance?select=attendance_date,attendance_time&attendance_id=eq.${attendanceId}&limit=1`
+                );
+                if (!regData || !regData[0]) return;
+
+                const dateTime = new Date(`${regData[0].attendance_date}T${regData[0].attendance_time}-05:00`);
+                const unixTimestamp = Math.floor(dateTime.getTime() / 1000);
+
+                const payload = [{
+                    person: String(studentCode),
+                    document_type: 'code',
+                    timestamp: unixTimestamp
+                }];
+
+                console.log(`📡 Phidias individual: enviando código ${studentCode}...`);
+
+                const respuesta = await phidiasRequest('/attendance/absence/register', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                console.log('📡 Phidias individual respuesta:', respuesta);
+
+                if (Array.isArray(respuesta) && respuesta.length > 0) {
+                    const resultado = respuesta[0];
+                    if (resultado && resultado.id) {
+                        await marcarSyncExitoso(attendanceId);
+                        console.log(`✅ Phidias: ${studentCode} sincronizado OK`);
+                    } else {
+                        const error = resultado?.subtext || resultado?.text || 'Error desconocido';
+                        await marcarSyncError(attendanceId, error);
+                        console.warn(`⚠️ Phidias: ${studentCode} error: ${error}`);
+                    }
+                } else {
+                    await marcarSyncError(attendanceId, 'Respuesta inesperada de Phidias');
+                }
+
+                await contarPendientesPhidias();
+
+            } catch (error) {
+                console.error('❌ Phidias individual error:', error);
+                try { await marcarSyncError(attendanceId, `Error: ${error.message}`); } catch(e) {}
             }
         }
 
