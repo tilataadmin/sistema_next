@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.23.18.20">
+    <meta name="page-version" content="26.02.23.18.30">
     <title>Salidas Deportivas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -576,8 +576,12 @@
         // ==========================================
         async function loadCurrentWorker() {
             try {
+                // workers no tiene user_id: obtener email del usuario y buscar worker por email
+                const userData = await supabaseRequest(`/users?select=user_mail&user_id=eq.${currentSession.user.user_id}`);
+                if (!userData || userData.length === 0 || !userData[0].user_mail) return;
+                
                 const workers = await supabaseRequest(
-                    `/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,worker_email&user_id=eq.${currentSession.user.user_id}`
+                    `/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&email=eq.${userData[0].user_mail}`
                 );
                 if (workers && workers.length > 0) {
                     currentWorker = workers[0];
@@ -629,23 +633,28 @@
             try {
                 // Find workers with "Resolución de solicitudes" permission
                 const PERM_ID = '5c503ff3-559f-4755-9d47-b63fe7f561a2';
-                // Get roles that have this permission
                 const rolePerms = await supabaseRequest(`/role_permissions?select=role_id&permission_id=eq.${PERM_ID}`);
                 if (!rolePerms || rolePerms.length === 0) return [];
 
                 const roleIds = rolePerms.map(rp => rp.role_id);
                 const roleFilter = roleIds.map(id => `role_id.eq.${id}`).join(',');
 
-                // Get users with those roles
                 const userRoles = await supabaseRequest(`/user_roles?select=user_id&or=(${roleFilter})`);
                 if (!userRoles || userRoles.length === 0) return [];
 
                 const userIds = [...new Set(userRoles.map(ur => ur.user_id))];
                 const userFilter = userIds.map(id => `user_id.eq.${id}`).join(',');
 
-                // Get workers for those users
+                // Obtener emails de esos usuarios
+                const users = await supabaseRequest(`/users?select=user_mail&or=(${userFilter})`);
+                if (!users || users.length === 0) return [];
+
+                const emails = users.map(u => u.user_mail).filter(Boolean);
+                const emailFilter = emails.map(e => `email.eq.${e}`).join(',');
+
+                // Obtener workers por email
                 const workers = await supabaseRequest(
-                    `/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2&or=(${userFilter})&order=worker_last_name_1,worker_first_name`
+                    `/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2&or=(${emailFilter})&order=worker_last_name_1,worker_first_name`
                 );
 
                 return workers || [];
@@ -1526,9 +1535,9 @@
         async function notifyApprover(approverId, tripName, tripDate) {
             try {
                 const approverData = await supabaseRequest(
-                    `/workers?select=worker_email,worker_first_name&worker_id=eq.${approverId}`
+                    `/workers?select=email,worker_first_name&worker_id=eq.${approverId}`
                 );
-                if (approverData && approverData.length > 0 && approverData[0].worker_email) {
+                if (approverData && approverData.length > 0 && approverData[0].email) {
                     const senderName = currentWorker ? `${currentWorker.worker_first_name} ${currentWorker.worker_last_name_1}${currentWorker.worker_last_name_2 ? ' ' + currentWorker.worker_last_name_2 : ''}` : 'Un usuario';
                     const html = `
                         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
@@ -1548,7 +1557,7 @@
                                 Correo automático de SchoolNet - No responder
                             </p>
                         </div>`;
-                    await sendNotification(approverData[0].worker_email, `SchoolNet - Solicitud: ${tripName}`, html);
+                    await sendNotification(approverData[0].email, `SchoolNet - Solicitud: ${tripName}`, html);
                 }
             } catch (e) {
                 console.error('Error notifying approver:', e);
