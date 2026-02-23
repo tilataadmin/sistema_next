@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.17.07.37">
+    <meta name="page-version" content="26.02.23.18.20">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -435,6 +435,32 @@
                                             </label>
                                         </div>
                                     </div>
+                                    
+                                    <!-- Nodos de transporte -->
+                                    <div class="col-md-6" id="nodosSeccionSalida" style="display:none;">
+                                        <label class="form-label">Nodos de salida</label>
+                                        <div class="input-group mb-2">
+                                            <select class="form-select" id="wizardNodoSalidaSelect">
+                                                <option value="">Agregar nodo de salida...</option>
+                                            </select>
+                                            <button class="btn btn-outline-primary" type="button" onclick="agregarNodo('departure')">
+                                                <i class="bi bi-plus"></i>
+                                            </button>
+                                        </div>
+                                        <div id="nodosSalidaList" class="d-flex flex-wrap gap-1"></div>
+                                    </div>
+                                    <div class="col-md-6" id="nodosSeccionLlegada" style="display:none;">
+                                        <label class="form-label">Nodos de llegada</label>
+                                        <div class="input-group mb-2">
+                                            <select class="form-select" id="wizardNodoLlegadaSelect">
+                                                <option value="">Agregar nodo de llegada...</option>
+                                            </select>
+                                            <button class="btn btn-outline-primary" type="button" onclick="agregarNodo('arrival')">
+                                                <i class="bi bi-plus"></i>
+                                            </button>
+                                        </div>
+                                        <div id="nodosLlegadaList" class="d-flex flex-wrap gap-1"></div>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -442,6 +468,11 @@
                             <div class="wizard-content" data-step="2">
                                 <h5 class="mb-3">Descripción de la Salida</h5>
                                 <div class="row g-3">
+                                    <div class="col-md-12">
+                                        <label class="form-label">Título de la salida <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="wizardTitulo" required
+                                               placeholder="Ej: Visita al Museo Nacional, Recorrido ecológico...">
+                                    </div>
                                     <div class="col-md-12">
                                         <label class="form-label">Descripción <span class="text-danger">*</span></label>
                                         <textarea class="form-control" id="wizardDescripcion" rows="4" required 
@@ -479,14 +510,14 @@
                                         </small>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label">Número de adultos <span class="text-danger">*</span></label>
-                                        <input type="number" class="form-control" id="wizardNumAdultos" min="0" value="0" required>
-                                    </div>
-                                    <div class="col-md-12">
                                         <label class="form-label">Adultos acompañantes</label>
-                                        <textarea class="form-control" id="wizardAdultosNombres" rows="3" 
-                                                  placeholder="Nombres de los adultos acompañantes (Ej: María García, Pedro López, Ana Ruiz)"></textarea>
-                                        <small class="text-muted">Separe los nombres con comas</small>
+                                        <select class="form-select" id="wizardAdultosWorkers" multiple size="5" onchange="actualizarContadorAdultos()">
+                                            <!-- Se carga dinámicamente -->
+                                        </select>
+                                        <small class="text-muted">Ctrl+click para seleccionar varios</small>
+                                        <div class="mt-1">
+                                            <span class="badge bg-info" id="wizardAdultosCount">0 adultos seleccionados</span>
+                                        </div>
                                     </div>
                                     <div class="col-md-12">
                                         <div class="alert alert-success">
@@ -758,14 +789,16 @@
             destinos: [],
             menus: [],
             aprobadores: [],
+            workers: [],
+            nodos: [],
             salidas: [],
-            detalleTransporte: null, // Info de vehículos calculados para optimización
+            detalleTransporte: null,
             diasMinimosAntelacion: 7,
             emailSecretariaPreescolarPrimaria: '',
             emailSecretariaBachillerato: '',
             emailChef: '',
-            emailSupervisor: ''
-            
+            emailSupervisor: '',
+            esAdminSalidas: false
         };
         
         // ==================== INICIALIZACIÓN ====================
@@ -855,6 +888,26 @@
                 const menus = await supabaseRequest('/svc_catering_menus?select=menu_id,menu_name,unit_price&is_active=eq.true&order=menu_name');
                 datosGlobales.menus = menus || [];
                 
+                // Cargar workers activos (para adultos acompañantes)
+                const workers = await supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2&worker_status=eq.active&order=worker_last_name_1,worker_first_name');
+                datosGlobales.workers = workers || [];
+                
+                // Cargar nodos de transporte
+                const nodos = await supabaseRequest('/svc_transport_nodes?select=node_id,node_name,node_description,node_order&is_active=eq.true&order=node_order,node_name');
+                datosGlobales.nodos = nodos || [];
+                
+                // Verificar si el usuario es Administrador de salidas pedagógicas
+                try {
+                    datosGlobales.esAdminSalidas = await checkUserPermission(
+                        currentUser.user_id, 
+                        'Administrador de salidas pedagógicas'
+                    );
+                    console.log('🔑 Es admin de salidas:', datosGlobales.esAdminSalidas);
+                } catch (error) {
+                    console.warn('⚠️ Error verificando permiso admin salidas:', error);
+                    datosGlobales.esAdminSalidas = false;
+                }
+                
                 // Cargar aprobadores (workers con permiso "Resolución de solicitudes")
                 // Usa función RPC get_workers_with_permission
                 try {
@@ -919,6 +972,8 @@
                 llenarSelectDestinos();
                 llenarSelectMenus();
                 llenarSelectAprobadores();
+                llenarSelectWorkers();
+                llenarSelectNodos();
                 
                 console.log('✅ Datos iniciales cargados');
                 
@@ -972,6 +1027,90 @@
             }
         }
         
+        function llenarSelectWorkers() {
+            const select = document.getElementById('wizardAdultosWorkers');
+            if (select) {
+                select.innerHTML = datosGlobales.workers.map(w => {
+                    const nombre = `${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}, ${w.worker_first_name}`;
+                    return `<option value="${w.worker_id}">${nombre}</option>`;
+                }).join('');
+            }
+        }
+        
+        function llenarSelectNodos() {
+            const optionsHtml = datosGlobales.nodos.map(n => 
+                `<option value="${n.node_id}">${n.node_name}</option>`
+            ).join('');
+            
+            const selSalida = document.getElementById('wizardNodoSalidaSelect');
+            const selLlegada = document.getElementById('wizardNodoLlegadaSelect');
+            if (selSalida) selSalida.innerHTML = '<option value="">Agregar nodo de salida...</option>' + optionsHtml;
+            if (selLlegada) selLlegada.innerHTML = '<option value="">Agregar nodo de llegada...</option>' + optionsHtml;
+        }
+        
+        // ==================== GESTIÓN DE NODOS ====================
+        let selectedNodosSalida = [];
+        let selectedNodosLlegada = [];
+        
+        function actualizarVisibilidadNodos() {
+            const modalidad = document.querySelector('input[name="wizardModalidad"]:checked')?.value || 'round_trip';
+            const showSalida = modalidad === 'outbound' || modalidad === 'round_trip';
+            const showLlegada = modalidad === 'return' || modalidad === 'round_trip';
+            
+            document.getElementById('nodosSeccionSalida').style.display = showSalida ? '' : 'none';
+            document.getElementById('nodosSeccionLlegada').style.display = showLlegada ? '' : 'none';
+            
+            if (!showSalida) { selectedNodosSalida = []; renderNodos('departure'); }
+            if (!showLlegada) { selectedNodosLlegada = []; renderNodos('arrival'); }
+        }
+        
+        function agregarNodo(role) {
+            const selectId = role === 'departure' ? 'wizardNodoSalidaSelect' : 'wizardNodoLlegadaSelect';
+            const sel = document.getElementById(selectId);
+            const nodeId = sel.value;
+            if (!nodeId) return;
+            
+            const nodeArr = role === 'departure' ? selectedNodosSalida : selectedNodosLlegada;
+            if (nodeArr.find(n => n.node_id === nodeId)) { sel.value = ''; return; }
+            
+            const nodo = datosGlobales.nodos.find(n => n.node_id === nodeId);
+            if (nodo) {
+                nodeArr.push(nodo);
+                renderNodos(role);
+            }
+            sel.value = '';
+        }
+        
+        function eliminarNodo(role, nodeId) {
+            if (role === 'departure') {
+                selectedNodosSalida = selectedNodosSalida.filter(n => n.node_id !== nodeId);
+            } else {
+                selectedNodosLlegada = selectedNodosLlegada.filter(n => n.node_id !== nodeId);
+            }
+            renderNodos(role);
+        }
+        
+        function renderNodos(role) {
+            const nodos = role === 'departure' ? selectedNodosSalida : selectedNodosLlegada;
+            const containerId = role === 'departure' ? 'nodosSalidaList' : 'nodosLlegadaList';
+            const cssClass = role === 'departure' ? 'bg-primary' : 'bg-success';
+            
+            document.getElementById(containerId).innerHTML = nodos.map(n => `
+                <span class="badge ${cssClass} p-2 me-1 mb-1">
+                    <i class="bi bi-geo-alt-fill me-1"></i>${n.node_name}
+                    <i class="bi bi-x-circle ms-1" style="cursor:pointer" onclick="eliminarNodo('${role}','${n.node_id}')"></i>
+                </span>
+            `).join('');
+        }
+        
+        function actualizarContadorAdultos() {
+            const selected = Array.from(document.getElementById('wizardAdultosWorkers').selectedOptions);
+            const count = selected.length;
+            document.getElementById('wizardAdultosCount').textContent = `${count} adulto${count !== 1 ? 's' : ''} seleccionado${count !== 1 ? 's' : ''}`;
+            actualizarTotalParticipantes();
+            calcularCostosWizard();
+        }
+        
         // ==================== EVENT LISTENERS ====================
         function configurarEventListeners() {
             // Toggle refrigerios
@@ -1007,10 +1146,12 @@
                 calcularCostosWizard();
             });
             
-            // Actualizar cálculos al cambiar adultos
-            document.getElementById('wizardNumAdultos').addEventListener('input', function() {
-                actualizarTotalParticipantes();
-                calcularCostosWizard();
+            // Actualizar nodos al cambiar modalidad
+            document.querySelectorAll('input[name="wizardModalidad"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    actualizarVisibilidadNodos();
+                    calcularCostosWizard();
+                });
             });
             
             // Actualizar cálculos al cambiar servicios
@@ -1063,6 +1204,11 @@
                 
                 // Construir query con filtros
                 let query = '/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),destination:svc_transport_destinations(destination_name),request:svc_service_requests(request_id,request_status)';
+                
+                // Filtrar por creador si NO es admin
+                if (!datosGlobales.esAdminSalidas && currentUser) {
+                    query += `&created_by=eq.${currentUser.user_id}`;
+                }
                 
                 // Aplicar filtros
                 if (filtrosActivos.fechaInicio) {
@@ -1156,21 +1302,23 @@
         function getAccionesSalida(salida, estadoAprobacion) {
             const acciones = [];
             const estaAprobada = estadoAprobacion === 'approved';
+            const esCreador = salida.created_by === currentUser?.user_id;
+            const esAdmin = datosGlobales.esAdminSalidas;
             
             // Ver detalle (siempre disponible)
             acciones.push(`<button class="btn btn-sm btn-info" onclick="verDetalleSalida('${salida.trip_id}')" title="Ver detalle">
                 <i class="bi bi-eye"></i>
             </button>`);
             
-            if (salida.trip_status === 'scheduled') {
-                // Editar - SOLO si NO está aprobada
+            if (salida.trip_status === 'scheduled' && esCreador && !esAdmin) {
+                // Editar - SOLO creador y si NO está aprobada
                 if (!estaAprobada) {
                     acciones.push(`<button class="btn btn-sm btn-warning" onclick="editarSalida('${salida.trip_id}')" title="Editar">
                         <i class="bi bi-pencil"></i>
                     </button>`);
                 }
                 
-                // Eliminar - SOLO si NO está aprobada
+                // Eliminar - SOLO creador y si NO está aprobada
                 if (!estaAprobada) {
                     acciones.push(`<button class="btn btn-sm btn-danger" onclick="eliminarSalida('${salida.trip_id}')" title="Eliminar">
                         <i class="bi bi-trash"></i>
@@ -1179,21 +1327,27 @@
             }
             
             if (salida.trip_status === 'imminent') {
-                // Banderazo (incluye registro de asistencia)
-                acciones.push(`<button class="btn btn-sm btn-success" onclick="mostrarModalBanderazo('${salida.trip_id}')" title="Banderazo (asistencia + salida)">
-                    <i class="bi bi-flag-fill"></i>
-                </button>`);
-                // Suspender
-                acciones.push(`<button class="btn btn-sm btn-danger" onclick="mostrarModalSuspender('${salida.trip_id}')" title="Suspender">
-                    <i class="bi bi-x-circle"></i>
-                </button>`);
+                // Banderazo - creador O admin
+                if (esCreador || esAdmin) {
+                    acciones.push(`<button class="btn btn-sm btn-success" onclick="mostrarModalBanderazo('${salida.trip_id}')" title="Banderazo (asistencia + salida)">
+                        <i class="bi bi-flag-fill"></i>
+                    </button>`);
+                }
+                // Suspender - SOLO creador (NO admin) y si NO está aprobada
+                if (esCreador && !esAdmin && !estaAprobada) {
+                    acciones.push(`<button class="btn btn-sm btn-danger" onclick="mostrarModalSuspender('${salida.trip_id}')" title="Suspender">
+                        <i class="bi bi-x-circle"></i>
+                    </button>`);
+                }
             }
             
             if (salida.trip_status === 'in_progress') {
-                // Suspender
-                acciones.push(`<button class="btn btn-sm btn-danger" onclick="mostrarModalSuspender('${salida.trip_id}')" title="Suspender">
-                    <i class="bi bi-x-circle"></i>
-                </button>`);
+                // Suspender - SOLO creador (NO admin) y si NO está aprobada
+                if (esCreador && !esAdmin && !estaAprobada) {
+                    acciones.push(`<button class="btn btn-sm btn-danger" onclick="mostrarModalSuspender('${salida.trip_id}')" title="Suspender">
+                        <i class="bi bi-x-circle"></i>
+                    </button>`);
+                }
             }
             
             return `<div class="table-actions">${acciones.join('')}</div>`;
@@ -1294,6 +1448,20 @@
             // Ocultar campos opcionales
             document.getElementById('wizardRefrigeriosFields').style.display = 'none';
             document.getElementById('wizardEntradasFields').style.display = 'none';
+            
+            // Resetear nodos
+            selectedNodosSalida = [];
+            selectedNodosLlegada = [];
+            renderNodos('departure');
+            renderNodos('arrival');
+            actualizarVisibilidadNodos();
+            
+            // Resetear selector de adultos
+            const workersSelect = document.getElementById('wizardAdultosWorkers');
+            if (workersSelect) {
+                Array.from(workersSelect.options).forEach(o => o.selected = false);
+            }
+            document.getElementById('wizardAdultosCount').textContent = '0 adultos seleccionados';
             
             // Mostrar modal
             const modal = new bootstrap.Modal(document.getElementById('modalWizardSalida'));
@@ -1466,7 +1634,7 @@
         
         function actualizarTotalParticipantes() {
             const estudiantes = parseInt(document.getElementById('wizardNumEstudiantes').value) || 0;
-            const adultos = parseInt(document.getElementById('wizardNumAdultos').value) || 0;
+            const adultos = document.getElementById('wizardAdultosWorkers').selectedOptions.length;
             const total = estudiantes + adultos;
             
             document.getElementById('wizardTotalParticipantes').textContent = total;
@@ -1671,7 +1839,7 @@
                                     </tr>
                                     <tr>
                                         <td style="padding: 8px 0; color: #666; font-weight: bold;">Adultos:</td>
-                                        <td style="padding: 8px 0; color: #333;">${datosSalida.p_num_adultos} adultos acompañantes</td>
+                                        <td style="padding: 8px 0; color: #333;">${(datosSalida.p_adultos_ids || []).length} adultos acompañantes</td>
                                     </tr>
                                     <tr>
                                         <td style="padding: 8px 0; color: #666; font-weight: bold;">Solicitado por:</td>
@@ -1886,7 +2054,7 @@
                                     <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Horario:</td><td style="padding: 8px 0; color: #333;">${datosSalida.p_hora_salida} - ${datosSalida.p_hora_regreso}</td></tr>
                                     <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Grados:</td><td style="padding: 8px 0; color: #333;">${nombresGrados}</td></tr>
                                     <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Estudiantes:</td><td style="padding: 8px 0; color: #333;">${datosSalida.p_num_estudiantes}</td></tr>
-                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Adultos:</td><td style="padding: 8px 0; color: #333;">${datosSalida.p_num_adultos}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Adultos:</td><td style="padding: 8px 0; color: #333;">${(datosSalida.p_adultos_ids || []).length}</td></tr>
                                     <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Solicitado por:</td><td style="padding: 8px 0; color: #333;">${solicitante}</td></tr>
                                 </table>
                             </div>
@@ -1977,61 +2145,49 @@
                 const numVehiculos = detalleTransporte.numeroVehiculos || 0;
                 
                 // Preparar datos para enviar
-                const datosFormulario = {
-                    // Información general
-                    p_fecha: fecha,
-                    p_hora_salida: horaSalida,
-                    p_hora_regreso: horaRegreso,
-                    p_destino_id: destinoId,
-                    p_descripcion: document.getElementById('wizardDescripcion').value || '',
-                    p_unidad_indagacion: document.getElementById('wizardUnidadIndagacion').value || '',
-                    p_observaciones: document.getElementById('wizardObservaciones').value || '',
-                    
-                    // Participantes
-                    p_grados: gradosSeleccionados,
-                    p_num_estudiantes: parseInt(document.getElementById('wizardNumEstudiantes').value) || 0,
-                    p_num_adultos: parseInt(document.getElementById('wizardNumAdultos').value) || 0,
-                    p_adultos_nombres: document.getElementById('wizardAdultosNombres').value || '',
-                    
-                    // Modalidad
-                    p_modalidad: modalidadElement.value,
-                    
-                    // Transporte
-                    p_costo_transporte: costoTransporte,
-                    p_tarifa_congelada: tarifaCongelada,
-                    p_capacidad_congelada: capacidadCongelada,
-                    p_num_vehiculos: numVehiculos,
-                    
-                    // Flags
-                    p_incluir_refrigerios: incluirRefrigerios,
-                    p_incluir_entradas: incluirEntradas,
-                    
-                    // Aprobación
-                    p_aprobador_id: aprobadorId,
-                    
-                    // Usuario actual
-                    p_user_id: currentUser.user_id,
-                    
-                    // Opcionales
-                    p_menu_id: menuId,
-                    p_cantidad_refrigerios: cantidadRefrigerios,
-                    p_precio_unitario_refrigerio: precioUnitarioRefrigerio,
-                    p_costo_refrigerios: costoRefrigerios,
-                    p_valor_entrada: valorEntrada,
-                    p_costo_entradas: costoEntradas,
-                    p_comentarios: document.getElementById('wizardComentarios').value || null
-                };
+                const adultosIds = Array.from(document.getElementById('wizardAdultosWorkers').selectedOptions).map(o => o.value);
+                const nodosSalidaIds = selectedNodosSalida.map(n => n.node_id);
+                const nodosLlegadaIds = selectedNodosLlegada.map(n => n.node_id);
                 
                 let resultado;
                 
                 if (esEdicion) {
-                    // MODO EDICIÓN: Actualizar salida existente
-                    datosFormulario.p_trip_id = tripIdEdicion;
+                    // MODO EDICIÓN: params del update RPC
+                    const datosUpdate = {
+                        p_trip_id: tripIdEdicion,
+                        p_titulo: document.getElementById('wizardTitulo').value || '',
+                        p_grade_ids: gradosSeleccionados,
+                        p_trip_date: fecha,
+                        p_departure_time: horaSalida,
+                        p_return_time: horaRegreso,
+                        p_destination_id: destinoId,
+                        p_trip_description: document.getElementById('wizardDescripcion').value || '',
+                        p_inquiry_unit: document.getElementById('wizardUnidadIndagacion').value || '',
+                        p_observations: document.getElementById('wizardObservaciones').value || '',
+                        p_adultos_ids: adultosIds,
+                        p_planned_students: parseInt(document.getElementById('wizardNumEstudiantes').value) || 0,
+                        p_modalidad: modalidadElement.value,
+                        p_include_catering: incluirRefrigerios,
+                        p_catering_menu_id: menuId,
+                        p_catering_quantity: cantidadRefrigerios,
+                        p_frozen_catering_unit_price: precioUnitarioRefrigerio,
+                        p_total_catering_value: costoRefrigerios,
+                        p_include_entrance: incluirEntradas,
+                        p_entrance_unit_value: valorEntrada,
+                        p_total_entrance_value: costoEntradas,
+                        p_total_transport_value: costoTransporte,
+                        p_frozen_vehicle_capacity: capacidadCongelada,
+                        p_frozen_transport_rate: tarifaCongelada,
+                        p_frozen_vehicle_count: numVehiculos,
+                        p_approver_id: aprobadorId,
+                        p_nodos_salida: nodosSalidaIds.length > 0 ? nodosSalidaIds : null,
+                        p_nodos_llegada: nodosLlegadaIds.length > 0 ? nodosLlegadaIds : null
+                    };
                     
-                    console.log('📤 Actualizando salida:', datosFormulario);
+                    console.log('📤 Actualizando salida:', datosUpdate);
                     resultado = await supabaseRequest('/rpc/update_pedagogical_trip', {
                         method: 'POST',
-                        body: JSON.stringify(datosFormulario)
+                        body: JSON.stringify(datosUpdate)
                     });
                     
                     console.log('📥 Respuesta del backend:', resultado);
@@ -2043,11 +2199,44 @@
                     }
                     
                 } else {
+                    // MODO CREAR: params del create RPC
+                    const datosCreate = {
+                        p_fecha: fecha,
+                        p_hora_salida: horaSalida,
+                        p_hora_regreso: horaRegreso,
+                        p_destino_id: destinoId,
+                        p_titulo: document.getElementById('wizardTitulo').value || '',
+                        p_descripcion: document.getElementById('wizardDescripcion').value || '',
+                        p_unidad_indagacion: document.getElementById('wizardUnidadIndagacion').value || '',
+                        p_observaciones: document.getElementById('wizardObservaciones').value || '',
+                        p_grados: gradosSeleccionados,
+                        p_num_estudiantes: parseInt(document.getElementById('wizardNumEstudiantes').value) || 0,
+                        p_adultos_ids: adultosIds,
+                        p_modalidad: modalidadElement.value,
+                        p_costo_transporte: costoTransporte,
+                        p_tarifa_congelada: tarifaCongelada,
+                        p_capacidad_congelada: capacidadCongelada,
+                        p_num_vehiculos: numVehiculos,
+                        p_incluir_refrigerios: incluirRefrigerios,
+                        p_incluir_entradas: incluirEntradas,
+                        p_aprobador_id: aprobadorId,
+                        p_user_id: currentUser.user_id,
+                        p_menu_id: menuId,
+                        p_cantidad_refrigerios: cantidadRefrigerios,
+                        p_precio_unitario_refrigerio: precioUnitarioRefrigerio,
+                        p_costo_refrigerios: costoRefrigerios,
+                        p_valor_entrada: valorEntrada,
+                        p_costo_entradas: costoEntradas,
+                        p_comentarios: document.getElementById('wizardComentarios').value || null,
+                        p_nodos_salida: nodosSalidaIds.length > 0 ? nodosSalidaIds : null,
+                        p_nodos_llegada: nodosLlegadaIds.length > 0 ? nodosLlegadaIds : null
+                    };
+                    
                     // MODO CREAR: Nueva salida
-                    console.log('📤 Creando nueva salida:', datosFormulario);
+                    console.log('📤 Creando nueva salida:', datosCreate);
                     resultado = await supabaseRequest('/rpc/create_pedagogical_trip', {
                         method: 'POST',
-                        body: JSON.stringify(datosFormulario)
+                        body: JSON.stringify(datosCreate)
                     });
                     
                     console.log('📥 Respuesta del backend:', resultado);
@@ -2056,11 +2245,11 @@
                         showMessage('✅ ' + resultado.message, 'success');
                         
                         // Enviar notificación al aprobador solo en creación
-                        await enviarNotificacionAprobador(resultado.trip_id, resultado.request_id, aprobadorId, datosFormulario);
+                        await enviarNotificacionAprobador(resultado.trip_id, resultado.request_id, aprobadorId, datosCreate);
                         // Enviar notificación a secretaría(s) según secciones de los grados
-                        await enviarNotificacionSecretarias(datosFormulario);
+                        await enviarNotificacionSecretarias(datosCreate);
                         // Enviar notificación a chef y supervisora
-                        await enviarNotificacionFijos(datosFormulario);
+                        await enviarNotificacionFijos(datosCreate);
                     } else {
                         throw new Error(resultado?.error || 'No se recibió respuesta del servidor');
                     }
@@ -2498,8 +2687,12 @@
             try {
                 console.log('📋 Ver detalle:', tripId);
                 
-                // Cargar datos de la salida
-                const salida = await supabaseRequest(`/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),destination:svc_transport_destinations(destination_name,destination_address),menu:svc_catering_menus(menu_name,unit_price),request:svc_service_requests(request_status,approver_id,workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1))&trip_id=eq.${tripId}`);
+                // Cargar datos de la salida + adultos + nodos
+                const [salida, tripAdults, tripNodes] = await Promise.all([
+                    supabaseRequest(`/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),destination:svc_transport_destinations(destination_name,destination_address),menu:svc_catering_menus(menu_name,unit_price),request:svc_service_requests(request_status,approver_id,workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1))&trip_id=eq.${tripId}`),
+                    supabaseRequest(`/svc_pedagogical_trip_adults?select=worker_id,workers(worker_first_name,worker_last_name_1,worker_last_name_2)&trip_id=eq.${tripId}`),
+                    supabaseRequest(`/svc_trip_transport_nodes?select=node_id,node_role,svc_transport_nodes(node_name)&service_type=eq.pedagogical_trip&trip_id=eq.${tripId}&order=node_role,node_order`)
+                ]);
                 
                 if (!salida || salida.length === 0) {
                     showMessage('No se encontró la salida', 'danger');
@@ -2567,8 +2760,27 @@
                     'N/A';
                 const estadoSolicitud = datos.request?.request_status || 'N/A';
                 
+                // Adultos acompañantes
+                const adultWorkerNames = (tripAdults || []).map(a => {
+                    const w = a.workers;
+                    return w ? `${w.worker_first_name} ${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}` : '-';
+                });
+                
+                // Nodos de transporte
+                const depNodes = (tripNodes || []).filter(n => n.node_role === 'departure').map(n => n.svc_transport_nodes?.node_name || '-');
+                const arrNodes = (tripNodes || []).filter(n => n.node_role === 'arrival').map(n => n.svc_transport_nodes?.node_name || '-');
+                
+                // Calcular costo total correctamente
+                const costoTotal = (datos.total_transport_value || 0) + (datos.total_catering_value || 0) + (datos.total_entrance_value || 0);
+                
                 const detalleHTML = `
                     <div class="row g-3">
+                        ${datos.trip_title ? `
+                        <div class="col-12">
+                            <strong>Título:</strong><br>
+                            <span class="fs-5">${datos.trip_title}</span>
+                        </div>
+                        ` : ''}
                         <div class="col-md-6">
                             <strong>Fecha:</strong><br>
                             ${formatearFecha(datos.trip_date)}
@@ -2594,6 +2806,16 @@
                             <strong>Hora regreso:</strong><br>
                             ${datos.return_time || 'N/A'}
                         </div>
+                        ${depNodes.length > 0 ? `
+                        <div class="col-md-6">
+                            <strong>Nodos de salida:</strong><br>
+                            ${depNodes.join(', ')}
+                        </div>` : ''}
+                        ${arrNodes.length > 0 ? `
+                        <div class="col-md-6">
+                            <strong>Nodos de llegada:</strong><br>
+                            ${arrNodes.join(', ')}
+                        </div>` : ''}
                         <div class="col-12">
                             <strong>Descripción:</strong><br>
                             ${datos.trip_description || 'N/A'}
@@ -2622,10 +2844,10 @@
                             <strong>Adultos:</strong><br>
                             ${datos.num_adults || 0}
                         </div>
-                        ${datos.accompanying_adults ? `
+                        ${adultWorkerNames.length > 0 ? `
                         <div class="col-12">
                             <strong>Adultos acompañantes:</strong><br>
-                            ${datos.accompanying_adults}
+                            ${adultWorkerNames.join(', ')}
                         </div>
                         ` : ''}
                         
@@ -2634,20 +2856,20 @@
                         </div>
                         <div class="col-md-4">
                             <strong>Transporte:</strong><br>
-                            ${formatearMoneda(datos.transport_cost || 0)}
+                            ${formatearMoneda(datos.total_transport_value || 0)}
                         </div>
                         <div class="col-md-4">
                             <strong>Refrigerios:</strong><br>
-                            ${datos.catering_menu_id ? formatearMoneda(datos.catering_cost || 0) : 'No incluye'}
+                            ${datos.catering_menu_id ? formatearMoneda(datos.total_catering_value || 0) : 'No incluye'}
                             ${datos.catering_menu_id ? `<br><small class="text-muted">${menu}</small>` : ''}
                         </div>
                         <div class="col-md-4">
                             <strong>Entradas:</strong><br>
-                            ${datos.entrance_unit_value ? formatearMoneda(datos.entrance_cost || 0) : 'No incluye'}
+                            ${datos.entrance_unit_value ? formatearMoneda(datos.total_entrance_value || 0) : 'No incluye'}
                         </div>
                         <div class="col-12">
                             <strong class="fs-5">Costo Total:</strong>
-                            <span class="fs-4 text-primary fw-bold">${formatearMoneda(datos.total_cost || 0)}</span>
+                            <span class="fs-4 text-primary fw-bold">${formatearMoneda(costoTotal)}</span>
                         </div>
                         
                         <div class="col-12 mt-4">
@@ -2720,9 +2942,12 @@
             try {
                 console.log('✏️ Editar salida:', tripId);
                 
-                
-                // Cargar datos completos de la salida
-                const salida = await supabaseRequest(`/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id)),request:svc_service_requests(approver_id)&trip_id=eq.${tripId}`);
+                // Cargar datos completos de la salida + adultos + nodos
+                const [salida, adultos, nodos] = await Promise.all([
+                    supabaseRequest(`/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id)),request:svc_service_requests(approver_id)&trip_id=eq.${tripId}`),
+                    supabaseRequest(`/svc_pedagogical_trip_adults?select=worker_id&trip_id=eq.${tripId}`),
+                    supabaseRequest(`/svc_trip_transport_nodes?select=node_id,node_role,node_order,svc_transport_nodes(node_id,node_name)&service_type=eq.pedagogical_trip&trip_id=eq.${tripId}&order=node_role,node_order`)
+                ]);
                 
                 if (!salida || salida.length === 0) {
                     throw new Error('No se encontró la salida');
@@ -2736,35 +2961,53 @@
                 currentWizardStep = 1;
                 
                 // Llenar STEP 1: Información General
-                // Grados (múltiple selección)
                 const gradosIds = datos.svc_pedagogical_trip_grades.map(g => g.grades.grade_id);
                 const selectGrados = document.getElementById('wizardGrados');
                 Array.from(selectGrados.options).forEach(option => {
                     option.selected = gradosIds.includes(option.value);
                 });
                 
-                // Destino
                 document.getElementById('wizardDestino').value = datos.destination_id;
-                
-                // Fecha
                 document.getElementById('wizardFecha').value = datos.trip_date;
-                
-                // Horas
                 document.getElementById('wizardHoraSalida').value = datos.departure_time;
                 document.getElementById('wizardHoraRegreso').value = datos.return_time;
                 
                 // Modalidad
                 document.querySelector(`input[name="wizardModalidad"][value="${datos.transport_modality}"]`).checked = true;
                 
-                // STEP 2: Descripción
+                // Nodos de transporte
+                selectedNodosSalida = [];
+                selectedNodosLlegada = [];
+                (nodos || []).forEach(n => {
+                    const nodoData = n.svc_transport_nodes || datosGlobales.nodos.find(nd => nd.node_id === n.node_id);
+                    if (nodoData) {
+                        if (n.node_role === 'departure') {
+                            selectedNodosSalida.push(nodoData);
+                        } else {
+                            selectedNodosLlegada.push(nodoData);
+                        }
+                    }
+                });
+                actualizarVisibilidadNodos();
+                renderNodos('departure');
+                renderNodos('arrival');
+                
+                // STEP 2: Descripción + Título
+                document.getElementById('wizardTitulo').value = datos.trip_title || '';
                 document.getElementById('wizardDescripcion').value = datos.trip_description || '';
                 document.getElementById('wizardUnidadIndagacion').value = datos.inquiry_unit || '';
                 document.getElementById('wizardObservaciones').value = datos.observations || '';
                 
                 // STEP 3: Participantes
-                await calcularEstudiantes(); // Recalcula estudiantes según grados
-                document.getElementById('wizardNumAdultos').value = datos.num_adults;
-                document.getElementById('wizardAdultosNombres').value = datos.accompanying_adults || '';
+                await calcularEstudiantes();
+                
+                // Adultos acompañantes (workers)
+                const adultosIds = (adultos || []).map(a => a.worker_id);
+                const selectWorkers = document.getElementById('wizardAdultosWorkers');
+                Array.from(selectWorkers.options).forEach(option => {
+                    option.selected = adultosIds.includes(option.value);
+                });
+                actualizarContadorAdultos();
                 actualizarTotalParticipantes();
                 
                 // STEP 4: Servicios Opcionales

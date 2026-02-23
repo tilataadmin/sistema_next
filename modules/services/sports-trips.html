@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.09.13.15">
+    <meta name="page-version" content="26.02.23.18.20">
     <title>Salidas Deportivas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -201,8 +201,14 @@
                                 <input type="time" class="form-control" id="wz_event_time">
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">N° adultos acompañantes <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control" id="wz_num_adults" min="0" value="1" required>
+                                <label class="form-label">Adultos acompañantes</label>
+                                <select class="form-select" id="wz_adult_workers" multiple size="4" onchange="onAdultWorkersChange()">
+                                    <!-- Se carga dinámicamente -->
+                                </select>
+                                <small class="text-muted">Ctrl+click para seleccionar varios</small>
+                                <div class="mt-1">
+                                    <span class="badge bg-info" id="wz_adults_count">0 adultos seleccionados</span>
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Hora de salida <span class="text-danger">*</span></label>
@@ -488,6 +494,7 @@
         let catalogTeams = [];
         let catalogApprovers = [];
         let catalogMenus = [];
+        let catalogWorkers = [];
         let moduleConfig = {};
         let currentSession = null;
         let currentWorker = null;
@@ -499,6 +506,7 @@
         let selectedTeamMembers = [];
         let selectedDepartureNodes = [];
         let selectedArrivalNodes = [];
+        let selectedAdultWorkers = [];
         let calculatedTransport = { rate: 0, capacity: 0, count: 0, total: 0 };
         let pendingStatusChange = { tripId: null, newStatus: null };
 
@@ -581,7 +589,7 @@
 
         async function loadCatalogs() {
             try {
-                const [destinations, rates, nodes, disciplines, categories, teams, config, approvers, menus] = await Promise.all([
+                const [destinations, rates, nodes, disciplines, categories, teams, config, approvers, menus, workers] = await Promise.all([
                     supabaseRequest('/svc_transport_destinations?select=destination_id,destination_name,destination_address&is_active=eq.true&order=destination_name'),
                     supabaseRequest('/svc_transport_rates_students?select=rate_id,destination_id,min_capacity,max_capacity,rate_value&is_active=eq.true'),
                     supabaseRequest('/svc_transport_nodes?select=node_id,node_name,node_description,node_order&is_active=eq.true&order=node_order,node_name'),
@@ -590,7 +598,8 @@
                     supabaseRequest('/svc_sports_teams?select=team_id,discipline_id,category_id,gender,coach_name,coach_contact,is_active&is_active=eq.true'),
                     supabaseRequest('/svc_module_config?select=config_key,config_value'),
                     loadApprovers(),
-                    supabaseRequest('/svc_catering_menus?select=menu_id,menu_name,unit_price&is_active=eq.true&order=menu_name')
+                    supabaseRequest('/svc_catering_menus?select=menu_id,menu_name,unit_price&is_active=eq.true&order=menu_name'),
+                    supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2&worker_status=eq.active&order=worker_last_name_1,worker_first_name')
                 ]);
 
                 catalogDestinations = destinations || [];
@@ -601,6 +610,7 @@
                 catalogTeams = teams || [];
                 catalogApprovers = approvers || [];
                 catalogMenus = menus || [];
+                catalogWorkers = workers || [];
 
                 // Parse module config into object
                 moduleConfig = {};
@@ -840,7 +850,6 @@
             document.getElementById('wz_trip_name').value = '';
             document.getElementById('wz_trip_date').value = '';
             document.getElementById('wz_event_time').value = '';
-            document.getElementById('wz_num_adults').value = '1';
             document.getElementById('wz_departure_time').value = '';
             document.getElementById('wz_return_time').value = '';
             document.getElementById('wz_specific_destination').value = '';
@@ -851,6 +860,11 @@
             populateWizardDestinations();
             populateWizardNodes();
             populateWizardApprovers();
+            populateWizardWorkers();
+
+            // Reset adult workers
+            selectedAdultWorkers = [];
+            document.getElementById('wz_adults_count').textContent = '0 adultos seleccionados';
 
             // Reset team info
             document.getElementById('teamInfo').classList.add('d-none');
@@ -910,6 +924,21 @@
             });
         }
 
+        function populateWizardWorkers() {
+            const sel = document.getElementById('wz_adult_workers');
+            sel.innerHTML = '';
+            catalogWorkers.forEach(w => {
+                const name = `${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}, ${w.worker_first_name}`;
+                sel.innerHTML += `<option value="${w.worker_id}">${name}</option>`;
+            });
+        }
+
+        function onAdultWorkersChange() {
+            selectedAdultWorkers = Array.from(document.getElementById('wz_adult_workers').selectedOptions).map(o => o.value);
+            document.getElementById('wz_adults_count').textContent = `${selectedAdultWorkers.length} adulto${selectedAdultWorkers.length !== 1 ? 's' : ''} seleccionado${selectedAdultWorkers.length !== 1 ? 's' : ''}`;
+            calculateTransportCost();
+        }
+
         // Wizard Navigation
         function updateWizardUI() {
             // Update step indicators
@@ -957,12 +986,10 @@
                     const date = document.getElementById('wz_trip_date').value;
                     const dep = document.getElementById('wz_departure_time').value;
                     const ret = document.getElementById('wz_return_time').value;
-                    const adults = parseInt(document.getElementById('wz_num_adults').value);
 
                     if (!name) { showMessage('Ingrese el nombre de la salida', 'warning'); return false; }
                     if (!date) { showMessage('Seleccione la fecha del evento', 'warning'); return false; }
                     if (!dep || !ret) { showMessage('Ingrese hora de salida y regreso', 'warning'); return false; }
-                    if (isNaN(adults) || adults < 0) { showMessage('Número de adultos inválido', 'warning'); return false; }
 
                     // Validate minimum days ahead
                     const minDays = parseInt(moduleConfig['min_days_advance'] || '7');
@@ -1146,7 +1173,7 @@
 
         function calculateTransportCost() {
             const destId = document.getElementById('wz_destination').value;
-            const numAdults = parseInt(document.getElementById('wz_num_adults').value) || 0;
+            const numAdults = selectedAdultWorkers.length;
             const numStudents = selectedTeamMembers.length;
             const totalParticipants = numStudents + numAdults;
 
@@ -1223,7 +1250,7 @@
                 populateWizardMenus();
                 // Auto-llenar cantidad con total de participantes
                 const numStudents = selectedTeamMembers.length;
-                const numAdults = parseInt(document.getElementById('wz_num_adults').value) || 0;
+                const numAdults = selectedAdultWorkers.length;
                 document.getElementById('wz_catering_quantity').value = numStudents + numAdults;
                 updateCateringCost();
             } else {
@@ -1277,7 +1304,7 @@
             const eventTime = document.getElementById('wz_event_time').value;
             const depTime = document.getElementById('wz_departure_time').value;
             const retTime = document.getElementById('wz_return_time').value;
-            const numAdults = document.getElementById('wz_num_adults').value;
+            const numAdults = selectedAdultWorkers.length;
             const destSel = document.getElementById('wz_destination');
             const destName = destSel.options[destSel.selectedIndex]?.text || '-';
             const specific = document.getElementById('wz_specific_destination').value;
@@ -1300,6 +1327,12 @@
             if (selectedArrivalNodes.length > 0) {
                 nodesHtml.push(`<strong>Llegada:</strong> ${selectedArrivalNodes.map(n => n.node_name).join(', ')}`);
             }
+
+            // Build adult workers names
+            const adultNames = selectedAdultWorkers.map(wId => {
+                const w = catalogWorkers.find(cw => cw.worker_id === wId);
+                return w ? `${w.worker_first_name} ${w.worker_last_name_1}` : 'N/A';
+            }).join(', ') || 'Ninguno';
         
             document.getElementById('wizardSummary').innerHTML = `
                 <div class="detail-section">
@@ -1311,6 +1344,7 @@
                         <div class="col-md-4"><div class="detail-label">Adultos</div><div class="detail-value">${numAdults}</div></div>
                         <div class="col-md-6"><div class="detail-label">Hora salida</div><div class="detail-value">${depTime}</div></div>
                         <div class="col-md-6"><div class="detail-label">Hora regreso</div><div class="detail-value">${retTime}</div></div>
+                        <div class="col-12"><div class="detail-label">Adultos acompañantes</div><div class="detail-value">${escapeHtml(adultNames)}</div></div>
                     </div>
                 </div>
                 <div class="detail-section">
@@ -1398,7 +1432,7 @@
                     specific_destination: document.getElementById('wz_specific_destination').value.trim() || null,
                     team_id: selectedTeamId,
                     transport_modality: document.getElementById('wz_modality').value,
-                    num_adults: parseInt(document.getElementById('wz_num_adults').value) || 0,
+                    num_adults: selectedAdultWorkers.length,
                     planned_students: selectedTeamMembers.length,
                     trip_status: 'scheduled',
                     frozen_transport_rate: calculatedTransport.rate,
@@ -1460,7 +1494,19 @@
                     });
                 }
 
-                // 5. Send notification to approver
+                // 5. Create adult worker records
+                if (selectedAdultWorkers.length > 0) {
+                    const adultRecords = selectedAdultWorkers.map(wId => ({
+                        trip_id: tripId,
+                        worker_id: wId
+                    }));
+                    await supabaseRequest('/svc_sports_trip_adults', {
+                        method: 'POST',
+                        body: JSON.stringify(adultRecords)
+                    });
+                }
+
+                // 6. Send notification to approver
                 await notifyApprover(approverId, tripBody.trip_name, formatDateDisplay(tripBody.trip_date));
 
                 // Close modal, reload
@@ -1528,8 +1574,20 @@
                 );
             } catch (e) { console.error(e); }
 
+            // Load adult workers for this trip
+            let tripAdults = [];
+            try {
+                tripAdults = await supabaseRequest(
+                    `/svc_sports_trip_adults?select=worker_id,workers(worker_first_name,worker_last_name_1,worker_last_name_2)&trip_id=eq.${tripId}`
+                );
+            } catch (e) { console.error(e); }
+
             const depNodes = (nodes || []).filter(n => n.node_role === 'departure').map(n => n.svc_transport_nodes?.node_name || '-');
             const arrNodes = (nodes || []).filter(n => n.node_role === 'arrival').map(n => n.svc_transport_nodes?.node_name || '-');
+            const adultWorkerNames = (tripAdults || []).map(a => {
+                const w = a.workers;
+                return w ? `${w.worker_first_name} ${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}` : '-';
+            });
 
             // Build detail HTML
             const discipline = team?.svc_sports_disciplines?.discipline_name || '-';
@@ -1562,6 +1620,7 @@
                         <div class="col-md-4"><div class="detail-label">Fecha</div><div class="detail-value">${formatDateDisplay(trip.trip_date)}</div></div>
                         <div class="col-md-4"><div class="detail-label">Hora evento</div><div class="detail-value">${trip.event_time?.substring(0,5) || 'N/A'}</div></div>
                         <div class="col-md-4"><div class="detail-label">Adultos</div><div class="detail-value">${trip.num_adults}</div></div>
+                        ${adultWorkerNames.length > 0 ? `<div class="col-12"><div class="detail-label">Adultos acompañantes</div><div class="detail-value">${adultWorkerNames.join(', ')}</div></div>` : ''}
                         <div class="col-md-6"><div class="detail-label">Hora salida</div><div class="detail-value">${trip.departure_time?.substring(0,5)}</div></div>
                         <div class="col-md-6"><div class="detail-label">Hora regreso</div><div class="detail-value">${trip.return_time?.substring(0,5)}</div></div>
                     </div>
