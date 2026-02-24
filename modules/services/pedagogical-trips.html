@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.23.18.25">
+    <meta name="page-version" content="26.02.23.19.10">
     <title>Salidas Pedagógicas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Flatpickr para fechas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     
     <!-- Configuración global -->
     <script src="/assets/js/config.js"></script>
@@ -258,11 +261,11 @@
                         <div class="row g-3">
                             <div class="col-md-3">
                                 <label class="form-label">Fecha inicio</label>
-                                <input type="date" class="form-control" id="filtroFechaInicio">
+                                <input type="text" class="form-control" id="filtroFechaInicio" placeholder="Seleccione fecha">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Fecha fin</label>
-                                <input type="date" class="form-control" id="filtroFechaFin">
+                                <input type="text" class="form-control" id="filtroFechaFin" placeholder="Seleccione fecha">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Estado</label>
@@ -406,7 +409,8 @@
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label">Fecha de salida <span class="text-danger">*</span></label>
-                                        <input type="date" class="form-control" id="wizardFecha" required>
+                                        <input type="text" class="form-control" id="wizardFecha" required
+                                               placeholder="Seleccione fecha">
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label">Hora de salida <span class="text-danger">*</span></label>
@@ -777,6 +781,14 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+    
+    <!-- jsPDF para generación de PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    
     <script>
         // ==================== VARIABLES GLOBALES ====================
         let currentUser = null;
@@ -784,6 +796,11 @@
         const itemsPerPage = 10;
         let currentWizardStep = 1;
         let filtrosActivos = {};
+        
+        // Instancias Flatpickr
+        let fpWizardFecha = null;
+        let fpFiltroInicio = null;
+        let fpFiltroFin = null;
         let datosGlobales = {
             grados: [],
             destinos: [],
@@ -840,6 +857,9 @@
                 
                 // Cargar datos iniciales
                 await cargarDatosIniciales();
+                
+                // Inicializar selectores de fecha Flatpickr
+                initializeFlatpickr();
                 
                 try {
                     const transResult = await supabaseRequest('/rpc/transition_trip_statuses', {
@@ -1111,6 +1131,46 @@
             calcularCostosWizard();
         }
         
+        // ==================== INICIALIZACIÓN FLATPICKR ====================
+        function initializeFlatpickr() {
+            // Calcular fecha mínima según configuración
+            const today = new Date();
+            const minDate = new Date(today);
+            minDate.setDate(today.getDate() + (datosGlobales.diasMinimosAntelacion || 7));
+            
+            // Fecha del wizard (con restricción de días mínimos)
+            fpWizardFecha = flatpickr('#wizardFecha', {
+                locale: 'es',
+                dateFormat: 'Y-m-d',
+                minDate: minDate,
+                altInput: true,
+                altFormat: 'j \\de F \\de Y',
+                disableMobile: true,
+                onReady: function(selectedDates, dateStr, instance) {
+                    instance.altInput.placeholder = `Mínimo ${datosGlobales.diasMinimosAntelacion || 7} días de antelación`;
+                }
+            });
+            
+            // Filtros de fecha (sin restricción)
+            fpFiltroInicio = flatpickr('#filtroFechaInicio', {
+                locale: 'es',
+                dateFormat: 'Y-m-d',
+                altInput: true,
+                altFormat: 'j \\de F \\de Y',
+                disableMobile: true
+            });
+            
+            fpFiltroFin = flatpickr('#filtroFechaFin', {
+                locale: 'es',
+                dateFormat: 'Y-m-d',
+                altInput: true,
+                altFormat: 'j \\de F \\de Y',
+                disableMobile: true
+            });
+            
+            console.log('✅ Flatpickr inicializado (mínimo ' + (datosGlobales.diasMinimosAntelacion || 7) + ' días de antelación)');
+        }
+        
         // ==================== EVENT LISTENERS ====================
         function configurarEventListeners() {
             // Toggle refrigerios
@@ -1159,41 +1219,6 @@
                 document.getElementById(id).addEventListener('input', function() {
                     calcularCostosWizard();
                 });
-            });
-            
-            // Validar fecha en tiempo real al cambiar
-            document.getElementById('wizardFecha').addEventListener('change', function() {
-                const fechaSalida = new Date(this.value + 'T00:00:00');
-                const hoy = new Date();
-                hoy.setHours(0, 0, 0, 0);
-                fechaSalida.setHours(0, 0, 0, 0);
-                
-                const diasDiferencia = Math.ceil((fechaSalida - hoy) / (1000 * 60 * 60 * 24));
-                const diasMinimos = datosGlobales.diasMinimosAntelacion || 7;
-                
-                // Crear o actualizar mensaje de ayuda
-                let helpText = this.parentElement.querySelector('.fecha-help-text');
-                if (!helpText) {
-                    helpText = document.createElement('small');
-                    helpText.className = 'fecha-help-text';
-                    helpText.style.display = 'block';
-                    helpText.style.marginTop = '5px';
-                    this.parentElement.appendChild(helpText);
-                }
-                
-                if (diasDiferencia < diasMinimos) {
-                    this.classList.add('is-invalid');
-                    helpText.className = 'fecha-help-text text-danger';
-                    helpText.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>Faltan ${diasMinimos - diasDiferencia} día${(diasMinimos - diasDiferencia) !== 1 ? 's' : ''} para cumplir el mínimo de ${diasMinimos} días de anticipación`;
-                } else if (diasDiferencia === diasMinimos) {
-                    this.classList.remove('is-invalid');
-                    helpText.className = 'fecha-help-text text-warning';
-                    helpText.innerHTML = `<i class="bi bi-check-circle me-1"></i>Fecha válida (justo en el mínimo de ${diasMinimos} días)`;
-                } else {
-                    this.classList.remove('is-invalid');
-                    helpText.className = 'fecha-help-text text-success';
-                    helpText.innerHTML = `<i class="bi bi-check-circle me-1"></i>Fecha válida (${diasDiferencia} días de anticipación)`;
-                }
             });
         }
         
@@ -1342,12 +1367,23 @@
             }
             
             if (salida.trip_status === 'in_progress') {
+                // Descargar PDF de la salida
+                acciones.push(`<button class="btn btn-sm btn-outline-dark" onclick="generarPDFSalida('${salida.trip_id}')" title="Descargar PDF">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                </button>`);
                 // Suspender - SOLO creador (NO admin) y si NO está aprobada
                 if (esCreador && !esAdmin && !estaAprobada) {
                     acciones.push(`<button class="btn btn-sm btn-danger" onclick="mostrarModalSuspender('${salida.trip_id}')" title="Suspender">
                         <i class="bi bi-x-circle"></i>
                     </button>`);
                 }
+            }
+            
+            if (salida.trip_status === 'completed') {
+                // Descargar PDF de la salida
+                acciones.push(`<button class="btn btn-sm btn-outline-dark" onclick="generarPDFSalida('${salida.trip_id}')" title="Descargar PDF">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                </button>`);
             }
             
             return `<div class="table-actions">${acciones.join('')}</div>`;
@@ -1409,6 +1445,8 @@
         
         function limpiarFiltros() {
             document.getElementById('formFiltros').reset();
+            if (fpFiltroInicio) fpFiltroInicio.clear();
+            if (fpFiltroFin) fpFiltroFin.clear();
             filtrosActivos = {};
             currentPage = 1;
             cargarSalidas();
@@ -1423,6 +1461,9 @@
         function abrirWizardNuevaSalida() {
             // Resetear formulario
             document.getElementById('formWizardSalida').reset();
+            
+            // Limpiar Flatpickr del wizard
+            if (fpWizardFecha) fpWizardFecha.clear();
 
             document.getElementById('formWizardSalida').removeAttribute('data-editing-trip-id');
             document.querySelector('#modalWizardSalida .modal-title').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Nueva Salida Pedagógica';
@@ -1488,34 +1529,13 @@
                 return;
             }
             
-            // VALIDACIÓN ESPECIAL PARA PASO 1: Fecha mínima de antelación
+            // VALIDACIÓN ESPECIAL PARA PASO 1: Verificar que se seleccionó una fecha
             if (currentWizardStep === 1) {
-                const fechaSalidaInput = document.getElementById('wizardFecha');
-                const fechaSalida = new Date(fechaSalidaInput.value + 'T00:00:00');
-                const hoy = new Date();
-                hoy.setHours(0, 0, 0, 0);
-                fechaSalida.setHours(0, 0, 0, 0);
-                
-                const diasDiferencia = Math.ceil((fechaSalida - hoy) / (1000 * 60 * 60 * 24));
-                const diasMinimos = datosGlobales.diasMinimosAntelacion || 7;
-                
-                if (diasDiferencia < diasMinimos) {
-                    showMessage(
-                        `❌ La fecha de la salida debe ser con al menos ${diasMinimos} días de anticipación. ` +
-                        `Actualmente hay ${diasDiferencia} día${diasDiferencia !== 1 ? 's' : ''} de diferencia.`,
-                        'warning'
-                    );
-                    fechaSalidaInput.classList.add('is-invalid');
-                    
-                    // Scroll hacia el campo con error
-                    fechaSalidaInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    fechaSalidaInput.focus();
-                    
-                    return; // Detener avance del wizard
+                const fechaValor = document.getElementById('wizardFecha').value;
+                if (!fechaValor) {
+                    showMessage('Por favor seleccione la fecha de la salida', 'warning');
+                    return;
                 }
-                
-                // Si la fecha pasa la validación, remover clase invalid
-                fechaSalidaInput.classList.remove('is-invalid');
             }
             
             // Marcar como completado
@@ -2582,6 +2602,429 @@
             }
         }
         
+        // ==================== GENERACIÓN DE PDF ====================
+        
+        /**
+         * Carga una imagen desde URL y la convierte a base64
+         */
+        function cargarImagenBase64(url) {
+            return new Promise((resolve) => {
+                if (!url) { resolve(null); return; }
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = function() {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        resolve(canvas.toDataURL('image/png'));
+                    } catch (e) {
+                        console.warn('⚠️ No se pudo convertir imagen a base64:', e);
+                        resolve(null);
+                    }
+                };
+                img.onerror = () => { resolve(null); };
+                img.src = url;
+            });
+        }
+        
+        /**
+         * Calcula la edad a partir de una fecha de nacimiento
+         */
+        function calcularEdad(birthday) {
+            if (!birthday) return '';
+            const birth = new Date(birthday + 'T00:00:00');
+            const today = new Date();
+            let age = today.getFullYear() - birth.getFullYear();
+            const m = today.getMonth() - birth.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+            return age;
+        }
+        
+        /**
+         * Formatea hora de HH:MM:SS a h:mm am/pm
+         */
+        function formatearHora12(timeStr) {
+            if (!timeStr) return '';
+            const [h, m] = timeStr.split(':');
+            let hour = parseInt(h);
+            const ampm = hour >= 12 ? 'pm' : 'am';
+            if (hour > 12) hour -= 12;
+            if (hour === 0) hour = 12;
+            return `${hour}:${m} ${ampm}`;
+        }
+        
+        /**
+         * Genera y descarga el PDF oficial de la salida pedagógica
+         */
+        async function generarPDFSalida(tripId) {
+            try {
+                showMessage('<i class="bi bi-hourglass-split me-1"></i>Generando PDF, por favor espere...', 'info');
+                
+                // ── 1. OBTENER TODOS LOS DATOS ──
+                const [tripArr, nodos, asistencia, adultos, configArr] = await Promise.all([
+                    // Datos de la salida + destino + grados + solicitud + profesor responsable + aprobador
+                    supabaseRequest(
+                        `/svc_pedagogical_trips?select=*,` +
+                        `destination:svc_transport_destinations(destination_name),` +
+                        `svc_pedagogical_trip_grades(grades(grade_name)),` +
+                        `request:svc_service_requests(` +
+                            `requested_by,approver_id,` +
+                            `requester:workers!svc_service_requests_requested_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,worker_phone,worker_id_doc,worker_birthday,` +
+                                `document_type:document_types(document_type_abbr),eps:eps_entities(eps_name)),` +
+                            `approver:workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)` +
+                        `)` +
+                        `&trip_id=eq.${tripId}`
+                    ),
+                    // Nodos de transporte
+                    supabaseRequest(
+                        `/svc_trip_transport_nodes?select=node_role,node_order,svc_transport_nodes(node_name)` +
+                        `&service_type=eq.pedagogical_trip&trip_id=eq.${tripId}&order=node_role,node_order`
+                    ),
+                    // Estudiantes asistentes
+                    supabaseRequest(
+                        `/svc_pedagogical_trip_attendance?select=student_id,` +
+                        `students(student_first_name,student_last_name_1,student_last_name_2,student_id_document,student_birthday,` +
+                            `document_type:document_types(document_type_abbr),eps:eps_entities(eps_name),` +
+                            `course:courses(course_name,grade:grades(grade_name)))` +
+                        `&trip_id=eq.${tripId}&is_attending=eq.true`
+                    ),
+                    // Adultos acompañantes
+                    supabaseRequest(
+                        `/svc_pedagogical_trip_adults?select=worker_id,` +
+                        `workers(worker_first_name,worker_last_name_1,worker_last_name_2,worker_id_doc,worker_birthday,` +
+                            `document_type:document_types(document_type_abbr),eps:eps_entities(eps_name))` +
+                        `&trip_id=eq.${tripId}`
+                    ),
+                    // Configuración del sistema
+                    supabaseRequest(
+                        `/system_config?select=organization_name,logo_url,legal_rep_name,principal_signature_url,` +
+                        `academic_year:academic_years!system_config_current_academic_year_fkey(year_name)`
+                    )
+                ]);
+                
+                if (!tripArr || tripArr.length === 0) {
+                    showMessage('No se encontró la salida pedagógica', 'danger');
+                    return;
+                }
+                
+                const trip = tripArr[0];
+                const config = configArr && configArr.length > 0 ? configArr[0] : {};
+                const request = trip.request;
+                const requester = request?.requester;
+                const approver = request?.approver;
+                
+                // Procesar nodos
+                const nodosSalida = (nodos || []).filter(n => n.node_role === 'departure').map(n => n.svc_transport_nodes?.node_name).filter(Boolean);
+                const nodosLlegada = (nodos || []).filter(n => n.node_role === 'arrival').map(n => n.svc_transport_nodes?.node_name).filter(Boolean);
+                
+                // Procesar fecha
+                const meses = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+                               'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+                const fechaObj = new Date(trip.trip_date + 'T00:00:00');
+                const dia = fechaObj.getDate();
+                const mes = meses[fechaObj.getMonth()];
+                const anio = fechaObj.getFullYear();
+                
+                // Procesar estudiantes (ordenar por apellido)
+                const estudiantes = (asistencia || [])
+                    .filter(a => a.students)
+                    .sort((a, b) => {
+                        const apA = a.students.student_last_name_1 || '';
+                        const apB = b.students.student_last_name_1 || '';
+                        return apA.localeCompare(apB);
+                    });
+                
+                // Procesar adultos (ordenar por apellido)
+                const profesores = (adultos || [])
+                    .filter(a => a.workers)
+                    .sort((a, b) => {
+                        const apA = a.workers.worker_last_name_1 || '';
+                        const apB = b.workers.worker_last_name_1 || '';
+                        return apA.localeCompare(apB);
+                    });
+                
+                // Cargar imágenes
+                const [logoBase64, firmaBase64] = await Promise.all([
+                    cargarImagenBase64(config.logo_url),
+                    cargarImagenBase64(config.principal_signature_url)
+                ]);
+                
+                // Año académico
+                const yearName = config.academic_year?.year_name || `${anio}-${anio + 1}`;
+                
+                // ── 2. CREAR PDF ──
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'letter'); // 216 x 279 mm
+                const pageWidth = 216;
+                const margin = 15;
+                const contentWidth = pageWidth - margin * 2;
+                let y = 15; // posición vertical actual
+                
+                // Colores
+                const azulOscuro = [27, 54, 93];
+                const grisClaro = [240, 240, 240];
+                const negro = [0, 0, 0];
+                
+                // ── ENCABEZADO ──
+                // Logo
+                if (logoBase64) {
+                    try {
+                        doc.addImage(logoBase64, 'PNG', margin, y, 30, 30);
+                    } catch (e) {
+                        console.warn('⚠️ No se pudo agregar logo al PDF');
+                    }
+                }
+                
+                // Título
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(14);
+                doc.setTextColor(...azulOscuro);
+                doc.text(`SALIDAS PEDAGÓGICAS ${yearName}`, pageWidth / 2, y + 12, { align: 'center' });
+                
+                y += 35;
+                
+                // ── LÍNEA: INSTITUCIÓN / MUNICIPIO ──
+                doc.setDrawColor(200, 200, 200);
+                doc.setLineWidth(0.3);
+                
+                // Tabla de información superior
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...negro);
+                
+                // Fila: Institución | Municipio
+                doc.rect(margin, y, contentWidth, 7);
+                doc.rect(margin, y, contentWidth * 0.6, 7);
+                doc.text('INSTITUCIÓN: COLEGIO TILATÁ - NIT. 800.164.741-5', margin + 2, y + 5);
+                doc.text('MUNICIPIO: LA CALERA', margin + contentWidth * 0.6 + 2, y + 5);
+                y += 7;
+                
+                // Fila: Destino | Fecha
+                doc.rect(margin, y, contentWidth, 7);
+                doc.rect(margin, y, contentWidth * 0.5, 7);
+                doc.setFont('helvetica', 'normal');
+                doc.text('DESTINO:', margin + 2, y + 5);
+                doc.setFont('helvetica', 'bold');
+                doc.text(trip.destination?.destination_name || '', margin + 22, y + 5);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.text('FECHA:', margin + contentWidth * 0.5 + 2, y + 5);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${dia}`, margin + contentWidth * 0.5 + 18, y + 5);
+                doc.text(`${mes}`, margin + contentWidth * 0.5 + 30, y + 5);
+                doc.text(`${anio}`, margin + contentWidth * 0.5 + 60, y + 5);
+                y += 7;
+                
+                // Fila: Hora salida + nodos
+                doc.rect(margin, y, contentWidth, 7);
+                doc.setFont('helvetica', 'bold');
+                const horaSalidaTexto = `SALIENDO DE TILATÁ A LAS: ${formatearHora12(trip.departure_time)}` +
+                    (nodosSalida.length > 0 ? ` — Paradas: ${nodosSalida.join(', ')}` : '');
+                doc.text(horaSalidaTexto, margin + 2, y + 5);
+                y += 7;
+                
+                // Fila: Hora regreso + nodos
+                doc.rect(margin, y, contentWidth, 7);
+                const horaRegresoTexto = `HORA FINALIZACIÓN EVENTO: ${formatearHora12(trip.return_time)}` +
+                    (nodosLlegada.length > 0 ? ` — Paradas: ${nodosLlegada.join(', ')}` : '');
+                doc.text(horaRegresoTexto, margin + 2, y + 5);
+                y += 10;
+                
+                // ── CONTACTOS (hardcoded) ──
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7);
+                doc.setTextColor(80, 80, 80);
+                doc.text('CONTACTO EN TILATÁ ANTE EVENTUALIDAD MÉDICA: 3176592097 - 6013849880 Ext. 137 - 121', pageWidth / 2, y, { align: 'center' });
+                y += 4;
+                doc.text('CONTACTO FUERA DE TILATÁ ANTE EVENTUALIDAD MÉDICA AXA COLPATRIA # 247', pageWidth / 2, y, { align: 'center' });
+                y += 6;
+                
+                // ── PROFESOR RESPONSABLE ──
+                doc.setFontSize(8);
+                doc.setTextColor(...negro);
+                doc.setFont('helvetica', 'bold');
+                const nombreProfesor = requester ? 
+                    `${requester.worker_first_name} ${requester.worker_last_name_1}${requester.worker_last_name_2 ? ' ' + requester.worker_last_name_2 : ''}` : 'N/A';
+                const celularProfesor = requester?.worker_phone || '';
+                
+                doc.text(`PROFESOR RESPONSABLE DE LA SALIDA: ${nombreProfesor}`, margin, y);
+                doc.text(`CELULAR: ${celularProfesor}`, pageWidth - margin, y, { align: 'right' });
+                y += 6;
+                
+                // ── TABLA DE ESTUDIANTES ──
+                const studentHeaders = [['No.', 'ESTUDIANTE', 'TIPO DE\nDOCUMENTO', 'DOCUMENTO DE\nIDENTIDAD', 'EDAD', 'EPS', 'GRADO']];
+                
+                const studentRows = estudiantes.map((est, idx) => {
+                    const s = est.students;
+                    const nombre = `${s.student_last_name_1 || ''}${s.student_last_name_2 ? ' ' + s.student_last_name_2 : ''}, ${s.student_first_name || ''}`;
+                    const tipoDoc = s.document_type?.document_type_abbr || '';
+                    const numDoc = s.student_id_document || '';
+                    const edad = calcularEdad(s.student_birthday);
+                    const eps = s.eps?.eps_name || '';
+                    const grado = s.course?.grade?.grade_name 
+                        ? `${s.course.grade.grade_name} ${s.course.course_name || ''}`.trim()
+                        : (s.course?.course_name || '');
+                    return [idx + 1, nombre, tipoDoc, numDoc, edad, eps, grado];
+                });
+                
+                doc.autoTable({
+                    startY: y,
+                    head: studentHeaders,
+                    body: studentRows,
+                    theme: 'grid',
+                    margin: { left: margin, right: margin },
+                    styles: {
+                        fontSize: 7,
+                        cellPadding: 1.5,
+                        lineColor: [180, 180, 180],
+                        lineWidth: 0.2,
+                        textColor: negro
+                    },
+                    headStyles: {
+                        fillColor: grisClaro,
+                        textColor: negro,
+                        fontStyle: 'bold',
+                        halign: 'center',
+                        fontSize: 7
+                    },
+                    columnStyles: {
+                        0: { halign: 'center', cellWidth: 10 },
+                        1: { cellWidth: 55 },
+                        2: { halign: 'center', cellWidth: 18 },
+                        3: { halign: 'center', cellWidth: 28 },
+                        4: { halign: 'center', cellWidth: 12 },
+                        5: { cellWidth: 30 },
+                        6: { cellWidth: 33 }
+                    }
+                });
+                
+                y = doc.lastAutoTable.finalY + 8;
+                
+                // ── TÍTULO PROFESORES ACOMPAÑANTES ──
+                // Verificar si hay espacio suficiente en la página actual
+                if (y + 40 > 270) {
+                    doc.addPage();
+                    y = 15;
+                }
+                
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.setTextColor(...negro);
+                doc.text('PROFESORES ACOMPAÑANTES', pageWidth / 2, y, { align: 'center' });
+                y += 5;
+                
+                // ── TABLA DE PROFESORES ──
+                const profHeaders = [['No.', 'PROFESOR', 'TIPO DE\nDOCUMENTO', 'DOCUMENTO DE\nIDENTIDAD', 'EDAD', 'EPS']];
+                
+                const profRows = profesores.map((prof, idx) => {
+                    const w = prof.workers;
+                    const nombre = `${w.worker_first_name || ''} ${w.worker_last_name_1 || ''}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}`;
+                    const tipoDoc = w.document_type?.document_type_abbr || 'c.c.';
+                    const numDoc = w.worker_id_doc || '';
+                    const edad = calcularEdad(w.worker_birthday);
+                    const eps = w.eps?.eps_name || '';
+                    return [idx + 1, nombre, tipoDoc, numDoc, edad, eps];
+                });
+                
+                doc.autoTable({
+                    startY: y,
+                    head: profHeaders,
+                    body: profRows,
+                    theme: 'grid',
+                    margin: { left: margin, right: margin },
+                    styles: {
+                        fontSize: 7,
+                        cellPadding: 1.5,
+                        lineColor: [180, 180, 180],
+                        lineWidth: 0.2,
+                        textColor: negro
+                    },
+                    headStyles: {
+                        fillColor: grisClaro,
+                        textColor: negro,
+                        fontStyle: 'bold',
+                        halign: 'center',
+                        fontSize: 7
+                    },
+                    columnStyles: {
+                        0: { halign: 'center', cellWidth: 10 },
+                        1: { cellWidth: 60 },
+                        2: { halign: 'center', cellWidth: 22 },
+                        3: { halign: 'center', cellWidth: 35 },
+                        4: { halign: 'center', cellWidth: 15 },
+                        5: { cellWidth: 44 }
+                    }
+                });
+                
+                y = doc.lastAutoTable.finalY + 15;
+                
+                // ── FIRMA DEL RECTOR ──
+                if (y + 45 > 270) {
+                    doc.addPage();
+                    y = 15;
+                }
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.text('Aprobó:', margin, y);
+                y += 5;
+                
+                // Firma (imagen)
+                if (firmaBase64) {
+                    try {
+                        doc.addImage(firmaBase64, 'PNG', margin, y, 40, 20);
+                    } catch (e) {
+                        console.warn('⚠️ No se pudo agregar firma al PDF');
+                    }
+                }
+                y += 22;
+                
+                // Nombre del rector
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                const nombreRector = (config.legal_rep_name || 'RECTOR').toUpperCase();
+                doc.text(nombreRector, margin, y);
+                y += 4;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.text('RECTOR', margin, y);
+                
+                // Logo Rectoría (al centro)
+                if (logoBase64) {
+                    try {
+                        doc.addImage(logoBase64, 'PNG', pageWidth / 2 - 10, y - 22, 20, 20);
+                    } catch (e) { /* silenciar */ }
+                }
+                
+                // ── PIE DE PÁGINA EN TODAS LAS PÁGINAS ──
+                const totalPages = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= totalPages; i++) {
+                    doc.setPage(i);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(6);
+                    doc.setTextColor(150, 150, 150);
+                    doc.text(
+                        `Documento generado por SchoolNet — Colegio Tilatá — Página ${i} de ${totalPages}`,
+                        pageWidth / 2, 275, { align: 'center' }
+                    );
+                }
+                
+                // ── 3. DESCARGAR ──
+                const destino = (trip.destination?.destination_name || 'salida').replace(/\s+/g, '_');
+                const fechaArchivo = trip.trip_date;
+                doc.save(`Salida_Pedagogica_${destino}_${fechaArchivo}.pdf`);
+                
+                showMessage('✅ PDF descargado correctamente', 'success');
+                
+            } catch (error) {
+                console.error('❌ Error generando PDF:', error);
+                showMessage('Error al generar el PDF: ' + error.message, 'danger');
+            }
+        }
+        
         // ==================== UTILIDADES ====================
         function formatDate(dateString) {
             const date = new Date(dateString + 'T00:00:00');
@@ -2968,7 +3411,13 @@
                 });
                 
                 document.getElementById('wizardDestino').value = datos.destination_id;
-                document.getElementById('wizardFecha').value = datos.trip_date;
+                
+                // Setear fecha usando Flatpickr (sin restricción de minDate al editar)
+                if (fpWizardFecha) {
+                    fpWizardFecha.set('minDate', null); // Permitir la fecha original
+                    fpWizardFecha.setDate(datos.trip_date, true);
+                }
+                
                 document.getElementById('wizardHoraSalida').value = datos.departure_time;
                 document.getElementById('wizardHoraRegreso').value = datos.return_time;
                 
