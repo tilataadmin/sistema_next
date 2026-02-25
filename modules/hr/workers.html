@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.02.16.15.45">
+    <meta name="page-version" content="2026.02.25.13.00">
     <title>Gestionar Trabajadores - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1111,6 +1111,11 @@
                                         <i class="bi bi-diagram-3"></i>
                                     </button>
                                 ` : ''}
+                                <button class="btn btn-outline-info" 
+                                        title="Transferir asignaciones presupuestales" 
+                                        onclick="prepareTransfer('${worker.worker_id}', '${escapeHtml(fullName).replace(/'/g, "\\'")}')">
+                                    <i class="bi bi-arrow-left-right"></i>
+                                </button>
                                 ${worker.worker_status === 'active' ? `
                                     <button class="btn btn-create-user ${worker.hasUser ? 'disabled' : ''}" 
                                             title="${worker.hasUser ? 'Usuario ya creado' : 'Crear como usuario'}" 
@@ -2687,6 +2692,146 @@
         
         // Hacer función disponible globalmente
         window.generarRutaFormacion = generarRutaFormacion;
+
+        // ==========================================
+        // TRANSFERENCIA DE ASIGNACIONES PRESUPUESTALES
+        // ==========================================
+
+        let currentTransferWorkerId = null;
+
+        async function prepareTransfer(workerId, workerName) {
+            try {
+                showLoading(true);
+                currentTransferWorkerId = workerId;
+
+                // Obtener datos del trabajador origen
+                const workerData = allWorkers.find(w => w.worker_id === workerId);
+                if (!workerData) {
+                    showMessage('Trabajador no encontrado', 'danger');
+                    return;
+                }
+
+                // Mostrar info del origen
+                const fullName = `${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''} ${workerData.worker_first_name}`.trim();
+                document.getElementById('transferOriginName').textContent = fullName;
+                document.getElementById('transferOriginEmail').textContent = workerData.email;
+
+                // Cargar asignaciones del trabajador
+                const assignments = await supabaseRequest(
+                    `/budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,assignment_status&worker_id=eq.${workerId}&order=assignment_category.asc`
+                );
+
+                if (!assignments || assignments.length === 0) {
+                    showMessage('Este trabajador no tiene asignaciones presupuestales para transferir', 'info');
+                    showLoading(false);
+                    return;
+                }
+
+                // Mostrar conteo
+                document.getElementById('transferAssignmentCount').textContent = `${assignments.length} asignación(es)`;
+
+                // Llenar tabla de detalle
+                const tbody = document.getElementById('transferAssignmentsTable');
+                tbody.innerHTML = assignments.map(a => `
+                    <tr>
+                        <td><small>${escapeHtml(a.assignment_category || '-')}</small></td>
+                        <td><small>${escapeHtml(a.category_detail || '-')}</small></td>
+                        <td><small>${a.approved_value ? '$' + Number(a.approved_value).toLocaleString('es-CO') : '-'}</small></td>
+                        <td><span class="badge ${a.assignment_status === 'active' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(a.assignment_status || '-')}</span></td>
+                    </tr>
+                `).join('');
+
+                // Cargar trabajadores destino (activos, excluyendo el origen)
+                const activeWorkers = await supabaseRequest(
+                    '/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active&order=worker_last_name_1.asc,worker_last_name_2.asc,worker_first_name.asc'
+                );
+
+                const destinationSelect = document.getElementById('transferDestinationWorker');
+                destinationSelect.innerHTML = '<option value="">Seleccionar trabajador destino...</option>' +
+                    (activeWorkers || [])
+                        .filter(w => w.worker_id !== workerId)
+                        .map(w => {
+                            const name = `${w.worker_last_name_1} ${w.worker_last_name_2 || ''} ${w.worker_first_name}`.trim();
+                            return `<option value="${w.worker_id}">${escapeHtml(name)} (${escapeHtml(w.email)})</option>`;
+                        }).join('');
+
+                // Abrir modal
+                const modal = new bootstrap.Modal(document.getElementById('transferModal'));
+                modal.show();
+
+            } catch (error) {
+                console.error('❌ Error preparando transferencia:', error);
+                showMessage('Error al preparar la transferencia: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function confirmTransfer() {
+            const destinationWorkerId = document.getElementById('transferDestinationWorker').value;
+
+            if (!destinationWorkerId) {
+                showMessage('Debes seleccionar un trabajador destino', 'warning');
+                return;
+            }
+
+            if (!currentTransferWorkerId) {
+                showMessage('Error: no se identificó el trabajador origen', 'danger');
+                return;
+            }
+
+            // Obtener nombres para la confirmación
+            const originName = document.getElementById('transferOriginName').textContent;
+            const destinationSelect = document.getElementById('transferDestinationWorker');
+            const destinationName = destinationSelect.options[destinationSelect.selectedIndex].text;
+            const assignmentCount = document.getElementById('transferAssignmentCount').textContent;
+
+            const confirmed = confirm(
+                `¿Confirmar transferencia?\n\n` +
+                `ORIGEN: ${originName}\n` +
+                `DESTINO: ${destinationName}\n` +
+                `ASIGNACIONES: ${assignmentCount}\n\n` +
+                `Todas las asignaciones presupuestales serán transferidas al trabajador destino.`
+            );
+
+            if (!confirmed) return;
+
+            try {
+                showLoading(true);
+
+                // Ejecutar transferencia
+                const result = await supabaseRequest(
+                    `/budget_assignments?worker_id=eq.${currentTransferWorkerId}`,
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({ worker_id: destinationWorkerId })
+                    }
+                );
+
+                showMessage(
+                    `✅ Transferencia exitosa\n\n` +
+                    `${assignmentCount} transferida(s) de ${originName} a ${destinationName}.\n\n` +
+                    `Recuerda: si el trabajador origen ya no está activo, puedes inactivarlo y liberar su correo electrónico.`,
+                    'success'
+                );
+
+                // Cerrar modal y recargar
+                bootstrap.Modal.getInstance(document.getElementById('transferModal')).hide();
+                currentTransferWorkerId = null;
+                await loadWorkers();
+
+            } catch (error) {
+                console.error('❌ Error en transferencia:', error);
+                showMessage('Error al transferir asignaciones: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Hacer funciones disponibles globalmente
+        window.prepareTransfer = prepareTransfer;
+        window.confirmTransfer = confirmTransfer;
+        
     </script>
 </body>
 </html>
