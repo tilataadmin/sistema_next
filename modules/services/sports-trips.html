@@ -496,6 +496,8 @@
         let catalogMenus = [];
         let catalogWorkers = [];
         let moduleConfig = {};
+        let emailChef = '';
+        let emailSupervisor = '';
         let currentSession = null;
         let currentWorker = null;
 
@@ -619,6 +621,11 @@
                 // Parse module config into object
                 moduleConfig = {};
                 (config || []).forEach(c => moduleConfig[c.config_key] = c.config_value);
+                
+                // Extraer emails fijos
+                emailChef = moduleConfig['email_chef'] || '';
+                emailSupervisor = moduleConfig['email_supervisor'] || '';
+                console.log('📧 Emails fijos cargados:', { emailChef, emailSupervisor });
 
                 // Populate filter selects
                 populateFilterDisciplines();
@@ -1517,6 +1524,16 @@
 
                 // 6. Send notification to approver
                 await notifyApprover(approverId, tripBody.trip_name, formatDateDisplay(tripBody.trip_date));
+                
+                // 7. Send notification to fixed recipients (chef, supervisor)
+                const disc = catalogDisciplines.find(d => d.discipline_id === document.getElementById('wz_discipline').value);
+                const cat = catalogCategories.find(c => c.category_id === document.getElementById('wz_category').value);
+                await notifyFixedRecipients(
+                    tripBody.trip_name,
+                    formatDateDisplay(tripBody.trip_date),
+                    disc?.discipline_name || '',
+                    cat?.category_name || ''
+                );
 
                 // Close modal, reload
                 bootstrap.Modal.getInstance(document.getElementById('createWizardModal')).hide();
@@ -1561,6 +1578,65 @@
                 }
             } catch (e) {
                 console.error('Error notifying approver:', e);
+            }
+        }
+
+        async function notifyFixedRecipients(tripName, tripDate, disciplineName, categoryName) {
+            try {
+                console.log('📧 Enviando notificaciones a destinatarios fijos...');
+        
+                const senderName = currentWorker
+                    ? `${currentWorker.worker_first_name} ${currentWorker.worker_last_name_1}${currentWorker.worker_last_name_2 ? ' ' + currentWorker.worker_last_name_2 : ''}`
+                    : 'Un usuario';
+        
+                const buildHTML = (destinatario) => `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+                        <div style="background-color: #1b365d; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; font-size: 22px;">Notificación de Salida Deportiva</h1>
+                        </div>
+                        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <p style="font-size: 16px; color: #333;">
+                                Estimado/a <strong>${destinatario}</strong>,
+                            </p>
+                            <p style="font-size: 14px; color: #666;">
+                                Se ha registrado una nueva salida deportiva:
+                            </p>
+                            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Salida:</td><td style="padding: 8px 0; color: #333;">${escapeHtml(tripName)}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Equipo:</td><td style="padding: 8px 0; color: #333;">${disciplineName} - ${categoryName}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td><td style="padding: 8px 0; color: #333;">${tripDate}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Estudiantes:</td><td style="padding: 8px 0; color: #333;">${selectedTeamMembers.length}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Adultos:</td><td style="padding: 8px 0; color: #333;">${selectedAdultWorkers.length}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Solicitado por:</td><td style="padding: 8px 0; color: #333;">${escapeHtml(senderName)}</td></tr>
+                                </table>
+                            </div>
+                            <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
+                                Este es un mensaje automático del sistema SchoolNet.<br>
+                                Por favor, no responder a este correo.
+                            </p>
+                        </div>
+                    </div>
+                `;
+        
+                const asunto = `Salida Deportiva programada — ${tripName} — ${tripDate}`;
+        
+                const destinatarios = [
+                    { email: emailChef, label: 'Chef' },
+                    { email: emailSupervisor, label: 'Supervisora' }
+                ];
+        
+                for (const dest of destinatarios) {
+                    if (dest.email) {
+                        await sendNotification(dest.email, asunto, buildHTML(dest.label), true);
+                        console.log(`✅ Notificación enviada a ${dest.label}: ${dest.email}`);
+                    } else {
+                        console.warn(`⚠️ No hay email configurado para ${dest.label}`);
+                    }
+                }
+        
+            } catch (error) {
+                console.error('❌ Error enviando notificaciones fijas:', error);
             }
         }
 
