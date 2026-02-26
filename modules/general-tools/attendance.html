@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.02.24.08.40"
+    <meta name="page-version" content="26.02.26.06.53"
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -575,34 +575,22 @@
                         </div>
                     </div>
                 </div>
-                <!-- SINCRONIZACIÓN PHIDIAS -->
+                
+                <!-- ERRORES PHIDIAS -->
                 <div class="card mt-4 mb-4 phidias-sync-card" id="phidias-sync-panel" style="display: none;">
                     <div class="card-header bg-white d-flex justify-content-between align-items-center">
                         <h6 class="mb-0">
                             <i class="bi bi-cloud-arrow-up me-2 text-purple"></i>Phidias
                         </h6>
-                        <span class="badge bg-warning text-dark badge-pending" id="phidias-pending-count" title="Registros de estudiantes pendientes de sincronizar">0</span>
+                        <span class="badge bg-success badge-pending" id="phidias-error-count" title="Registros con error de sincronización hoy">0</span>
                     </div>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Auto-sync:</span>
-                            <span class="badge" id="phidias-auto-sync-status">--</span>
-                        </div>
-                        <div class="d-flex justify-content-between mb-3">
-                            <span>Último envío:</span>
-                            <span class="fw-bold" id="phidias-last-sync">--</span>
-                        </div>
-                        
-                        <button class="btn btn-primary w-100" id="btn-sync-phidias" onclick="sincronizarConPhidias()">
-                            <i class="bi bi-cloud-arrow-up me-2"></i>Sincronizar con Phidias
+                        <p class="text-muted small mb-3">
+                            Cada registro de estudiante se envía a Phidias automáticamente al momento del registro.
+                        </p>
+                        <button class="btn btn-outline-danger w-100" onclick="mostrarErroresPhidias()">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Ver errores de sincronización
                         </button>
-                        
-                        <!-- Resultado de la última sincronización -->
-                        <div id="phidias-sync-result" class="mt-3" style="display: none;">
-                            <hr>
-                            <h6 class="mb-2">Resultado:</h6>
-                            <div id="phidias-sync-result-content"></div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -896,9 +884,8 @@
         let allFaceDescriptors = []; // Cache de descriptores
         // Variables para sincronización con Phidias
         let phidiasConfig = null;
-        let phidiasAutoSyncTimer = null;
-        let phidiasAutoSyncDone = false; // Evita doble envío automático en el mismo día
 
+        
         // ==========================================
         // OBTENER FECHA Y HORA DE COLOMBIA (UTC-5)
         // ==========================================
@@ -1478,7 +1465,7 @@
 
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
-                await contarPendientesPhidias();
+                await contarErroresPhidias();
 
                 // Sync individual con Phidias si es estudiante + entrada
                 if (match.tipo === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
@@ -1595,7 +1582,7 @@
 
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
-                await contarPendientesPhidias();
+                await contarErroresPhidias();
 
                 // Sync individual con Phidias si es estudiante + entrada
                 if (tipoPersona === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
@@ -1933,7 +1920,7 @@
 
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
-                await contarPendientesPhidias();
+                await contarErroresPhidias();
 
                 // Sync individual con Phidias si es estudiante + entrada
                 if (tipoPersona === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
@@ -2175,7 +2162,7 @@
 
                 await cargarEstadisticas();
                 await cargarUltimosRegistros();
-                await contarPendientesPhidias();
+                await contarErroresPhidias();
 
                 // Sync individual con Phidias si es estudiante + entrada
                 if (selectedPerson.tipo === 'student' && tipoRegistro === 'Entrada' && resultadoPost?.[0]?.attendance_id) {
@@ -2291,9 +2278,6 @@
 
         console.log('✅ Sistema de asistencia con reconocimiento facial cargado correctamente');
 
-        // Phidias Sync
-        window.sincronizarConPhidias = sincronizarConPhidias;
-
         // ==========================================
         // SINCRONIZACIÓN CON PHIDIAS
         // ==========================================
@@ -2303,323 +2287,60 @@
          */
         async function inicializarPhidias() {
             try {
-                // Cargar configuración base desde config.js (URL, token, expiry)
                 await loadPhidiasConfig();
-
+        
                 if (!PHIDIAS_CONFIG.loaded || !isPhidiasTokenValid()) {
                     console.log('⚠️ Phidias no configurado o token expirado, panel oculto');
                     return;
                 }
-
-                // Cargar campos adicionales de sync
-                const configExtra = await supabaseRequest(
-                    '/system_config?select=phidias_auto_sync_enabled,phidias_auto_sync_time,phidias_sync_notify_email&limit=1'
-                );
-
+        
                 phidiasConfig = {
-                    ...PHIDIAS_CONFIG,
-                    phidias_auto_sync_enabled: configExtra?.[0]?.phidias_auto_sync_enabled || false,
-                    phidias_auto_sync_time: configExtra?.[0]?.phidias_auto_sync_time || '08:20:00',
-                    phidias_sync_notify_email: configExtra?.[0]?.phidias_sync_notify_email || 'soporte@colegiotilata.edu.co'
+                    ...PHIDIAS_CONFIG
                 };
-                // Mostrar panel
+        
+                // Mostrar panel (ahora solo muestra errores)
                 document.getElementById('phidias-sync-panel').style.display = 'block';
-
-                // Estado del auto-sync
-                const statusBadge = document.getElementById('phidias-auto-sync-status');
-                if (phidiasConfig.phidias_auto_sync_enabled) {
-                    const hora = phidiasConfig.phidias_auto_sync_time?.substring(0, 5) || '08:20';
-                    statusBadge.textContent = `${hora}`;
-                    statusBadge.className = 'badge bg-success';
-                    programarAutoSync(hora);
-                } else {
-                    statusBadge.textContent = 'Desactivado';
-                    statusBadge.className = 'badge bg-secondary';
-                }
-
-                // Contar pendientes
-                await contarPendientesPhidias();
-
-                console.log('✅ Panel Phidias inicializado');
-
+        
+                // Cargar conteo de errores
+                await contarErroresPhidias();
+        
+                console.log('✅ Panel Phidias inicializado (modo individual)');
+        
             } catch (error) {
                 console.error('❌ Error inicializando Phidias:', error);
             }
         }
-
+        
         /**
          * Cuenta los registros de estudiantes pendientes de sincronizar hoy
          */
-        async function contarPendientesPhidias() {
+        async function contarErroresPhidias() {
             try {
                 const { fecha: today } = obtenerFechaHoraColombia();
-
-                const pendientes = await supabaseRequest(
-                    `/attendance?select=attendance_id&person_type=eq.student&attendance_date=eq.${today}&phidias_synced=eq.false&registro_tipo=eq.entrada`
+        
+                const errores = await supabaseRequest(
+                    `/attendance?select=attendance_id&person_type=eq.student&attendance_date=eq.${today}&phidias_synced=eq.false&phidias_sync_error=neq.null`
                 );
-
-                const count = pendientes ? pendientes.length : 0;
-                const badge = document.getElementById('phidias-pending-count');
+        
+                const count = errores ? errores.length : 0;
+                const badge = document.getElementById('phidias-error-count');
                 badge.textContent = count;
-
+        
                 if (count === 0) {
                     badge.className = 'badge bg-success badge-pending';
                 } else {
-                    badge.className = 'badge bg-warning text-dark badge-pending';
+                    badge.className = 'badge bg-danger badge-pending';
                 }
-
-                // Habilitar/deshabilitar botón
-                document.getElementById('btn-sync-phidias').disabled = (count === 0);
-
+        
                 return count;
-
+        
             } catch (error) {
-                console.error('❌ Error contando pendientes Phidias:', error);
+                console.error('❌ Error contando errores Phidias:', error);
                 return 0;
             }
         }
-
-        /**
-         * Programa el auto-sync verificando cada minuto si es la hora configurada
-         */
-        function programarAutoSync(horaConfig) {
-            // Limpiar timer anterior si existe
-            if (phidiasAutoSyncTimer) clearInterval(phidiasAutoSyncTimer);
-
-            phidiasAutoSyncTimer = setInterval(async () => {
-                if (phidiasAutoSyncDone) return;
-
-                const { hora } = obtenerFechaHoraColombia();
-                const horaActual = hora.substring(0, 5); // HH:MM
-
-                if (horaActual === horaConfig) {
-                    console.log('⏰ Auto-sync Phidias activado');
-                    phidiasAutoSyncDone = true;
-                    await sincronizarConPhidias(true);
-                }
-            }, 30000); // Verificar cada 30 segundos
-
-            console.log(`⏰ Auto-sync programado para ${horaConfig}`);
-        }
-
-        /**
-         * Ejecuta la sincronización con Phidias
-         * @param {boolean} esAutomatico - true si es el envío automático programado
-         */
-        async function sincronizarConPhidias(esAutomatico = false) {
-            const btn = document.getElementById('btn-sync-phidias');
-            const resultContainer = document.getElementById('phidias-sync-result');
-            const resultContent = document.getElementById('phidias-sync-result-content');
-
-            try {
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sincronizando...';
-                resultContainer.style.display = 'none';
-
-                const { fecha: today } = obtenerFechaHoraColombia();
-
-                // 1. Obtener registros de estudiantes pendientes (solo entradas)
-                const pendientes = await supabaseRequest(
-                    `/attendance?select=attendance_id,person_id_document,attendance_date,attendance_time&person_type=eq.student&attendance_date=eq.${today}&phidias_synced=eq.false&registro_tipo=eq.entrada`
-                );
-
-                if (!pendientes || pendientes.length === 0) {
-                    resultContent.innerHTML = '<div class="alert alert-info mb-0">No hay registros pendientes por sincronizar.</div>';
-                    resultContainer.style.display = 'block';
-                    return;
-                }
-
-                // 2. Obtener student_code para cada estudiante
-                const documentos = [...new Set(pendientes.map(r => r.person_id_document))];
-                const estudiantes = await supabaseRequest(
-                    `/students?select=student_id_document,student_code&student_id_document=in.(${documentos.join(',')})`
-                );
-
-                const mapaStudentCode = {};
-                if (estudiantes) {
-                    estudiantes.forEach(e => {
-                        if (e.student_code) {
-                            mapaStudentCode[e.student_id_document] = e.student_code;
-                        }
-                    });
-                }
-
-                // 3. Construir payload para Phidias
-                const payload = [];
-                const registrosPorIndice = []; // Array paralelo a payload: cada posición tiene {studentCode, attendanceId, documento}
-                const sinCodigo = []; // Estudiantes sin student_code
-
-                pendientes.forEach(reg => {
-                    const studentCode = mapaStudentCode[reg.person_id_document];
-
-                    if (!studentCode) {
-                        sinCodigo.push(reg);
-                        return;
-                    }
-
-                    // Convertir fecha + hora a Unix timestamp (Colombia UTC-5)
-                    const dateTime = new Date(`${reg.attendance_date}T${reg.attendance_time}-05:00`);
-                    const unixTimestamp = Math.floor(dateTime.getTime() / 1000);
-
-                    payload.push({
-                        person: String(studentCode),
-                        document_type: 'code',
-                        timestamp: unixTimestamp
-                    });
-
-                    registrosPorIndice.push({
-                        studentCode: studentCode,
-                        attendanceId: reg.attendance_id,
-                        documento: reg.person_id_document
-                    });
-                });
-                
-                if (payload.length === 0) {
-                    resultContent.innerHTML = `
-                        <div class="alert alert-warning mb-0">
-                            Ningún estudiante tiene student_code asignado en Phidias.
-                            <br><small>${sinCodigo.length} registro(s) sin código.</small>
-                        </div>`;
-                    resultContainer.style.display = 'block';
-
-                    // Marcar los sin código con error
-                    for (const reg of sinCodigo) {
-                        await marcarSyncError(reg.attendance_id, 'Sin student_code en SchoolNet');
-                    }
-                    return;
-                }
-
-                // 4. Enviar a Phidias EN LOTES
-                const TAMAÑO_LOTE = 100;
-                const totalLotes = Math.ceil(payload.length / TAMAÑO_LOTE);
-                console.log(`📡 Enviando ${payload.length} registros a Phidias en ${totalLotes} lote(s) de máx ${TAMAÑO_LOTE}...`);
-
-                let exitosos = 0;
-                let fallidos = 0;
-                const erroresDetalle = [];
-
-                for (let lote = 0; lote < totalLotes; lote++) {
-                    const inicio = lote * TAMAÑO_LOTE;
-                    const fin = Math.min(inicio + TAMAÑO_LOTE, payload.length);
-                    const payloadLote = payload.slice(inicio, fin);
-                    const registrosLote = registrosPorIndice.slice(inicio, fin);
-
-                    console.log(`📦 Lote ${lote + 1}/${totalLotes}: enviando ${payloadLote.length} registros (${inicio}-${fin - 1})...`);
-
-                    // Actualizar botón con progreso
-                    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Lote ${lote + 1}/${totalLotes}...`;
-
-                    try {
-                        const respuestaPhidias = await phidiasRequest('/attendance/absence/register', {
-                            method: 'POST',
-                            body: JSON.stringify(payloadLote)
-                        });
-                        console.log(`📡 Respuesta lote ${lote + 1}:`, respuestaPhidias);
-
-                        // 5. Procesar respuesta del lote
-                        if (Array.isArray(respuestaPhidias)) {
-                            for (let i = 0; i < respuestaPhidias.length; i++) {
-                                const resultado = respuestaPhidias[i];
-                                const registro = registrosLote[i];
-                                if (!registro) continue;
-
-                                if (typeof resultado === 'object' && resultado !== null && resultado.id) {
-                                    exitosos++;
-                                    await marcarSyncExitoso(registro.attendanceId);
-                                } else {
-                                    fallidos++;
-                                    const mensajeError = typeof resultado === 'string'
-                                        ? resultado
-                                        : (resultado?.subtext || resultado?.message || 'Error desconocido');
-                                    erroresDetalle.push({ code: registro.studentCode, error: mensajeError });
-                                    await marcarSyncError(registro.attendanceId, mensajeError);
-                                }
-                            }
-
-                            // Registros del lote sin respuesta de Phidias
-                            for (let i = respuestaPhidias.length; i < registrosLote.length; i++) {
-                                const registro = registrosLote[i];
-                                fallidos++;
-                                erroresDetalle.push({ code: registro.studentCode, error: 'Sin respuesta de Phidias' });
-                                await marcarSyncError(registro.attendanceId, 'Sin respuesta de Phidias');
-                            }
-
-                        } else if (respuestaPhidias && typeof respuestaPhidias === 'object') {
-                            for (const [clave, resultado] of Object.entries(respuestaPhidias)) {
-                                const registro = registrosLote.find(r => r.studentCode === clave);
-
-                                if (resultado.success || (!resultado.error && resultado.text)) {
-                                    exitosos++;
-                                    if (registro) await marcarSyncExitoso(registro.attendanceId);
-                                } else {
-                                    fallidos++;
-                                    const mensajeError = resultado.subtext || resultado.message || 'Error desconocido';
-                                    erroresDetalle.push({ code: clave, error: mensajeError });
-                                    if (registro) await marcarSyncError(registro.attendanceId, mensajeError);
-                                }
-                            }
-                        }
-
-                    } catch (errorLote) {
-                        console.error(`❌ Error en lote ${lote + 1}:`, errorLote);
-                        // Marcar todos los registros del lote como fallidos
-                        for (const registro of registrosLote) {
-                            fallidos++;
-                            erroresDetalle.push({ code: registro.studentCode, error: `Error lote ${lote + 1}: ${errorLote.message}` });
-                            await marcarSyncError(registro.attendanceId, `Error de conexión: ${errorLote.message}`);
-                        }
-                    }
-
-                    // Pausa entre lotes para no saturar Phidias
-                    if (lote < totalLotes - 1) {
-                        console.log('⏳ Esperando 2 segundos antes del siguiente lote...');
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
-                }
-
-                console.log(`✅ Sync completado: ${exitosos} exitosos, ${fallidos} fallidos de ${payload.length} enviados`);
-                
-                // Sumar los sin código como fallidos
-                fallidos += sinCodigo.length;
-                sinCodigo.forEach(reg => {
-                    erroresDetalle.push({ code: reg.person_id_document, error: 'Sin student_code' });
-                });
-
-                // 6. Mostrar resultado
-                mostrarResultadoSync(exitosos, fallidos, erroresDetalle, esAutomatico);
-
-                // 7. Notificar por correo si hay errores
-                if (fallidos > 0 && phidiasConfig.phidias_sync_notify_email) {
-                    await notificarErroresSync(exitosos, fallidos, erroresDetalle);
-                }
-
-                // 8. Actualizar conteo
-                await contarPendientesPhidias();
-
-                // Actualizar hora del último envío
-                const { hora } = obtenerFechaHoraColombia();
-                document.getElementById('phidias-last-sync').textContent = hora.substring(0, 5);
-
-            } catch (error) {
-                console.error('❌ Error sincronizando con Phidias:', error);
-
-                resultContent.innerHTML = `
-                    <div class="alert alert-danger mb-0">
-                        <strong>Error de conexión:</strong> ${error.message}
-                    </div>`;
-                resultContainer.style.display = 'block';
-
-                if (phidiasConfig?.phidias_sync_notify_email) {
-                    await notificarErroresSync(0, -1, [{ code: 'CONEXIÓN', error: error.message }]);
-                }
-
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-2"></i>Sincronizar con Phidias';
-                await contarPendientesPhidias();
-            }
-        }
-
+        
+        
         /**
          * Marca un registro como sincronizado exitosamente
          */
@@ -2658,6 +2379,173 @@
                 console.error('Error marcando sync error:', error);
             }
         }
+
+        /**
+         * Muestra el modal con los errores de sincronización Phidias del día
+         */
+        async function mostrarErroresPhidias() {
+            try {
+                mostrarLoading('Cargando errores de sincronización...');
+        
+                const { fecha: today } = obtenerFechaHoraColombia();
+        
+                // Registros con error hoy
+                const errores = await supabaseRequest(
+                    `/attendance?select=attendance_id,person_id_document,attendance_time,phidias_sync_error,phidias_sync_attempts&person_type=eq.student&attendance_date=eq.${today}&phidias_synced=eq.false&phidias_sync_error=neq.null&order=attendance_time.desc`
+                );
+        
+                if (!errores || errores.length === 0) {
+                    ocultarLoading();
+                    mostrarFeedback('success', 'Sin errores', 'No hay errores de sincronización hoy');
+                    return;
+                }
+        
+                // Obtener nombres de los estudiantes
+                const documentos = [...new Set(errores.map(e => e.person_id_document))];
+                const estudiantes = await supabaseRequest(
+                    `/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_code&student_id_document=in.(${documentos.join(',')})`
+                );
+        
+                const mapaNombres = {};
+                if (estudiantes) {
+                    estudiantes.forEach(e => {
+                        mapaNombres[e.student_id_document] = {
+                            nombre: `${e.student_last_name_1} ${e.student_last_name_2 || ''} ${e.student_first_name}`.trim(),
+                            code: e.student_code
+                        };
+                    });
+                }
+        
+                // Construir tabla de errores
+                let filas = '';
+                errores.forEach(err => {
+                    const info = mapaNombres[err.person_id_document] || { nombre: 'Desconocido', code: '—' };
+                    const intentos = err.phidias_sync_attempts || 0;
+        
+                    filas += `
+                        <tr id="row-error-${err.attendance_id}">
+                            <td>
+                                <strong>${info.nombre}</strong><br>
+                                <small class="text-muted">Doc: ${err.person_id_document} | Código: ${info.code || '—'}</small>
+                            </td>
+                            <td>${err.attendance_time.substring(0, 5)}</td>
+                            <td><small class="text-danger">${err.phidias_sync_error}</small></td>
+                            <td class="text-center">${intentos}</td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-primary" 
+                                        onclick="reintentarSyncIndividual('${err.attendance_id}', '${err.person_id_document}')"
+                                        id="btn-retry-${err.attendance_id}">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+        
+                // Crear modal
+                // Eliminar modal anterior si existe
+                const modalAnterior = document.getElementById('modal-errores-phidias');
+                if (modalAnterior) modalAnterior.remove();
+        
+                const modalHtml = `
+                    <div class="modal fade" id="modal-errores-phidias" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header bg-danger text-white">
+                                    <h5 class="modal-title">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>Errores de Sincronización Phidias — Hoy
+                                    </h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Estudiante</th>
+                                                    <th>Hora</th>
+                                                    <th>Error</th>
+                                                    <th class="text-center">Intentos</th>
+                                                    <th class="text-center">Reintentar</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${filas}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <span class="me-auto text-muted"><small>${errores.length} error(es) hoy</small></span>
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+        
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                ocultarLoading();
+        
+                const modal = new bootstrap.Modal(document.getElementById('modal-errores-phidias'));
+                modal.show();
+        
+                // Limpiar al cerrar
+                document.getElementById('modal-errores-phidias').addEventListener('hidden.bs.modal', function () {
+                    this.remove();
+                });
+        
+            } catch (error) {
+                console.error('❌ Error cargando errores Phidias:', error);
+                ocultarLoading();
+                showMessage('Error al cargar los errores de sincronización', 'danger');
+            }
+        }
+        
+        /**
+         * Reintenta el envío individual de un registro a Phidias
+         */
+        async function reintentarSyncIndividual(attendanceId, documento) {
+            const btn = document.getElementById(`btn-retry-${attendanceId}`);
+            const row = document.getElementById(`row-error-${attendanceId}`);
+        
+            try {
+                // Feedback visual
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        
+                await sincronizarRegistroIndividualPhidias(attendanceId, documento);
+        
+                // Verificar resultado
+                const resultado = await supabaseRequest(
+                    `/attendance?select=phidias_synced,phidias_sync_error&attendance_id=eq.${attendanceId}`
+                );
+        
+                if (resultado && resultado[0]?.phidias_synced) {
+                    // Éxito: marcar fila en verde y quitar botón
+                    row.classList.add('table-success');
+                    btn.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
+                    btn.disabled = true;
+                } else {
+                    // Sigue fallando: mostrar nuevo error
+                    const nuevoError = resultado?.[0]?.phidias_sync_error || 'Error desconocido';
+                    row.querySelector('.text-danger').textContent = nuevoError;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+                    btn.disabled = false;
+                }
+        
+                await contarErroresPhidias();
+        
+            } catch (error) {
+                console.error('❌ Error reintentando sync:', error);
+                btn.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+                btn.disabled = false;
+            }
+        }
+        
+        // Exponer funciones globales
+        window.mostrarErroresPhidias = mostrarErroresPhidias;
+        window.reintentarSyncIndividual = reintentarSyncIndividual;
 
         /**
          * Sincroniza UN registro individual con Phidias (post 8:20)
@@ -2716,84 +2604,11 @@
                     await marcarSyncError(attendanceId, 'Respuesta inesperada de Phidias');
                 }
 
-                await contarPendientesPhidias();
+                await contarErroresPhidias();
 
             } catch (error) {
                 console.error('❌ Phidias individual error:', error);
                 try { await marcarSyncError(attendanceId, `Error: ${error.message}`); } catch(e) {}
-            }
-        }
-
-        /**
-         * Muestra el resultado de la sincronización en el panel
-         */
-        function mostrarResultadoSync(exitosos, fallidos, erroresDetalle, esAutomatico) {
-            const resultContainer = document.getElementById('phidias-sync-result');
-            const resultContent = document.getElementById('phidias-sync-result-content');
-
-            let html = '';
-
-            // Resumen
-            const origen = esAutomatico ? '(automático)' : '(manual)';
-            if (fallidos === 0) {
-                html += `<div class="alert alert-success mb-2">
-                    <i class="bi bi-check-circle me-2"></i>
-                    <strong>${exitosos}</strong> registro(s) sincronizado(s) exitosamente ${origen}
-                </div>`;
-            } else {
-                html += `<div class="alert alert-warning mb-2">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>${exitosos}</strong> exitoso(s), <strong>${fallidos}</strong> con error ${origen}
-                </div>`;
-            }
-
-            // Detalle de errores
-            if (erroresDetalle.length > 0) {
-                html += `<div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">`;
-                erroresDetalle.forEach(err => {
-                    html += `<div class="sync-result-item">
-                        <i class="bi bi-x-circle text-danger me-1"></i>
-                        <strong>${err.code}</strong>: ${err.error}
-                    </div>`;
-                });
-                html += `</div>`;
-            }
-
-            resultContent.innerHTML = html;
-            resultContainer.style.display = 'block';
-        }
-
-        /**
-         * Envía notificación por correo cuando hay errores de sincronización
-         */
-        async function notificarErroresSync(exitosos, fallidos, erroresDetalle) {
-            try {
-                // Construir el detalle de errores para el correo
-                let detalleErrores = erroresDetalle.map(e => `• ${e.code}: ${e.error}`).join('\n');
-
-                const { fecha, hora } = obtenerFechaHoraColombia();
-                const asunto = `SchoolNet → Phidias: ${fallidos > 0 ? fallidos + ' error(es)' : 'Error de conexión'} - ${fecha}`;
-                const cuerpo = `Reporte de sincronización Phidias\n` +
-                    `Fecha: ${fecha} ${hora}\n` +
-                    `Exitosos: ${exitosos >= 0 ? exitosos : 'N/A'}\n` +
-                    `Con error: ${fallidos >= 0 ? fallidos : 'Error de conexión'}\n\n` +
-                    `Detalle:\n${detalleErrores}`;
-
-                // Intentar enviar notificación usando la función global si existe
-                if (typeof sendNotification === 'function') {
-                    await sendNotification(
-                        phidiasConfig.phidias_sync_notify_email,
-                        asunto,
-                        cuerpo
-                    );
-                    console.log('📧 Notificación de errores enviada');
-                } else {
-                    console.warn('⚠️ sendNotification no disponible, error registrado en consola');
-                    console.log('📧 Correo pendiente:', asunto, '\n', cuerpo);
-                }
-
-            } catch (error) {
-                console.error('Error enviando notificación:', error);
             }
         }
 
