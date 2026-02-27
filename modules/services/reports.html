@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.08.19.00">
+    <meta name="page-version" content="26.02.27.14.40">
     <title>Reportes de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -205,6 +205,7 @@
                                     <option value="">Todos los tipos</option>
                                     <option value="pedagogical">Salidas pedagogicas</option>
                                     <option value="sports">Salidas deportivas</option>
+                                    <option value="rep">Salidas de representación</option>
                                     <option value="extracurricular">Extracurriculares</option>
                                     <option value="staff">Transporte de personal</option>
                                 </select>
@@ -303,6 +304,7 @@
                                     <option value="">Todos</option>
                                     <option value="pedagogical_trip">Pedagogicas</option>
                                     <option value="sports_trip">Deportivas</option>
+                                    <option value="rep_trip">Representación</option>
                                     <option value="internal_event">Eventos</option>
                                 </select>
                             </div>
@@ -411,6 +413,9 @@
                 
                 // Deportivas (no canceladas)
                 const deportivas = await supabaseRequest(`/svc_sports_trips?select=trip_id,trip_date,total_transport_value,trip_status&trip_date=gte.${desde}&trip_date=lte.${hasta}&trip_status=neq.cancelled`);
+onst depTotal = (deportivas||[]).reduce((s,t) => s + (parseFloat(t.total_transport_value)||0), 0);
+                // Representación (no canceladas)
+                const representacion = await supabaseRequest(`/svc_rep_trips?select=trip_id,trip_date,total_transport_value,trip_status&trip_date=gte.${desde}&trip_date=lte.${hasta}&trip_status=neq.cancelled`);
                 
                 // Extracurriculares
                 const extracurriculares = await supabaseRequest(`/svc_extracurricular_daily_records?select=record_id,record_date,was_completed,frozen_rate_value&record_date=gte.${desde}&record_date=lte.${hasta}`);
@@ -424,6 +429,9 @@
                 
                 const depTotal = (deportivas||[]).reduce((s,t) => s + (parseFloat(t.total_transport_value)||0), 0);
                 const depCount = (deportivas||[]).length;
+
+                const repTotal = (representacion||[]).reduce((s,t) => s + (parseFloat(t.total_transport_value)||0), 0);
+                const repCount = (representacion||[]).length;
                 
                 const extRealizados = (extracurriculares||[]).filter(r => r.was_completed);
                 const extTotal = extRealizados.reduce((s,r) => s + (parseFloat(r.frozen_rate_value)||0), 0);
@@ -435,9 +443,9 @@
                 const perCount = (personal||[]).length;
                 const perCancelados = perCount - perRealizados.length;
                 
-                const granTotal = pedTotal + depTotal + extTotal + perTotal;
-                const totalRecorridos = pedCount + depCount + extCount + perCount;
-                const totalRealizados = pedCount + depCount + extRealizados.length + perRealizados.length;
+               const granTotal = pedTotal + depTotal + repTotal + extTotal + perTotal;
+                const totalRecorridos = pedCount + depCount + repCount + extCount + perCount;
+                const totalRealizados = pedCount + depCount + repCount + extRealizados.length + perRealizados.length;
                 const totalCancelados = extCancelados + perCancelados;
                 
                 datosConsolidado = {
@@ -445,6 +453,7 @@
                     filas: [
                         { tipo: 'Salidas Pedagogicas', recorridos: pedCount, realizados: pedCount, cancelados: 0, valor: pedTotal },
                         { tipo: 'Salidas Deportivas', recorridos: depCount, realizados: depCount, cancelados: 0, valor: depTotal },
+                        { tipo: 'Salidas de Representación', recorridos: repCount, realizados: repCount, cancelados: 0, valor: repTotal },
                         { tipo: 'Extracurriculares', recorridos: extCount, realizados: extRealizados.length, cancelados: extCancelados, valor: extTotal },
                         { tipo: 'Transporte de Personal', recorridos: perCount, realizados: perRealizados.length, cancelados: perCancelados, valor: perTotal }
                     ],
@@ -538,6 +547,24 @@
                         datosDetalle.push({
                             fecha: t.trip_date,
                             tipo: 'Salida Deportiva',
+                            detalle: t.specific_destination || t.destination?.destination_name || 'N/A',
+                            modalidad: t.transport_modality === 'round_trip' ? 'Ida y vuelta' : t.transport_modality === 'outbound' ? 'Ida' : 'Regreso',
+                            vehiculos: t.frozen_vehicle_count || 1,
+                            capacidad: t.frozen_vehicle_capacity || 0,
+                            pasajeros: (t.planned_students||0) + (t.num_adults||0),
+                            valor: parseFloat(t.total_transport_value) || 0,
+                            estado: t.trip_status
+                        });
+                    });
+                }
+
+                // Representación
+                if (!tipo || tipo === 'rep') {
+                    const rep = await supabaseRequest(`/svc_rep_trips?select=trip_id,trip_date,total_transport_value,trip_status,planned_students,num_adults,frozen_vehicle_capacity,frozen_vehicle_count,transport_modality,specific_destination,destination:svc_transport_destinations(destination_name)&trip_date=gte.${desde}&trip_date=lte.${hasta}&trip_status=neq.cancelled&order=trip_date.asc`);
+                    (rep||[]).forEach(t => {
+                        datosDetalle.push({
+                            fecha: t.trip_date,
+                            tipo: 'Salida Representación',
                             detalle: t.specific_destination || t.destination?.destination_name || 'N/A',
                             modalidad: t.transport_modality === 'round_trip' ? 'Ida y vuelta' : t.transport_modality === 'outbound' ? 'Ida' : 'Regreso',
                             vehiculos: t.frozen_vehicle_count || 1,
@@ -777,6 +804,7 @@
                 const TIPO_LABELS = {
                     'pedagogical_trip': 'Salida Pedagogica',
                     'sports_trip': 'Salida Deportiva',
+                    'rep_trip': 'Salida de Representación',
                     'internal_event': 'Evento Interno'
                 };
                 
