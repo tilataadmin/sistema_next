@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.23.19.25">
+    <meta name="page-version" content="26.02.27.08.15">
     <title>Configuración General - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -285,12 +285,39 @@
                     </div>
                     
                     <div class="col-md-6 mb-3">
-                        <label for="principalSignatureUrl" class="form-label">URL de la firma del rector(a)</label>
-                        <input type="url" class="form-control" id="principalSignatureUrl" name="principalSignatureUrl" 
-                               placeholder="https://...firma.png">
-                        <img id="signaturePreview" src="" alt="Vista previa de firma" 
-                             style="display: none; max-width: 200px; max-height: 80px; margin-top: 0.5rem; border: 1px solid #dee2e6; border-radius: 4px;">
-                        <small class="text-muted">Imagen de la firma (se usa en documentos oficiales como salidas pedagógicas)</small>
+                        <label for="principalSignatureFile" class="form-label">Firma del rector(a)</label>
+                        
+                        <!-- Campo oculto que guarda la URL final -->
+                        <input type="hidden" id="principalSignatureUrl" name="principalSignatureUrl">
+                        
+                        <!-- Vista previa + botón cambiar (visible cuando ya hay firma) -->
+                        <div id="signatureCurrentContainer" style="display: none;">
+                            <div class="d-flex align-items-center gap-3 mb-2">
+                                <img id="signaturePreview" src="" alt="Vista previa de firma" 
+                                     style="max-width: 200px; max-height: 80px; border: 1px solid #dee2e6; border-radius: 4px;">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="cambiarFirma()">
+                                    <i class="bi bi-pencil me-1"></i>Cambiar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Input de archivo (visible cuando no hay firma o se quiere cambiar) -->
+                        <div id="signatureUploadContainer">
+                            <input type="file" class="form-control" id="principalSignatureFile" 
+                                   accept="image/png,image/jpeg,image/jpg"
+                                   onchange="previsualizarFirma(this)">
+                            <small class="text-muted">PNG o JPG, máximo 2 MB. Se usa en documentos oficiales.</small>
+                            <img id="signatureNewPreview" src="" alt="" 
+                                 style="display: none; max-width: 200px; max-height: 80px; margin-top: 0.5rem; border: 1px solid #dee2e6; border-radius: 4px;">
+                        </div>
+                        
+                        <!-- Indicador de subida -->
+                        <div id="signatureUploadProgress" style="display: none;" class="mt-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="spinner-border spinner-border-sm text-primary"></div>
+                                <small>Subiendo firma...</small>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -492,15 +519,25 @@
     
     <!-- SCRIPTS - ORDEN CRÍTICO -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../assets/js/config.js"></script>
     
     <script>
+
         // ==========================================
         // VARIABLES GLOBALES
         // ==========================================
         
         let formData = null;
         let currentConfig = null;
+        
+        // Cliente Supabase para Storage
+        const supabaseClient = window.supabase.createClient(
+            SUPABASE_CONFIG.url,
+            SUPABASE_CONFIG.anonKey
+        );
+        const SIGNATURE_BUCKET = 'schoolnet-photos';
+        const SIGNATURE_FOLDER = 'signatures';
         
         // ==========================================
         // INICIALIZACIÓN - PATRÓN OBLIGATORIO
@@ -837,10 +874,7 @@
             setFieldValue('legalRepEmail', config.legal_rep_email);
             // Rectoría
             setFieldValue('principalName', config.principal_name);
-            setFieldValue('principalSignatureUrl', config.principal_signature_url);
-            if (config.principal_signature_url) {
-                showSignaturePreview(config.principal_signature_url);
-            }
+            mostrarFirmaExistente(config.principal_signature_url);
             
             // Configuración presupuestal
             setFieldValue('buyerEmail', config.buyer_email);
@@ -926,6 +960,112 @@
                 preview.style.display = 'none';
             }
         }
+
+        // ==========================================
+        // GESTIÓN DE FIRMA DEL RECTOR
+        // ==========================================
+        
+        function previsualizarFirma(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            // Validar tipo
+            if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+                showMessage('Solo se permiten imágenes PNG o JPG', 'danger');
+                input.value = '';
+                return;
+            }
+            
+            // Validar tamaño (2 MB)
+            if (file.size > 2 * 1024 * 1024) {
+                showMessage('La imagen no debe superar 2 MB', 'danger');
+                input.value = '';
+                return;
+            }
+            
+            // Mostrar vista previa local
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const preview = document.getElementById('signatureNewPreview');
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function cambiarFirma() {
+            document.getElementById('signatureCurrentContainer').style.display = 'none';
+            document.getElementById('signatureUploadContainer').style.display = 'block';
+            document.getElementById('principalSignatureFile').value = '';
+            document.getElementById('signatureNewPreview').style.display = 'none';
+        }
+        
+        async function subirFirmaARector() {
+            const fileInput = document.getElementById('principalSignatureFile');
+            const file = fileInput.files[0];
+            
+            // Si no hay archivo nuevo, no hacer nada (mantener URL actual)
+            if (!file) {
+                return document.getElementById('principalSignatureUrl').value || null;
+            }
+            
+            try {
+                document.getElementById('signatureUploadProgress').style.display = 'block';
+                
+                // Nombre fijo para sobrescribir siempre la misma firma
+                const extension = file.name.split('.').pop().toLowerCase();
+                const filePath = `${SIGNATURE_FOLDER}/firma-rector.${extension}`;
+                
+                console.log('📤 Subiendo firma a Storage:', filePath);
+                
+                // Subir (upsert: true para sobrescribir si existe)
+                const { data, error } = await supabaseClient
+                    .storage
+                    .from(SIGNATURE_BUCKET)
+                    .upload(filePath, file, {
+                        cacheControl: '3600',
+                        upsert: true
+                    });
+                
+                if (error) throw error;
+                
+                // Obtener URL pública
+                const { data: urlData } = supabaseClient
+                    .storage
+                    .from(SIGNATURE_BUCKET)
+                    .getPublicUrl(filePath);
+                
+                // Agregar timestamp para evitar caché del navegador
+                const publicUrl = urlData.publicUrl + '?t=' + Date.now();
+                
+                console.log('✅ Firma subida:', publicUrl);
+                
+                // Guardar URL en el campo oculto
+                document.getElementById('principalSignatureUrl').value = publicUrl;
+                
+                return publicUrl;
+                
+            } catch (error) {
+                console.error('❌ Error subiendo firma:', error);
+                showMessage('Error al subir la firma: ' + error.message, 'danger');
+                throw error;
+            } finally {
+                document.getElementById('signatureUploadProgress').style.display = 'none';
+            }
+        }
+        
+        // Mostrar firma existente al cargar formulario
+        function mostrarFirmaExistente(url) {
+            if (url) {
+                document.getElementById('principalSignatureUrl').value = url;
+                document.getElementById('signaturePreview').src = url;
+                document.getElementById('signatureCurrentContainer').style.display = 'block';
+                document.getElementById('signatureUploadContainer').style.display = 'none';
+            } else {
+                document.getElementById('signatureCurrentContainer').style.display = 'none';
+                document.getElementById('signatureUploadContainer').style.display = 'block';
+            }
+        }
         
         // ==========================================
         // GUARDAR CONFIGURACIÓN
@@ -945,6 +1085,9 @@
                 }
                 
                 // Recopilar datos del formulario
+                // Subir firma si hay archivo nuevo seleccionado
+                await subirFirmaARector();
+                
                 const configData = collectFormData();
                 console.log('💾 Guardando configuración:', configData);
                 
