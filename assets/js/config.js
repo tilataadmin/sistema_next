@@ -350,6 +350,15 @@ const APP_CONFIG = {
             icon: 'bi-building',
             path: '/modules/suppliers/',
             status: 'active'
+        },
+        {
+            id: 'teacher-eval',
+            moduleId: 'teacher-eval',
+            name: 'Evaluación Docente',
+            description: 'Evaluación de profesores por parte de estudiantes',
+            icon: 'bi-clipboard2-pulse',
+            path: '/modules/teacher-eval/',
+            status: 'active'
         }
         
     ],
