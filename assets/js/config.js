@@ -359,6 +359,15 @@ const APP_CONFIG = {
             icon: 'bi-clipboard2-pulse',
             path: '/modules/teacher-eval/',
             status: 'active'
+        },
+        {
+            id: 'institutional-eval',
+            moduleId: 'institutional-eval',
+            name: 'Autoevaluación Institucional',
+            description: 'Autoevaluación institucional basada en Guía 34 del MEN con plan de mejoramiento',
+            icon: 'bi-building-check',
+            path: '/modules/institutional-eval/',
+            status: 'active'
         }
         
     ],
