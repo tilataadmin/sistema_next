@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.02.28.18.00">
+    <title>Monitoreo - Evaluación Docente - SchoolNet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex; justify-content: center;
+            align-items: center; z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content {
+            background: white; padding: 2rem; border-radius: 8px; text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3; border-top: 3px solid #0ea5e9;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin: 0 auto 1rem;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .summary-card {
+            border: none; border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .summary-value {
+            font-size: 2rem; font-weight: 700; line-height: 1;
+        }
+        .summary-label {
+            font-size: 0.85rem; color: #6c757d;
+        }
+
+        .progress-bar-custom {
+            height: 8px; border-radius: 4px; background: #e9ecef;
+            overflow: hidden;
+        }
+        .progress-bar-custom .fill {
+            height: 100%; border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .fill-green { background: #10b981; }
+        .fill-yellow { background: #f59e0b; }
+        .fill-red { background: #ef4444; }
+
+        .course-row {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            transition: background 0.2s;
+        }
+        .course-row:hover {
+            background: #f8f9fa;
+        }
+
+        .no-period-alert {
+            text-align: center; padding: 3rem; color: #6c757d;
+        }
+        .no-period-alert i {
+            font-size: 3rem; display: block; margin-bottom: 1rem; color: #f59e0b;
+        }
+
+        .refresh-info {
+            font-size: 0.8rem; color: #6c757d;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0">Cargando monitoreo...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Dashboard</a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="index.html">Evaluación Docente</a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">Monitoreo</li>
+            </ol>
+        </nav>
+
+        <div class="row mb-3">
+            <div class="col">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1 class="h3">
+                            <i class="bi bi-speedometer2 me-2" style="color: #0ea5e9;"></i>Monitoreo de Evaluación
+                        </h1>
+                        <p class="text-muted mb-0">Avance de respuestas en tiempo real del período activo</p>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="refresh-info" id="lastRefresh"></span>
+                        <button class="btn btn-outline-primary btn-sm" onclick="cargarMonitoreo()" id="btnRefresh">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- ALERTA: NO HAY PERÍODO ABIERTO -->
+        <div id="noPeriodAlert" class="no-period-alert" style="display: none;">
+            <i class="bi bi-calendar-x"></i>
+            <h5>No hay período de evaluación abierto</h5>
+            <p>Para monitorear avance, primero debe abrir un período desde la página de
+                <a href="periods.html">Períodos</a>.
+            </p>
+        </div>
+
+        <!-- CONTENIDO DE MONITOREO -->
+        <div id="monitorContent" style="display: none;">
+
+            <!-- INFO DEL PERÍODO ACTIVO -->
+            <div class="alert alert-success d-flex align-items-center mb-4" id="periodInfo">
+                <i class="bi bi-unlock-fill me-2 fs-5"></i>
+                <div>
+                    <strong id="periodName">-</strong>
+                    <small class="d-block text-muted" id="periodDates">-</small>
+                </div>
+            </div>
+
+            <!-- TARJETAS DE RESUMEN -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-lg-3">
+                    <div class="card summary-card">
+                        <div class="card-body text-center">
+                            <div class="summary-value text-primary" id="totalStudents">0</div>
+                            <p class="summary-label mb-0">Estudiantes Esperados</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card summary-card">
+                        <div class="card-body text-center">
+                            <div class="summary-value text-success" id="totalCompleted">0</div>
+                            <p class="summary-label mb-0">Sesiones Completadas</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card summary-card">
+                        <div class="card-body text-center">
+                            <div class="summary-value text-warning" id="totalInProgress">0</div>
+                            <p class="summary-label mb-0">En Progreso</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card summary-card">
+                        <div class="card-body text-center">
+                            <div class="summary-value text-info" id="globalProgress">0%</div>
+                            <p class="summary-label mb-0">Avance Global</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AVANCE POR CURSO -->
+            <div class="card" style="border:none; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+                <div class="card-header bg-white border-bottom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-bar-chart-steps me-2 text-primary"></i>Avance por Curso</h5>
+                        <input type="text" class="form-control form-control-sm" id="filterCourse"
+                               placeholder="Filtrar curso..." style="max-width: 220px;" oninput="filtrarCursos()">
+                    </div>
+                </div>
+                <div class="card-body" id="courseProgressContainer">
+                    <p class="text-muted text-center">Cargando avance por curso...</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let periodoAbierto = null;
+        let datosCursos = [];
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🔐 Validando acceso...');
+            try {
+                const hasAccess = await validatePageAccess('Monitoreo de evaluación');
+                if (!hasAccess) return;
+
+                await cargarMonitoreo();
+
+                console.log('✅ Página de monitoreo inicializada');
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                showMessage('Error al cargar la página: ' + error.message, 'danger');
+            }
+        });
+
+        // ==========================================
+        // CARGA PRINCIPAL DE MONITOREO
+        // ==========================================
+        async function cargarMonitoreo() {
+            const btn = document.getElementById('btnRefresh');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando...';
+
+            try {
+                document.getElementById('loading-overlay').classList.remove('hidden');
+
+                // Buscar período abierto
+                const periodos = await supabaseRequest(
+                    '/teval_periods?select=*,academic_years(year_name)&period_status=eq.open&limit=1'
+                );
+
+                if (!periodos || periodos.length === 0) {
+                    document.getElementById('noPeriodAlert').style.display = 'block';
+                    document.getElementById('monitorContent').style.display = 'none';
+                    return;
+                }
+
+                periodoAbierto = periodos[0];
+                document.getElementById('noPeriodAlert').style.display = 'none';
+                document.getElementById('monitorContent').style.display = 'block';
+
+                // Mostrar info del período
+                document.getElementById('periodName').textContent = periodoAbierto.period_name;
+                const yearName = periodoAbierto.academic_years?.year_name || '';
+                const openedAt = periodoAbierto.opened_at
+                    ? new Date(periodoAbierto.opened_at).toLocaleString('es-CO')
+                    : '-';
+                document.getElementById('periodDates').textContent = `${yearName} · Abierto desde: ${openedAt}`;
+
+                // Cargar datos de avance
+                await cargarAvance();
+
+                // Actualizar hora de refresh
+                document.getElementById('lastRefresh').textContent =
+                    'Última actualización: ' + new Date().toLocaleTimeString('es-CO');
+
+            } catch (error) {
+                console.error('❌ Error cargando monitoreo:', error);
+                showMessage('Error al cargar monitoreo: ' + error.message, 'danger');
+            } finally {
+                document.getElementById('loading-overlay').classList.add('hidden');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Actualizar';
+            }
+        }
+
+        // ==========================================
+        // CARGAR AVANCE DEL PERÍODO ABIERTO
+        // ==========================================
+        async function cargarAvance() {
+            try {
+                const periodId = periodoAbierto.period_id;
+
+                // Obtener formularios del período con su sección académica
+                const periodForms = await supabaseRequest(
+                    `/teval_period_forms?select=form_id,teval_forms(form_name,section_id,sections(section_name))&period_id=eq.${periodId}`
+                );
+
+                // Obtener IDs de secciones académicas involucradas
+                const sectionIds = [...new Set(
+                    periodForms.map(pf => pf.teval_forms?.section_id).filter(Boolean)
+                )];
+
+                if (sectionIds.length === 0) {
+                    document.getElementById('courseProgressContainer').innerHTML =
+                        '<p class="text-muted text-center">No hay formularios asociados a este período</p>';
+                    return;
+                }
+
+                // Obtener cursos activos de las secciones involucradas
+                const sectionFilter = sectionIds.map(id => `"${id}"`).join(',');
+                const courses = await supabaseRequest(
+                    `/courses?select=course_id,course_name,grades(grade_name,section_id,sections(section_name))&course_status=eq.active&grades.section_id=in.(${sectionFilter})&order=course_name`
+                );
+
+                // Filtrar cursos que realmente pertenecen a las secciones (por relación grades -> sections)
+                const cursosValidos = courses.filter(c => 
+                    c.grades && sectionIds.includes(c.grades.section_id)
+                );
+
+                // Obtener conteo de estudiantes activos por curso
+                const studentCounts = await supabaseRequest(
+                    '/students?select=course_id,student_id&status_id=not.is.null&course_id=not.is.null'
+                );
+
+                // Agrupar estudiantes por curso
+                const studentsByCourse = {};
+                studentCounts.forEach(s => {
+                    if (!studentsByCourse[s.course_id]) studentsByCourse[s.course_id] = 0;
+                    studentsByCourse[s.course_id]++;
+                });
+
+                // Obtener todas las sesiones del período
+                const sessions = await supabaseRequest(
+                    `/teval_sessions?select=session_id,student_id,session_status,students(course_id)&period_id=eq.${periodId}`
+                );
+
+                // Agrupar sesiones por curso
+                const sessionsByCourse = {};
+                sessions.forEach(s => {
+                    const courseId = s.students?.course_id;
+                    if (!courseId) return;
+                    if (!sessionsByCourse[courseId]) {
+                        sessionsByCourse[courseId] = { completed: 0, inProgress: 0, students: new Set() };
+                    }
+                    sessionsByCourse[courseId].students.add(s.student_id);
+                    if (s.session_status === 'completed') {
+                        sessionsByCourse[courseId].completed++;
+                    } else {
+                        sessionsByCourse[courseId].inProgress++;
+                    }
+                });
+
+                // Construir datos por curso
+                datosCursos = cursosValidos.map(c => {
+                    const totalStudents = studentsByCourse[c.course_id] || 0;
+                    const courseData = sessionsByCourse[c.course_id] || { completed: 0, inProgress: 0, students: new Set() };
+                    const studentsStarted = courseData.students.size;
+                    const percentage = totalStudents > 0 ? Math.round((studentsStarted / totalStudents) * 100) : 0;
+
+                    return {
+                        courseId: c.course_id,
+                        courseName: c.course_name,
+                        sectionName: c.grades?.sections?.section_name || '',
+                        gradeName: c.grades?.grade_name || '',
+                        totalStudents: totalStudents,
+                        studentsStarted: studentsStarted,
+                        completed: courseData.completed,
+                        inProgress: courseData.inProgress,
+                        percentage: percentage
+                    };
+                });
+
+                // Ordenar por sección y nombre de curso
+                datosCursos.sort((a, b) => a.sectionName.localeCompare(b.sectionName) || a.courseName.localeCompare(b.courseName));
+
+                // Calcular totales globales
+                const totalStudents = datosCursos.reduce((sum, c) => sum + c.totalStudents, 0);
+                const totalStarted = datosCursos.reduce((sum, c) => sum + c.studentsStarted, 0);
+                const totalCompleted = datosCursos.reduce((sum, c) => sum + c.completed, 0);
+                const totalInProgress = datosCursos.reduce((sum, c) => sum + c.inProgress, 0);
+                const globalPct = totalStudents > 0 ? Math.round((totalStarted / totalStudents) * 100) : 0;
+
+                document.getElementById('totalStudents').textContent = totalStudents.toLocaleString('es-CO');
+                document.getElementById('totalCompleted').textContent = totalCompleted.toLocaleString('es-CO');
+                document.getElementById('totalInProgress').textContent = totalInProgress.toLocaleString('es-CO');
+                document.getElementById('globalProgress').textContent = globalPct + '%';
+
+                // Renderizar avance por curso
+                renderizarAvanceCursos();
+
+            } catch (error) {
+                console.error('❌ Error cargando avance:', error);
+                showMessage('Error al cargar avance: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // RENDERIZAR AVANCE POR CURSO
+        // ==========================================
+        function renderizarAvanceCursos() {
+            const container = document.getElementById('courseProgressContainer');
+
+            if (!datosCursos || datosCursos.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No se encontraron cursos para monitorear</p>';
+                return;
+            }
+
+            let currentSection = '';
+            let html = '';
+
+            datosCursos.forEach(c => {
+                // Separador por sección académica
+                if (c.sectionName !== currentSection) {
+                    currentSection = c.sectionName;
+                    html += `<h6 class="text-secondary mt-3 mb-2"><i class="bi bi-building me-1"></i>${escapeHtml(currentSection)}</h6>`;
+                }
+
+                // Color de barra según porcentaje
+                let fillClass = 'fill-red';
+                if (c.percentage >= 75) fillClass = 'fill-green';
+                else if (c.percentage >= 40) fillClass = 'fill-yellow';
+
+                html += `
+                    <div class="course-row" data-course="${escapeHtml(c.courseName.toLowerCase())}">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div>
+                                <strong class="me-2">${escapeHtml(c.courseName)}</strong>
+                                <small class="text-muted">${escapeHtml(c.gradeName)}</small>
+                            </div>
+                            <div class="text-end">
+                                <span class="fw-bold ${c.percentage >= 75 ? 'text-success' : c.percentage >= 40 ? 'text-warning' : 'text-danger'}">
+                                    ${c.percentage}%
+                                </span>
+                                <small class="text-muted ms-2">${c.studentsStarted}/${c.totalStudents} estudiantes</small>
+                            </div>
+                        </div>
+                        <div class="progress-bar-custom">
+                            <div class="fill ${fillClass}" style="width: ${c.percentage}%;"></div>
+                        </div>
+                        <div class="d-flex gap-3 mt-1">
+                            <small class="text-success"><i class="bi bi-check-circle me-1"></i>${c.completed} completadas</small>
+                            <small class="text-warning"><i class="bi bi-hourglass-split me-1"></i>${c.inProgress} en progreso</small>
+                            <small class="text-muted"><i class="bi bi-dash-circle me-1"></i>${c.totalStudents - c.studentsStarted} sin iniciar</small>
+                        </div>
+                    </div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // FILTRAR CURSOS
+        // ==========================================
+        function filtrarCursos() {
+            const filter = document.getElementById('filterCourse').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('.course-row');
+
+            rows.forEach(row => {
+                const courseName = row.getAttribute('data-course') || '';
+                row.style.display = courseName.includes(filter) ? '' : 'none';
+            });
+
+            // Ocultar/mostrar headers de sección sin cursos visibles
+            const headers = document.querySelectorAll('#courseProgressContainer h6');
+            headers.forEach(header => {
+                let nextEl = header.nextElementSibling;
+                let hasVisible = false;
+                while (nextEl && !nextEl.matches('h6')) {
+                    if (nextEl.classList.contains('course-row') && nextEl.style.display !== 'none') {
+                        hasVisible = true;
+                        break;
+                    }
+                    nextEl = nextEl.nextElementSibling;
+                }
+                header.style.display = hasVisible ? '' : 'none';
+            });
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ==========================================
+        // HACER FUNCIONES DISPONIBLES GLOBALMENTE
+        // ==========================================
+        window.cargarMonitoreo = cargarMonitoreo;
+        window.filtrarCursos = filtrarCursos;
+
+        console.log('✅ Página Monitoreo de Evaluación Docente cargada');
+    </script>
+</body>
+</html>
