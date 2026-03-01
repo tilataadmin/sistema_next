@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.28.19.00">
+    <meta name="page-version" content="26.03.01.11.55">
     <title>Evaluar Componentes - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -193,6 +193,60 @@
         
         /* Componente sin rúbricas - fallback a botones numéricos */
         .rating-group-compact { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+        /* Evidencias por resultado esperado */
+        .result-evidence-section {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            background: #fafafa;
+        }
+        .result-evidence-section .result-title {
+            font-weight: 600; font-size: 0.85rem; color: #2c3e50;
+        }
+        .evidence-card {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: white;
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+        }
+        .evidence-card .evidence-thumb-lg {
+            width: 120px; height: 90px; min-width: 120px;
+            border-radius: 8px; object-fit: cover;
+            border: 1px solid #dee2e6;
+            cursor: pointer;
+        }
+        .evidence-card .evidence-detail {
+            flex: 1; min-width: 0;
+        }
+        .evidence-analysis {
+            font-size: 0.8rem; resize: vertical; min-height: 50px;
+        }
+        .paste-zone {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 0.75rem;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            outline: none;
+        }
+        .paste-zone:hover, .paste-zone:focus {
+            border-color: var(--module-primary);
+            color: var(--module-primary);
+            background: #f0fdf4;
+        }
+        .paste-zone.drag-over {
+            border-color: var(--module-primary);
+            background: var(--module-light);
+        }
                 
     </style>
 </head>
@@ -387,6 +441,7 @@
         let rubricasCache = [];
         let ratingsCache = [];
         let evidenciasCache = [];
+        let resultadosEsperadosCache = [];
         
         const BUCKET_NAME = 'institutional-eval';
         const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -551,6 +606,11 @@
                 } else {
                     rubricasCache = [];
                 }
+
+                // 4.5. Resultados esperados de los procesos asignados
+                resultadosEsperadosCache = await supabaseRequest(
+                    `/ie_expected_results?select=result_id,process_id,result_description,result_order,result_status&or=(${pFilter})&result_status=eq.active&order=result_order.asc`
+                );
                 
                 // 5. Calificaciones existentes
                 if (selectedEval.evaluation_mode === 'individual') {
@@ -565,7 +625,7 @@
                 
                 // 6. Evidencias de resultados
                 evidenciasCache = await supabaseRequest(
-                    `/ie_process_results?select=result_evidence_id,process_id,image_storage_path,image_description,file_size,mime_type,display_order,uploaded_by_name&or=(${pFilter})&evaluation_id=eq.${selectedEvalId}&evidence_status=eq.active&order=display_order.asc`
+                    `/ie_process_results?select=result_evidence_id,process_id,expected_result_id,image_storage_path,image_description,result_analysis,file_size,mime_type,display_order,uploaded_by_name&or=(${pFilter})&evaluation_id=eq.${selectedEvalId}&evidence_status=eq.active&order=display_order.asc`
                 );
                 
                 renderizarProcesos();
@@ -925,67 +985,173 @@
             let html = '';
             
             procesosAsignados.forEach(proceso => {
-                const evidencias = evidenciasCache.filter(e => e.process_id === proceso.process_id);
                 const areaName = proceso.ie_management_areas ? proceso.ie_management_areas.area_name : '';
+                const resultados = resultadosEsperadosCache.filter(r => r.process_id === proceso.process_id);
                 
-                let thumbsHtml = '';
-                evidencias.forEach(ev => {
-                    const publicUrl = getStoragePublicUrl(ev.image_storage_path);
-                    thumbsHtml += `
-                        <div class="evidence-item">
-                            <img src="${publicUrl}" class="evidence-thumb" 
-                                onclick="verImagenAmpliada('${publicUrl}', '${ev.image_description || 'Evidencia'}')"
-                                alt="${ev.image_description || 'Evidencia'}">
-                            ${!isReadOnly ? `
-                                <button class="evidence-delete" onclick="eliminarEvidencia('${ev.result_evidence_id}', '${ev.image_storage_path}')" title="Eliminar">
-                                    <i class="bi bi-x"></i>
-                                </button>
-                            ` : ''}
-                            ${ev.image_description ? `<small class="text-muted" style="font-size:0.65rem; max-width:80px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ev.image_description}</small>` : ''}
+                let resultadosHtml = '';
+                
+                if (resultados.length === 0) {
+                    resultadosHtml = `
+                        <div class="text-muted small text-center py-2">
+                            <i class="bi bi-info-circle me-1"></i>No hay resultados esperados configurados para este proceso.
+                            Configure los resultados en la Estructura para asociar evidencias.
                         </div>
                     `;
-                });
+                } else {
+                    resultados.forEach(resultado => {
+                        const evidencias = evidenciasCache.filter(e => 
+                            e.process_id === proceso.process_id && e.expected_result_id === resultado.result_id
+                        );
+                        
+                        let evidenciasHtml = '';
+                        evidencias.forEach(ev => {
+                            const publicUrl = getStoragePublicUrl(ev.image_storage_path);
+                            const analysis = ev.result_analysis || '';
+                            const description = ev.image_description || '';
+                            const analysisDisabled = isReadOnly ? 'disabled' : '';
+                            
+                            evidenciasHtml += `
+                                <div class="evidence-card">
+                                    <img src="${publicUrl}" class="evidence-thumb-lg" 
+                                        onclick="verImagenAmpliada('${publicUrl}', '${description.replace(/'/g, "\\'")}')"
+                                        alt="${description}">
+                                    <div class="evidence-detail">
+                                        <div class="d-flex justify-content-between align-items-start mb-1">
+                                            <small class="text-muted">${description}</small>
+                                            ${!isReadOnly ? `
+                                                <button class="btn btn-outline-danger btn-sm py-0 px-1" style="font-size:0.7rem;" 
+                                                    onclick="eliminarEvidencia('${ev.result_evidence_id}', '${ev.image_storage_path}')" title="Eliminar">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                        <textarea class="form-control evidence-analysis" id="analysis-${ev.result_evidence_id}"
+                                            placeholder="Análisis de esta gráfica: ¿Qué muestra? ¿Qué tendencias se observan?"
+                                            onblur="guardarAnalisis('${ev.result_evidence_id}')" ${analysisDisabled}>${analysis}</textarea>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        // Zona de subida/pegado
+                        let uploadHtml = '';
+                        if (!isReadOnly) {
+                            uploadHtml = `
+                                <div class="d-flex gap-2 mt-2">
+                                    <input type="file" class="d-none" id="file-${proceso.process_id}-${resultado.result_id}" 
+                                        accept="image/jpeg,image/png,image/webp" multiple
+                                        onchange="subirEvidencias('${proceso.process_id}', '${resultado.result_id}', this.files)">
+                                    <button class="btn btn-outline-success btn-sm" 
+                                        onclick="document.getElementById('file-${proceso.process_id}-${resultado.result_id}').click()">
+                                        <i class="bi bi-upload me-1"></i>Subir archivo
+                                    </button>
+                                    <div class="paste-zone flex-grow-1" tabindex="0"
+                                        data-process-id="${proceso.process_id}" 
+                                        data-result-id="${resultado.result_id}"
+                                        ondragover="event.preventDefault(); this.classList.add('drag-over');"
+                                        ondragleave="this.classList.remove('drag-over');"
+                                        ondrop="manejarDrop(event, '${proceso.process_id}', '${resultado.result_id}')">
+                                        <i class="bi bi-clipboard me-1"></i>Clic aquí + Ctrl+V para pegar captura
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        resultadosHtml += `
+                            <div class="result-evidence-section">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div class="result-title">
+                                        <i class="bi bi-bullseye me-1"></i>${resultado.result_description}
+                                    </div>
+                                    <span class="badge bg-secondary">${evidencias.length} evidencia(s)</span>
+                                </div>
+                                ${evidenciasHtml}
+                                ${uploadHtml}
+                            </div>
+                        `;
+                    });
+                }
                 
-                if (evidencias.length === 0) {
-                    thumbsHtml = '<span class="text-muted small"><i class="bi bi-image me-1"></i>Sin evidencias</span>';
+                // Evidencias huérfanas (sin resultado asociado, de datos anteriores)
+                const huerfanas = evidenciasCache.filter(e => 
+                    e.process_id === proceso.process_id && !e.expected_result_id
+                );
+                if (huerfanas.length > 0) {
+                    let huerfanasHtml = '';
+                    huerfanas.forEach(ev => {
+                        const publicUrl = getStoragePublicUrl(ev.image_storage_path);
+                        huerfanasHtml += `
+                            <div class="evidence-card">
+                                <img src="${publicUrl}" class="evidence-thumb-lg" 
+                                    onclick="verImagenAmpliada('${publicUrl}', '${(ev.image_description || 'Evidencia').replace(/'/g, "\\'")}')"
+                                    alt="${ev.image_description || 'Evidencia'}">
+                                <div class="evidence-detail">
+                                    <small class="text-muted">${ev.image_description || 'Sin descripción'}</small>
+                                    ${!isReadOnly ? `
+                                        <div class="mt-1">
+                                            <button class="btn btn-outline-danger btn-sm py-0 px-1" style="font-size:0.7rem;" 
+                                                onclick="eliminarEvidencia('${ev.result_evidence_id}', '${ev.image_storage_path}')" title="Eliminar">
+                                                <i class="bi bi-trash me-1"></i>Eliminar
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    resultadosHtml += `
+                        <div class="result-evidence-section" style="border-color: #fbbf24;">
+                            <div class="result-title text-warning mb-2">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Evidencias sin resultado asociado
+                            </div>
+                            ${huerfanasHtml}
+                        </div>
+                    `;
                 }
                 
                 html += `
-                    <div class="process-assignment mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="process-section mb-3">
+                        <div class="process-header" onclick="toggleProcesoEvidencia(this)">
                             <div>
-                                <div class="process-name" style="font-size:0.9rem;">${proceso.process_name}</div>
-                                <small class="text-muted">${areaName} · ${evidencias.length} imagen(es)</small>
+                                <div class="process-name">${proceso.process_name}</div>
+                                <span class="text-muted small">${areaName}</span>
                             </div>
-                            ${!isReadOnly ? `
-                                <div>
-                                    <input type="file" class="d-none" id="file-${proceso.process_id}" 
-                                        accept="image/jpeg,image/png,image/webp" multiple
-                                        onchange="subirEvidencias('${proceso.process_id}', this.files)">
-                                    <button class="btn btn-outline-success btn-sm" onclick="document.getElementById('file-${proceso.process_id}').click()">
-                                        <i class="bi bi-upload me-1"></i>Subir
-                                    </button>
-                                </div>
-                            ` : ''}
+                            <div class="process-progress">
+                                ${resultados.length} resultado(s) esperado(s)
+                                <i class="bi bi-chevron-down ms-2"></i>
+                            </div>
                         </div>
-                        <div class="d-flex flex-wrap gap-2" id="thumbs-${proceso.process_id}">
-                            ${thumbsHtml}
+                        <div class="process-body">
+                            ${resultadosHtml}
                         </div>
                     </div>
                 `;
             });
             
             container.innerHTML = html;
+            
+            // Inicializar listeners de pegado
+            initPasteListeners();
         }
         
-        async function subirEvidencias(processId, files) {
+        function toggleProcesoEvidencia(header) {
+            const body = header.nextElementSibling;
+            const isOpen = body.classList.contains('show');
+            body.classList.toggle('show');
+            header.classList.toggle('active');
+        }
+        
+        async function subirEvidencias(processId, resultId, files) {
             if (!files || files.length === 0) return;
             
-            const maxImages = 10; // ie_module_config: max_images_per_process
-            const existentes = evidenciasCache.filter(e => e.process_id === processId).length;
+            const maxImages = 10;
+            const existentes = evidenciasCache.filter(e => 
+                e.process_id === processId && e.expected_result_id === resultId
+            ).length;
             
             if (existentes + files.length > maxImages) {
-                showMessage(`Máximo ${maxImages} imágenes por proceso. Ya tiene ${existentes}.`, 'warning');
+                showMessage(`Máximo ${maxImages} imágenes por resultado. Ya tiene ${existentes}.`, 'warning');
                 return;
             }
             
@@ -993,22 +1159,19 @@
             let subidas = 0;
             
             for (const file of files) {
-                // Validar tipo
                 if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
                     showMessage(`Archivo "${file.name}" no es una imagen válida (JPG, PNG, WebP)`, 'warning');
                     continue;
                 }
                 
-                // Validar tamaño
                 if (file.size > MAX_IMAGE_SIZE) {
                     showMessage(`Archivo "${file.name}" excede 5MB`, 'warning');
                     continue;
                 }
                 
                 try {
-                    // Subir a Storage
                     const timestamp = Date.now();
-                    const ext = file.name.split('.').pop();
+                    const ext = file.name.split('.').pop() || 'png';
                     const fileName = `${timestamp}_${Math.random().toString(36).substr(2, 6)}.${ext}`;
                     const storagePath = `evaluations/${selectedEvalId}/${processId}/${fileName}`;
                     
@@ -1023,14 +1186,16 @@
                         continue;
                     }
                     
-                    // Registrar en BD
-                    const nextOrder = evidenciasCache.filter(e => e.process_id === processId).length + subidas + 1;
+                    const nextOrder = evidenciasCache.filter(e => 
+                        e.process_id === processId && e.expected_result_id === resultId
+                    ).length + subidas + 1;
                     
                     await supabaseRequest('/ie_process_results', {
                         method: 'POST',
                         body: JSON.stringify({
                             evaluation_id: selectedEvalId,
                             process_id: processId,
+                            expected_result_id: resultId,
                             image_storage_path: storagePath,
                             image_description: file.name,
                             file_size: file.size,
@@ -1049,17 +1214,15 @@
             }
             
             if (subidas > 0) {
-                // Recargar evidencias
                 const pFilter = procesosAsignados.map(p => `process_id.eq.${p.process_id}`).join(',');
                 evidenciasCache = await supabaseRequest(
-                    `/ie_process_results?select=result_evidence_id,process_id,image_storage_path,image_description,file_size,mime_type,display_order,uploaded_by_name&or=(${pFilter})&evaluation_id=eq.${selectedEvalId}&evidence_status=eq.active&order=display_order.asc`
+                    `/ie_process_results?select=result_evidence_id,process_id,expected_result_id,image_storage_path,image_description,result_analysis,file_size,mime_type,display_order,uploaded_by_name&or=(${pFilter})&evaluation_id=eq.${selectedEvalId}&evidence_status=eq.active&order=display_order.asc`
                 );
                 renderizarEvidencias();
                 showMessage(`${subidas} imagen(es) subida(s) correctamente`, 'success');
             }
             
-            // Limpiar input
-            const fileInput = document.getElementById(`file-${processId}`);
+            const fileInput = document.getElementById(`file-${processId}-${resultId}`);
             if (fileInput) fileInput.value = '';
             
             ocultarLoading();
@@ -1101,6 +1264,80 @@
         // ==========================================
         // FUNCIONES DE UTILIDAD
         // ==========================================
+
+        // ==========================================
+        // PEGADO Y DRAG & DROP DE IMÁGENES
+        // ==========================================
+        function initPasteListeners() {
+            document.querySelectorAll('.paste-zone').forEach(zone => {
+                zone.addEventListener('paste', function(e) {
+                    const items = e.clipboardData?.items;
+                    if (!items) return;
+                    
+                    let imageFile = null;
+                    for (const item of items) {
+                        if (item.type.startsWith('image/')) {
+                            imageFile = item.getAsFile();
+                            break;
+                        }
+                    }
+                    
+                    if (!imageFile) return;
+                    e.preventDefault();
+                    
+                    const processId = this.dataset.processId;
+                    const resultId = this.dataset.resultId;
+                    
+                    // Renombrar el archivo pegado
+                    const timestamp = new Date().toISOString().slice(0,19).replace(/[:-]/g, '');
+                    const newFile = new File([imageFile], `captura_${timestamp}.png`, { type: imageFile.type });
+                    
+                    subirEvidencias(processId, resultId, [newFile]);
+                });
+            });
+        }
+        
+        function manejarDrop(event, processId, resultId) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('drag-over');
+            
+            const files = event.dataTransfer?.files;
+            if (files && files.length > 0) {
+                subirEvidencias(processId, resultId, files);
+            }
+        }
+        
+        // ==========================================
+        // GUARDAR ANÁLISIS POR EVIDENCIA
+        // ==========================================
+        async function guardarAnalisis(evidenceId) {
+            if (selectedEval.evaluation_status === 'completed') return;
+            
+            const textarea = document.getElementById(`analysis-${evidenceId}`);
+            if (!textarea) return;
+            
+            const analysis = textarea.value.trim() || null;
+            const evidencia = evidenciasCache.find(e => e.result_evidence_id === evidenceId);
+            if (!evidencia) return;
+            if (evidencia.result_analysis === analysis) return;
+            
+            try {
+                await supabaseRequest(`/ie_process_results?result_evidence_id=eq.${evidenceId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        result_analysis: analysis,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                evidencia.result_analysis = analysis;
+            } catch (error) {
+                console.error('❌ Error guardando análisis:', error);
+                showMessage('Error al guardar análisis: ' + error.message, 'danger');
+            }
+        }
+        
+        
+        
         function obtenerNombreNivel(value) {
             const niveles = {
                 1: 'Existencia',
