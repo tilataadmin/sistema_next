@@ -767,12 +767,21 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                       <div class="col-md-3">
                             <div class="card text-center h-100">
                                 <div class="card-body py-2">
                                     <i class="bi bi-person-badge text-warning fs-4"></i>
                                     <h5 class="mb-0" id="transferCountManaged">0</h5>
                                     <small class="text-muted">Subalternos</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center h-100">
+                                <div class="card-body py-2">
+                                    <i class="bi bi-list-columns text-purple fs-4"></i>
+                                    <h5 class="mb-0" id="transferCountVariables">0</h5>
+                                    <small class="text-muted">Variables</small>
                                 </div>
                             </div>
                         </div>
@@ -857,6 +866,25 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Variables -->
+                        <div class="accordion-item" id="accordionItemVariables" style="display:none;">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVariables">
+                                    <i class="bi bi-list-columns me-2"></i>Variables (Propietario y Responsable de captura)
+                                </button>
+                            </h2>
+                            <div id="collapseVariables" class="accordion-collapse collapse" data-bs-parent="#accordionTransferDetail">
+                                <div class="accordion-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead><tr><th>Variable</th><th>Rol</th><th>Fuente</th><th>Periodicidad</th><th>Estado</th></tr></thead>
+                                            <tbody id="transferTableVariables"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                     <!-- Selector de destino -->
                     <div class="card border-primary">
@@ -3050,9 +3078,78 @@
                 }
 
                 // =============================================
+                // 5) VARIABLES (propietario + responsable de captura)
+                // =============================================
+                let listaVariables = [];
+
+                const originUserData = await supabaseRequest(
+                    `/users?select=user_id&user_mail=eq.${encodeURIComponent(workerData.email)}&user_status=eq.active&limit=1`
+                );
+                const originUserId = originUserData && originUserData.length > 0 ? originUserData[0].user_id : null;
+
+                if (originUserId) {
+                    const variablesOwner = await supabaseRequest(
+                        `/variables?select=variable_id,variable_name,data_source,periodicity,variable_status&owner_id=eq.${originUserId}&order=variable_name.asc`
+                    );
+                    if (variablesOwner) {
+                        variablesOwner.forEach(v => {
+                            listaVariables.push({ ...v, _rol: 'Propietario' });
+                        });
+                    }
+
+                    const variablesResponsible = await supabaseRequest(
+                        `/variables?select=variable_id,variable_name,data_source,periodicity,variable_status&capture_responsible_id=eq.${originUserId}&owner_id=neq.${originUserId}&order=variable_name.asc`
+                    );
+                    if (variablesResponsible) {
+                        variablesResponsible.forEach(v => {
+                            if (!listaVariables.find(lv => lv.variable_id === v.variable_id)) {
+                                listaVariables.push({ ...v, _rol: 'Responsable captura' });
+                            }
+                        });
+                    }
+
+                    const variablesBoth = await supabaseRequest(
+                        `/variables?select=variable_id,variable_name,data_source,periodicity,variable_status&capture_responsible_id=eq.${originUserId}&owner_id=eq.${originUserId}&order=variable_name.asc`
+                    );
+                    if (variablesBoth && variablesBoth.length > 0) {
+                        variablesBoth.forEach(v => {
+                            const existing = listaVariables.find(lv => lv.variable_id === v.variable_id);
+                            if (existing) {
+                                existing._rol = 'Propietario + Responsable';
+                            }
+                        });
+                    }
+                }
+
+                const variablesCount = listaVariables.length;
+                document.getElementById('transferCountVariables').textContent = variablesCount;
+
+                const tbodyVariables = document.getElementById('transferTableVariables');
+                const accordionVariables = document.getElementById('accordionItemVariables');
+                if (variablesCount > 0) {
+                    accordionVariables.style.display = '';
+                    tbodyVariables.innerHTML = listaVariables.map(v => {
+                        const sourceLabel = v.data_source === 'manual' ? 'Manual' : v.data_source === 'query' ? 'SQL' : v.data_source === 'api' ? 'API' : v.data_source === 'survey' ? 'Encuesta' : v.data_source || '-';
+                        const periodLabel = v.periodicity === 'annual' ? 'Anual' : 'Mensual';
+                        return `
+                            <tr>
+                                <td><small>${escapeHtml(v.variable_name)}</small></td>
+                                <td><span class="badge ${v._rol.includes('Propietario') ? 'bg-primary' : 'bg-info text-dark'}">${v._rol}</span></td>
+                                <td><small>${sourceLabel}</small></td>
+                                <td><small>${periodLabel}</small></td>
+                                <td><span class="badge ${v.variable_status === 'active' ? 'bg-success' : 'bg-secondary'}">${v.variable_status}</span></td>
+                            </tr>
+                        `;
+                    }).join('');
+                } else {
+                    accordionVariables.style.display = 'none';
+                    tbodyVariables.innerHTML = '';
+                }
+
+                // =============================================
                 // Resumen total
                 // =============================================
-                const totalItems = budgetCount + tasksCount + projectsCount + managedCount;
+                const totalItems = budgetCount + tasksCount + projectsCount + managedCount + variablesCount;
                 document.getElementById('transferSummaryBadge').textContent = `${totalItems} elemento(s) a transferir`;
 
                 if (totalItems === 0) {
@@ -3084,6 +3181,8 @@
                     listaTareas,
                     listaProyectos,
                     subalternos: subalternos || [],
+                    listaVariables,
+                    originUserId,
                     totalItems
                 };
 
@@ -3126,7 +3225,8 @@
                 `• ${data.budgetCount} asignación(es) presupuestal(es)\n` +
                 `• ${data.listaTareas.length} tarea(s)\n` +
                 `• ${data.listaProyectos.length} proyecto(s)\n` +
-                `• ${data.subalternos.length} subalterno(s)\n\n` +
+                `• ${data.subalternos.length} subalterno(s)\n` +
+                `• ${data.listaVariables ? data.listaVariables.length : 0} variable(s)\n\n` +
                 `Total: ${data.totalItems} elemento(s). Esta acción es inmediata.`
             );
 
@@ -3275,6 +3375,65 @@
                         resultados.errores.push('Jefaturas: ' + err.message);
                     }
                 }
+
+                // =============================================
+                // 5) VARIABLES (propietario + responsable de captura)
+                // =============================================
+                if (data.listaVariables && data.listaVariables.length > 0 && data.originUserId) {
+                    const destUserData = await supabaseRequest(
+                        `/users?select=user_id&user_mail=eq.${encodeURIComponent(destEmail)}&user_status=eq.active&limit=1`
+                    );
+                    const destUserId = destUserData && destUserData.length > 0 ? destUserData[0].user_id : null;
+
+                    if (destUserId) {
+                        const variablesAsOwner = data.listaVariables.filter(v => v._rol.includes('Propietario'));
+                        if (variablesAsOwner.length > 0) {
+                            try {
+                                await supabaseRequest(
+                                    `/variables?owner_id=eq.${data.originUserId}`,
+                                    {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({
+                                            owner_id: destUserId,
+                                            updated_at: new Date().toISOString()
+                                        })
+                                    }
+                                );
+                                resultados.exitos += variablesAsOwner.length;
+                                console.log(`✅ ${variablesAsOwner.length} variables (propietario) transferidas`);
+                            } catch (err) {
+                                console.error('❌ Error transfiriendo variables propietario:', err);
+                                resultados.errores.push('Variables (propietario): ' + err.message);
+                            }
+                        }
+
+                        const variablesAsResponsible = data.listaVariables.filter(v => 
+                            v._rol === 'Responsable captura' || v._rol === 'Propietario + Responsable'
+                        );
+                        if (variablesAsResponsible.length > 0) {
+                            try {
+                                await supabaseRequest(
+                                    `/variables?capture_responsible_id=eq.${data.originUserId}`,
+                                    {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({
+                                            capture_responsible_id: destUserId,
+                                            updated_at: new Date().toISOString()
+                                        })
+                                    }
+                                );
+                                const onlyResponsible = data.listaVariables.filter(v => v._rol === 'Responsable captura');
+                                resultados.exitos += onlyResponsible.length;
+                                console.log(`✅ Responsabilidades de captura transferidas`);
+                            } catch (err) {
+                                console.error('❌ Error transfiriendo responsabilidades de captura:', err);
+                                resultados.errores.push('Variables (responsable captura): ' + err.message);
+                            }
+                        }
+                    } else {
+                        resultados.errores.push('Variables: El trabajador destino no tiene usuario del sistema creado');
+                    }
+                }    
 
                 // =============================================
                 // Mostrar resultado final
