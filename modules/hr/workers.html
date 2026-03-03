@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.03.03.07.15">
+    <meta name="page-version" content="2026.03.03.08.00">
     <title>Gestionar Trabajadores - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -788,6 +788,15 @@
                         <div class="col-md-3">
                             <div class="card text-center h-100">
                                 <div class="card-body py-2">
+                                    <i class="bi bi-clipboard-data text-info fs-4"></i>
+                                    <h5 class="mb-0" id="transferCountSurveys">0</h5>
+                                    <small class="text-muted">Encuestas</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center h-100">
+                                <div class="card-body py-2">
                                     <i class="bi bi-list-columns text-purple fs-4"></i>
                                     <h5 class="mb-0" id="transferCountVariables">0</h5>
                                     <small class="text-muted">Variables</small>
@@ -908,6 +917,25 @@
                                         <table class="table table-sm table-hover mb-0">
                                             <thead><tr><th>Indicador</th><th>Formato</th><th>Estado</th></tr></thead>
                                             <tbody id="transferTableIndicators"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    <!-- Encuestas -->
+                        <div class="accordion-item" id="accordionItemSurveys" style="display:none;">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSurveys">
+                                    <i class="bi bi-clipboard-data me-2"></i>Encuestas (Creador)
+                                </button>
+                            </h2>
+                            <div id="collapseSurveys" class="accordion-collapse collapse" data-bs-parent="#accordionTransferDetail">
+                                <div class="accordion-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead><tr><th>Encuesta</th><th>Público</th><th>Estado</th></tr></thead>
+                                            <tbody id="transferTableSurveys"></tbody>
                                         </table>
                                     </div>
                                 </div>
@@ -3211,9 +3239,45 @@
                 }
 
                 // =============================================
+                // 8) ENCUESTAS (creador)
+                // =============================================
+                let listaEncuestas = [];
+
+                if (originUserId) {
+                    const encuestas = await supabaseRequest(
+                        `/survey_masters?select=survey_master_id,survey_name,target_audience,is_active&created_by=eq.${originUserId}&order=survey_name.asc`
+                    );
+                    if (encuestas) {
+                        listaEncuestas = encuestas;
+                    }
+                }
+
+                const surveysCount = listaEncuestas.length;
+                document.getElementById('transferCountSurveys').textContent = surveysCount;
+
+                const tbodySurveys = document.getElementById('transferTableSurveys');
+                const accordionSurveys = document.getElementById('accordionItemSurveys');
+                if (surveysCount > 0) {
+                    accordionSurveys.style.display = '';
+                    tbodySurveys.innerHTML = listaEncuestas.map(enc => {
+                        const audienceLabel = enc.target_audience === 'students' ? 'Estudiantes' : enc.target_audience === 'families' ? 'Familias' : enc.target_audience === 'workers' ? 'Trabajadores' : 'Mixto';
+                        return `
+                            <tr>
+                                <td><small>${escapeHtml(enc.survey_name)}</small></td>
+                                <td><small>${audienceLabel}</small></td>
+                                <td><span class="badge ${enc.is_active ? 'bg-success' : 'bg-secondary'}">${enc.is_active ? 'Activa' : 'Inactiva'}</span></td>
+                            </tr>
+                        `;
+                    }).join('');
+                } else {
+                    accordionSurveys.style.display = 'none';
+                    tbodySurveys.innerHTML = '';
+                }
+
+                // =============================================
                 // Resumen total
                 // =============================================
-                const totalItems = budgetCount + tasksCount + projectsCount + managedCount + variablesCount + indicatorsCount;
+                const totalItems = budgetCount + tasksCount + projectsCount + managedCount + variablesCount + indicatorsCount + surveysCount;
                 document.getElementById('transferSummaryBadge').textContent = `${totalItems} elemento(s) a transferir`;
 
                 if (totalItems === 0) {
@@ -3247,7 +3311,9 @@
                     subalternos: subalternos || [],
                     listaVariables,
                     listaIndicadores,
+                    listaEncuestas,
                     originUserId,
+                    originEmail: workerData.email,
                     totalItems
                 };
 
@@ -3292,7 +3358,8 @@
                 `• ${data.listaProyectos.length} proyecto(s)\n` +
                 `• ${data.subalternos.length} subalterno(s)\n` +
                 `• ${data.listaVariables ? data.listaVariables.length : 0} variable(s)\n` +
-                `• ${data.listaIndicadores ? data.listaIndicadores.length : 0} indicador(es)\n\n` +
+                `• ${data.listaIndicadores ? data.listaIndicadores.length : 0} indicador(es)\n` +
+                `• ${data.listaEncuestas ? data.listaEncuestas.length : 0} encuesta(s)\n\n` +
                 `Total: ${data.totalItems} elemento(s). Esta acción es inmediata.`
             );
 
@@ -3530,6 +3597,38 @@
                         }
                     } else {
                         resultados.errores.push('Indicadores: El trabajador destino no tiene usuario del sistema creado');
+                    }
+                }
+
+                // =============================================
+                // 8) ENCUESTAS (creador)
+                // =============================================
+                if (data.listaEncuestas && data.listaEncuestas.length > 0 && data.originUserId) {
+                    const destUserData3 = await supabaseRequest(
+                        `/users?select=user_id&user_mail=eq.${encodeURIComponent(destEmail)}&user_status=eq.active&limit=1`
+                    );
+                    const destUserId3 = destUserData3 && destUserData3.length > 0 ? destUserData3[0].user_id : null;
+
+                    if (destUserId3) {
+                        try {
+                            await supabaseRequest(
+                                `/survey_masters?created_by=eq.${data.originUserId}`,
+                                {
+                                    method: 'PATCH',
+                                    body: JSON.stringify({
+                                        created_by: destUserId3,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                }
+                            );
+                            resultados.exitos += data.listaEncuestas.length;
+                            console.log(`✅ ${data.listaEncuestas.length} encuestas transferidas`);
+                        } catch (err) {
+                            console.error('❌ Error transfiriendo encuestas:', err);
+                            resultados.errores.push('Encuestas: ' + err.message);
+                        }
+                    } else {
+                        resultados.errores.push('Encuestas: El trabajador destino no tiene usuario del sistema creado');
                     }
                 }
 
