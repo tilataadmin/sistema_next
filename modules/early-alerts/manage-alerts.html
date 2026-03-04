@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.04.13.35">
+    <meta name="page-version" content="26.03.04.13.50">
     <title>Gestión de Alertas Tempranas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -833,109 +833,71 @@
          */
         async function aplicarFiltros() {
             try {
-                const causeId = document.getElementById('filtro-causa').value;
-                const estado = document.getElementById('filtro-estado').value;
+                const causeId   = document.getElementById('filtro-causa').value;
+                const estado    = document.getElementById('filtro-estado').value;
                 const sectionId = document.getElementById('filtro-seccion').value;
-                
+        
                 mostrarLoading();
-                
+        
+                // ── 1. Petición de alertas ──────────────────────────────────────
                 let query = '/early_alert_logs?select=log_id,family_code,cause_id,worker_id,log_details,alert_status,is_closed,created_at,closed_at,families(family_name),early_alert_causes(cause_name),workers(worker_first_name,worker_last_name_1)&order=created_at.desc';
-                
-                // Construir filtros
-                let filtros = [];
-                
-                if (causeId !== 'todas') {
-                    filtros.push(`cause_id=eq.${causeId}`);
-                }
-                
-                if (estado !== 'todos') {
-                    filtros.push(`alert_status=eq.${estado}`);
-                }
-                
-                if (filtros.length > 0) {
-                    query += '&' + filtros.join('&');
-                }
-                
+        
+                const filtros = [];
+                if (causeId !== 'todas') filtros.push(`cause_id=eq.${causeId}`);
+                if (estado  !== 'todos') filtros.push(`alert_status=eq.${estado}`);
+                if (filtros.length > 0)  query += '&' + filtros.join('&');
+        
                 const alertas = await supabaseRequest(query);
-                
-                // Filtrar por sección si es necesario
+        
+                if (!alertas || alertas.length === 0) {
+                    await renderizarAlertas([]);
+                    ocultarLoading();
+                    mostrarMensajeFiltro(causeId, estado, sectionId, 0);
+                    return;
+                }
+        
+                // ── 2. UNA sola petición para todos los estudiantes ─────────────
+                const familyCodes = [...new Set(alertas.map(a => a.family_code))];
+                const codesParam  = familyCodes.join(',');
+        
+                const todosEstudiantes = await supabaseRequest(
+                    `/students?select=student_code,student_first_name,student_birthday,family_id,courses(course_name,grades(section_id))&family_id=in.(${codesParam})&status_id=eq.d89b6287-ee51-435d-aeeb-d0f503af4646&order=student_first_name`
+                );
+        
+                // ── 3. Agrupar estudiantes por familia en memoria ───────────────
+                const estudiantesPorFamilia = {};
+                todosEstudiantes.forEach(est => {
+                    if (!estudiantesPorFamilia[est.family_id]) {
+                        estudiantesPorFamilia[est.family_id] = [];
+                    }
+                    estudiantesPorFamilia[est.family_id].push(est);
+                });
+        
+                // ── 4. Filtrar por sección en memoria (sin más peticiones) ──────
                 let alertasFiltradas = alertas;
                 if (sectionId !== 'todas') {
-                    alertasFiltradas = await filtrarPorSeccion(alertas, sectionId);
+                    alertasFiltradas = alertas.filter(alerta => {
+                        const estudiantes = estudiantesPorFamilia[alerta.family_code] || [];
+                        return estudiantes.some(est => est.courses?.grades?.section_id == sectionId);
+                    });
                 }
-                
-                // Cargar estudiantes para cada alerta
-                const alertasConEstudiantes = await cargarEstudiantesParaAlertas(alertasFiltradas);
-                
-                // Renderizar alertas
-                renderizarAlertas(alertasConEstudiantes);
-                
+        
+                // ── 5. Combinar alertas con sus estudiantes ─────────────────────
+                const alertasConEstudiantes = alertasFiltradas.map(alerta => ({
+                    ...alerta,
+                    estudiantes: estudiantesPorFamilia[alerta.family_code] || []
+                }));
+        
+                await renderizarAlertas(alertasConEstudiantes);
                 ocultarLoading();
-                
-                // Mostrar mensaje informativo
                 mostrarMensajeFiltro(causeId, estado, sectionId, alertasConEstudiantes.length);
-
+        
             } catch (error) {
                 ocultarLoading();
                 console.error('Error aplicando filtros:', error);
                 mostrarMensaje('Error al cargar alertas: ' + error.message, 'error');
             }
         }
-
-        /**
-         * Filtrar alertas por sección
-         */
-        async function filtrarPorSeccion(alertas, sectionId) {
-            try {
-                const alertasFiltradas = [];
-                
-                for (const alerta of alertas) {
-                    // CORRECCIÓN: Usar family_id en lugar de family_code
-                    const querySeccion = `/students?select=courses(grades(section_id))&family_id=eq.${alerta.family_code}&status_id=eq.d89b6287-ee51-435d-aeeb-d0f503af4646`;
-                    const estudiantesConSeccion = await supabaseRequest(querySeccion);
-                    
-                    const perteneceSeccion = estudiantesConSeccion.some(est => 
-                        est.courses?.grades?.section_id == sectionId
-                    );
-                    
-                    if (perteneceSeccion) {
-                        alertasFiltradas.push(alerta);
-                    }
-                }
-                
-                return alertasFiltradas;
-            } catch (error) {
-                console.error('Error filtrando por sección:', error);
-                return alertas;
-            }
-        }
-
-        
-        /**
-         * Cargar estudiantes para cada alerta
-         */
-        async function cargarEstudiantesParaAlertas(alertas) {
-            try {
-                const alertasConEstudiantes = [];
-                
-                for (const alerta of alertas) {
-                    // CORRECCIÓN: Usar family_id en lugar de family_code
-                    const estudiantes = await supabaseRequest(`/students?select=student_code,student_first_name,student_birthday,courses(course_name)&family_id=eq.${alerta.family_code}&status_id=eq.d89b6287-ee51-435d-aeeb-d0f503af4646&order=student_first_name`);                    
-                    alertasConEstudiantes.push({
-                        ...alerta,
-                        estudiantes: estudiantes
-                    });
-                }
-                
-                return alertasConEstudiantes;
-            } catch (error) {
-                console.error('Error cargando estudiantes:', error);
-                return alertas.map(alerta => ({ ...alerta, estudiantes: [] }));
-            }
-        }
-
-
-
         
         /**
          * Renderizar alertas en la interfaz
@@ -943,22 +905,21 @@
         async function renderizarAlertas(alertas) {
             const container = document.getElementById('alertas-container');
             const noDataDiv = document.getElementById('no-datos');
-            
+        
             container.innerHTML = '';
-            
+        
             if (!alertas || alertas.length === 0) {
                 noDataDiv.classList.remove('d-none');
                 return;
             }
-            
+        
             noDataDiv.classList.add('d-none');
-            
-            for (const alerta of alertas) {
-                const alertaElement = await crearElementoAlerta(alerta);
-                container.appendChild(alertaElement);
-            }
+        
+            // Crear todos los elementos en paralelo (fotos incluidas)
+            const elementos = await Promise.all(alertas.map(alerta => crearElementoAlerta(alerta)));
+            elementos.forEach(el => container.appendChild(el));
         }
-
+        
         /**
          * Crear elemento HTML para una alerta
          */

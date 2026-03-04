@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.03.04.13.45">
     <title>Tablero de Control de Alertas Tempranas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -753,402 +754,201 @@
             try {
                 console.log('📊 Cargando datos del dashboard...');
         
-                // Cargar métricas principales y datos en paralelo
-                await Promise.all([
-                    cargarMetricasPrincipales(),
-                    cargarTopCausas(),
-                    cargarAlertasRecientes(),
-                    cargarEstadisticasTrabajadores(),
-                    actualizarGraficoTendencia(),
-                    actualizarGraficoSecciones(),
-                    actualizarGraficoEvolucion()
+                const fechaLimite = new Date();
+                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
+                const fechaLimiteStr = fechaLimite.toISOString();
+        
+                // UNA SOLA petición con todos los datos necesarios
+                const [todasAlertas, todosEstudiantes] = await Promise.all([
+                    supabaseRequest(
+                        `/early_alert_logs?select=log_id,family_code,cause_id,worker_id,alert_status,is_closed,created_at,families(family_name),early_alert_causes(cause_name),workers(worker_first_name,worker_last_name_1)&created_at=gte.${fechaLimiteStr}&order=created_at.desc`
+                    ),
+                    supabaseRequest(
+                        `/students?select=family_id,courses(grades(section_id))&status_id=eq.d89b6287-ee51-435d-aeeb-d0f503af4646`
+                    )
                 ]);
         
-                console.log('✅ Datos del dashboard cargados con datos reales');
+                // Construir mapa familia → secciones (en memoria, sin más peticiones)
+                const mapaFamiliaSeccion = {};
+                todosEstudiantes.forEach(est => {
+                    const seccionId = est.courses?.grades?.section_id;
+                    if (!seccionId || !est.family_id) return;
+                    if (!mapaFamiliaSeccion[est.family_id]) {
+                        mapaFamiliaSeccion[est.family_id] = new Set();
+                    }
+                    mapaFamiliaSeccion[est.family_id].add(seccionId);
+                });
+        
+                // Filtrar por sección en memoria
+                let alertasFiltradas = todasAlertas;
+                if (filtrosActuales.seccion !== 'todas') {
+                    alertasFiltradas = todasAlertas.filter(a => {
+                        const secciones = mapaFamiliaSeccion[a.family_code];
+                        return secciones && secciones.has(filtrosActuales.seccion);
+                    });
+                }
+        
+                // Filtrar por estado en memoria
+                if (filtrosActuales.estado !== 'todos') {
+                    alertasFiltradas = alertasFiltradas.filter(a => a.alert_status === filtrosActuales.estado);
+                }
+        
+                // Guardar en caché para uso de todas las funciones
+                cacheData.alertasFiltradas = alertasFiltradas;
+                cacheData.todasAlertas = todasAlertas;
+                cacheData.mapaFamiliaSeccion = mapaFamiliaSeccion;
+        
+                // Todas las funciones usan los datos ya cargados — sin más peticiones
+                procesarMetricasPrincipales(alertasFiltradas);
+                procesarTopCausas(alertasFiltradas);
+                procesarAlertasRecientes(todasAlertas.slice(0, 10));
+                procesarEstadisticasTrabajadores(alertasFiltradas);
+                procesarGraficoTendencia(alertasFiltradas, fechaLimiteStr);
+                procesarGraficoSecciones(todasAlertas, mapaFamiliaSeccion);
+                procesarGraficoEvolucion(alertasFiltradas);
+        
+                console.log(`✅ Dashboard cargado: ${todasAlertas.length} alertas en 2 peticiones`);
         
             } catch (error) {
                 console.error('❌ Error cargando datos del dashboard:', error);
                 throw error;
             }
         }
-
-
-
         
       // ==========================================
         // CARGAR MÉTRICAS PRINCIPALES
         // ==========================================
-        async function cargarMetricasPrincipales() {
-            try {
-                const fechaLimite = new Date();
-                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
-                const fechaLimiteStr = fechaLimite.toISOString();
-
-                let query = `/early_alert_logs?select=log_id,family_code,alert_status,is_closed&created_at=gte.${fechaLimiteStr}`;
-                
-                // Aplicar filtro de estado si no es "todos"
-                if (filtrosActuales.estado !== 'todos') {
-                    query += `&alert_status=eq.${filtrosActuales.estado}`;
-                }
-
-                const alertas = await supabaseRequest(query);
-                let alertasFiltradas = alertas;
-
-                // Filtrar por sección si es necesario
-                if (filtrosActuales.seccion !== 'todas') {
-                    alertasFiltradas = await filtrarAlertasPorSeccion(alertas, filtrosActuales.seccion);
-                }
-
-                // Calcular métricas
-                const totalAlertas = alertasFiltradas.length;
-                const alertasRojas = alertasFiltradas.filter(a => a.alert_status === 'red').length;
-                const alertasAmarillas = alertasFiltradas.filter(a => a.alert_status === 'yellow').length;
-                const familiasUnicas = new Set(alertasFiltradas.map(a => a.family_code)).size;
-
-                // Actualizar UI
-                document.getElementById('total-alertas').textContent = totalAlertas;
-                document.getElementById('alertas-rojas').textContent = alertasRojas;
-                document.getElementById('alertas-amarillas').textContent = alertasAmarillas;
-                document.getElementById('familias-afectadas').textContent = familiasUnicas;
-
-            } catch (error) {
-                console.error('Error cargando métricas principales:', error);
-                document.getElementById('total-alertas').innerHTML = '<span class="text-danger">Error</span>';
-            }
+        // ==========================================
+        // PROCESAR MÉTRICAS PRINCIPALES (sin peticiones)
+        // ==========================================
+        function procesarMetricasPrincipales(alertas) {
+            const alertasRojas     = alertas.filter(a => a.alert_status === 'red').length;
+            const alertasAmarillas = alertas.filter(a => a.alert_status === 'yellow').length;
+            const familiasUnicas   = new Set(alertas.map(a => a.family_code)).size;
+        
+            document.getElementById('total-alertas').textContent      = alertas.length;
+            document.getElementById('alertas-rojas').textContent      = alertasRojas;
+            document.getElementById('alertas-amarillas').textContent  = alertasAmarillas;
+            document.getElementById('familias-afectadas').textContent = familiasUnicas;
         }
-
+        
         // ==========================================
-        // FILTRAR ALERTAS POR SECCIÓN
+        // PROCESAR TOP CAUSAS (sin peticiones)
         // ==========================================
-        async function filtrarAlertasPorSeccion(alertas, sectionId) {
-            try {
-                const alertasFiltradas = [];
-                
-                for (const alerta of alertas) {
-                    const querySeccion = `/students?select=courses(grades(section_id))&family_id=eq.${alerta.family_code}&status_id=eq.d89b6287-ee51-435d-aeeb-d0f503af4646`;
-                    const estudiantesConSeccion = await supabaseRequest(querySeccion);
-                    
-                    const perteneceSeccion = estudiantesConSeccion.some(est => 
-                        est.courses?.grades?.section_id == sectionId
-                    );
-                    
-                    if (perteneceSeccion) {
-                        alertasFiltradas.push(alerta);
-                    }
-                }
-                
-                return alertasFiltradas;
-            } catch (error) {
-                console.error('Error filtrando por sección:', error);
-                return alertas;
-            }
+        function procesarTopCausas(alertas) {
+            const contadorCausas = {};
+            alertas.forEach(alerta => {
+                const causaName = alerta.early_alert_causes?.cause_name || 'Sin causa';
+                contadorCausas[causaName] = (contadorCausas[causaName] || 0) + 1;
+            });
+        
+            const causasOrdenadas = Object.entries(contadorCausas)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 5);
+        
+            renderizarTopCausas(causasOrdenadas);
         }
-
+        
         // ==========================================
-        // CARGAR TOP CAUSAS
+        // PROCESAR ALERTAS RECIENTES (sin peticiones)
         // ==========================================
-        async function cargarTopCausas() {
-            try {
-                const fechaLimite = new Date();
-                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
-                const fechaLimiteStr = fechaLimite.toISOString();
-
-                const query = `/early_alert_logs?select=cause_id,early_alert_causes(cause_name)&created_at=gte.${fechaLimiteStr}`;
-                const alertas = await supabaseRequest(query);
-
-                // Contar causas
-                const contadorCausas = {};
-                alertas.forEach(alerta => {
-                    const causaName = alerta.early_alert_causes?.cause_name || 'Sin causa';
-                    contadorCausas[causaName] = (contadorCausas[causaName] || 0) + 1;
+        function procesarAlertasRecientes(alertas) {
+            renderizarAlertasRecientes(alertas);
+        }
+        
+        // ==========================================
+        // PROCESAR ESTADÍSTICAS TRABAJADORES (sin peticiones)
+        // ==========================================
+        function procesarEstadisticasTrabajadores(alertas) {
+            const stats = {};
+            alertas.forEach(alerta => {
+                const id   = alerta.worker_id;
+                const name = `${alerta.workers?.worker_first_name || ''} ${alerta.workers?.worker_last_name_1 || ''}`.trim();
+                if (!stats[id]) stats[id] = { name, total: 0, red: 0, yellow: 0, green: 0 };
+                stats[id].total++;
+                stats[id][alerta.alert_status || 'red']++;
+            });
+            renderizarEstadisticasTrabajadores(Object.values(stats));
+        }
+        
+        // ==========================================
+        // PROCESAR GRÁFICO TENDENCIAS (sin peticiones)
+        // ==========================================
+        function procesarGraficoTendencia(alertas, fechaLimiteStr) {
+            const fechaInicio = new Date(fechaLimiteStr);
+            const fechaFin    = new Date();
+        
+            const labels = [], dataRed = [], dataYellow = [], dataGreen = [];
+        
+            for (let d = new Date(fechaInicio); d <= fechaFin; d.setDate(d.getDate() + 7)) {
+                const inicioSemana = new Date(d);
+                const finSemana    = new Date(d);
+                finSemana.setDate(finSemana.getDate() + 6);
+        
+                labels.push(`${inicioSemana.getDate()}/${inicioSemana.getMonth() + 1}`);
+        
+                // Filtrar en memoria por semana
+                const semana = alertas.filter(a => {
+                    const fecha = new Date(a.created_at);
+                    return fecha >= inicioSemana && fecha <= finSemana;
                 });
-
-                // Ordenar por cantidad
-                const causasOrdenadas = Object.entries(contadorCausas)
-                    .sort(([,a], [,b]) => b - a)
-                    .slice(0, 5);
-
-                // Renderizar tabla
-                renderizarTopCausas(causasOrdenadas);
-
-            } catch (error) {
-                console.error('Error cargando top causas:', error);
-                document.getElementById('top-causas-body').innerHTML = `
-                    <tr><td colspan="3" class="text-center text-danger">Error al cargar causas</td></tr>
-                `;
+        
+                dataRed.push(semana.filter(a => a.alert_status === 'red').length);
+                dataYellow.push(semana.filter(a => a.alert_status === 'yellow').length);
+                dataGreen.push(semana.filter(a => a.alert_status === 'green').length);
             }
+        
+            chartsInstances.tendencias.data.labels            = labels;
+            chartsInstances.tendencias.data.datasets[0].data  = dataRed;
+            chartsInstances.tendencias.data.datasets[1].data  = dataYellow;
+            chartsInstances.tendencias.data.datasets[2].data  = dataGreen;
+            chartsInstances.tendencias.update();
         }
-
+        
         // ==========================================
-        // RENDERIZAR TOP CAUSAS
+        // PROCESAR GRÁFICO SECCIONES (sin peticiones)
         // ==========================================
-        function renderizarTopCausas(causas) {
-            const tbody = document.getElementById('top-causas-body');
-            
-            if (causas.length === 0) {
-                tbody.innerHTML = `
-                    <tr><td colspan="3" class="text-center text-muted py-4">No hay datos disponibles</td></tr>
-                `;
-                return;
-            }
-
-            const maxCount = causas[0][1];
-            
-            tbody.innerHTML = causas.map(([causa, count], index) => {
-                const percentage = (count / maxCount) * 100;
-                return `
-                    <tr>
-                        <td class="fw-bold text-primary">${index + 1}</td>
-                        <td>
-                            <div class="mb-1">${escapeHtml(causa)}</div>
-                            <div class="causa-bar" style="width: ${percentage}%; height: 8px;"></div>
-                        </td>
-                        <td class="text-end fw-bold">${count}</td>
-                    </tr>
-                `;
-            }).join('');
+        function procesarGraficoSecciones(todasAlertas, mapaFamiliaSeccion) {
+            if (!cacheData.secciones) return;
+        
+            const labels = [];
+            const data   = [];
+        
+            cacheData.secciones.forEach(seccion => {
+                labels.push(seccion.section_name);
+                const count = todasAlertas.filter(a => {
+                    const secciones = mapaFamiliaSeccion[a.family_code];
+                    return secciones && secciones.has(seccion.section_id);
+                }).length;
+                data.push(count);
+            });
+        
+            chartsInstances.secciones.data.labels              = labels;
+            chartsInstances.secciones.data.datasets[0].data    = data;
+            chartsInstances.secciones.update();
         }
-
+        
         // ==========================================
-        // CARGAR ALERTAS RECIENTES
+        // PROCESAR GRÁFICO EVOLUCIÓN (sin peticiones)
         // ==========================================
-        async function cargarAlertasRecientes() {
-            try {
-                const query = `/early_alert_logs?select=log_id,family_code,alert_status,created_at,families(family_name),early_alert_causes(cause_name)&order=created_at.desc&limit=10`;
-                const alertas = await supabaseRequest(query);
-
-                renderizarAlertasRecientes(alertas);
-
-            } catch (error) {
-                console.error('Error cargando alertas recientes:', error);
-                document.getElementById('alertas-recientes').innerHTML = `
-                    <div class="text-center text-danger">Error al cargar alertas recientes</div>
-                `;
-            }
+        function procesarGraficoEvolucion(alertas) {
+            const estados = ['red', 'yellow', 'green'];
+            const abiertas  = estados.map(e => alertas.filter(a => a.alert_status === e && !a.is_closed).length);
+            const cerradas  = estados.map(e => alertas.filter(a => a.alert_status === e &&  a.is_closed).length);
+        
+            chartsInstances.evolucion.data.datasets[0].data = abiertas;
+            chartsInstances.evolucion.data.datasets[1].data = cerradas;
+            chartsInstances.evolucion.update();
         }
-
-        // ==========================================
-        // RENDERIZAR ALERTAS RECIENTES
-        // ==========================================
-        function renderizarAlertasRecientes(alertas) {
-            const container = document.getElementById('alertas-recientes');
-            
-            if (alertas.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center text-muted py-4">No hay alertas recientes</div>
-                `;
-                return;
-            }
-
-            container.innerHTML = alertas.map(alerta => {
-                const fecha = formatearFecha(alerta.created_at);
-                const estadoClass = alerta.alert_status || 'red';
-                
-                return `
-                    <div class="alert-item ${estadoClass}">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <div class="alert-familia">${escapeHtml(alerta.families?.family_name || 'Sin nombre')}</div>
-                                <div class="alert-causa">${escapeHtml(alerta.early_alert_causes?.cause_name || 'Sin causa')}</div>
-                            </div>
-                            <div class="alert-fecha">${fecha}</div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // ==========================================
-        // CARGAR ESTADÍSTICAS POR TRABAJADOR
-        // ==========================================
-        async function cargarEstadisticasTrabajadores() {
-            try {
-                const fechaLimite = new Date();
-                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
-                const fechaLimiteStr = fechaLimite.toISOString();
-
-                const query = `/early_alert_logs?select=worker_id,alert_status,workers(worker_first_name,worker_last_name_1)&created_at=gte.${fechaLimiteStr}`;
-                const alertas = await supabaseRequest(query);
-
-                // Agrupar por trabajador
-                const stats = {};
-                alertas.forEach(alerta => {
-                    const workerId = alerta.worker_id;
-                    const workerName = `${alerta.workers?.worker_first_name || ''} ${alerta.workers?.worker_last_name_1 || ''}`.trim();
-                    
-                    if (!stats[workerId]) {
-                        stats[workerId] = {
-                            name: workerName,
-                            total: 0,
-                            red: 0,
-                            yellow: 0,
-                            green: 0
-                        };
-                    }
-                    
-                    stats[workerId].total++;
-                    stats[workerId][alerta.alert_status || 'red']++;
-                });
-
-                renderizarEstadisticasTrabajadores(Object.values(stats));
-
-            } catch (error) {
-                console.error('Error cargando estadísticas de trabajadores:', error);
-                document.getElementById('trabajadores-stats').innerHTML = `
-                    <tr><td colspan="5" class="text-center text-danger">Error al cargar estadísticas</td></tr>
-                `;
-            }
-        }
-
-        // ==========================================
-        // RENDERIZAR ESTADÍSTICAS TRABAJADORES
-        // ==========================================
-        function renderizarEstadisticasTrabajadores(stats) {
-            const tbody = document.getElementById('trabajadores-stats');
-            
-            if (stats.length === 0) {
-                tbody.innerHTML = `
-                    <tr><td colspan="5" class="text-center text-muted py-4">No hay datos disponibles</td></tr>
-                `;
-                return;
-            }
-
-            // Ordenar por total descendente
-            stats.sort((a, b) => b.total - a.total);
-
-            tbody.innerHTML = stats.slice(0, 10).map(stat => `
-                <tr>
-                    <td>${escapeHtml(stat.name)}</td>
-                    <td class="text-center fw-bold">${stat.total}</td>
-                    <td class="text-center"><span class="badge bg-danger">${stat.red}</span></td>
-                    <td class="text-center"><span class="badge bg-warning">${stat.yellow}</span></td>
-                    <td class="text-center"><span class="badge bg-success">${stat.green}</span></td>
-                </tr>
-            `).join('');
-        }
-
-        // ==========================================
-        // ACTUALIZAR GRÁFICO DE TENDENCIAS - DATOS REALES
-        // ==========================================
+        
+        // Mantener compatibilidad con el botón de refrescar tendencia
         async function actualizarGraficoTendencia() {
-            try {
-                const fechaFin = new Date();
-                const fechaInicio = new Date();
-                fechaInicio.setDate(fechaFin.getDate() - filtrosActuales.periodo);
-        
-                // Generar etiquetas por semana
-                const labels = [];
-                const dataRed = [];
-                const dataYellow = [];
-                const dataGreen = [];
-        
-                // Crear intervalos semanales
-                for (let d = new Date(fechaInicio); d <= fechaFin; d.setDate(d.getDate() + 7)) {
-                    const fechaInicioSemana = new Date(d);
-                    const fechaFinSemana = new Date(d);
-                    fechaFinSemana.setDate(fechaFinSemana.getDate() + 6);
-                    
-                    const label = `${fechaInicioSemana.getDate()}/${fechaInicioSemana.getMonth() + 1}`;
-                    labels.push(label);
-        
-                    // Consultar datos reales para cada estado en esta semana
-                    const fechaInicioStr = fechaInicioSemana.toISOString();
-                    const fechaFinStr = fechaFinSemana.toISOString();
-        
-                    const [alertasRojas, alertasAmarillas, alertasVerdes] = await Promise.all([
-                        supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.red&created_at=gte.${fechaInicioStr}&created_at=lte.${fechaFinStr}`),
-                        supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.yellow&created_at=gte.${fechaInicioStr}&created_at=lte.${fechaFinStr}`),
-                        supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.green&created_at=gte.${fechaInicioStr}&created_at=lte.${fechaFinStr}`)
-                    ]);
-        
-                    dataRed.push(alertasRojas.length);
-                    dataYellow.push(alertasAmarillas.length);
-                    dataGreen.push(alertasVerdes.length);
-                }
-        
-                chartsInstances.tendencias.data.labels = labels;
-                chartsInstances.tendencias.data.datasets[0].data = dataRed;
-                chartsInstances.tendencias.data.datasets[1].data = dataYellow;
-                chartsInstances.tendencias.data.datasets[2].data = dataGreen;
-                chartsInstances.tendencias.update();
-        
-            } catch (error) {
-                console.error('Error actualizando gráfico de tendencias:', error);
-            }
-        }
-        
-        // ==========================================
-        // ACTUALIZAR GRÁFICO DE SECCIONES - DATOS REALES
-        // ==========================================
-        async function actualizarGraficoSecciones() {
-            try {
-                if (!cacheData.secciones) return;
-        
+            if (cacheData.alertasFiltradas) {
                 const fechaLimite = new Date();
                 fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
-                const fechaLimiteStr = fechaLimite.toISOString();
-        
-                // Obtener todas las alertas del período
-                const todasLasAlertas = await supabaseRequest(`/early_alert_logs?select=family_code&created_at=gte.${fechaLimiteStr}`);
-        
-                const labels = [];
-                const data = [];
-        
-                for (const seccion of cacheData.secciones) {
-                    labels.push(seccion.section_name);
-                    
-                    // Filtrar alertas de esta sección
-                    const alertasSeccion = await filtrarAlertasPorSeccion(todasLasAlertas, seccion.section_id);
-                    data.push(alertasSeccion.length);
-                }
-        
-                chartsInstances.secciones.data.labels = labels;
-                chartsInstances.secciones.data.datasets[0].data = data;
-                chartsInstances.secciones.update();
-        
-            } catch (error) {
-                console.error('Error actualizando gráfico de secciones:', error);
+                procesarGraficoTendencia(cacheData.alertasFiltradas, fechaLimite.toISOString());
             }
         }
-
-        // ==========================================
-        // ACTUALIZAR GRÁFICO DE EVOLUCIÓN - DATOS REALES
-        // ==========================================
-        async function actualizarGraficoEvolucion() {
-            try {
-                const fechaLimite = new Date();
-                fechaLimite.setDate(fechaLimite.getDate() - filtrosActuales.periodo);
-                const fechaLimiteStr = fechaLimite.toISOString();
-        
-                // Consultar alertas abiertas y cerradas por estado
-                const [
-                    rojasAbiertas,
-                    rojasCerradas,
-                    amarillasAbiertas,
-                    amarillasCerradas,
-                    verdesAbiertas,
-                    verdesCerradas
-                ] = await Promise.all([
-                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.red&is_closed=eq.false&created_at=gte.${fechaLimiteStr}`),
-                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.red&is_closed=eq.true&created_at=gte.${fechaLimiteStr}`),
-                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.yellow&is_closed=eq.false&created_at=gte.${fechaLimiteStr}`),
-                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.yellow&is_closed=eq.true&created_at=gte.${fechaLimiteStr}`),
-                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.green&is_closed=eq.false&created_at=gte.${fechaLimiteStr}`),
-                    supabaseRequest(`/early_alert_logs?select=log_id&alert_status=eq.green&is_closed=eq.true&created_at=gte.${fechaLimiteStr}`)
-                ]);
-        
-                const abiertas = [rojasAbiertas.length, amarillasAbiertas.length, verdesAbiertas.length];
-                const cerradas = [rojasCerradas.length, amarillasCerradas.length, verdesCerradas.length];
-        
-                chartsInstances.evolucion.data.datasets[0].data = abiertas;
-                chartsInstances.evolucion.data.datasets[1].data = cerradas;
-                chartsInstances.evolucion.update();
-        
-            } catch (error) {
-                console.error('Error actualizando gráfico de evolución:', error);
-            }
-        }
-
      
         // ==========================================
         // APLICAR FILTROS
