@@ -636,6 +636,31 @@ const SvcCommons = (() => {
         }
     }
 
+    /**
+     * Devuelve un Set con los documentos de estudiantes que
+     * registraron asistencia escolar hoy.
+     * @param {string[]} documentos - Array de student_id_document
+     * @returns {Promise<Set<string>>}
+     */
+    async function obtenerAsistentesHoy(documentos) {
+        if (!documentos || documentos.length === 0) return new Set();
+        try {
+            const hoy = getCurrentDateColombia();
+            const lista = documentos.filter(Boolean).join(',');
+            if (!lista) return new Set();
+            const registros = await supabaseRequest(
+                `/attendance?select=person_id_document` +
+                `&person_type=eq.student` +
+                `&attendance_date=eq.${hoy}` +
+                `&person_id_document=in.(${lista})`
+            );
+            return new Set((registros || []).map(r => r.person_id_document));
+        } catch (e) {
+            console.error('Error obteniendo asistentes hoy:', e);
+            return new Set();
+        }
+    }
+
     // ============================
     // BADGES DE ESTADO Y APROBACIÓN
     // ============================
@@ -1386,6 +1411,7 @@ const SvcCommons = (() => {
         // Estados
         updateTripStatus,
         checkAutoStatusTransitions,
+        obtenerAsistentesHoy,
         statusBadgeHtml,
         approvalBadgeHtml,
         approvalDetailHtml,

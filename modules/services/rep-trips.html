@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.04.07.30">
+    <meta name="page-version" content="26.03.04.12.40">
     <title>Salidas de Representación - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -1315,13 +1315,20 @@
 
             try {
                 const attendance = await supabaseRequest(
-                    `/svc_rep_trip_attendance?select=*,students(student_id,student_first_name,student_last_name_1,student_last_name_2,student_code,courses(course_name))&trip_id=eq.${tripId}&order=students(student_last_name_1),students(student_first_name)`
+                    `/svc_rep_trip_attendance?select=*,students(student_id,student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_code,courses(course_name))&trip_id=eq.${tripId}&order=students(student_last_name_1),students(student_first_name)`
                 );
 
                 const canEdit = trip.trip_status === 'imminent';
                 const attending = (attendance || []).filter(a => a.is_attending);
                 const unlinked = (attendance || []).filter(a => !a.is_attending);
-
+                
+                // Cruzar con asistencia escolar si es momento de banderazo
+                let asistentesHoy = new Set();
+                if (canEdit) {
+                    const docs = attending.map(a => a.students?.student_id_document).filter(Boolean);
+                    asistentesHoy = await SvcCommons.obtenerAsistentesHoy(docs);
+                }
+                
                 let html = `
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
@@ -1330,8 +1337,36 @@
                             <strong class="text-danger">Desvinculados:</strong> ${unlinked.length}
                         </div>
                     </div>`;
-
-                if (attending.length > 0) {
+                
+                if (canEdit && attending.length > 0) {
+                    // Vista de banderazo con checkboxes pre-marcados según asistencia escolar
+                    html += '<h6 class="text-success"><i class="bi bi-flag me-1"></i>Confirmar asistencia al banderazo</h6>';
+                    attending.forEach(a => {
+                        const s = a.students;
+                        const studentName = s ? `${s.student_last_name_1} ${s.student_last_name_2 || ''} ${s.student_first_name}`.trim() : 'Estudiante';
+                        const course = s?.courses?.course_name || '';
+                        const llego = s?.student_id_document ? asistentesHoy.has(s.student_id_document) : false;
+                        html += `
+                            <div class="student-attendance-item">
+                                <div class="d-flex align-items-center gap-2">
+                                    <input type="checkbox" class="form-check-input rep-attend-check"
+                                           value="${a.attendance_id}" ${llego ? 'checked' : ''}>
+                                    <div>
+                                        <strong>${SvcCommons.escapeHtml(studentName)}</strong>
+                                        <small class="text-muted ms-2">${course}</small>
+                                    </div>
+                                </div>
+                            </div>`;
+                    });
+                    html += `
+                        <div class="mt-3">
+                            <button class="btn btn-success" onclick="confirmarAsistenciaRep('${tripId}')">
+                                <i class="bi bi-check-circle me-1"></i>Guardar asistencia
+                            </button>
+                        </div>`;
+                
+                } else if (attending.length > 0) {
+                    // Vista de solo lectura (in_progress, completed)
                     html += '<h6 class="text-success"><i class="bi bi-check-circle me-1"></i>Asistentes</h6>';
                     attending.forEach(a => {
                         const s = a.students;
@@ -1343,11 +1378,6 @@
                                     <strong>${SvcCommons.escapeHtml(studentName)}</strong>
                                     <small class="text-muted ms-2">${course}</small>
                                 </div>
-                                ${canEdit ? `
-                                    <button class="btn btn-sm btn-outline-danger" onclick="unlinkStudent('${tripId}','${a.attendance_id}','${SvcCommons.escapeHtml(studentName)}')">
-                                        <i class="bi bi-person-dash me-1"></i>Desvincular
-                                    </button>
-                                ` : ''}
                             </div>`;
                     });
                 }
@@ -1379,6 +1409,31 @@
                 showMessage('Error cargando asistencia', 'danger');
             }
         }
+
+        async function confirmarAsistenciaRep(tripId) {
+            const checkboxes = document.querySelectorAll('.rep-attend-check');
+            const desmarcados = [...checkboxes].filter(cb => !cb.checked).map(cb => cb.value);
+        
+            if (desmarcados.length > 0) {
+                if (!confirm(`${desmarcados.length} estudiante(s) no registraron entrada al colegio. ¿Confirmar y desvincularlos?`)) return;
+                for (const attendanceId of desmarcados) {
+                    await supabaseRequest(`/svc_rep_trip_attendance?attendance_id=eq.${attendanceId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            is_attending: false,
+                            unlinked_at: new Date().toISOString(),
+                            unlinked_reason: 'No registró entrada al colegio'
+                        })
+                    });
+                }
+            }
+        
+            bootstrap.Modal.getInstance(document.getElementById('attendanceModal')).hide();
+            showMessage('Asistencia confirmada correctamente', 'success');
+            await loadTrips();
+        }
+
+        
 
         async function unlinkStudent(tripId, attendanceId, studentName) {
             const reason = prompt(`Razón para desvincular a ${studentName}:`, 'No se presentó');
