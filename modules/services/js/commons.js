@@ -41,6 +41,8 @@ const SvcCommons = (() => {
 
     const PERM_RESOLUCION_ID = '5c503ff3-559f-4755-9d47-b63fe7f561a2';
 
+    let _catalogWorkersCache = [];
+
     // ============================
     // UTILIDADES PURAS
     // ============================
@@ -169,7 +171,7 @@ const SvcCommons = (() => {
 
         const moduleConfig = {};
         (config || []).forEach(c => moduleConfig[c.config_key] = c.config_value);
-
+        _catalogWorkersCache = workers || [];
         return {
             destinations: destinations || [],
             rates: rates || [],
@@ -1126,6 +1128,199 @@ const SvcCommons = (() => {
     function workerFullName(worker) {
         if (!worker) return 'N/A';
         return `${worker.worker_first_name} ${worker.worker_last_name_1}${worker.worker_last_name_2 ? ' ' + worker.worker_last_name_2 : ''}`;
+    }
+
+    // ==========================================
+    // EDITABLE ADULTS (detail view - imminent/in_progress)
+    // ==========================================
+
+    /**
+     * Renderiza lista de adultos editable con Reemplazar / Eliminar
+     * @param {Object} opts
+     *   containerId, adults [{worker_id, workers:{...}}], catalogWorkers,
+     *   tableName, tripIdField, tripId, tripTableName, onChanged callback
+     */
+    function renderEditableAdults(opts) {
+        const container = document.getElementById(opts.containerId);
+        if (!container) return;
+
+        const currentIds = opts.adults.map(a => a.worker_id);
+
+        if (opts.adults.length === 0) {
+            container.innerHTML = '<p class="text-muted mb-0">Sin adultos acompañantes</p>';
+            return;
+        }
+
+        let html = '';
+        opts.adults.forEach(a => {
+            const w = a.workers;
+            const name = w ? workerFullName(w) : 'N/A';
+            const wId = a.worker_id;
+
+            html += `
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom" id="editAdult_${wId}">
+                    <div>
+                        <i class="bi bi-person-fill me-1"></i>
+                        <strong>${escapeHtml(name)}</strong>
+                    </div>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-outline-primary" onclick="SvcCommons.showReplaceAdultUI('${opts.containerId}','${wId}','${opts.tableName}','${opts.tripIdField}','${opts.tripId}','${opts.tripTableName}')" title="Reemplazar">
+                            <i class="bi bi-arrow-repeat me-1"></i>Reemplazar
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="SvcCommons.removeAdultFromTrip('${opts.tableName}','${opts.tripIdField}','${opts.tripId}','${opts.tripTableName}','${wId}')" title="Eliminar">
+                            <i class="bi bi-person-dash"></i>
+                        </button>
+                    </div>
+                </div>`;
+        });
+
+        container.innerHTML = html;
+
+        // Guardar contexto para callbacks
+        container.dataset.svcEditAdultsOpts = JSON.stringify({
+            tableName: opts.tableName,
+            tripIdField: opts.tripIdField,
+            tripId: opts.tripId,
+            tripTableName: opts.tripTableName
+        });
+    }
+
+    /**
+     * Muestra UI inline para seleccionar reemplazo
+     */
+    function showReplaceAdultUI(containerId, oldWorkerId, tableName, tripIdField, tripId, tripTableName) {
+        // Remover cualquier selector previo
+        const prev = document.getElementById('replaceAdultSelector');
+        if (prev) prev.remove();
+
+        const row = document.getElementById(`editAdult_${oldWorkerId}`);
+        if (!row) return;
+
+        // Obtener IDs actuales para excluirlos
+        const container = document.getElementById(containerId);
+        const currentRows = container.querySelectorAll('[id^="editAdult_"]');
+        const currentIds = Array.from(currentRows).map(r => r.id.replace('editAdult_', ''));
+
+        const selectorHtml = `
+            <div id="replaceAdultSelector" class="mt-2 p-2 border rounded bg-light">
+                <div class="input-group input-group-sm mb-2">
+                    <input type="text" class="form-control" id="replaceAdultSearch" placeholder="Buscar trabajador..." oninput="SvcCommons.filterReplaceOptions()">
+                </div>
+                <select class="form-select form-select-sm" id="replaceAdultSelect" size="5"></select>
+                <div class="d-flex gap-1 mt-2">
+                    <button class="btn btn-sm btn-primary" onclick="SvcCommons.confirmReplaceAdult('${containerId}','${oldWorkerId}','${tableName}','${tripIdField}','${tripId}','${tripTableName}')">
+                        <i class="bi bi-check me-1"></i>Confirmar
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('replaceAdultSelector')?.remove()">
+                        Cancelar
+                    </button>
+                </div>
+            </div>`;
+
+        row.insertAdjacentHTML('afterend', selectorHtml);
+
+        // Guardar currentIds y popular opciones
+        document.getElementById('replaceAdultSelect').dataset.excludeIds = JSON.stringify(currentIds);
+        filterReplaceOptions();
+        document.getElementById('replaceAdultSearch').focus();
+    }
+
+    /**
+     * Filtra las opciones del selector de reemplazo
+     */
+    function filterReplaceOptions() {
+        const search = (document.getElementById('replaceAdultSearch')?.value || '').toLowerCase().trim();
+        const sel = document.getElementById('replaceAdultSelect');
+        if (!sel) return;
+
+        const excludeIds = JSON.parse(sel.dataset.excludeIds || '[]');
+
+        // Usar _catalogWorkersCache que se guarda en loadCommonCatalogs
+        const workers = _catalogWorkersCache || [];
+
+        const filtered = workers.filter(w => {
+            if (excludeIds.includes(w.worker_id)) return false;
+            if (!search) return true;
+            const fullName = `${w.worker_first_name} ${w.worker_last_name_1} ${w.worker_last_name_2 || ''}`.toLowerCase();
+            return fullName.includes(search);
+        });
+
+        sel.innerHTML = filtered.slice(0, 50).map(w => {
+            const name = `${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}, ${w.worker_first_name}`;
+            return `<option value="${w.worker_id}">${name}</option>`;
+        }).join('');
+    }
+
+    /**
+     * Confirma el reemplazo: DELETE viejo + INSERT nuevo
+     */
+    async function confirmReplaceAdult(containerId, oldWorkerId, tableName, tripIdField, tripId, tripTableName) {
+        const sel = document.getElementById('replaceAdultSelect');
+        const newWorkerId = sel?.value;
+        if (!newWorkerId) {
+            if (typeof showMessage === 'function') showMessage('Seleccione un trabajador', 'warning');
+            return;
+        }
+
+        if (!confirm('¿Confirma reemplazar este adulto acompañante?')) return;
+
+        try {
+            // DELETE old
+            await supabaseRequest(`/${tableName}?${tripIdField}=eq.${tripId}&worker_id=eq.${oldWorkerId}`, {
+                method: 'DELETE'
+            });
+
+            // INSERT new
+            const body = {};
+            body[tripIdField] = tripId;
+            body.worker_id = newWorkerId;
+            await supabaseRequest(`/${tableName}`, {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
+
+            if (typeof showMessage === 'function') showMessage('Adulto reemplazado correctamente', 'success');
+
+            // Disparar evento custom para que la página recargue el detalle
+            document.dispatchEvent(new CustomEvent('svcAdultsChanged', { detail: { tripId } }));
+
+        } catch (error) {
+            console.error('Error reemplazando adulto:', error);
+            if (typeof showMessage === 'function') showMessage('Error al reemplazar: ' + error.message, 'danger');
+        }
+    }
+
+    /**
+     * Elimina un adulto: DELETE + PATCH num_adults - 1
+     */
+    async function removeAdultFromTrip(tableName, tripIdField, tripId, tripTableName, workerId) {
+        if (!confirm('¿Confirma eliminar este adulto acompañante? Esta acción no se puede deshacer.')) return;
+
+        try {
+            // DELETE
+            await supabaseRequest(`/${tableName}?${tripIdField}=eq.${tripId}&worker_id=eq.${workerId}`, {
+                method: 'DELETE'
+            });
+
+            // GET current num_adults
+            const tripArr = await supabaseRequest(`/${tripTableName}?select=num_adults&${tripIdField}=eq.${tripId}`);
+            const currentNum = tripArr && tripArr[0] ? (tripArr[0].num_adults || 0) : 0;
+            const newNum = Math.max(0, currentNum - 1);
+
+            // PATCH
+            await supabaseRequest(`/${tripTableName}?${tripIdField}=eq.${tripId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ num_adults: newNum })
+            });
+
+            if (typeof showMessage === 'function') showMessage('Adulto eliminado correctamente', 'success');
+
+            document.dispatchEvent(new CustomEvent('svcAdultsChanged', { detail: { tripId } }));
+
+        } catch (error) {
+            console.error('Error eliminando adulto:', error);
+            if (typeof showMessage === 'function') showMessage('Error al eliminar: ' + error.message, 'danger');
+        }
     }
 
     // ============================
