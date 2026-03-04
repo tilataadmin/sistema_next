@@ -1403,7 +1403,12 @@ const SvcCommons = (() => {
         pdfInfoTable,
         pdfTablaEstudiantes,
         pdfTablaAdultos,
-        pdfFirmaYPie
+        pdfFirmaYPie,
+        // Adultos editables (detalle)
+        renderEditableAdults,
+        showReplaceAdultUI,
+        filterReplaceOptions,
+        confirmReplaceAdult,
+        removeAdultFromTrip
     };
-
 })();
