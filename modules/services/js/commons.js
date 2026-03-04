@@ -550,7 +550,10 @@ const SvcCommons = (() => {
     function populateApprovers(selectId, catalogApprovers) {
         const sel = document.getElementById(selectId);
         sel.innerHTML = '<option value="">Seleccionar quien aprueba...</option>';
-        catalogApprovers.forEach(w => {
+        const ordenados = [...catalogApprovers].sort((a, b) =>
+            (a.worker_last_name_1 || '').localeCompare(b.worker_last_name_1 || '')
+        );
+        ordenados.forEach(w => {
             const name = `${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}, ${w.worker_first_name}`;
             sel.innerHTML += `<option value="${w.worker_id}">${name}</option>`;
         });
