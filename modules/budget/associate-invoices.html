@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.02.10.05">
+    <meta name="page-version" content="26.03.05.08.22">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -713,9 +713,9 @@
                 mostrarLoading('Cargando datos iniciales...');
                 
                 // Cargar proveedores
-                const proveedoresData = await supabaseRequest('/suppliers?select=supplier_id,supplier_name&supplier_status=eq.active&order=supplier_name.asc');
+                
                 datosCompletos.proveedores = proveedoresData || [];
-                cargarSelectProveedores();
+                cargarSelectProveedores();const proveedoresData = await supabaseRequest('/sup_suppliers?select=supplier_id,person_type,business_name,first_name,last_name_1,last_name_2,contact_name&supplier_status=eq.approved&order=business_name.asc');
                 
                 // Consulta con joins para obtener solicitante y aprobador
                 const requerimientosData = await supabaseRequest('/execution_requests?select=request_id,request_details,requested_value,requested_at,request_status,requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),budget_assignments!execution_requests_assignment_fkey(assignment_id,category_detail,authorizer:workers!budget_assignments_worker_id_fkey(email,worker_first_name,worker_last_name_1,worker_last_name_2),budget_items!budget_assignments_item_fkey(item_id,item_name))&request_status=in.(approved,executed,pre-closed,closed)&order=requested_at.desc');
@@ -772,12 +772,29 @@
             datosCompletos.proveedores.forEach(proveedor => {
                 const option = document.createElement('option');
                 option.value = proveedor.supplier_id;
-                option.textContent = proveedor.supplier_name;
+                option.textContent = formatSupplierName(proveedor);
                 elementos.facturaProveedor.appendChild(option);
             });
         }
 
+        /**
+         * Formatea el nombre del proveedor según tipo de persona
+         */
 
+        function formatSupplierName(proveedor) {
+            if (!proveedor) return 'Sin nombre';
+            if (proveedor.person_type === 'juridica') {
+                return proveedor.business_name || 'Sin nombre';
+            }
+            // Natural: Apellido1 Apellido2 Nombre
+            const partes = [
+                proveedor.last_name_1,
+                proveedor.last_name_2,
+                proveedor.first_name
+            ].filter(Boolean);
+            return partes.join(' ') || proveedor.contact_name || 'Sin nombre';
+        }
+        
         function poblarSelectAprobadores() {
             elementos.filtroAprobador.innerHTML = '<option value="">Todos</option>';
             
@@ -930,25 +947,43 @@
                 elementos.loadingFacturas.style.display = 'block';
                 elementos.facturasTableContainer.appendChild(elementos.loadingFacturas);
                 
-                // Obtener pagos asociados al requerimiento
-                const facturasQuery = `/budget_payments?select=payment_id,supplier_id,payment_type,invoice_number,invoice_date,invoice_description,invoice_value,suppliers(supplier_name)&execution_request_id=eq.${requestId}&order=payment_id.desc`;
-                const facturasData = await supabaseRequest(facturasQuery);
+                // Obtener pagos sin join
+                const facturasData = await supabaseRequest(
+                    `/budget_payments?select=payment_id,supplier_id,payment_type,invoice_number,invoice_date,invoice_description,invoice_value&execution_request_id=eq.${requestId}&order=payment_id.desc`
+                );
                 
-                if (facturasData) {
-                    // Procesar datos para formato consistente
-                    datosCompletos.facturasActuales = facturasData.map(factura => ({
-                        payment_id: factura.payment_id,
-                        supplier_id: factura.supplier_id,
-                        payment_type: factura.payment_type,
-                        invoice_number: factura.invoice_number,
-                        invoice_date: factura.invoice_date,
-                        invoice_description: factura.invoice_description,
-                        invoice_value: factura.invoice_value,
-                        supplier_name: factura.suppliers?.supplier_name || 'Sin nombre'
-                    }));
-                } else {
+                if (!facturasData || facturasData.length === 0) {
                     datosCompletos.facturasActuales = [];
+                    renderizarTablaFacturas();
+                    return;
                 }
+                
+                // Recolectar IDs únicos de proveedores
+                const supplierIds = [...new Set(facturasData.map(f => f.supplier_id).filter(Boolean))];
+                const idsParam = supplierIds.join(',');
+                
+                // Consultar ambas tablas en paralelo
+                const [oldSuppliers, newSuppliers] = await Promise.all([
+                    supabaseRequest(`/suppliers?select=supplier_id,supplier_name&supplier_id=in.(${idsParam})`),
+                    supabaseRequest(`/sup_suppliers?select=supplier_id,person_type,business_name,first_name,last_name_1,last_name_2,contact_name&supplier_id=in.(${idsParam})`)
+                ]);
+                
+                // Construir mapa de nombres
+                const nameMap = {};
+                (oldSuppliers || []).forEach(s => { nameMap[s.supplier_id] = s.supplier_name; });
+                (newSuppliers || []).forEach(s => { nameMap[s.supplier_id] = formatSupplierName(s); });
+                
+                // Mapear nombres a las facturas
+                datosCompletos.facturasActuales = facturasData.map(factura => ({
+                    payment_id: factura.payment_id,
+                    supplier_id: factura.supplier_id,
+                    payment_type: factura.payment_type,
+                    invoice_number: factura.invoice_number,
+                    invoice_date: factura.invoice_date,
+                    invoice_description: factura.invoice_description,
+                    invoice_value: factura.invoice_value,
+                    supplier_name: nameMap[factura.supplier_id] || 'Sin nombre'
+                }));
                 
                 renderizarTablaFacturas();
                 
