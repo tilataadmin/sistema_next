@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.25.13.35">
+    <meta name="page-version" content="26.03.05.12.50">
     <title>Mi Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1057,8 +1057,8 @@
             `;
             
             try {
-                // Query para obtener movimientos del requerimiento
-                const query = `/budget_payments?select=payment_id,payment_type,invoice_number,invoice_description,invoice_value,suppliers!budget_payments_supplier_fkey(supplier_name)&execution_request_id=eq.${requestId}&order=invoice_date.desc`;
+                // Query SIN join a proveedores, traemos supplier_id
+                const query = `/budget_payments?select=payment_id,supplier_id,payment_type,invoice_number,invoice_description,invoice_value&execution_request_id=eq.${requestId}&order=invoice_date.desc`;
                 
                 const data = await supabaseRequest(query);
 
@@ -1075,11 +1075,50 @@
                     return;
                 }
 
+                // Recoger supplier_ids únicos (excluyendo nulos)
+                const supplierIds = [...new Set(data.filter(m => m.supplier_id).map(m => m.supplier_id))];
+                
+                // Mapa para almacenar nombres: supplier_id -> nombre
+                const supplierNames = {};
+
+                if (supplierIds.length > 0) {
+                    const idsParam = supplierIds.map(id => `"${id}"`).join(',');
+
+                    // 1. Buscar en sup_suppliers (tabla nueva)
+                    try {
+                        const newSuppliers = await supabaseRequest(
+                            `/sup_suppliers?select=supplier_id,person_type,business_name,first_name,last_name_1,last_name_2&supplier_id=in.(${idsParam})`
+                        );
+                        newSuppliers.forEach(s => {
+                            supplierNames[s.supplier_id] = formatSupplierName(s);
+                        });
+                    } catch (e) {
+                        console.warn('⚠️ Error consultando sup_suppliers:', e);
+                    }
+
+                    // 2. IDs que no se encontraron en la nueva, buscar en suppliers (tabla vieja)
+                    const missingIds = supplierIds.filter(id => !supplierNames[id]);
+                    if (missingIds.length > 0) {
+                        try {
+                            const missingParam = missingIds.map(id => `"${id}"`).join(',');
+                            const oldSuppliers = await supabaseRequest(
+                                `/suppliers?select=supplier_id,supplier_name&supplier_id=in.(${missingParam})`
+                            );
+                            oldSuppliers.forEach(s => {
+                                supplierNames[s.supplier_id] = s.supplier_name || 'Sin proveedor';
+                            });
+                        } catch (e) {
+                            console.warn('⚠️ Error consultando suppliers:', e);
+                        }
+                    }
+                }
+
+                // Renderizar tabla
                 let html = '';
                 let totalValor = 0;
 
-                data.forEach((mov, index) => {
-                    const proveedorName = mov.suppliers?.supplier_name || 'Sin proveedor';
+                data.forEach(mov => {
+                    const proveedorName = supplierNames[mov.supplier_id] || 'Sin proveedor';
                     const tipoDoc = mov.payment_type || 'N/A';
                     const numero = mov.invoice_number || 'N/A';
                     const descripcion = mov.invoice_description || 'Sin descripción';
@@ -1122,6 +1161,25 @@
                     </tr>
                 `;
                 document.getElementById('resumen-movimientos').style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // FORMATEAR NOMBRE DE PROVEEDOR (sup_suppliers)
+        // ==========================================
+        function formatSupplierName(supplier) {
+            if (!supplier) return 'Sin proveedor';
+            
+            if (supplier.person_type === 'juridica') {
+                return supplier.business_name || 'Sin nombre';
+            } else {
+                // Persona natural: armar nombre completo
+                const parts = [
+                    supplier.first_name,
+                    supplier.last_name_1,
+                    supplier.last_name_2
+                ].filter(Boolean);
+                return parts.length > 0 ? parts.join(' ') : 'Sin nombre';
             }
         }
 
