@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.02.26.06.53"
+    <meta name="page-version" content="26.03.05.13.10"
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2385,27 +2385,117 @@
          */
         async function mostrarErroresPhidias() {
             try {
-                mostrarLoading('Cargando errores de sincronización...');
-        
                 const { fecha: today } = obtenerFechaHoraColombia();
-        
-                // Registros con error hoy
+                
+                // Eliminar modal anterior si existe
+                const modalAnterior = document.getElementById('modal-errores-phidias');
+                if (modalAnterior) modalAnterior.remove();
+
+                // Crear modal con selector de fecha
+                const modalHtml = `
+                    <div class="modal fade" id="modal-errores-phidias" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header bg-danger text-white">
+                                    <h5 class="modal-title">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>Errores de Sincronización Phidias
+                                    </h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <!-- Selector de fecha y botón descarga -->
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <label for="phidias-error-fecha" class="form-label mb-0 fw-bold">Fecha:</label>
+                                            <input type="date" class="form-control form-control-sm" id="phidias-error-fecha" value="${today}" style="width: auto;">
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-success" id="btn-descargar-errores" disabled onclick="descargarErroresPhidiasCSV()">
+                                            <i class="bi bi-download me-1"></i>Descargar CSV
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Contenedor de la tabla -->
+                                    <div id="phidias-errores-contenido">
+                                        <div class="text-center py-4">
+                                            <div class="spinner-border text-primary" role="status"></div>
+                                            <p class="mt-2 mb-0">Cargando errores...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <span class="me-auto text-muted" id="phidias-errores-contador"></span>
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+                // Evento de cambio de fecha
+                document.getElementById('phidias-error-fecha').addEventListener('change', function() {
+                    cargarErroresPhidiasPorFecha(this.value);
+                });
+
+                // Mostrar modal
+                const modal = new bootstrap.Modal(document.getElementById('modal-errores-phidias'));
+                modal.show();
+
+                // Limpiar al cerrar
+                document.getElementById('modal-errores-phidias').addEventListener('hidden.bs.modal', function() {
+                    this.remove();
+                });
+
+                // Cargar datos iniciales (hoy)
+                await cargarErroresPhidiasPorFecha(today);
+
+            } catch (error) {
+                console.error('❌ Error abriendo modal Phidias:', error);
+                ocultarLoading();
+                showMessage('Error al cargar los errores de sincronización', 'danger');
+            }
+        }
+
+        // Variable para almacenar los errores cargados (para descarga)
+        let erroresPhidiasActuales = [];
+
+        async function cargarErroresPhidiasPorFecha(fecha) {
+            const contenido = document.getElementById('phidias-errores-contenido');
+            const contador = document.getElementById('phidias-errores-contador');
+            const btnDescargar = document.getElementById('btn-descargar-errores');
+            
+            contenido.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 mb-0">Cargando errores...</p>
+                </div>
+            `;
+            btnDescargar.disabled = true;
+            erroresPhidiasActuales = [];
+
+            try {
                 const errores = await supabaseRequest(
-                    `/attendance?select=attendance_id,person_id_document,attendance_time,phidias_sync_error,phidias_sync_attempts&person_type=eq.student&attendance_date=eq.${today}&phidias_synced=eq.false&phidias_sync_error=neq.null&order=attendance_time.desc`
+                    `/attendance?select=attendance_id,person_id_document,attendance_time,phidias_sync_error,phidias_sync_attempts&person_type=eq.student&attendance_date=eq.${fecha}&phidias_synced=eq.false&phidias_sync_error=neq.null&order=attendance_time.desc`
                 );
-        
+
                 if (!errores || errores.length === 0) {
-                    ocultarLoading();
-                    mostrarFeedback('success', 'Sin errores', 'No hay errores de sincronización hoy');
+                    contenido.innerHTML = `
+                        <div class="text-center py-4 text-muted">
+                            <i class="bi bi-check-circle" style="font-size: 2rem;"></i>
+                            <p class="mt-2 mb-0">No hay errores de sincronización para esta fecha</p>
+                        </div>
+                    `;
+                    contador.innerHTML = '<small>0 errores</small>';
                     return;
                 }
-        
-                // Obtener nombres de los estudiantes
+
+                // Obtener nombres de estudiantes
                 const documentos = [...new Set(errores.map(e => e.person_id_document))];
                 const estudiantes = await supabaseRequest(
                     `/students?select=student_id_document,student_first_name,student_last_name_1,student_last_name_2,student_code&student_id_document=in.(${documentos.join(',')})`
                 );
-        
+
                 const mapaNombres = {};
                 if (estudiantes) {
                     estudiantes.forEach(e => {
@@ -2415,13 +2505,21 @@
                         };
                     });
                 }
-        
-                // Construir tabla de errores
+
+                // Guardar para descarga
+                erroresPhidiasActuales = errores.map(err => ({
+                    ...err,
+                    nombre: mapaNombres[err.person_id_document]?.nombre || 'Desconocido',
+                    codigo: mapaNombres[err.person_id_document]?.code || '',
+                    fecha: fecha
+                }));
+
+                // Construir tabla
                 let filas = '';
                 errores.forEach(err => {
                     const info = mapaNombres[err.person_id_document] || { nombre: 'Desconocido', code: '—' };
                     const intentos = err.phidias_sync_attempts || 0;
-        
+
                     filas += `
                         <tr id="row-error-${err.attendance_id}">
                             <td>
@@ -2441,65 +2539,64 @@
                         </tr>
                     `;
                 });
-        
-                // Crear modal
-                // Eliminar modal anterior si existe
-                const modalAnterior = document.getElementById('modal-errores-phidias');
-                if (modalAnterior) modalAnterior.remove();
-        
-                const modalHtml = `
-                    <div class="modal fade" id="modal-errores-phidias" tabindex="-1">
-                        <div class="modal-dialog modal-lg">
-                            <div class="modal-content">
-                                <div class="modal-header bg-danger text-white">
-                                    <h5 class="modal-title">
-                                        <i class="bi bi-exclamation-triangle me-2"></i>Errores de Sincronización Phidias — Hoy
-                                    </h5>
-                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                                </div>
-                                <div class="modal-body p-0">
-                                    <div class="table-responsive">
-                                        <table class="table table-hover mb-0">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th>Estudiante</th>
-                                                    <th>Hora</th>
-                                                    <th>Error</th>
-                                                    <th class="text-center">Intentos</th>
-                                                    <th class="text-center">Reintentar</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${filas}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <span class="me-auto text-muted"><small>${errores.length} error(es) hoy</small></span>
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                                </div>
-                            </div>
-                        </div>
+
+                contenido.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Estudiante</th>
+                                    <th>Hora</th>
+                                    <th>Error</th>
+                                    <th class="text-center">Intentos</th>
+                                    <th class="text-center">Reintentar</th>
+                                </tr>
+                            </thead>
+                            <tbody>${filas}</tbody>
+                        </table>
                     </div>
                 `;
-        
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
-                ocultarLoading();
-        
-                const modal = new bootstrap.Modal(document.getElementById('modal-errores-phidias'));
-                modal.show();
-        
-                // Limpiar al cerrar
-                document.getElementById('modal-errores-phidias').addEventListener('hidden.bs.modal', function () {
-                    this.remove();
-                });
-        
+
+                contador.innerHTML = `<small>${errores.length} error(es)</small>`;
+                btnDescargar.disabled = false;
+
             } catch (error) {
                 console.error('❌ Error cargando errores Phidias:', error);
-                ocultarLoading();
-                showMessage('Error al cargar los errores de sincronización', 'danger');
+                contenido.innerHTML = `
+                    <div class="text-center py-4 text-danger">
+                        <i class="bi bi-exclamation-triangle" style="font-size: 2rem;"></i>
+                        <p class="mt-2 mb-0">Error al cargar los datos: ${error.message}</p>
+                    </div>
+                `;
             }
+        }
+
+        function descargarErroresPhidiasCSV() {
+            if (erroresPhidiasActuales.length === 0) return;
+
+            const fecha = document.getElementById('phidias-error-fecha').value;
+            const headers = ['Fecha', 'Hora', 'Documento', 'Código', 'Estudiante', 'Error', 'Intentos'];
+            
+            const filas = erroresPhidiasActuales.map(err => [
+                err.fecha,
+                err.attendance_time.substring(0, 5),
+                err.person_id_document,
+                err.codigo,
+                `"${err.nombre}"`,
+                `"${(err.phidias_sync_error || '').replace(/"/g, '""')}"`,
+                err.phidias_sync_attempts || 0
+            ]);
+
+            const csv = [headers.join(','), ...filas.map(f => f.join(','))].join('\n');
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `errores_phidias_${fecha}.csv`;
+            link.click();
+            
+            URL.revokeObjectURL(url);
         }
         
         /**
@@ -2546,6 +2643,7 @@
         // Exponer funciones globales
         window.mostrarErroresPhidias = mostrarErroresPhidias;
         window.reintentarSyncIndividual = reintentarSyncIndividual;
+        window.descargarErroresPhidiasCSV = descargarErroresPhidiasCSV;
 
         /**
          * Sincroniza UN registro individual con Phidias (post 8:20)
@@ -2596,12 +2694,14 @@
                         await marcarSyncExitoso(attendanceId);
                         console.log(`✅ Phidias: ${studentCode} sincronizado OK`);
                     } else {
-                        const error = resultado?.subtext || resultado?.text || 'Error desconocido';
+                        const error = resultado?.subtext || resultado?.text || resultado?.message || resultado?.error || (typeof resultado === 'string' ? resultado : JSON.stringify(resultado));
                         await marcarSyncError(attendanceId, error);
                         console.warn(`⚠️ Phidias: ${studentCode} error: ${error}`);
+                        console.warn('⚠️ Phidias respuesta completa:', JSON.stringify(resultado));
                     }
                 } else {
-                    await marcarSyncError(attendanceId, 'Respuesta inesperada de Phidias');
+                    const detalle = respuesta ? JSON.stringify(respuesta) : 'Respuesta vacía';
+                    await marcarSyncError(attendanceId, `Respuesta inesperada: ${detalle}`);
                 }
 
                 await contarErroresPhidias();
