@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.04.18.28">
+    <meta name="page-version" content="26.03.05.13.45">
     <title>Gestión de Ausencias - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -572,6 +572,60 @@
         </div>
     </div>
 
+    <!-- Modal: Código CIE-10 -->
+    <div class="modal fade" id="cie10Modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard2-pulse me-2"></i>Registro de Diagnóstico CIE-10
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="cie10Form">
+                    <div class="modal-body">
+                        <input type="hidden" id="cie10RequestId">
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Registre el código CIE-10 y diagnóstico tal como aparece en el certificado de incapacidad.
+                        </div>
+    
+                        <div class="mb-3">
+                            <label for="cie10Code" class="form-label">
+                                Código CIE-10 <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="cie10Code" 
+                                required maxlength="10" placeholder="Ej: J11.1, M54.5, S62.0"
+                                style="text-transform: uppercase; font-family: monospace; font-size: 1.1rem;">
+                            <div class="form-text">
+                                Formato: Letra + 2 dígitos + punto + 1 o 2 dígitos (Ej: A00.0 a Z99.99)
+                            </div>
+                        </div>
+    
+                        <div class="mb-3">
+                            <label for="cie10Description" class="form-label">
+                                Descripción del Diagnóstico
+                            </label>
+                            <textarea class="form-control" id="cie10Description" rows="2" 
+                                placeholder="Ej: Influenza con otras manifestaciones respiratorias"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-danger" id="cie10ClearBtn" 
+                            onclick="clearCie10()" style="display:none;">
+                            <i class="bi bi-x-circle me-1"></i>Limpiar
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>Guardar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -597,6 +651,94 @@
         let selectedCategory = null;
         let selectedFiles = [];
         let editingRequest = null;
+
+        // ==========================================
+        // REGISTRO CIE-10
+        // ==========================================
+        function openCie10Modal(requestId) {
+            const request = allRequests.find(r => r.request_id === requestId);
+            if (!request) return;
+        
+            document.getElementById('cie10RequestId').value = requestId;
+            document.getElementById('cie10Code').value = request.cie10_code || '';
+            document.getElementById('cie10Description').value = request.cie10_description || '';
+            
+            // Mostrar botón Limpiar solo si ya hay datos
+            document.getElementById('cie10ClearBtn').style.display = request.cie10_code ? 'inline-block' : 'none';
+        
+            const modal = new bootstrap.Modal(document.getElementById('cie10Modal'));
+            modal.show();
+        }
+        
+        document.getElementById('cie10Form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+        
+            const code = document.getElementById('cie10Code').value.trim().toUpperCase();
+            
+            // Validar formato CIE-10
+            const cie10Regex = /^[A-Z]\d{2}\.\d{1,2}$/;
+            if (!cie10Regex.test(code)) {
+                showMessage('Formato de código CIE-10 inválido. Use: Letra + 2 dígitos + punto + 1 o 2 dígitos (Ej: J11.1)', 'warning');
+                return;
+            }
+        
+            showLoading(true);
+        
+            try {
+                const requestId = document.getElementById('cie10RequestId').value;
+                const description = document.getElementById('cie10Description').value.trim();
+        
+                await supabaseRequest('/hr_absence_requests?request_id=eq.' + requestId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        cie10_code: code,
+                        cie10_description: description || null,
+                        edited_by: currentSession.worker_id || null,
+                        edited_at: new Date().toISOString()
+                    })
+                });
+        
+                showMessage('Código CIE-10 registrado exitosamente', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('cie10Modal')).hide();
+                await loadRequests();
+        
+            } catch (error) {
+                console.error('Error al guardar CIE-10:', error);
+                showMessage('Error al guardar el código CIE-10: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        });
+        
+        async function clearCie10() {
+            if (!confirm('¿Desea eliminar el código CIE-10 de esta solicitud?')) return;
+        
+            showLoading(true);
+        
+            try {
+                const requestId = document.getElementById('cie10RequestId').value;
+        
+                await supabaseRequest('/hr_absence_requests?request_id=eq.' + requestId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        cie10_code: null,
+                        cie10_description: null,
+                        edited_by: currentSession.worker_id || null,
+                        edited_at: new Date().toISOString()
+                    })
+                });
+        
+                showMessage('Código CIE-10 eliminado', 'info');
+                bootstrap.Modal.getInstance(document.getElementById('cie10Modal')).hide();
+                await loadRequests();
+        
+            } catch (error) {
+                console.error('Error al limpiar CIE-10:', error);
+                showMessage('Error al eliminar el código CIE-10: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
         
         // ==========================================
         // UTILIDADES PARA MANEJO DE FECHAS
@@ -907,7 +1049,7 @@
                 const tbody = document.getElementById('requestsTableBody');
                 tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><span class="spinner-border spinner-border-sm me-2"></span>Cargando solicitudes...</td></tr>';
                 
-                const data = await supabaseRequest('/hr_absence_requests?select=*,hr_absence_categories(name),workers!hr_absence_requests_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,section_id,organizational_division_id,organizational_cost_center_id,organizational_area_id)&order=created_at.desc');
+                const data = await supabaseRequest('/hr_absence_requests?select=*,hr_absence_categories(name,requires_cie10),workers!hr_absence_requests_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,section_id,organizational_division_id,organizational_cost_center_id,organizational_area_id)&order=created_at.desc');
                 
                 allRequests = data || [];
                 filteredRequests = [...allRequests];
@@ -985,6 +1127,13 @@
                         <button class="btn btn-sm btn-outline-success" onclick="openAddFilesModal('${request.request_id}')" title="Agregar archivos">
                             <i class="bi bi-paperclip"></i>
                         </button>
+                        ${request.hr_absence_categories?.requires_cie10 ? `
+                            <button class="btn btn-sm ${request.cie10_code ? 'btn-info' : 'btn-outline-info'}" 
+                                    onclick="openCie10Modal('${request.request_id}')" 
+                                    title="${request.cie10_code ? 'CIE-10: ' + request.cie10_code : 'Registrar CIE-10'}">
+                                <i class="bi bi-clipboard2-pulse"></i>
+                            </button>
+                        ` : ''}
                     </td>
                 `;
                 
@@ -1241,6 +1390,16 @@
                     ${request.description ? `
                         <div class="mb-3">
                             <p><strong>Descripción:</strong><br>${request.description}</p>
+                        </div>
+                    ` : ''}
+
+                    ${request.cie10_code ? `
+                        <div class="mb-3 p-2 border rounded" style="background-color: #e8f4fd;">
+                            <p class="mb-1"><strong><i class="bi bi-clipboard2-pulse me-1"></i>Diagnóstico CIE-10:</strong></p>
+                            <p class="mb-0">
+                                <span class="badge bg-info" style="font-family: monospace; font-size: 0.95rem;">${request.cie10_code}</span>
+                                ${request.cie10_description ? ` — ${request.cie10_description}` : ''}
+                            </p>
                         </div>
                     ` : ''}
                     
