@@ -1008,8 +1008,30 @@ const SvcCommons = (() => {
      * @param {Array} estudiantes - con datos de students anidados
      * @returns {number} nueva Y después de la tabla
      */
-    function pdfTablaEstudiantes(doc, y, margin, estudiantes) {
-        const headers = [['No.', 'ESTUDIANTE', 'TIPO DE\nDOCUMENTO', 'DOCUMENTO DE\nIDENTIDAD', 'EDAD', 'EPS', 'GRADO']];
+
+    async function pdfTablaEstudiantes(doc, y, margin, estudiantes) {
+        // Consultar servicios (almuerzo/refrigerio) de los estudiantes
+        let serviciosMap = {};
+        try {
+            const studentIds = estudiantes
+                .map(est => est.student_id)
+                .filter(Boolean);
+            if (studentIds.length > 0) {
+                const serviciosData = await supabaseRequest(
+                    `/students?select=student_id,uses_cafeteria_service,uses_snack_service&student_id=in.(${studentIds.join(',')})`
+                );
+                (serviciosData || []).forEach(s => {
+                    const items = [];
+                    if (s.uses_cafeteria_service) items.push('Almuerzo');
+                    if (s.uses_snack_service) items.push('Refrigerio');
+                    serviciosMap[s.student_id] = items.join(', ');
+                });
+            }
+        } catch (e) {
+            console.warn('⚠️ No se pudieron cargar servicios de estudiantes:', e);
+        }
+
+        const headers = [['No.', 'ESTUDIANTE', 'TIPO DE\nDOCUMENTO', 'DOCUMENTO DE\nIDENTIDAD', 'EDAD', 'EPS', 'GRADO', 'SERVICIOS']];
         const grisClaro = [240, 240, 240];
         const negro = [0, 0, 0];
 
@@ -1021,7 +1043,8 @@ const SvcCommons = (() => {
             const edad = calcularEdad(s.student_birthday);
             const eps = s.eps?.eps_name || '';
             const grado = s.course?.course_name || '';
-            return [idx + 1, nombre, tipoDoc, numDoc, edad, eps, grado];
+            const servicios = serviciosMap[est.student_id] || '';
+            return [idx + 1, nombre, tipoDoc, numDoc, edad, eps, grado, servicios];
         });
 
         doc.autoTable({
@@ -1033,19 +1056,21 @@ const SvcCommons = (() => {
             styles: { fontSize: 7, cellPadding: 1.5, lineColor: [180, 180, 180], lineWidth: 0.2, textColor: negro },
             headStyles: { fillColor: grisClaro, textColor: negro, fontStyle: 'bold', halign: 'center', fontSize: 7 },
             columnStyles: {
-                0: { halign: 'center', cellWidth: 10 },
-                1: { cellWidth: 55 },
-                2: { halign: 'center', cellWidth: 22 },
-                3: { halign: 'center', cellWidth: 28 },
-                4: { halign: 'center', cellWidth: 12 },
-                5: { cellWidth: 30 },
-                6: { cellWidth: 29 }
+                0: { halign: 'center', cellWidth: 8 },
+                1: { cellWidth: 46 },
+                2: { halign: 'center', cellWidth: 18 },
+                3: { halign: 'center', cellWidth: 26 },
+                4: { halign: 'center', cellWidth: 10 },
+                5: { cellWidth: 26 },
+                6: { cellWidth: 26 },
+                7: { cellWidth: 26 }
             }
         });
 
         return doc.lastAutoTable.finalY + 8;
     }
 
+    
     /**
      * Genera tabla de adultos acompañantes en el PDF.
      * @param {jsPDF} doc
