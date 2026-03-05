@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.05.16.30">
+    <meta name="page-version" content="26.03.05.14.10">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -870,6 +870,82 @@
         }
 
         // ==========================================
+        // CÁLCULO DE FECHA MÍNIMA PERMITIDA
+        // ==========================================
+        function getMinAllowedDate() {
+            const today = new Date(getCurrentDateColombia() + 'T00:00:00');
+            
+            const pastDaysLimit = hrConfig.request_past_days_limit ?? 2;
+            const monthEndStartDay = hrConfig.request_month_end_start_day ?? 30;
+            const monthEndPastDaysLimit = hrConfig.request_month_end_past_days_limit ?? 1;
+            
+            // Calcular la fecha más antigua permitida con plazo normal
+            const minNormal = new Date(today);
+            minNormal.setDate(minNormal.getDate() - pastDaysLimit);
+            
+            // Calcular la fecha más antigua permitida con plazo de fin de mes
+            const minMonthEnd = new Date(today);
+            minMonthEnd.setDate(minMonthEnd.getDate() - monthEndPastDaysLimit);
+            
+            // La fecha mínima real es la más antigua de ambas opciones,
+            // pero solo si la fecha candidata cae en el rango de fin de mes
+            // Tomamos la más antigua para permitir el rango completo
+            const minDate = minNormal < minMonthEnd ? minNormal : minMonthEnd;
+            
+            const year = minDate.getFullYear();
+            const month = String(minDate.getMonth() + 1).padStart(2, '0');
+            const day = String(minDate.getDate()).padStart(2, '0');
+            
+            return `${year}-${month}-${day}`;
+        }
+        
+        function validateStartDate(startDateStr) {
+            if (!startDateStr) return { valid: false, message: 'Debe seleccionar una fecha.' };
+            
+            const today = new Date(getCurrentDateColombia() + 'T00:00:00');
+            const startDate = new Date(startDateStr + 'T00:00:00');
+            
+            // Fechas futuras siempre permitidas
+            if (startDate >= today) return { valid: true, message: '' };
+            
+            // Para fechas pasadas, calcular el plazo permitido
+            const pastDaysLimit = hrConfig.request_past_days_limit ?? 2;
+            const monthEndStartDay = hrConfig.request_month_end_start_day ?? 30;
+            const monthEndPastDaysLimit = hrConfig.request_month_end_past_days_limit ?? 1;
+            
+            const startDay = startDate.getDate();
+            
+            // Determinar qué plazo aplica según el día del mes de la ausencia
+            let allowedDays;
+            if (startDay >= monthEndStartDay) {
+                allowedDays = monthEndPastDaysLimit;
+            } else {
+                allowedDays = pastDaysLimit;
+            }
+            
+            // Calcular la fecha límite para registrar
+            const deadline = new Date(startDate);
+            deadline.setDate(deadline.getDate() + allowedDays);
+            
+            if (today > deadline) {
+                const deadlineStr = deadline.toLocaleDateString('es-CO');
+                if (startDay >= monthEndStartDay) {
+                    return {
+                        valid: false,
+                        message: `La ausencia del ${startDate.toLocaleDateString('es-CO')} (fin de mes) debía registrarse antes del ${deadlineStr} (plazo de ${allowedDays} día${allowedDays !== 1 ? 's' : ''}).`
+                    };
+                } else {
+                    return {
+                        valid: false,
+                        message: `La ausencia del ${startDate.toLocaleDateString('es-CO')} debía registrarse antes del ${deadlineStr} (plazo de ${allowedDays} días).`
+                    };
+                }
+            }
+            
+            return { valid: true, message: '' };
+        }
+
+        // ==========================================
         // CAMBIO DE CATEGORÍA - FORMULARIO DINÁMICO
         // ==========================================
         document.getElementById('categorySelect').addEventListener('change', function() {
@@ -986,13 +1062,13 @@
             
             container.innerHTML = html;
             
-            // Establecer fechas mínimas
-            const today = getCurrentDateColombia();
+            // Establecer fechas mínimas (permite fechas pasadas según configuración)
+            const minDate = getMinAllowedDate();
             if (category.full_day_only) {
-                document.getElementById('startDate').min = today;
-                document.getElementById('endDate').min = today;
+                document.getElementById('startDate').min = minDate;
+                document.getElementById('endDate').min = minDate;
             } else {
-                document.getElementById('singleDate').min = today;
+                document.getElementById('singleDate').min = minDate;
             }
         }
 
@@ -1046,6 +1122,17 @@
                 
                 if (!startDate || !endDate) return;
                 
+                // Validar plazo de registro
+                const dateValidation = validateStartDate(startDate);
+                if (!dateValidation.valid) {
+                    showMessage(dateValidation.message, 'danger');
+                    document.getElementById('totalDays').value = '0';
+                    document.getElementById('totalHours').value = '0';
+                    document.getElementById('submitBtn').disabled = true;
+                    return;
+                }
+                document.getElementById('submitBtn').disabled = false;
+                
                 if (new Date(endDate) < new Date(startDate)) {
                     showMessage('La fecha final debe ser mayor o igual a la fecha inicial', 'warning');
                     return;
@@ -1066,6 +1153,17 @@
                 const endTime = document.getElementById('endTime').value;
                 
                 if (!singleDate || !startTime || !endTime) return;
+                
+                // Validar plazo de registro
+                const dateValidation = validateStartDate(singleDate);
+                if (!dateValidation.valid) {
+                    showMessage(dateValidation.message, 'danger');
+                    document.getElementById('totalDays').value = '0';
+                    document.getElementById('totalHours').value = '0';
+                    document.getElementById('submitBtn').disabled = true;
+                    return;
+                }
+                document.getElementById('submitBtn').disabled = false;
                 
                 const workdayStart = hrConfig.workday_start_time || '07:00:00';
                 const workdayEnd = hrConfig.workday_end_time || '15:00:00';
@@ -1362,6 +1460,11 @@
                     showMessage('Debes completar las fechas', 'warning');
                     return;
                 }
+                const dateCheck = validateStartDate(startDate);
+                if (!dateCheck.valid) {
+                    showMessage(dateCheck.message, 'danger');
+                    return;
+                }
             } else {
                 const singleDate = document.getElementById('singleDate').value;
                 const startTime = document.getElementById('startTime').value;
@@ -1370,6 +1473,12 @@
                     showMessage('Debes completar la fecha y horas', 'warning');
                     return;
                 }
+
+                const dateCheck = validateStartDate(singleDate);
+                    if (!dateCheck.valid) {
+                        showMessage(dateCheck.message, 'danger');
+                        return;
+                    }
                 
                 // ✅ VALIDACIÓN CRÍTICA: Verificar horas dentro de jornada laboral
                 const workdayStart = hrConfig.workday_start_time || '07:00:00';
