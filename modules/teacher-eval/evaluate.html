@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.28.20.00">
+    <meta name="page-version" content="26.03.06.07.10">
     <title>Evaluación Docente - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -278,6 +278,7 @@
         let sessionExpiry = null;
         let scaleOptionsCache = {}; // scale_id -> options[]
         let englishTeachers = {};   // worker_id -> boolean (dicta en inglés)
+        let directorTeachers = {};  // worker_id -> boolean (es director de curso del estudiante)
 
         // ==========================================
         // INICIALIZACIÓN
@@ -412,7 +413,7 @@
             try {
                 // Verificar que el email pertenece a un estudiante activo
                 const students = await supabaseRequest(
-                    `/students?select=student_id,student_first_name,student_last_name_1,student_last_name_2,course_id,student_email,courses(course_name,grade_id,grades(grade_name,section_id))&student_email=eq.${encodeURIComponent(email)}&limit=1`
+                    `/students?select=student_id,student_first_name,student_last_name_1,student_last_name_2,course_id,student_email,courses(course_name,course_director_email,grade_id,grades(grade_name,section_id))&student_email=eq.${encodeURIComponent(email)}&limit=1`
                 );
 
                 if (!students || students.length === 0) {
@@ -559,7 +560,7 @@
 
                 // Cargar secciones y preguntas del formulario
                 const sections = await supabaseRequest(
-                    `/teval_form_sections?select=form_section_id,section_title,section_order,english_only,scale_id&form_id=eq.${formId}&order=section_order`
+                    `/teval_form_sections?select=form_section_id,section_title,section_order,english_only,director_only,scale_id&form_id=eq.${formId}&order=section_order`
                 );
 
                 const questions = await supabaseRequest(
@@ -585,7 +586,7 @@
 
                 // Obtener profesores del curso del estudiante en el año académico
                 const assignments = await supabaseRequest(
-                    `/academic_assignments?select=worker_id,workers(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2),academic_subjects(subject_name,is_english)&course_id=eq.${courseId}&academic_year_id=eq.${yearId}`
+                    `/academic_assignments?select=worker_id,workers(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email),academic_subjects(subject_name,is_english)&course_id=eq.${courseId}&academic_year_id=eq.${yearId}`
                 );
 
                 if (!assignments || assignments.length === 0) {
@@ -602,6 +603,7 @@
                         teacherMap[wid] = {
                             workerId: wid,
                             name: `${w.worker_first_name} ${w.worker_last_name_1} ${w.worker_last_name_2 || ''}`.trim(),
+                            email: w.email || '',
                             subjects: [],
                             teachesEnglish: false
                         };
@@ -614,11 +616,13 @@
 
                 teachersList = Object.values(teacherMap).sort((a, b) => a.name.localeCompare(b.name));
 
-                // Registrar qué profesores dictan inglés
+                // Registrar qué profesores dictan inglés y quién es director de curso
+                const courseDirectorEmail = studentData.courses?.course_director_email?.toLowerCase() || '';
                 teachersList.forEach(t => {
                     englishTeachers[t.workerId] = t.teachesEnglish;
+                    directorTeachers[t.workerId] = (t.email?.toLowerCase() === courseDirectorEmail);
                 });
-
+                
                 // Verificar evaluaciones ya completadas en este período
                 const existing = await supabaseRequest(
                     `/teval_sessions?select=worker_id&period_id=eq.${periodId}&student_id=eq.${studentData.student_id}&session_status=eq.completed`
@@ -781,17 +785,19 @@
             document.getElementById('evaluatingInfo').innerHTML =
                 `<strong>${escapeHtml(teacher.name)}</strong>`;
 
-            // Determinar si el profesor dicta inglés
+           // Determinar si el profesor dicta inglés y si es director de curso
             const isEnglishTeacher = englishTeachers[teacher.workerId] || false;
-
+            const isDirector = directorTeachers[teacher.workerId] || false;
+            
             // Construir contenido del formulario
             let html = '';
             let questionCount = 0;
             let sectionCount = 0;
-
-            // Filtrar secciones: incluir english_only solo si el profesor dicta inglés
+            
+            // Filtrar secciones según condiciones del profesor
             const visibleSections = formSections.filter(sec => {
                 if (sec.english_only && !isEnglishTeacher) return false;
+                if (sec.director_only && !isDirector) return false;
                 return true;
             });
 
@@ -874,10 +880,12 @@
         // ==========================================
         function actualizarProgreso() {
             const teacher = teachersList[currentTeacherIndex];
-            const isEnglishTeacher = englishTeachers[teacher.workerId] || false;
-
+           const isEnglishTeacher = englishTeachers[teacher.workerId] || false;
+            const isDirector = directorTeachers[teacher.workerId] || false;
+            
             const visibleSections = formSections.filter(sec => {
                 if (sec.english_only && !isEnglishTeacher) return false;
+                if (sec.director_only && !isDirector) return false;
                 return true;
             });
 
@@ -915,13 +923,13 @@
         async function enviarEvaluacion() {
             const teacher = teachersList[currentTeacherIndex];
             const isEnglishTeacher = englishTeachers[teacher.workerId] || false;
-
-            // Validar preguntas obligatorias
+            const isDirector = directorTeachers[teacher.workerId] || false;
+            
             const visibleSections = formSections.filter(sec => {
                 if (sec.english_only && !isEnglishTeacher) return false;
+                if (sec.director_only && !isDirector) return false;
                 return true;
             });
-
             let missingRequired = false;
             visibleSections.forEach(sec => {
                 sec.questions.forEach(q => {
