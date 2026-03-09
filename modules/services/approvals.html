@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.03.13.20">
+    <meta name="page-version" content="26.03.09.14.50">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -90,6 +90,23 @@
             padding-top: 1rem;
             border-top: 2px solid var(--service-primary);
         }
+
+        /* === Estilos modal presupuesto === */
+        .assignment-row {
+            cursor: pointer;
+            transition: background-color 0.15s;
+        }
+        .assignment-row:hover {
+            background-color: #e8f0fe !important;
+        }
+        .assignment-row.table-active {
+            background-color: #cfe2ff !important;
+        }
+        .costo-total-badge {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        
     </style>
 </head>
 <body>
@@ -274,6 +291,70 @@
             </div>
         </div>
     </div>
+
+    <!-- ==================== MODAL: SELECCIÓN PRESUPUESTAL AL APROBAR ==================== -->
+    <div class="modal fade" id="modalPresupuesto" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-check-circle me-2"></i>Aprobar Solicitud — Asignación Presupuestal
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Info de la solicitud -->
+                    <div class="alert alert-light border mb-3" id="infoSolicitudPresupuesto"></div>
+
+                    <!-- Costo total -->
+                    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-info bg-opacity-10 border border-info rounded">
+                        <span><i class="bi bi-cash-stack me-2"></i><strong>Costo total a cargar al presupuesto:</strong></span>
+                        <span class="costo-total-badge text-info" id="costoTotalPresupuesto">$0</span>
+                    </div>
+
+                    <!-- Aviso si costo es 0 -->
+                    <div class="alert alert-secondary d-none" id="alertCostoCero">
+                        <i class="bi bi-info-circle me-2"></i>No se encontraron costos registrados para este servicio. Se creará la ejecución presupuestal con valor $0.
+                    </div>
+
+                    <!-- Tabla de sub-ítems -->
+                    <p class="text-muted mb-2"><small>Seleccione el sub-ítem presupuestal al cual cargar este gasto:</small></p>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm table-bordered mb-0">
+                            <thead class="table-primary">
+                                <tr>
+                                    <th style="width:30px;"></th>
+                                    <th>Sub-ítem</th>
+                                    <th>Categoría</th>
+                                    <th class="text-end">Aprobado</th>
+                                    <th class="text-end">Ejecutado</th>
+                                    <th class="text-end">Disponible</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyAssignments"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Sin assignments -->
+                    <div class="alert alert-warning d-none mt-3" id="alertSinAssignments">
+                        <i class="bi bi-exclamation-triangle me-2"></i>No se encontraron sub-ítems presupuestales asignados a su cuenta. No es posible aprobar sin vinculación presupuestal.
+                    </div>
+
+                    <!-- Warning sobreejecución -->
+                    <div class="alert alert-warning d-none mt-3" id="alertSobreejecucion">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <span id="textoSobreejecucion"></span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" id="btnConfirmarAprobacion" disabled onclick="confirmarAprobacionConPresupuesto()">
+                        <i class="bi bi-check-circle me-1"></i>Confirmar Aprobación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -287,6 +368,12 @@
             tipo: '',
             estado: 'pending'
         };
+
+        // === Variables para integración presupuestal ===
+        let aprobacionEnCurso = null;       // request_id de la solicitud que se está aprobando
+        let assignmentsAprobador = [];      // budget_assignments del aprobador
+        let selectedAssignmentId = null;    // assignment_id seleccionado
+        let costoServicioActual = 0;        // costo calculado del servicio
         
         // ==================== INICIALIZACIÓN ====================
         document.addEventListener('DOMContentLoaded', async function() {
@@ -1118,76 +1205,69 @@
 
         
       // ==================== APROBAR SOLICITUD ====================
+
+        // ==================== APROBAR SOLICITUD (con integración presupuestal) ====================
         async function aprobarSolicitud(requestId) {
-            // Validar restricciones de fecha
+            // Validar restricciones de fecha (misma lógica existente)
             const solicitud = solicitudesData.find(s => s.request_id === requestId);
-            if (solicitud) {
-                const hoy = new Date();
-                hoy.setHours(0, 0, 0, 0);
-            
-                if (solicitud._tipo === 'internal_event') {
-                    const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
-                    if (evento) {
-                        const fechaEvento = new Date(evento.event_date + 'T00:00:00');
-                        const diasRestantes = Math.ceil((fechaEvento - hoy) / (1000 * 60 * 60 * 24));
-            
-                        if (diasRestantes < 0) {
-                            showMessage('No se puede aprobar: la fecha del evento ya pasó.', 'warning');
-                            return;
-                        }
-                        if (diasRestantes > daysBeforeImminent) {
-                            showMessage(`No es posible aprobar aún. Faltan ${diasRestantes} días para el evento. La aprobación se habilitará cuando falten ${daysBeforeImminent} días o menos.`, 'warning');
-                            return;
-                        }
+            if (!solicitud) {
+                showMessage('No se encontró la solicitud', 'danger');
+                return;
+            }
+
+            const hoy = new Date();
+            hoy.setHours(0, 0, 0, 0);
+
+            if (solicitud._tipo === 'internal_event') {
+                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                if (evento) {
+                    const fechaEvento = new Date(evento.event_date + 'T00:00:00');
+                    const diasRestantes = Math.ceil((fechaEvento - hoy) / (1000 * 60 * 60 * 24));
+                    if (diasRestantes < 0) {
+                        showMessage('No se puede aprobar: la fecha del evento ya pasó.', 'warning');
+                        return;
                     }
-                } else if (solicitud._tipo === 'pedagogical_trip' || solicitud._tipo === 'sports_trip' || solicitud._tipo === 'rep_trip') {
-                    const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
-                    if (trip) {
-                        const fechaTrip = new Date(trip.trip_date + 'T00:00:00');
-                        const diasRestantes = Math.ceil((fechaTrip - hoy) / (1000 * 60 * 60 * 24));
-            
-                        if (diasRestantes < 0) {
-                            showMessage('No se puede aprobar: la fecha de la salida ya pasó.', 'warning');
-                            return;
-                        }
+                    if (diasRestantes > daysBeforeImminent) {
+                        showMessage(`No es posible aprobar aún. Faltan ${diasRestantes} días para el evento. La aprobación se habilitará cuando falten ${daysBeforeImminent} días o menos.`, 'warning');
+                        return;
+                    }
+                }
+            } else {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                if (trip) {
+                    const fechaTrip = new Date(trip.trip_date + 'T00:00:00');
+                    const diasRestantes = Math.ceil((fechaTrip - hoy) / (1000 * 60 * 60 * 24));
+                    if (diasRestantes < 0) {
+                        showMessage('No se puede aprobar: la fecha de la salida ya pasó.', 'warning');
+                        return;
                     }
                 }
             }
-        
-            // Confirmación
-            if (!confirm('¿Está seguro de aprobar esta solicitud?')) return;
-            
+
             try {
-                showLoading('listaSolicitudes');
-                
-                // Actualizar estado en base de datos
-                await supabaseRequest(`/svc_service_requests?request_id=eq.${requestId}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                        request_status: 'approved',
-                        resolved_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                });
-                
-                // Obtener datos completos de la solicitud para notificación
-                const solicitud = solicitudesData.find(s => s.request_id === requestId);
-                
-                if (solicitud) {
-                    await enviarNotificacionAprobacion(solicitud, true);
-                }
-                
-                showMessage('✅ Solicitud aprobada correctamente', 'success');
-                
-                // Recargar solicitudes
-                await cargarSolicitudes();
-                
+                // Guardar referencia de la solicitud en curso
+                aprobacionEnCurso = requestId;
+
+                // Calcular costo del servicio
+                costoServicioActual = await calcularCostoServicio(solicitud);
+
+                // Cargar sub-ítems presupuestales del aprobador
+                await cargarAssignmentsAprobador();
+
+                // Renderizar el modal
+                renderizarModalPresupuesto(solicitud);
+
+                // Abrir modal
+                const modal = new bootstrap.Modal(document.getElementById('modalPresupuesto'));
+                modal.show();
+
             } catch (error) {
-                console.error('❌ Error aprobando solicitud:', error);
-                showMessage('Error al aprobar la solicitud', 'danger');
-                await cargarSolicitudes(); // Recargar de todos modos
+                console.error('❌ Error preparando aprobación:', error);
+                showMessage('Error al preparar la aprobación: ' + error.message, 'danger');
+                aprobacionEnCurso = null;
             }
         }
+
         
         // ==================== MOSTRAR MODAL RECHAZAR ====================
         function mostrarModalRechazar(requestId) {
@@ -1244,6 +1324,345 @@
                 await cargarSolicitudes(); // Recargar de todos modos
             }
         }
+
+        // ==================== INTEGRACIÓN PRESUPUESTAL ====================
+
+        // --- Calcular costo total del servicio según tipo ---
+        async function calcularCostoServicio(solicitud) {
+            if (solicitud._tipo === 'pedagogical_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                return (trip.total_transport_value || 0) + (trip.total_catering_value || 0) + (trip.total_entrance_value || 0);
+
+            } else if (solicitud._tipo === 'sports_trip' || solicitud._tipo === 'rep_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                return (trip.total_transport_value || 0) + (trip.total_catering_value || 0);
+
+            } else if (solicitud._tipo === 'internal_event') {
+                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                if (!evento) return 0;
+                let total = 0;
+
+                // Sumar refrigerios (siempre tienen valor)
+                const catering = await supabaseRequest('/svc_internal_event_catering?select=total_value&event_id=eq.' + evento.event_id);
+                if (catering && catering.length > 0) {
+                    total += catering.reduce((sum, c) => sum + (parseFloat(c.total_value) || 0), 0);
+                }
+
+                // Sumar servicios de apoyo que YA tengan costo registrado
+                const services = await supabaseRequest('/svc_internal_event_services?select=cost_value&event_id=eq.' + evento.event_id + '&cost_value=not.is.null');
+                if (services && services.length > 0) {
+                    total += services.reduce((sum, s) => sum + (parseFloat(s.cost_value) || 0), 0);
+                }
+
+                return Math.round(total);
+            }
+            return 0;
+        }
+
+        // --- Cargar budget_assignments del aprobador ---
+        async function cargarAssignmentsAprobador() {
+            const userEmail = currentUser.user_mail || currentUser.email;
+            const workerId = currentUser.worker_id;
+
+            // Obtener año presupuestal activo
+            const config = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
+            if (!config || config.length === 0 || !config[0].current_budget_year_id) {
+                throw new Error('No hay año presupuestal activo configurado');
+            }
+            const budgetYearId = config[0].current_budget_year_id;
+
+            const assignmentIds = new Set();
+            let todas = [];
+
+            // Buscar por worker_id
+            const byWorker = await supabaseRequest('/budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,executed_value,budget_items(item_name,budget_categories(category_name))&worker_id=eq.' + workerId + '&academic_year_id=eq.' + budgetYearId + '&assignment_status=eq.active');
+            if (byWorker) {
+                byWorker.forEach(a => {
+                    if (!assignmentIds.has(a.assignment_id)) {
+                        assignmentIds.add(a.assignment_id);
+                        todas.push(a);
+                    }
+                });
+            }
+
+            // Buscar también por worker_email_legacy (respaldo)
+            const byEmail = await supabaseRequest('/budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,executed_value,budget_items(item_name,budget_categories(category_name))&worker_email_legacy=eq.' + userEmail + '&academic_year_id=eq.' + budgetYearId + '&assignment_status=eq.active');
+            if (byEmail) {
+                byEmail.forEach(a => {
+                    if (!assignmentIds.has(a.assignment_id)) {
+                        assignmentIds.add(a.assignment_id);
+                        todas.push(a);
+                    }
+                });
+            }
+
+            // Ordenar por nombre del sub-ítem
+            todas.sort((a, b) => (a.budget_items?.item_name || '').localeCompare(b.budget_items?.item_name || ''));
+            assignmentsAprobador = todas;
+        }
+
+        // --- Renderizar contenido del modal presupuestal ---
+        function renderizarModalPresupuesto(solicitud) {
+            const infoDiv = document.getElementById('infoSolicitudPresupuesto');
+            const costoDisplay = document.getElementById('costoTotalPresupuesto');
+            const tbody = document.getElementById('tbodyAssignments');
+            const alertSobre = document.getElementById('alertSobreejecucion');
+            const alertCero = document.getElementById('alertCostoCero');
+            const alertSin = document.getElementById('alertSinAssignments');
+            const btnConfirmar = document.getElementById('btnConfirmarAprobacion');
+
+            // Reset estado
+            selectedAssignmentId = null;
+            btnConfirmar.disabled = true;
+            btnConfirmar.innerHTML = '<i class="bi bi-check-circle me-1"></i>Confirmar Aprobación';
+            alertSobre.classList.add('d-none');
+            alertCero.classList.add('d-none');
+            alertSin.classList.add('d-none');
+
+            // Mostrar info de la solicitud
+            let infoHTML = '';
+            if (solicitud._tipo === 'pedagogical_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || '';
+                infoHTML = `<i class="bi bi-backpack3 me-2 text-info"></i><strong>Salida Pedagógica:</strong> ${trip.destination?.destination_name || 'N/A'} — ${formatDateLong(trip.trip_date)}${grados ? ' — ' + grados : ''}`;
+            } else if (solicitud._tipo === 'sports_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                infoHTML = `<i class="bi bi-trophy me-2 text-success"></i><strong>Salida Deportiva:</strong> ${trip.trip_name} — ${formatDateLong(trip.trip_date)}`;
+            } else if (solicitud._tipo === 'rep_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                infoHTML = `<i class="bi bi-music-note-beamed me-2" style="color:#0d9488;"></i><strong>Salida de Representación:</strong> ${trip.trip_name} — ${formatDateLong(trip.trip_date)}`;
+            } else if (solicitud._tipo === 'internal_event') {
+                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                infoHTML = `<i class="bi bi-calendar-event me-2 text-primary"></i><strong>Evento Interno:</strong> ${evento.event_name} — ${formatDateLong(evento.event_date)}`;
+            }
+            infoDiv.innerHTML = infoHTML;
+
+            // Mostrar costo
+            costoDisplay.textContent = formatCurrency(costoServicioActual);
+            if (costoServicioActual === 0) {
+                alertCero.classList.remove('d-none');
+            }
+
+            // Si no hay assignments
+            if (!assignmentsAprobador || assignmentsAprobador.length === 0) {
+                tbody.innerHTML = '';
+                alertSin.classList.remove('d-none');
+                return;
+            }
+
+            // Renderizar filas
+            tbody.innerHTML = assignmentsAprobador.map(a => {
+                const disponible = (a.approved_value || 0) - (a.executed_value || 0);
+                const esSobre = costoServicioActual > disponible;
+                const itemName = a.budget_items?.item_name || 'Sin nombre';
+                const catName = a.category_detail || a.assignment_category || a.budget_items?.budget_categories?.category_name || '';
+
+                return `
+                    <tr class="assignment-row" onclick="seleccionarAssignment('${a.assignment_id}', this)">
+                        <td class="text-center"><input type="radio" name="assignmentRadio" value="${a.assignment_id}" class="form-check-input"></td>
+                        <td><strong>${itemName}</strong></td>
+                        <td><small>${catName}</small></td>
+                        <td class="text-end">${formatCurrency(a.approved_value || 0)}</td>
+                        <td class="text-end">${formatCurrency(a.executed_value || 0)}</td>
+                        <td class="text-end ${esSobre ? 'text-danger fw-bold' : 'text-success fw-bold'}">${formatCurrency(disponible)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // --- Seleccionar un sub-ítem presupuestal ---
+        function seleccionarAssignment(assignmentId, row) {
+            selectedAssignmentId = assignmentId;
+
+            // Visual
+            document.querySelectorAll('#tbodyAssignments tr').forEach(tr => tr.classList.remove('table-active'));
+            row.classList.add('table-active');
+            row.querySelector('input[type="radio"]').checked = true;
+
+            // Verificar sobreejecución
+            const assignment = assignmentsAprobador.find(a => a.assignment_id === assignmentId);
+            const disponible = (assignment.approved_value || 0) - (assignment.executed_value || 0);
+            const alertSobre = document.getElementById('alertSobreejecucion');
+
+            if (costoServicioActual > disponible) {
+                const sobre = costoServicioActual - disponible;
+                document.getElementById('textoSobreejecucion').innerHTML =
+                    `<strong>Atención:</strong> El costo (${formatCurrency(costoServicioActual)}) excede el saldo disponible (${formatCurrency(disponible)}). Se generará una sobreejecución de <strong>${formatCurrency(sobre)}</strong>.`;
+                alertSobre.classList.remove('d-none');
+            } else {
+                alertSobre.classList.add('d-none');
+            }
+
+            // Habilitar botón
+            document.getElementById('btnConfirmarAprobacion').disabled = false;
+        }
+
+        // --- Construir descripción automática para execution_request ---
+        function construirDescripcionEjecucion(solicitud) {
+            if (solicitud._tipo === 'pedagogical_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                const destino = trip.destination?.destination_name || 'Sin destino';
+                const fecha = formatDateLong(trip.trip_date);
+                const grados = trip.grades?.map(g => g.grade?.grade_name).filter(Boolean).join(', ') || '';
+                return `Salida Pedagógica — ${destino} — ${fecha}${grados ? ' — ' + grados : ''}`;
+            } else if (solicitud._tipo === 'sports_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                const disc = trip.team?.discipline?.discipline_name || '';
+                const cat = trip.team?.category?.category_name || '';
+                const destino = trip.destination?.destination_name || '';
+                return `Salida Deportiva — ${disc} ${cat} — ${destino} — ${formatDateLong(trip.trip_date)}`;
+            } else if (solicitud._tipo === 'rep_trip') {
+                const trip = Array.isArray(solicitud.trip) ? solicitud.trip[0] : solicitud.trip;
+                const grupo = trip.grupo?.group_name || '';
+                const destino = trip.destination?.destination_name || '';
+                return `Salida de Representación — ${grupo} — ${destino} — ${formatDateLong(trip.trip_date)}`;
+            } else if (solicitud._tipo === 'internal_event') {
+                const evento = Array.isArray(solicitud.evento) ? solicitud.evento[0] : solicitud.evento;
+                return `Evento Interno — ${evento.event_name} — ${formatDateLong(evento.event_date)}`;
+            }
+            return 'Servicio aprobado';
+        }
+
+        // --- Confirmar aprobación con vinculación presupuestal ---
+        async function confirmarAprobacionConPresupuesto() {
+            if (!aprobacionEnCurso || !selectedAssignmentId) return;
+
+            const requestId = aprobacionEnCurso;
+            const solicitud = solicitudesData.find(s => s.request_id === requestId);
+            if (!solicitud) return;
+
+            const btnConfirmar = document.getElementById('btnConfirmarAprobacion');
+            const textoOriginal = btnConfirmar.innerHTML;
+
+            try {
+                btnConfirmar.disabled = true;
+                btnConfirmar.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Procesando...';
+
+                const ahora = new Date().toISOString();
+                const userEmail = currentUser.user_mail || currentUser.email;
+                const descripcion = construirDescripcionEjecucion(solicitud);
+
+                // 1. Crear execution_request como aprobada
+                const execData = {
+                    assignment_id: selectedAssignmentId,
+                    worker_id: solicitud.requested_by,
+                    worker_email: userEmail,
+                    requested_value: costoServicioActual,
+                    request_details: descripcion,
+                    request_status: 'approved',
+                    requested_at: ahora,
+                    responded_at: ahora,
+                    service_request_id: requestId
+                };
+
+                await supabaseRequest('/execution_requests', {
+                    method: 'POST',
+                    body: JSON.stringify(execData)
+                });
+
+                // 2. Incrementar executed_value del budget_assignment
+                const assignment = assignmentsAprobador.find(a => a.assignment_id === selectedAssignmentId);
+                const newExecuted = (assignment.executed_value || 0) + costoServicioActual;
+
+                await supabaseRequest('/budget_assignments?assignment_id=eq.' + selectedAssignmentId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        executed_value: newExecuted,
+                        updated_at: ahora
+                    })
+                });
+
+                // 3. Actualizar svc_service_requests a aprobada
+                await supabaseRequest('/svc_service_requests?request_id=eq.' + requestId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        request_status: 'approved',
+                        resolved_at: ahora,
+                        updated_at: ahora
+                    })
+                });
+
+                // 4. Enviar notificaciones existentes (al solicitante y coordinación)
+                if (solicitud) {
+                    await enviarNotificacionAprobacion(solicitud, true);
+                }
+
+                // 5. Si hay sobreejecución, notificar al admin presupuestal
+                const disponible = (assignment.approved_value || 0) - (assignment.executed_value || 0);
+                if (costoServicioActual > disponible) {
+                    await enviarNotificacionSobreejecucionServicio(solicitud, assignment, costoServicioActual, disponible);
+                }
+
+                // 6. Cerrar modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('modalPresupuesto'));
+                if (modal) modal.hide();
+
+                showMessage('✅ Solicitud aprobada y cargada al presupuesto correctamente', 'success');
+                await cargarSolicitudes();
+
+            } catch (error) {
+                console.error('❌ Error en aprobación con presupuesto:', error);
+                showMessage('Error al aprobar: ' + error.message, 'danger');
+                btnConfirmar.disabled = false;
+                btnConfirmar.innerHTML = textoOriginal;
+            } finally {
+                aprobacionEnCurso = null;
+                selectedAssignmentId = null;
+                costoServicioActual = 0;
+            }
+        }
+
+        // --- Notificación de sobreejecución al admin presupuestal ---
+        async function enviarNotificacionSobreejecucionServicio(solicitud, assignment, costoTotal, disponible) {
+            try {
+                const config = await supabaseRequest('/system_config?select=budget_admin_email&limit=1');
+                if (!config || config.length === 0 || !config[0].budget_admin_email) {
+                    console.warn('No se encontró email del admin presupuestal');
+                    return;
+                }
+
+                const budgetAdminEmail = config[0].budget_admin_email;
+                const sobre = costoTotal - disponible;
+                const itemName = assignment.budget_items?.item_name || 'Sin nombre';
+                const descripcion = construirDescripcionEjecucion(solicitud);
+                const aprobador = currentUser.user_display_name || currentUser.user_name;
+                const solicitante = solicitud.solicitante ? `${solicitud.solicitante.worker_first_name} ${solicitud.solicitante.worker_last_name_1}` : 'Desconocido';
+
+                const asunto = `SchoolNet - Sobreejecución por aprobación de servicio: ${itemName}`;
+
+                const htmlContent = `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+                        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                            <h2 style="color: #856404; margin: 0 0 10px 0; font-size: 20px;">⚠️ Sobreejecución por Aprobación de Servicio</h2>
+                            <p style="margin: 0; color: #856404;">SchoolNet - Sistema de Gestión Educativa</p>
+                        </div>
+                        <div style="background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <p>Se ha autorizado una aprobación de servicio que genera sobreejecución presupuestal.</p>
+                            <table style="width: 100%; border-collapse: collapse; margin: 15px 0; border: 1px solid #dee2e6;">
+                                <tr style="background-color: #f8f9fa;"><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Servicio:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${descripcion}</td></tr>
+                                <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Sub-ítem:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${itemName}</td></tr>
+                                <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Solicitado por:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${solicitante}</td></tr>
+                                <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Aprobado por:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${aprobador}</td></tr>
+                                <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Valor cargado:</td><td style="padding: 10px; border: 1px solid #dee2e6; font-family: monospace;">${formatCurrency(costoTotal)}</td></tr>
+                                <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Disponible era:</td><td style="padding: 10px; border: 1px solid #dee2e6; font-family: monospace;">${formatCurrency(disponible)}</td></tr>
+                                <tr style="background-color: #fff3cd;"><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Sobreejecución:</td><td style="padding: 10px; border: 1px solid #dee2e6; font-family: monospace; color: #856404; font-weight: bold;">${formatCurrency(sobre)}</td></tr>
+                            </table>
+                        </div>
+                        <p style="font-size: 12px; color: #999; margin-top: 20px; text-align: center;">
+                            Este es un mensaje automático del sistema SchoolNet. No responder a este correo.
+                        </p>
+                    </div>
+                `;
+
+                await sendNotification(budgetAdminEmail, asunto, htmlContent, true);
+                console.log('Notificación de sobreejecución enviada a:', budgetAdminEmail);
+
+            } catch (error) {
+                console.error('Error enviando notificación de sobreejecución:', error);
+            }
+        }
+
+        
       // ==================== ENVIAR NOTIFICACIONES ====================
         async function enviarNotificacionAprobacion(solicitud, esAprobada, motivoRechazo = null) {
             try {
