@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.05.15.55">
+    <meta name="page-version" content="26.03.09.14.15">
     <title>Salidas Deportivas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -411,6 +411,7 @@
         let selectedAdultWorkers = [];
         let calculatedTransport = { rate: 0, capacity: 0, count: 0, total: 0 };
         let pendingStatusChange = { tripId: null, newStatus: null };
+        let editingTripId = null;
         let fpWizardFecha = null;
 
         const GENDER_LABELS = { male: 'Masculino', female: 'Femenino', mixed: 'Mixto' };
@@ -570,7 +571,8 @@
                                 <span class="badge bg-light text-dark">
                                     <i class="bi bi-dribbble me-1"></i>${discipline} - ${category}
                                 </span>
-                                <span>
+                                <span class="d-flex align-items-center gap-1">
+                                    ${(!req || req.request_status !== 'approved') ? `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="event.stopPropagation(); editTrip('${trip.trip_id}')" title="Editar"><i class="bi bi-pencil"></i></button>` : ''}
                                     <small class="text-success fw-bold">$${SvcCommons.formatNumber((trip.total_transport_value || 0) + (trip.total_catering_value || 0))}</small>
                                     ${reqBadge}
                                 </span>
@@ -649,6 +651,9 @@
             document.getElementById('wz_include_catering').checked = false;
             document.getElementById('cateringFields').style.display = 'none';
             document.getElementById('cateringCostPreview').style.display = 'none';
+
+            editingTripId = null;
+            document.querySelector('#createWizardModal .modal-title').innerHTML = '<i class="bi bi-trophy me-2"></i>Nueva Salida Deportiva';
 
             doUpdateWizardUI();
             new bootstrap.Modal(document.getElementById('createWizardModal')).show();
@@ -1040,48 +1045,101 @@
                     quantityInputId: 'wz_catering_quantity'
                 });
 
-                // 1. Create service request
-                const requestData = await supabaseRequest('/svc_service_requests', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        service_type: 'sports_trip',
-                        requested_by: currentWorker.worker_id,
-                        approver_id: approverId,
-                        request_status: 'pending'
-                    })
-                });
-                const requestId = requestData[0].request_id;
+                let tripId;
+                let requestId;
 
-                // 2. Create sports trip
-                const tripBody = {
-                    request_id: requestId,
-                    trip_name: document.getElementById('wz_trip_name').value.trim(),
-                    trip_date: SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value),
-                    event_time: document.getElementById('wz_event_time').value || null,
-                    departure_time: document.getElementById('wz_departure_time').value,
-                    return_time: document.getElementById('wz_return_time').value,
-                    destination_id: document.getElementById('wz_destination').value,
-                    specific_destination: document.getElementById('wz_specific_destination').value.trim() || null,
-                    team_id: selectedTeamId,
-                    transport_modality: document.getElementById('wz_modality').value,
-                    num_adults: selectedAdultWorkers.length,
-                    planned_students: selectedTeamMembers.length,
-                    trip_status: 'scheduled',
-                    frozen_transport_rate: calculatedTransport.rate,
-                    frozen_vehicle_capacity: calculatedTransport.capacity,
-                    frozen_vehicle_count: calculatedTransport.count,
-                    total_transport_value: calculatedTransport.total,
-                    catering_menu_id: catering.menuId || null,
-                    catering_quantity: catering.quantity,
-                    frozen_catering_unit_price: catering.unitPrice,
-                    total_catering_value: catering.total,
-                    created_by: currentSession.user.user_id
-                };
-                const tripData = await supabaseRequest('/svc_sports_trips', {
-                    method: 'POST',
-                    body: JSON.stringify(tripBody)
-                });
-                const tripId = tripData[0].trip_id;
+                if (editingTripId) {
+                    // === MODO EDICIÓN ===
+                    tripId = editingTripId;
+                    const existingTrip = allTrips.find(t => t.trip_id === tripId);
+                    requestId = existingTrip?.svc_service_requests?.request_id;
+
+                    // Actualizar request (cambiar aprobador si cambió)
+                    if (requestId) {
+                        await supabaseRequest(`/svc_service_requests?request_id=eq.${requestId}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ approver_id: approverId })
+                        });
+                    }
+
+                    // Actualizar trip
+                    const updateBody = {
+                        trip_name: document.getElementById('wz_trip_name').value.trim(),
+                        trip_date: SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value),
+                        event_time: document.getElementById('wz_event_time').value || null,
+                        departure_time: document.getElementById('wz_departure_time').value,
+                        return_time: document.getElementById('wz_return_time').value,
+                        destination_id: document.getElementById('wz_destination').value,
+                        specific_destination: document.getElementById('wz_specific_destination').value.trim() || null,
+                        team_id: selectedTeamId,
+                        transport_modality: document.getElementById('wz_modality').value,
+                        num_adults: selectedAdultWorkers.length,
+                        planned_students: selectedTeamMembers.length,
+                        frozen_transport_rate: calculatedTransport.rate,
+                        frozen_vehicle_capacity: calculatedTransport.capacity,
+                        frozen_vehicle_count: calculatedTransport.count,
+                        total_transport_value: calculatedTransport.total,
+                        catering_menu_id: catering.menuId || null,
+                        catering_quantity: catering.quantity,
+                        frozen_catering_unit_price: catering.unitPrice,
+                        total_catering_value: catering.total
+                    };
+                    await supabaseRequest(`/svc_sports_trips?trip_id=eq.${tripId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(updateBody)
+                    });
+
+                    // Limpiar y recrear attendance
+                    await supabaseRequest(`/svc_sports_trip_attendance?trip_id=eq.${tripId}`, { method: 'DELETE' });
+
+                    // Limpiar y recrear nodos
+                    await supabaseRequest(`/svc_trip_transport_nodes?service_type=eq.sports_trip&trip_id=eq.${tripId}`, { method: 'DELETE' });
+
+                    // Limpiar y recrear adultos
+                    await supabaseRequest(`/svc_sports_trip_adults?trip_id=eq.${tripId}`, { method: 'DELETE' });
+
+                } else {
+                    // === MODO CREACIÓN ===
+                    const requestData = await supabaseRequest('/svc_service_requests', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            service_type: 'sports_trip',
+                            requested_by: currentWorker.worker_id,
+                            approver_id: approverId,
+                            request_status: 'pending'
+                        })
+                    });
+                    requestId = requestData[0].request_id;
+
+                    const tripBody = {
+                        request_id: requestId,
+                        trip_name: document.getElementById('wz_trip_name').value.trim(),
+                        trip_date: SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value),
+                        event_time: document.getElementById('wz_event_time').value || null,
+                        departure_time: document.getElementById('wz_departure_time').value,
+                        return_time: document.getElementById('wz_return_time').value,
+                        destination_id: document.getElementById('wz_destination').value,
+                        specific_destination: document.getElementById('wz_specific_destination').value.trim() || null,
+                        team_id: selectedTeamId,
+                        transport_modality: document.getElementById('wz_modality').value,
+                        num_adults: selectedAdultWorkers.length,
+                        planned_students: selectedTeamMembers.length,
+                        trip_status: 'scheduled',
+                        frozen_transport_rate: calculatedTransport.rate,
+                        frozen_vehicle_capacity: calculatedTransport.capacity,
+                        frozen_vehicle_count: calculatedTransport.count,
+                        total_transport_value: calculatedTransport.total,
+                        catering_menu_id: catering.menuId || null,
+                        catering_quantity: catering.quantity,
+                        frozen_catering_unit_price: catering.unitPrice,
+                        total_catering_value: catering.total,
+                        created_by: currentSession.user.user_id
+                    };
+                    const tripData = await supabaseRequest('/svc_sports_trips', {
+                        method: 'POST',
+                        body: JSON.stringify(tripBody)
+                    });
+                    tripId = tripData[0].trip_id;
 
                 // 3. Attendance records
                 if (selectedTeamMembers.length > 0) {
@@ -1120,34 +1178,39 @@
                     });
                 }
 
-                // 6. Notify approver
-                const senderName = SvcCommons.workerFullName(currentWorker);
-                await SvcCommons.notifyApprover({
-                    approverId: approverId,
-                    tripName: tripBody.trip_name,
-                    tripDate: SvcCommons.formatDateDisplay(tripBody.trip_date),
-                    senderName: senderName,
-                    moduleIcon: '🏟️',
-                    moduleTitle: 'Salida Deportiva'
-                });
+                // 6-7. Notificaciones solo en creación
+                if (!editingTripId) {
+                    const senderName = SvcCommons.workerFullName(currentWorker);
+                    await SvcCommons.notifyApprover({
+                        approverId: approverId,
+                        tripName: document.getElementById('wz_trip_name').value.trim(),
+                        tripDate: SvcCommons.formatDateDisplay(SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value)),
+                        senderName: senderName,
+                        moduleIcon: '🏟️',
+                        moduleTitle: 'Salida Deportiva'
+                    });
 
-                // 7. Notify fixed recipients
-                const disc = catalogDisciplines.find(d => d.discipline_id === document.getElementById('wz_discipline').value);
-                const cat = catalogCategories.find(c => c.category_id === document.getElementById('wz_category').value);
-                await SvcCommons.notifyFixedRecipients({
-                    tripName: tripBody.trip_name,
-                    tripDate: SvcCommons.formatDateDisplay(tripBody.trip_date),
-                    senderName: senderName,
-                    moduleTitle: 'Salida Deportiva',
-                    emailChef: emailChef,
-                    emailSupervisor: emailSupervisor,
-                    plannedStudents: selectedTeamMembers.length,
-                    numAdults: selectedAdultWorkers.length,
-                    extraRows: { 'Equipo': `${disc?.discipline_name || ''} - ${cat?.category_name || ''}` }
-                });
-
+                    const disc = catalogDisciplines.find(d => d.discipline_id === document.getElementById('wz_discipline').value);
+                    const cat = catalogCategories.find(c => c.category_id === document.getElementById('wz_category').value);
+                    await SvcCommons.notifyFixedRecipients({
+                        tripName: document.getElementById('wz_trip_name').value.trim(),
+                        tripDate: SvcCommons.formatDateDisplay(SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value)),
+                        senderName: senderName,
+                        moduleTitle: 'Salida Deportiva',
+                        emailChef: emailChef,
+                        emailSupervisor: emailSupervisor,
+                        plannedStudents: selectedTeamMembers.length,
+                        numAdults: selectedAdultWorkers.length,
+                        extraRows: { 'Equipo': `${disc?.discipline_name || ''} - ${cat?.category_name || ''}` }
+                    });
+                }
+            
                 bootstrap.Modal.getInstance(document.getElementById('createWizardModal')).hide();
-                showMessage('Salida deportiva creada exitosamente. Solicitud enviada al aprobador.', 'success');
+                const msgExito = editingTripId 
+                    ? 'Salida deportiva actualizada exitosamente.' 
+                    : 'Salida deportiva creada exitosamente. Solicitud enviada al aprobador.';
+                editingTripId = null;
+                showMessage(msgExito, 'success');
                 await loadTrips();
 
             } catch (error) {
@@ -1155,7 +1218,99 @@
                 showMessage('Error al crear la salida: ' + error.message, 'danger');
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-send me-1"></i>Enviar Solicitud';
+                btn.innerHTML = editingTripId ? '<i class="bi bi-check-lg me-1"></i>Actualizar Salida' : '<i class="bi bi-send me-1"></i>Enviar Solicitud';
+            }
+        }
+
+        // ==========================================
+        // EDIT TRIP
+        // ==========================================
+        async function editTrip(tripId) {
+            try {
+                const trip = allTrips.find(t => t.trip_id === tripId);
+                if (!trip) { showMessage('Salida no encontrada', 'danger'); return; }
+
+                const req = trip.svc_service_requests;
+                if (req && req.request_status === 'approved') {
+                    showMessage('Esta salida ya fue aprobada y no se puede editar', 'warning');
+                    return;
+                }
+
+                // Abrir wizard limpio y luego poblar
+                openCreateWizard();
+                editingTripId = tripId;
+                document.querySelector('#createWizardModal .modal-title').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Salida Deportiva';
+
+                // Esperar a que el modal se muestre
+                await new Promise(resolve => setTimeout(resolve, 200));
+
+                // Step 1: Info básica
+                document.getElementById('wz_trip_name').value = trip.trip_name || '';
+                if (fpWizardFecha) fpWizardFecha.setDate(trip.trip_date, true);
+                document.getElementById('wz_event_time').value = trip.event_time ? trip.event_time.substring(0,5) : '';
+                document.getElementById('wz_departure_time').value = trip.departure_time ? trip.departure_time.substring(0,5) : '';
+                document.getElementById('wz_return_time').value = trip.return_time ? trip.return_time.substring(0,5) : '';
+
+                // Cargar adultos
+                let tripAdults = [];
+                try {
+                    tripAdults = await supabaseRequest(`/svc_sports_trip_adults?select=worker_id&trip_id=eq.${tripId}`);
+                } catch(e) {}
+                selectedAdultWorkers = (tripAdults || []).map(a => a.worker_id);
+                renderBadgesLocal();
+
+                // Step 2: Equipo
+                const team = trip.svc_sports_teams;
+                if (team) {
+                    document.getElementById('wz_discipline').value = team.discipline_id;
+                    // Poblar categorías
+                    const catSel = document.getElementById('wz_category');
+                    catSel.innerHTML = '<option value="">Seleccionar categoría...</option>';
+                    catalogCategories.forEach(c => {
+                        catSel.innerHTML += `<option value="${c.category_id}">${c.category_name}</option>`;
+                    });
+                    catSel.value = team.category_id;
+                    await onCategoryChange();
+                }
+
+                // Step 3: Transporte
+                document.getElementById('wz_destination').value = trip.destination_id || '';
+                document.getElementById('wz_specific_destination').value = trip.specific_destination || '';
+                document.getElementById('wz_modality').value = trip.transport_modality || '';
+                onModalityChange();
+
+                // Cargar nodos
+                let nodes = [];
+                try {
+                    nodes = await supabaseRequest(`/svc_trip_transport_nodes?select=node_id,node_role,svc_transport_nodes(node_id,node_name)&service_type=eq.sports_trip&trip_id=eq.${tripId}&order=node_role,node_order`);
+                } catch(e) {}
+                selectedDepartureNodes = [];
+                selectedArrivalNodes = [];
+                (nodes || []).forEach(n => {
+                    const nodoData = n.svc_transport_nodes || catalogNodes.find(nd => nd.node_id === n.node_id);
+                    if (nodoData) {
+                        if (n.node_role === 'departure') selectedDepartureNodes.push(nodoData);
+                        else selectedArrivalNodes.push(nodoData);
+                    }
+                });
+                renderDepNodes();
+                renderArrNodes();
+                calculateTransportCost();
+
+                // Step 4: Refrigerios
+                if (trip.catering_menu_id) {
+                    document.getElementById('wz_include_catering').checked = true;
+                    toggleCatering();
+                    document.getElementById('wz_catering_menu').value = trip.catering_menu_id;
+                    document.getElementById('wz_catering_quantity').value = trip.catering_quantity || 0;
+                    updateCateringCost();
+                }
+
+                console.log('✏️ Modo edición activado para trip:', tripId);
+
+            } catch (error) {
+                console.error('Error cargando datos para edición:', error);
+                showMessage('Error al cargar la salida para edición: ' + error.message, 'danger');
             }
         }
 
