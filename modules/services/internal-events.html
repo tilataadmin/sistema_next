@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.27.09.50">
+    <meta name="page-version" content="26.03.09.14.30">
     
     <title>Eventos Internos - SchoolNet</title>
     
@@ -991,8 +991,8 @@
             try {
                 const tbody = document.getElementById('eventsTableBody');
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center"><i class="bi bi-hourglass-split"></i> Cargando...</td></tr>';
-                
-                let query = '/svc_internal_events?select=*,created_by_user:users!svc_internal_events_created_by_fkey(user_name)&order=event_date.desc';
+
+                let query = '/svc_internal_events?select=*,created_by_user:users!svc_internal_events_created_by_fkey(user_name),request:svc_service_requests(request_id,request_status)&order=event_date.desc';
                 
                 // Filtros
                 const filterStatus = document.getElementById('filterStatus').value;
@@ -1804,39 +1804,78 @@
                 
                 console.log('📝 Guardando evento...', wizardData);
                 
-                // 1. Crear la solicitud de aprobación
-                const requestData = await supabaseRequest('/svc_service_requests', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        service_type: 'internal_event',
-                        requested_by: currentWorkerId,
-                        approver_id: wizardData.approverId,
-                        request_status: 'pending'
-                    })
-                });
-                
-                const requestId = requestData[0].request_id;
-                console.log('✅ Solicitud creada:', requestId);
-                
-                // 2. Crear el evento principal
-                const eventData = await supabaseRequest('/svc_internal_events', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        request_id: requestId,
-                        event_name: wizardData.eventName,
-                        event_date: wizardData.eventDate,
-                        start_time: wizardData.startTime,
-                        end_time: wizardData.endTime,
-                        event_location: wizardData.eventLocation,
-                        num_students: wizardData.numStudents,
-                        num_adults: wizardData.numAdults,
-                        event_status: 'scheduled',
-                        created_by: currentUserId
-                    })
-                });
-                
-                const eventId = eventData[0].event_id;
-                console.log('✅ Evento creado:', eventId);
+                let eventId;
+                let requestId;
+
+                if (editingEventId) {
+                    // === MODO EDICIÓN ===
+                    eventId = editingEventId;
+                    
+                    // Obtener request_id existente
+                    const existingEvent = await supabaseRequest(`/svc_internal_events?event_id=eq.${eventId}&select=request_id`);
+                    requestId = existingEvent[0]?.request_id;
+                    
+                    // Actualizar aprobador si cambió
+                    if (requestId) {
+                        await supabaseRequest(`/svc_service_requests?request_id=eq.${requestId}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ approver_id: wizardData.approverId })
+                        });
+                    }
+                    
+                    // Actualizar evento
+                    await supabaseRequest(`/svc_internal_events?event_id=eq.${eventId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            event_name: wizardData.eventName,
+                            event_date: wizardData.eventDate,
+                            start_time: wizardData.startTime,
+                            end_time: wizardData.endTime,
+                            event_location: wizardData.eventLocation,
+                            num_students: wizardData.numStudents,
+                            num_adults: wizardData.numAdults
+                        })
+                    });
+                    console.log('✅ Evento actualizado:', eventId);
+                    
+                    // Limpiar refrigerios y servicios existentes para recrear
+                    await supabaseRequest(`/svc_internal_event_catering?event_id=eq.${eventId}`, { method: 'DELETE' });
+                    await supabaseRequest(`/svc_internal_event_services?event_id=eq.${eventId}`, { method: 'DELETE' });
+                    
+                } else {
+                    // === MODO CREACIÓN ===
+                    const requestData = await supabaseRequest('/svc_service_requests', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            service_type: 'internal_event',
+                            requested_by: currentWorkerId,
+                            approver_id: wizardData.approverId,
+                            request_status: 'pending'
+                        })
+                    });
+                    
+                    requestId = requestData[0].request_id;
+                    console.log('✅ Solicitud creada:', requestId);
+                    
+                    const eventData = await supabaseRequest('/svc_internal_events', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            request_id: requestId,
+                            event_name: wizardData.eventName,
+                            event_date: wizardData.eventDate,
+                            start_time: wizardData.startTime,
+                            end_time: wizardData.endTime,
+                            event_location: wizardData.eventLocation,
+                            num_students: wizardData.numStudents,
+                            num_adults: wizardData.numAdults,
+                            event_status: 'scheduled',
+                            created_by: currentUserId
+                        })
+                    });
+                    
+                    eventId = eventData[0].event_id;
+                    console.log('✅ Evento creado:', eventId);
+                }
                 
                 // 3. Insertar refrigerios (múltiples por grupo)
                 const cateringInserts = [];
@@ -1897,14 +1936,20 @@
                     console.log('✅ Servicios de apoyo insertados');
                 }
                 
-                // 5. Enviar notificaciones
-                const notifResult = await sendEventNotifications(wizardData);
-                if (notifResult.failed > 0) {
-                    console.warn(`⚠️ ${notifResult.failed} notificación(es) no pudieron enviarse`);
+                // 5. Enviar notificaciones solo en creación
+                if (!editingEventId) {
+                    const notifResult = await sendEventNotifications(wizardData);
+                    if (notifResult.failed > 0) {
+                        console.warn(`⚠️ ${notifResult.failed} notificación(es) no pudieron enviarse`);
+                    }
                 }
                 
                 // Éxito
-                showMessage('Evento creado exitosamente. Se ha enviado la solicitud de aprobación.', 'success');
+                const msgExito = editingEventId
+                    ? 'Evento actualizado exitosamente.'
+                    : 'Evento creado exitosamente. Se ha enviado la solicitud de aprobación.';
+                editingEventId = null;
+                showMessage(msgExito, 'success');
                 
                 // Recargar tabla y ocultar wizard
                 await loadEvents();
@@ -1959,6 +2004,16 @@
                 </button>
             `;
             
+            // Botón editar: solo si no ha sido aprobado
+            const isApproved = event.request && event.request.request_status === 'approved';
+            if (!isApproved) {
+                actions += `
+                    <button class="btn btn-sm btn-outline-warning ms-1" onclick="editEvent('${event.event_id}')" title="Editar">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                `;
+            }
+            
             if (event.event_status === 'scheduled') {
                 actions += `
                     <button class="btn btn-sm btn-warning ms-1" onclick="changeEventStatus('${event.event_id}')" title="Cambiar estado">
@@ -1970,6 +2025,119 @@
             return actions;
         }
 
+        // ==========================================
+        // EDITAR EVENTO
+        // ==========================================
+        async function editEvent(eventId) {
+            try {
+                // Cargar evento con request
+                const eventArr = await supabaseRequest(`/svc_internal_events?event_id=eq.${eventId}&select=*,request:svc_service_requests(request_id,request_status,approver_id)`);
+                
+                if (!eventArr || eventArr.length === 0) {
+                    showMessage('Evento no encontrado', 'danger');
+                    return;
+                }
+                
+                const event = eventArr[0];
+                
+                // Verificar que no esté aprobado
+                if (event.request && event.request.request_status === 'approved') {
+                    showMessage('Este evento ya fue aprobado y no se puede editar', 'warning');
+                    return;
+                }
+                
+                // Cargar refrigerios
+                const catering = await supabaseRequest(`/svc_internal_event_catering?event_id=eq.${eventId}&select=*,menu:svc_catering_menus(menu_name,unit_price)`);
+                
+                // Cargar servicios
+                const services = await supabaseRequest(`/svc_internal_event_services?event_id=eq.${eventId}&select=*`);
+                
+                // Resetear wizard y activar modo edición
+                resetWizard();
+                editingEventId = eventId;
+                document.getElementById('wizardTitle').textContent = 'Editar Evento Interno';
+                
+                // Paso 1: Información básica
+                document.getElementById('eventName').value = event.event_name || '';
+                
+                // Fecha: quitar restricción de minDate para edición
+                const fpInstance = document.getElementById('eventDate')._flatpickr;
+                if (fpInstance) {
+                    fpInstance.set('minDate', null);
+                    fpInstance.setDate(event.event_date, true);
+                }
+                
+                document.getElementById('startTime').value = event.start_time ? event.start_time.substring(0, 5) : '';
+                document.getElementById('endTime').value = event.end_time ? event.end_time.substring(0, 5) : '';
+                document.getElementById('eventLocation').value = event.event_location || '';
+                document.getElementById('numStudents').value = event.num_students || 0;
+                document.getElementById('numAdults').value = event.num_adults || 0;
+                
+                // Paso 2: Refrigerios
+                if (catering && catering.length > 0) {
+                    const studentItems = catering.filter(c => c.target_group === 'students');
+                    const adultItems = catering.filter(c => c.target_group === 'adults');
+                    
+                    if (studentItems.length > 0) {
+                        document.getElementById('cateringStudentsCheck').checked = true;
+                        toggleCateringStudents();
+                        // Limpiar líneas auto-generadas
+                        document.getElementById('cateringStudentsLines').innerHTML = '';
+                        studentItems.forEach(item => {
+                            addCateringLine('students');
+                            const lines = document.querySelectorAll('#cateringStudentsLines .catering-line');
+                            const lastLine = lines[lines.length - 1];
+                            const select = lastLine.querySelector('.catering-menu-select');
+                            select.value = item.menu_id;
+                            calculateCateringLine(select);
+                        });
+                    }
+                    
+                    if (adultItems.length > 0) {
+                        document.getElementById('cateringAdultsCheck').checked = true;
+                        toggleCateringAdults();
+                        document.getElementById('cateringAdultsLines').innerHTML = '';
+                        adultItems.forEach(item => {
+                            addCateringLine('adults');
+                            const lines = document.querySelectorAll('#cateringAdultsLines .catering-line');
+                            const lastLine = lines[lines.length - 1];
+                            const select = lastLine.querySelector('.catering-menu-select');
+                            select.value = item.menu_id;
+                            calculateCateringLine(select);
+                        });
+                    }
+                }
+                
+                // Paso 3: Servicios de apoyo
+                if (services && services.length > 0) {
+                    services.forEach(svc => {
+                        const checkboxId = getServiceCheckboxId(svc.service_type);
+                        const checkbox = document.getElementById(`service${checkboxId}Check`);
+                        const textarea = document.getElementById(`service${checkboxId}Desc`);
+                        if (checkbox && textarea) {
+                            checkbox.checked = true;
+                            toggleServiceField(svc.service_type);
+                            textarea.value = svc.description || '';
+                        }
+                    });
+                }
+                
+                // Paso 4: Aprobador
+                if (event.request && event.request.approver_id) {
+                    document.getElementById('approverSelect').value = event.request.approver_id;
+                }
+                
+                // Mostrar wizard
+                showWizard();
+                
+                console.log('✏️ Modo edición activado para evento:', eventId);
+                
+            } catch (error) {
+                console.error('Error cargando evento para edición:', error);
+                showMessage('Error al cargar el evento para edición: ' + error.message, 'danger');
+            }
+        }
+        
         // ==========================================
         // VER DETALLE DEL EVENTO
         // ==========================================
@@ -2617,7 +2785,8 @@
         // FUNCIONES GLOBALES (para onclick en HTML)
         // ==========================================
         
-       window.viewEvent = viewEvent;
+        window.viewEvent = viewEvent;
+        window.editEvent = editEvent;
         window.changeEventStatus = changeEventStatus;
         window.calculateCateringLine = calculateCateringLine;
         window.removeCateringLine = removeCateringLine;
