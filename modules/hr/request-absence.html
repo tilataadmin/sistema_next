@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.05.14.10">
+    <meta name="page-version" content="26.03.09.13.15">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -459,6 +459,7 @@
         let selectedFiles = [];
         let cameraStream = null;
         let capturedPhotoBlob = null;
+        let editingRequestId = null;
         let hrConfig = null;
         let workers = [];
         let nonWorkDays = [];
@@ -1010,34 +1011,12 @@
                 `;
             }
             
-            // Campo de reemplazo (siempre visible, opcional)
-            const currentWorker = workers.find(w => w.worker_id === currentSession.worker_id);
-            const hasSection = currentWorker && currentWorker.section_id;
-            
-            const filteredWorkers = workers.filter(w => {
-                if (w.worker_id === currentSession.worker_id) return false;
-                if (w.is_replacement) return false;
-                if (hasSection) {
-                    return w.section_id !== null;
-                } else {
-                    return w.section_id === null;
-                }
-            }).sort((a, b) => {
-                const nameA = `${a.worker_last_name_1} ${a.worker_first_name}`.toLowerCase();
-                const nameB = `${b.worker_last_name_1} ${b.worker_first_name}`.toLowerCase();
-                return nameA.localeCompare(nameB);
-            });
-            
             html += `
                 <div class="mb-3">
-                    <label for="replacementWorker" class="form-label">Trabajador de Reemplazo</label>
-                    <select class="form-select" id="replacementWorker">
-                        <option value="">Seleccione un reemplazo (opcional)...</option>
-                        ${filteredWorkers.map(w => 
-                            `<option value="${w.worker_id}">${w.worker_last_name_1} ${w.worker_first_name}</option>`
-                        ).join('')}
-                    </select>
-                    <div class="form-text">Opcional: seleccione quién cubrirá su ausencia</div>
+                    <label for="replacementInfo" class="form-label">Reemplazo(s)</label>
+                    <textarea class="form-control" id="replacementInfo" rows="2" 
+                        placeholder="Ej: Juan Gómez primera hora, Patricia González tercera hora..."></textarea>
+                    <div class="form-text">Opcional: indica quién(es) cubrirán tu ausencia y en qué horario</div>
                 </div>
             `;
             
@@ -1505,23 +1484,38 @@
                 }
             }
             
-            if (!confirm('¿Estás seguro de enviar esta solicitud de ausencia?')) {
+            const confirmMsg = editingRequestId 
+                ? '¿Estás seguro de actualizar esta solicitud de ausencia?' 
+                : '¿Estás seguro de enviar esta solicitud de ausencia?';
+            if (!confirm(confirmMsg)) {
                 return;
             }
             
             showLoading(true);
             
             try {
-                const requestId = await createAbsenceRequest();
-                
-                if (selectedFiles.length > 0) {
-                    await uploadFiles(requestId);
+                if (editingRequestId) {
+                    // MODO EDICIÓN
+                    await updateAbsenceRequest(editingRequestId);
+                    
+                    if (selectedFiles.length > 0) {
+                        await uploadFiles(editingRequestId);
+                    }
+                    
+                    showMessage('¡Solicitud actualizada exitosamente!', 'success');
+                } else {
+                    // MODO CREACIÓN
+                    const requestId = await createAbsenceRequest();
+                    
+                    if (selectedFiles.length > 0) {
+                        await uploadFiles(requestId);
+                    }
+                    
+                    await createAuthorizations(requestId);
+                    await sendNotifications(requestId);
+                    
+                    showMessage('¡Solicitud enviada exitosamente! Recibirás notificaciones sobre el estado de tu solicitud.', 'success');
                 }
-                
-                await createAuthorizations(requestId);
-                await sendNotifications(requestId);
-                
-                showMessage('¡Solicitud enviada exitosamente! Recibirás notificaciones sobre el estado de tu solicitud.', 'success');
                 
                 resetForm();
                 await loadBalances();
@@ -1564,9 +1558,9 @@
                 requestData.is_full_day = false;
             }
             
-            const replacementId = document.getElementById('replacementWorker').value;
-            if (replacementId && replacementId.trim() !== '') {
-                requestData.replacement_worker_id = replacementId;
+            const replacementInfo = document.getElementById('replacementInfo').value.trim();
+            if (replacementInfo) {
+                requestData.replacement_info = replacementInfo;
             }
             
             const result = await supabaseRequest('/hr_absence_requests', {
@@ -1580,6 +1574,45 @@
             
             console.log('✅ Solicitud creada:', result[0].request_id);
             return result[0].request_id;
+        }
+
+        async function updateAbsenceRequest(requestId) {
+            const totalDays = parseFloat(document.getElementById('totalDays').value);
+            const totalHours = parseFloat(document.getElementById('totalHours').value);
+            const description = document.getElementById('description').value;
+            
+            let updateData = {
+                total_days: totalDays,
+                total_hours: totalHours,
+                description: description,
+                edited_by: currentSession.worker_id,
+                edited_at: new Date().toISOString()
+            };
+            
+            if (selectedCategory.full_day_only) {
+                updateData.start_date = formatDateForDatabase(document.getElementById('startDate').value);
+                updateData.end_date = formatDateForDatabase(document.getElementById('endDate').value);
+                updateData.start_time = null;
+                updateData.end_time = null;
+                updateData.is_full_day = true;
+            } else {
+                const singleDate = formatDateForDatabase(document.getElementById('singleDate').value);
+                updateData.start_date = singleDate;
+                updateData.end_date = singleDate;
+                updateData.start_time = document.getElementById('startTime').value;
+                updateData.end_time = document.getElementById('endTime').value;
+                updateData.is_full_day = false;
+            }
+            
+            const replacementInfo = document.getElementById('replacementInfo').value.trim();
+            updateData.replacement_info = replacementInfo || null;
+            
+            await supabaseRequest('/hr_absence_requests?request_id=eq.' + requestId, {
+                method: 'PATCH',
+                body: JSON.stringify(updateData)
+            });
+            
+            console.log('✅ Solicitud actualizada:', requestId);
         }
 
         async function uploadFiles(requestId) {
@@ -1841,6 +1874,7 @@
                     <p><strong>Fechas:</strong> ${requestData}</p>
                     <p><strong>Total días:</strong> ${document.getElementById('totalDays').value}</p>
                     <p><strong>Total horas:</strong> ${document.getElementById('totalHours').value}</p>
+                    <p><strong>Reemplazo(s):</strong> ${document.getElementById('replacementInfo').value.trim() || 'No especificado'}</p>
                     <p><strong>Descripción:</strong> ${document.getElementById('description').value || 'Sin descripción'}</p>
                 `;
                 
@@ -1857,7 +1891,16 @@
                 console.error('Error al enviar notificaciones:', error);
             }
         }
-                
+
+        // ==========================================
+        // VERIFICAR SI UNA SOLICITUD ES EDITABLE
+        // ==========================================
+        function canEditRequest(request) {
+            if (request.status !== 'pending') return false;
+            const today = getCurrentDateColombia();
+            return request.start_date > today;
+        }
+        
         // ==========================================
         // CARGAR HISTORIAL DE SOLICITUDES
         // ==========================================
@@ -1905,6 +1948,11 @@
                             break;
                     }
                     
+                    const editButton = canEditRequest(request) ? 
+                        `<button class="btn btn-sm btn-outline-warning ms-1" onclick="editRequest('${request.request_id}')" title="Editar solicitud">
+                            <i class="bi bi-pencil"></i>
+                        </button>` : '';
+                    
                     row.innerHTML = `
                         <td>${createdDate}</td>
                         <td>${categoryName}</td>
@@ -1916,6 +1964,7 @@
                             <button class="btn btn-sm btn-outline-primary" onclick="viewRequestDetail('${request.request_id}')" title="Ver detalle">
                                 <i class="bi bi-eye"></i>
                             </button>
+                            ${editButton}
                         </td>
                     `;
                     
@@ -2023,6 +2072,7 @@
                         <p><strong>Total días:</strong> ${request.total_days.toFixed(2)}</p>
                         <p><strong>Total horas:</strong> ${request.total_hours.toFixed(2)}</p>
                         <p><strong>Estado:</strong> ${request.status}</p>
+                        <p><strong>Reemplazo(s):</strong> ${request.replacement_info || 'No especificado'}</p>
                         <p><strong>Descripción:</strong> ${request.description || 'Sin descripción'}</p>
                     </div>
                     ${authHTML}
@@ -2036,6 +2086,80 @@
         }
 
         // ==========================================
+        // EDITAR SOLICITUD EXISTENTE
+        // ==========================================
+        async function editRequest(requestId) {
+            showLoading(true);
+            
+            try {
+                const data = await supabaseRequest(
+                    '/hr_absence_requests?request_id=eq.' + requestId + '&select=*'
+                );
+                
+                if (!data || data.length === 0) {
+                    showMessage('No se encontró la solicitud', 'danger');
+                    return;
+                }
+                
+                const request = data[0];
+                
+                // Verificar que aún se puede editar
+                if (!canEditRequest(request)) {
+                    showMessage('Esta solicitud ya no puede editarse (fue autorizada o la fecha ya pasó)', 'warning');
+                    return;
+                }
+                
+                // Activar modo edición
+                editingRequestId = requestId;
+                
+                // Seleccionar la categoría (dispara el renderizado de campos dinámicos)
+                const categorySelect = document.getElementById('categorySelect');
+                categorySelect.value = request.category_id;
+                categorySelect.disabled = true;
+                categorySelect.dispatchEvent(new Event('change'));
+                
+                // Esperar a que se rendericen los campos dinámicos
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Llenar los campos según tipo
+                if (request.is_full_day) {
+                    document.getElementById('startDate').value = request.start_date;
+                    document.getElementById('endDate').value = request.end_date;
+                } else {
+                    document.getElementById('singleDate').value = request.start_date;
+                    document.getElementById('startTime').value = request.start_time ? request.start_time.substring(0, 5) : '';
+                    document.getElementById('endTime').value = request.end_time ? request.end_time.substring(0, 5) : '';
+                }
+                
+                // Llenar descripción
+                document.getElementById('description').value = request.description || '';
+                
+                // Llenar reemplazo (campo de texto nuevo)
+                const replacementField = document.getElementById('replacementInfo');
+                if (replacementField) {
+                    replacementField.value = request.replacement_info || '';
+                }
+                
+                // Recalcular totales
+                calculateTotals();
+                
+                // Cambiar texto del botón
+                document.getElementById('submitBtn').innerHTML = '<i class="bi bi-pencil me-1"></i>Actualizar Solicitud';
+                
+                // Scroll al formulario
+                document.getElementById('absenceForm').scrollIntoView({ behavior: 'smooth' });
+                
+                showMessage('Editando solicitud. Modifica los campos y haz clic en "Actualizar Solicitud".', 'info');
+                
+            } catch (error) {
+                console.error('Error al cargar solicitud para edición:', error);
+                showMessage('Error al cargar la solicitud: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ==========================================
         // UTILIDADES
         // ==========================================
         function resetForm() {
@@ -2044,8 +2168,11 @@
             document.getElementById('categoryHelp').textContent = '';
             selectedCategory = null;
             selectedFiles = [];
+            editingRequestId = null;
             renderFilePreview();
             document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerHTML = '<i class="bi bi-send me-1"></i>Enviar Solicitud';
+            document.getElementById('categorySelect').disabled = false;
         }
 
         function showLoading(show) {
