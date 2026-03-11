@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.09.14.30">
+    <meta name="page-version" content="26.03.11.10.10">
     
     <title>Eventos Internos - SchoolNet</title>
     
@@ -553,13 +553,22 @@
                     <div class="mt-4">
                         <h6 class="mb-3"><i class="bi bi-person-check"></i> Solicitud de Aprobación</h6>
                         <div class="row">
-                            <div class="col-md-8">
+                            <div class="col-md-6 mb-3">
                                 <label for="approverSelect" class="form-label">Seleccione el Aprobador <span class="text-danger">*</span></label>
                                 <select class="form-select" id="approverSelect" required>
                                     <option value="">Cargando aprobadores...</option>
                                 </select>
                                 <small class="text-muted">
                                     Persona que revisará y aprobará este evento
+                                </small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="responsibleWorkerSelect" class="form-label">Responsable del Evento <span class="text-danger">*</span></label>
+                                <select class="form-select" id="responsibleWorkerSelect" required>
+                                    <option value="">Cargando trabajadores...</option>
+                                </select>
+                                <small class="text-muted">
+                                    Persona designada como responsable de coordinar este evento
                                 </small>
                             </div>
                         </div>
@@ -751,8 +760,9 @@
                 decoration: { enabled: false, description: '' }
             },
             
-            // Paso 4: Aprobación
-            approverId: null
+            // Paso 4: Aprobación y Responsable
+            approverId: null,
+            responsibleWorkerId: null
         };
         
         // Catálogo de menús
@@ -822,6 +832,7 @@
                 initializeFlatpickr();
                 await loadMenusCatalog();
                 await loadApprovers();
+                await loadActiveWorkers();
                 
                 // PASO 5: Cargar eventos
                 await loadEvents();
@@ -984,6 +995,33 @@
                     console.error('Error en carga alternativa:', altError);
                     showMessage('Error al cargar la lista de aprobadores', 'warning');
                 }
+            }
+        }
+
+        async function loadActiveWorkers() {
+            try {
+                const workers = await supabaseRequest('/workers?worker_status=eq.active&select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&order=worker_last_name_1,worker_first_name');
+                
+                const select = document.getElementById('responsibleWorkerSelect');
+                
+                if (!workers || workers.length === 0) {
+                    select.innerHTML = '<option value="">No hay trabajadores disponibles</option>';
+                    return;
+                }
+                
+                const sorted = sortWorkersByName(workers);
+                const optionsHTML = sorted.map(w => 
+                    `<option value="${w.worker_id}" data-email="${w.email || ''}">
+                        ${formatWorkerName(w)}
+                    </option>`
+                ).join('');
+                
+                select.innerHTML = '<option value="">Seleccione un responsable...</option>' + optionsHTML;
+                console.log(`✅ ${workers.length} trabajadores cargados para responsable`);
+                
+            } catch (error) {
+                console.error('Error cargando trabajadores:', error);
+                showMessage('Error al cargar la lista de trabajadores', 'warning');
             }
         }
 
@@ -1327,8 +1365,17 @@
                 return false;
             }
             
+            const responsibleId = document.getElementById('responsibleWorkerSelect').value;
+            
+            if (!responsibleId) {
+                showMessage('Por favor seleccione al responsable del evento', 'warning');
+                document.getElementById('responsibleWorkerSelect').focus();
+                return false;
+            }
+            
             return true;
         }
+        
         // ==========================================
         // GUARDADO DE DATOS DEL WIZARD
         // ==========================================
@@ -1424,6 +1471,7 @@
 
         function saveStep4Data() {
             wizardData.approverId = document.getElementById('approverSelect').value;
+            wizardData.responsibleWorkerId = document.getElementById('responsibleWorkerSelect').value;
         }
 
         // ==========================================
@@ -1825,17 +1873,20 @@
                     
                     // Actualizar evento
                     await supabaseRequest(`/svc_internal_events?event_id=eq.${eventId}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({
-                            event_name: wizardData.eventName,
-                            event_date: wizardData.eventDate,
-                            start_time: wizardData.startTime,
-                            end_time: wizardData.endTime,
-                            event_location: wizardData.eventLocation,
-                            num_students: wizardData.numStudents,
-                            num_adults: wizardData.numAdults
-                        })
-                    });
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        event_name: wizardData.eventName,
+                        event_date: wizardData.eventDate,
+                        start_time: wizardData.startTime,
+                        end_time: wizardData.endTime,
+                        event_location: wizardData.eventLocation,
+                        num_students: wizardData.numStudents,
+                        num_adults: wizardData.numAdults,
+                        responsible_worker_id: wizardData.responsibleWorkerId
+                    })
+                });
+
+                    
                     console.log('✅ Evento actualizado:', eventId);
                     
                     // Limpiar refrigerios y servicios existentes para recrear
@@ -1869,7 +1920,8 @@
                             num_students: wizardData.numStudents,
                             num_adults: wizardData.numAdults,
                             event_status: 'scheduled',
-                            created_by: currentUserId
+                            created_by: currentUserId,
+                            responsible_worker_id: wizardData.responsibleWorkerId
                         })
                     });
                     
@@ -2126,6 +2178,11 @@
                 if (event.request && event.request.approver_id) {
                     document.getElementById('approverSelect').value = event.request.approver_id;
                 }
+
+                // Responsable del evento
+                if (event.responsible_worker_id) {
+                    document.getElementById('responsibleWorkerSelect').value = event.responsible_worker_id;
+                }
                 
                 // Mostrar wizard
                 showWizard();
@@ -2145,8 +2202,8 @@
         async function viewEvent(eventId) {
             try {
                 // Cargar evento con relaciones
-                const event = await supabaseRequest(`/svc_internal_events?event_id=eq.${eventId}&select=*,created_by_user:users!svc_internal_events_created_by_fkey(user_name),request:svc_service_requests(*,approver:workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1))`);
-                
+                const event = await supabaseRequest(`/svc_internal_events?event_id=eq.${eventId}&select=*,created_by_user:users!svc_internal_events_created_by_fkey(user_name),responsible_worker:workers!svc_internal_events_responsible_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),request:svc_service_requests(*,approver:workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1))`);
+
                 // Cargar refrigerios
                 const catering = await supabaseRequest(`/svc_internal_event_catering?event_id=eq.${eventId}&select=*,menu:svc_catering_menus(menu_name)`);
                 
@@ -2192,6 +2249,8 @@
                     </div>
                     <p><strong>Estado:</strong> ${getStatusBadge(event.event_status)}</p>
                     ${event.status_reason ? `<p><strong>Razón:</strong> ${event.status_reason}</p>` : ''}
+                    <p><strong>Responsable:</strong> ${event.responsible_worker ? 
+                        `${event.responsible_worker.worker_first_name} ${event.responsible_worker.worker_last_name_1}${event.responsible_worker.worker_last_name_2 ? ' ' + event.responsible_worker.worker_last_name_2 : ''}` : 'N/A'}</p>
                     <p><strong>Creado por:</strong> ${event.created_by_user?.user_name || 'N/A'}</p>
                 </div>
             `;
@@ -2409,6 +2468,12 @@
                         <h2 style="color: #055160; margin-top: 0; margin-bottom: 5px;">Nuevo Evento Programado</h2>
                         <p style="margin: 0; color: #055160;">Se ha programado un nuevo evento interno. A continuación el detalle.</p>
                     </div>`;
+                            } else if (recipientContext === 'responsible') {
+                contextHeader = `
+                    <div style="background-color: #d1e7dd; border-left: 4px solid #198754; padding: 15px; margin-bottom: 20px;">
+                        <h2 style="color: #0f5132; margin-top: 0; margin-bottom: 5px;">Designación como Responsable de Evento</h2>
+                        <p style="margin: 0; color: #0f5132;">Ha sido designado(a) como responsable del siguiente evento interno. Por favor coordine los preparativos necesarios.</p>
+                    </div>`;
             } else if (recipientContext === 'service_area') {
                 contextHeader = `
                     <div style="background-color: #d1e7dd; border-left: 4px solid #198754; padding: 15px; margin-bottom: 20px;">
@@ -2554,6 +2619,33 @@
                 console.error('Error notificando al aprobador:', error);
                 failed++;
             }
+
+            // 1b. Notificación al responsable del evento
+            try {
+                const responsibleSelect = document.getElementById('responsibleWorkerSelect');
+                const selectedResponsible = responsibleSelect.options[responsibleSelect.selectedIndex];
+                const responsibleEmail = selectedResponsible.dataset.email;
+                const responsibleName = selectedResponsible.text.trim();
+            
+                if (responsibleEmail) {
+                    const subject = `SchoolNet - Ha sido designado responsable del evento: ${data.eventName}`;
+                    const html = generateEventEmailHTML(data, 'responsible');
+                    const result = await sendNotification(responsibleEmail, subject, html);
+                    if (result) {
+                        console.log(`✅ Notificación enviada al responsable: ${responsibleName} (${responsibleEmail})`);
+                        sent++;
+                    } else {
+                        console.warn(`⚠️ No se pudo notificar al responsable: ${responsibleEmail}`);
+                        failed++;
+                    }
+                } else {
+                    console.warn('⚠️ El responsable no tiene email registrado');
+                    failed++;
+                }
+            } catch (error) {
+                console.error('Error notificando al responsable:', error);
+                failed++;
+            }
         
             // 2. Notificaciones fijas: coordinación, recepción, portería
             const fixedRecipients = [
@@ -2669,7 +2761,8 @@
                     transport: { enabled: false, description: '' },
                     decoration: { enabled: false, description: '' }
                 },
-                approverId: null
+                approverId: null,
+                responsibleWorkerId: null
             };
             
             // Limpiar formulario paso 1
@@ -2689,8 +2782,9 @@
                 toggleServiceField(type);
             });
             
-            // Resetear paso 4
+           // Resetear paso 4
             document.getElementById('approverSelect').value = '';
+            document.getElementById('responsibleWorkerSelect').value = '';
             
             // Resetear UI del wizard
             updateWizardUI();
