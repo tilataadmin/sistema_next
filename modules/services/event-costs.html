@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.10.14.21">
+    <meta name="page-version" content="26.03.11.10.35">
     <title>Costos de Eventos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -401,10 +401,10 @@
                 if (filtrosActivos.estadoCosto === 'pending') {
                     serviciosData = serviciosData.filter(s => {
                         const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
-                        return !s.cost_value && evento?.event_status === 'scheduled' && s._requestStatus !== 'approved';
+                        return !s.cost_value && !s.no_cost_confirmed && evento?.event_status === 'scheduled' && s._requestStatus !== 'approved';
                     });
                 } else if (filtrosActivos.estadoCosto === 'registered') {
-                    serviciosData = serviciosData.filter(s => s.cost_value !== null && s.cost_value !== undefined);
+                    serviciosData = serviciosData.filter(s => (s.cost_value !== null && s.cost_value !== undefined) || s.no_cost_confirmed);
                 } else if (filtrosActivos.estadoCosto === 'closed') {
                     serviciosData = serviciosData.filter(s => {
                         const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
@@ -487,6 +487,23 @@
                             Evento autorizado — Los costos están congelados
                         </div>` : ''}
                     `;
+                } else if (servicio.no_cost_confirmed) {
+                    cardClass = 'cost-registered';
+                    estadoHTML = `
+                        <div class="alert alert-success mb-0 mt-3 py-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    <strong>Revisado sin costos asociados</strong>
+                                    ${servicio.cost_registered_at ? `<br><small class="text-muted">Confirmado el ${formatDate(servicio.cost_registered_at)}</small>` : ''}
+                                </div>
+                                ${eventoAbierto && !solicitudAprobada ? `
+                                <button class="btn btn-sm btn-outline-secondary" onclick="deshacerSinCosto('${servicio.service_id}')">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Deshacer
+                                </button>` : ''}
+                            </div>
+                        </div>
+                    `;
                 } else if (!eventoAbierto) {
                     cardClass = 'event-closed';
                     estadoHTML = `
@@ -502,14 +519,16 @@
                             <i class="bi bi-shield-check me-1"></i>
                             Evento autorizado — Ya no se pueden registrar costos
                         </div>
-                    `;
-                } else {
-                    accionHTML = `
-                        <button class="btn btn-primary" onclick="mostrarModalRegistrar('${servicio.service_id}')">
-                            <i class="bi bi-cash-coin me-1"></i>Registrar Costo
-                        </button>
-                    `;
-                }
+                           } else {
+                accionHTML = `
+                    <button class="btn btn-primary me-2" onclick="mostrarModalRegistrar('${servicio.service_id}')">
+                        <i class="bi bi-cash-coin me-1"></i>Registrar Costo
+                    </button>
+                    <button class="btn btn-outline-success" onclick="confirmarSinCosto('${servicio.service_id}')">
+                        <i class="bi bi-check2-circle me-1"></i>Sin costos asociados
+                    </button>
+                `;
+            }
                 
                 return `
                     <div class="card event-card ${cardClass} mb-3">
@@ -684,6 +703,57 @@
                 showMessage('Error al actualizar el costo', 'danger');
             }
         }
+
+        // ==================== SIN COSTOS ASOCIADOS ====================
+        async function confirmarSinCosto(serviceId) {
+            if (!confirm('¿Confirma que este servicio fue revisado y no tiene costos asociados?')) {
+                return;
+            }
+            
+            try {
+                await supabaseRequest(`/svc_internal_event_services?service_id=eq.${serviceId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        no_cost_confirmed: true,
+                        cost_registered_by: currentWorkerId,
+                        cost_registered_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                
+                showMessage('Servicio marcado como revisado sin costos', 'success');
+                await cargarServicios();
+                
+            } catch (error) {
+                console.error('Error confirmando sin costo:', error);
+                showMessage('Error al registrar la confirmación', 'danger');
+            }
+        }
+        
+        async function deshacerSinCosto(serviceId) {
+            if (!confirm('¿Desea revertir la confirmación de "sin costos" para poder registrar un costo?')) {
+                return;
+            }
+            
+            try {
+                await supabaseRequest(`/svc_internal_event_services?service_id=eq.${serviceId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        no_cost_confirmed: false,
+                        cost_registered_by: null,
+                        cost_registered_at: null,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                
+                showMessage('Confirmación revertida. Puede registrar un costo ahora.', 'success');
+                await cargarServicios();
+                
+            } catch (error) {
+                console.error('Error deshaciendo sin costo:', error);
+                showMessage('Error al revertir la confirmación', 'danger');
+            }
+        }
         
         // ==================== FILTROS ====================
         function aplicarFiltros() {
@@ -744,7 +814,7 @@
                     const reqStatus = requestStatuses[evento.request_id];
                     const solicitudAprobada = reqStatus === 'approved';
                     
-                    if (tieneCosto) {
+                    if (tieneCosto || s.no_cost_confirmed) {
                         registrados++;
                     } else if (abierto && !solicitudAprobada) {
                         pendientes++;
