@@ -1893,6 +1893,65 @@ function injectUserNavbar() {
     // Inyectar badge de versión de página (debe ir DESPUÉS de crear el navbar)
     renderPageVersion();
     
+    // --- BOTÓN FLOTANTE DE TICKETS (auto-inyectado) ---
+    // Remover botón flotante viejo de bugs si existe en la página
+    const oldBugBtn = document.querySelector('.floating-bug-button');
+    if (oldBugBtn) oldBugBtn.remove();
+    
+    // Inyectar botón flotante de tickets si no existe
+    if (!document.getElementById('schoolnet-floating-ticket-btn')) {
+        const currentPage = window.location.pathname.toLowerCase();
+        
+        // No mostrar en login, ni en el propio formulario de tickets/bugs
+        if (!currentPage.includes('login.html') && 
+            !currentPage.includes('report-ticket.html') && 
+            !currentPage.includes('report-bug.html')) {
+            
+            // Detectar profundidad para construir ruta relativa
+            const pathParts = window.location.pathname.split('/').filter(p => p.length > 0);
+            let ticketPath = 'report-ticket.html';
+            
+            if (pathParts.length >= 3) {
+                ticketPath = '../../../report-ticket.html';
+            } else if (pathParts.length >= 2) {
+                ticketPath = '../../report-ticket.html';
+            } else if (pathParts.length >= 1) {
+                ticketPath = '../report-ticket.html';
+            }
+            
+            // Estilos del botón flotante
+            if (!document.getElementById('schoolnet-floating-ticket-styles')) {
+                document.head.insertAdjacentHTML('beforeend', `
+                    <style id="schoolnet-floating-ticket-styles">
+                        #schoolnet-floating-ticket-btn {
+                            position: fixed;
+                            bottom: 30px;
+                            right: 30px;
+                            z-index: 1000;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                            background: var(--system-primary-color, #0d6efd) !important;
+                            border-color: var(--system-primary-color, #0d6efd) !important;
+                            color: white !important;
+                            text-decoration: none;
+                            transition: all 0.2s ease;
+                        }
+                        #schoolnet-floating-ticket-btn:hover {
+                            transform: translateY(-2px);
+                            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+                            color: white !important;
+                        }
+                    </style>
+                `);
+            }
+            
+            document.body.insertAdjacentHTML('beforeend', `
+                <a href="${ticketPath}" class="btn btn-primary btn-lg" id="schoolnet-floating-ticket-btn" title="Crear Ticket de Soporte">
+                    <i class="bi bi-ticket-perforated me-2"></i>Crear Ticket
+                </a>
+            `);
+        }
+    }
+    
     console.log('✅ Navbar de usuario inyectado correctamente');
 }
 
