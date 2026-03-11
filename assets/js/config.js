@@ -1907,17 +1907,7 @@ function injectUserNavbar() {
             !currentPage.includes('report-ticket.html') && 
             !currentPage.includes('report-bug.html')) {
             
-            // Detectar profundidad para construir ruta relativa
-            const pathParts = window.location.pathname.split('/').filter(p => p.length > 0);
-            let ticketPath = 'report-ticket.html';
-            
-            if (pathParts.length >= 3) {
-                ticketPath = '../../../report-ticket.html';
-            } else if (pathParts.length >= 2) {
-                ticketPath = '../../report-ticket.html';
-            } else if (pathParts.length >= 1) {
-                ticketPath = '../report-ticket.html';
-            }
+            const ticketPath = '/manual/report-ticket.html';
             
             // Estilos del botón flotante
             if (!document.getElementById('schoolnet-floating-ticket-styles')) {
