@@ -1903,7 +1903,7 @@ function injectUserNavbar() {
         const currentPage = window.location.pathname.toLowerCase();
         
         // No mostrar en login, ni en el propio formulario de tickets/bugs
-        if (!currentPage.includes('login.html') && 
+        if (currentPage.includes('/manual/') && 
             !currentPage.includes('report-ticket.html') && 
             !currentPage.includes('report-bug.html')) {
             
