@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="page-version" content="26.03.13.09.50">
   <title>Registro de Alertas Tempranas - SchoolNet</title>
   
   <!-- Bootstrap CSS -->
@@ -276,6 +277,7 @@
     let familiasDatos = [];
     let causasAlertas = [];
     let estudiantesActuales = [];
+    let cacheGlobal = {};
 
     // Inicialización al cargar la página
     document.addEventListener('DOMContentLoaded', function() {
@@ -314,9 +316,12 @@
      */
     async function cargarDatosProgresivo() {
       try {
-        // Paso 1: Cargar familias (40%)
+        // Paso 1: Cargar familias y URL de fotos (40%)
         updateProgress(40, 'Cargando familias...');
-        await cargarFamilias();
+        await Promise.all([
+            cargarFamilias(),
+            cargarPhotosBaseUrl()
+        ]);
 
         // Paso 2: Cargar causas de alertas (70%)
         updateProgress(70, 'Cargando tipos de alertas...');
@@ -369,7 +374,7 @@
      */
     async function cargarCausasAlertas() {
       try {
-        const causas = await supabaseRequest('/early_alert_causes?select=cause_id,cause_name&order=cause_name');
+        const causas = await supabaseRequest('/early_alert_causes?select=cause_id,cause_name&cause_status=eq.active&order=cause_name');
         
         causasAlertas = causas;
         
@@ -390,6 +395,19 @@
         console.error('Error al cargar causas de alertas:', error);
         throw new Error('No se pudieron cargar los tipos de alertas');
       }
+    }
+
+    /**
+     * Cargar URL base de fotos una sola vez
+     */
+    async function cargarPhotosBaseUrl() {
+        try {
+            const configData = await supabaseRequest('/system_config?select=photos_url&limit=1');
+            cacheGlobal.photosBaseUrl = (configData.length > 0 && configData[0].photos_url) ? configData[0].photos_url : '';
+        } catch (error) {
+            console.error('Error cargando URL de fotos:', error);
+            cacheGlobal.photosBaseUrl = '';
+        }
     }
 
     /**
@@ -441,42 +459,11 @@
       try {
         mostrarLoading();
         
-        // Primero obtener estudiantes
         const estudiantes = await supabaseRequest(
-          `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,course_id&family_id=eq.${familyCode}`
+          `/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,courses(course_name,grades(grade_name))&family_id=eq.${familyCode}&order=student_first_name`
         );
         
         console.log(`Estudiantes para familia ${familyCode}:`, estudiantes);
-        
-        if (estudiantes.length > 0) {
-          // Obtener información de cursos por separado
-          for (let estudiante of estudiantes) {
-            console.log(`Procesando estudiante ${estudiante.student_first_name}, course_id: ${estudiante.course_id}`);
-            
-            if (estudiante.course_id) {
-              try {
-                // Consulta corregida para obtener curso y grado
-                const cursoData = await supabaseRequest(
-                  `/courses?select=course_name,grade_id,grades(grade_name)&course_id=eq.${estudiante.course_id}`
-                );
-                
-                console.log(`Curso data para ${estudiante.student_first_name}:`, cursoData);
-                
-                if (cursoData && cursoData.length > 0) {
-                  estudiante.cursoInfo = cursoData[0];
-                } else {
-                  estudiante.cursoInfo = null;
-                }
-              } catch (err) {
-                console.warn('Error al obtener curso:', err);
-                estudiante.cursoInfo = null;
-              }
-            } else {
-              console.log(`Estudiante ${estudiante.student_first_name} no tiene course_id asignado`);
-              estudiante.cursoInfo = null;
-            }
-          }
-        }
         
         estudiantesActuales = estudiantes;
         mostrarEstudiantes();
@@ -494,7 +481,7 @@
     /**
      * Mostrar estudiantes en tarjetas con fotos
      */
-    async function mostrarEstudiantes() {
+    function mostrarEstudiantes() {
       const container = document.getElementById('estudiantes-container');
       const grid = document.getElementById('estudiantes-grid');
       
@@ -506,51 +493,51 @@
         return;
       }
       
-      for (const estudiante of estudiantesActuales) {
-        const card = await crearTarjetaEstudiante(estudiante);
-        grid.appendChild(card);
-      }
+      estudiantesActuales.forEach(estudiante => {
+        grid.appendChild(crearTarjetaEstudiante(estudiante));
+      });
       
       container.classList.remove('d-none');
       container.classList.add('fade-in');
     }
 
+    
     /**
      * Crear tarjeta individual de estudiante con foto
      */
-    async function crearTarjetaEstudiante(estudiante) {
+
+    function crearTarjetaEstudiante(estudiante) {
       const col = document.createElement('div');
       col.className = 'col-md-6 col-lg-4';
       
-      // Calcular edad
       const edad = calcularEdad(estudiante.student_birthday);
       
-      // Nombre completo
       const nombreCompleto = [
         estudiante.student_first_name,
         estudiante.student_last_name_1,
         estudiante.student_last_name_2
       ].filter(Boolean).join(' ');
       
-      // Curso completo - CORREGIDO
       let cursoCompleto = 'Sin curso asignado';
-      if (estudiante.cursoInfo) {
-        if (estudiante.cursoInfo.grades && estudiante.cursoInfo.grades.grade_name) {
-          cursoCompleto = `${estudiante.cursoInfo.grades.grade_name} - ${estudiante.cursoInfo.course_name}`;
+      if (estudiante.courses) {
+        if (estudiante.courses.grades && estudiante.courses.grades.grade_name) {
+          cursoCompleto = `${estudiante.courses.grades.grade_name} - ${estudiante.courses.course_name}`;
         } else {
-          cursoCompleto = estudiante.cursoInfo.course_name;
+          cursoCompleto = estudiante.courses.course_name;
         }
       }
       
-      // Obtener URL de foto
-      const fotoUrl = await getStudentPhotoUrl(estudiante.student_code);
+      const baseUrl = cacheGlobal.photosBaseUrl || '';
+      const code = estudiante.student_code || '';
+      const fotoSrc = (baseUrl && code) ? `${baseUrl}${code}.jpg` : '';
       
       col.innerHTML = `
         <div class="card h-100 estudiante-card">
           <div class="card-body text-center">
-            ${fotoUrl ? 
-              `<img src="${fotoUrl}" class="rounded-circle mb-3" width="80" height="80" 
+            ${fotoSrc ? 
+              `<img src="${fotoSrc}" class="rounded-circle mb-3" width="80" height="80" 
                    style="object-fit: cover;" alt="Foto de ${nombreCompleto}"
+                   loading="lazy"
                    onerror="this.outerHTML='<div class=\\'foto-placeholder mb-3\\'>👤</div>'">` :
               `<div class="foto-placeholder mb-3">👤</div>`
             }
@@ -564,6 +551,7 @@
       return col;
     }
 
+    
     /**
      * Calcular edad en formato legible
      */
@@ -603,8 +591,21 @@
       if (!validarFormulario()) return;
       
       mostrarLoading();
-      
+
+      // Verificar si ya existe una alerta abierta para esta familia
+      const familyCode = parseInt(document.getElementById('familia-select').value);
+      const alertasAbiertas = await supabaseRequest(
+        `/early_alert_logs?select=log_id&family_code=eq.${familyCode}&is_closed=eq.false&limit=1`
+      );
+
+      if (alertasAbiertas && alertasAbiertas.length > 0) {
+        ocultarLoading();
+        showMessage('Esta familia ya tiene una alerta abierta. Use la página de Gestión para complementar la información en la bitácora.', 'warning');
+        return;
+      }
+
       // Obtener worker_id del usuario actual
+      
       const workers = await supabaseRequest(
         `/workers?select=worker_id&email=eq.${currentSession.user.user_mail}`
       );
@@ -662,15 +663,17 @@
     /**
      * Enviar notificación de nueva alerta
      */
+
     async function enviarNotificacionAlerta(alertaGuardada, datosOriginales) {
       try {
-        // Obtener familia seleccionada
-        const familia = familiasDatos.find(f => f.family_code == datosOriginales.family_id);
+        const familia = familiasDatos.find(f => f.family_code == datosOriginales.family_code);
         const causa = causasAlertas.find(c => c.cause_id == datosOriginales.cause_id);
         
         if (!familia || !causa) return;
-        
-        // Preparar contenido del correo
+
+        const estadoTexto = { red: 'Rojo', yellow: 'Amarillo', green: 'Verde' };
+        const colorEstado = { red: '#dc3545', yellow: '#ffc107', green: '#198754' };
+
         const asunto = 'Nueva Alerta Temprana - Sistema SchoolNet';
         const contenidoHtml = `
           <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -678,7 +681,7 @@
             
             <p><strong>Familia:</strong> ${familia.family_name}</p>
             <p><strong>Tipo de alerta:</strong> ${causa.cause_name}</p>
-            <p><strong>Estado:</strong> <span style="color: ${getColorEstado(datosOriginales.log_status)}">${datosOriginales.log_status}</span></p>
+            <p><strong>Estado:</strong> <span style="color: ${colorEstado[datosOriginales.alert_status] || '#6c757d'}">${estadoTexto[datosOriginales.alert_status] || datosOriginales.alert_status}</span></p>
             <p><strong>Registrada por:</strong> ${currentSession.user.user_display_name || currentSession.user.user_name}</p>
             
             <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #1380e2; margin: 20px 0;">
@@ -690,20 +693,17 @@
           </div>
         `;
         
-        // Obtener destinatarios (se podría implementar lógica específica)
-        const destinatarios = ['direccion@colegiotilata.edu.co']; // Placeholder
+        const destinatarios = ['direccion@colegiotilata.edu.co'];
         
-        // Enviar notificación usando el sistema centralizado
         for (const destinatario of destinatarios) {
           await sendNotification(destinatario, asunto, contenidoHtml, true);
         }
         
       } catch (error) {
         console.error('Error al enviar notificación:', error);
-        // No lanzar error para no afectar el guardado principal
       }
     }
-
+    
     /**
      * Funciones auxiliares
      */
