@@ -354,8 +354,8 @@ const APP_CONFIG = {
         {
             id: 'teacher-eval',
             moduleId: 'teacher-eval',
-            name: 'Evaluación Docente',
-            description: 'Evaluación de profesores por parte de estudiantes',
+            name: 'Evaluación de Desempeño',
+            description: 'Evaluación de profesores, observaciones de clase y desempeño del personal',
             icon: 'bi-clipboard2-pulse',
             path: '/modules/teacher-eval/',
             status: 'active'
