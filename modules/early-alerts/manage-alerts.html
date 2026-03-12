@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.12.09.25">
+    <meta name="page-version" content="26.03.12.09.40">
     <title>Gestión de Alertas Tempranas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -713,7 +713,8 @@
                 // Cargar datos iniciales en paralelo
                 await Promise.all([
                     cargarCausas(),
-                    cargarSecciones()
+                    cargarSecciones(),
+                    cargarPhotosBaseUrl()
                 ]);
 
                 // Inicializar eventos de filtros
@@ -778,6 +779,19 @@
             }
         }
 
+        /**
+         * Cargar URL base de fotos una sola vez
+         */
+        async function cargarPhotosBaseUrl() {
+            try {
+                const configData = await supabaseRequest('/system_config?select=photos_url&limit=1');
+                cacheGlobal.photosBaseUrl = (configData.length > 0 && configData[0].photos_url) ? configData[0].photos_url : '';
+                console.log('📷 URL base de fotos cargada:', cacheGlobal.photosBaseUrl ? 'OK' : 'No configurada');
+            } catch (error) {
+                console.error('Error cargando URL de fotos:', error);
+                cacheGlobal.photosBaseUrl = '';
+            }
+        }
         
         /**
          * Renderizar select de causas
@@ -840,8 +854,9 @@
                 mostrarLoading();
         
                 // ── 1. Petición de alertas ──────────────────────────────────────
-                let query = '/early_alert_logs?select=log_id,family_code,cause_id,worker_id,log_details,alert_status,is_closed,created_at,closed_at,families(family_name),early_alert_causes(cause_name),workers(worker_first_name,worker_last_name_1)&order=created_at.desc';
-        
+                let query = '/early_alert_logs?select=log_id,family_code,cause_id,worker_id,log_details,alert_status,is_closed,created_at,closed_at,families(family_name),early_alert_causes(cause_name),workers(worker_first_name,worker_last_name_1)&order=created_at.desc&limit=30';
+
+                
                 const filtros = [];
                 if (causeId !== 'todas') filtros.push(`cause_id=eq.${causeId}`);
                 if (estado  !== 'todos') filtros.push(`alert_status=eq.${estado}`);
@@ -887,6 +902,9 @@
                     ...alerta,
                     estudiantes: estudiantesPorFamilia[alerta.family_code] || []
                 }));
+
+                // Resetear paginación
+                offsetActual = 0;
         
                 await renderizarAlertas(alertasConEstudiantes);
                 ocultarLoading();
@@ -902,7 +920,7 @@
         /**
          * Renderizar alertas en la interfaz
          */
-        async function renderizarAlertas(alertas) {
+        function renderizarAlertas(alertas) {
             const container = document.getElementById('alertas-container');
             const noDataDiv = document.getElementById('no-datos');
         
@@ -915,15 +933,123 @@
         
             noDataDiv.classList.add('d-none');
         
-            // Crear todos los elementos en paralelo (fotos incluidas)
-            const elementos = await Promise.all(alertas.map(alerta => crearElementoAlerta(alerta)));
-            elementos.forEach(el => container.appendChild(el));
+            // Crear y agregar elementos sincrónicamente (fotos se cargan lazy)
+            alertas.forEach(alerta => {
+                container.appendChild(crearElementoAlerta(alerta));
+            });
+        
+            // Botón "Cargar más" si se alcanzó el límite
+            if (alertas.length >= 30) {
+                const btnMas = document.createElement('div');
+                btnMas.className = 'text-center my-3';
+                btnMas.innerHTML = `
+                    <button class="btn btn-outline-primary" id="btn-cargar-mas">
+                        <i class="bi bi-arrow-down-circle me-1"></i>Cargar más alertas
+                    </button>
+                `;
+                container.appendChild(btnMas);
+                document.getElementById('btn-cargar-mas').addEventListener('click', cargarMasAlertas);
+            }
+        }
+
+        /**
+         * Variables para paginación
+         */
+        let alertasCargadas = [];
+        let offsetActual = 0;
+        const LIMITE_POR_PAGINA = 30;
+        
+        /**
+         * Cargar más alertas (paginación)
+         */
+        async function cargarMasAlertas() {
+            const btn = document.getElementById('btn-cargar-mas');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cargando...';
+            }
+        
+            try {
+                offsetActual += LIMITE_POR_PAGINA;
+        
+                const causeId   = document.getElementById('filtro-causa').value;
+                const estado    = document.getElementById('filtro-estado').value;
+                const sectionId = document.getElementById('filtro-seccion').value;
+        
+                let query = `/early_alert_logs?select=log_id,family_code,cause_id,worker_id,log_details,alert_status,is_closed,created_at,closed_at,families(family_name),early_alert_causes(cause_name),workers(worker_first_name,worker_last_name_1)&order=created_at.desc&limit=${LIMITE_POR_PAGINA}&offset=${offsetActual}`;
+        
+                const filtros = [];
+                if (causeId !== 'todas') filtros.push(`cause_id=eq.${causeId}`);
+                if (estado  !== 'todos') filtros.push(`alert_status=eq.${estado}`);
+                if (filtros.length > 0)  query += '&' + filtros.join('&');
+        
+                const alertas = await supabaseRequest(query);
+        
+                if (!alertas || alertas.length === 0) {
+                    if (btn) btn.parentElement.remove();
+                    mostrarMensaje('No hay más alertas por cargar', 'info');
+                    return;
+                }
+        
+                // Obtener estudiantes de las nuevas alertas
+                const familyCodes = [...new Set(alertas.map(a => a.family_code))];
+                const codesParam  = familyCodes.join(',');
+        
+                const todosEstudiantes = await supabaseRequest(
+                    `/students?select=student_code,student_first_name,student_birthday,family_id,courses(course_name,grades(section_id))&family_id=in.(${codesParam})&status_id=eq.d89b6287-ee51-435d-aeeb-d0f503af4646&order=student_first_name`
+                );
+        
+                const estudiantesPorFamilia = {};
+                todosEstudiantes.forEach(est => {
+                    if (!estudiantesPorFamilia[est.family_id]) estudiantesPorFamilia[est.family_id] = [];
+                    estudiantesPorFamilia[est.family_id].push(est);
+                });
+        
+                let alertasFiltradas = alertas;
+                if (sectionId !== 'todas') {
+                    alertasFiltradas = alertas.filter(alerta => {
+                        const estudiantes = estudiantesPorFamilia[alerta.family_code] || [];
+                        return estudiantes.some(est => est.courses?.grades?.section_id == sectionId);
+                    });
+                }
+        
+                const alertasConEstudiantes = alertasFiltradas.map(alerta => ({
+                    ...alerta,
+                    estudiantes: estudiantesPorFamilia[alerta.family_code] || []
+                }));
+        
+                // Remover botón actual
+                if (btn) btn.parentElement.remove();
+        
+                // Agregar nuevas alertas al contenedor
+                const container = document.getElementById('alertas-container');
+                alertasConEstudiantes.forEach(alerta => {
+                    container.appendChild(crearElementoAlerta(alerta));
+                });
+        
+                // Si hay más, volver a poner el botón
+                if (alertas.length >= LIMITE_POR_PAGINA) {
+                    const btnMas = document.createElement('div');
+                    btnMas.className = 'text-center my-3';
+                    btnMas.innerHTML = `
+                        <button class="btn btn-outline-primary" id="btn-cargar-mas">
+                            <i class="bi bi-arrow-down-circle me-1"></i>Cargar más alertas
+                        </button>
+                    `;
+                    container.appendChild(btnMas);
+                    document.getElementById('btn-cargar-mas').addEventListener('click', cargarMasAlertas);
+                }
+        
+            } catch (error) {
+                console.error('Error cargando más alertas:', error);
+                mostrarMensaje('Error al cargar más alertas: ' + error.message, 'error');
+            }
         }
         
         /**
          * Crear elemento HTML para una alerta
          */
-        async function crearElementoAlerta(alerta) {
+        function crearElementoAlerta(alerta) {
             const alertaDiv = document.createElement('div');
             alertaDiv.className = 'alerta-item';
             alertaDiv.setAttribute('data-log-id', alerta.log_id);
@@ -936,8 +1062,8 @@
             const fechaCreacion = formatearFecha(alerta.created_at);
             const fechaCierre = alerta.closed_at ? formatearFecha(alerta.closed_at) : null;
             
-            // Generar HTML de estudiantes
-            const estudiantesHtml = await generarHtmlEstudiantes(alerta.estudiantes || []);
+            // Generar HTML de estudiantes (síncrono, fotos lazy)
+            const estudiantesHtml = generarHtmlEstudiantes(alerta.estudiantes || []);
             
             // Generar select de estado
             const estadoSelectHtml = generarSelectEstado(alerta.log_id, alerta.alert_status, alerta.is_closed);
@@ -1001,33 +1127,37 @@
             
             return alertaDiv;
         }
+
         /**
-         * Generar HTML para mostrar estudiantes
+         * Generar HTML para mostrar estudiantes (sin await, fotos lazy)
          */
-        async function generarHtmlEstudiantes(estudiantes) {
+        function generarHtmlEstudiantes(estudiantes) {
             if (!estudiantes || estudiantes.length === 0) {
                 return '<small class="text-muted">Sin estudiantes activos</small>';
             }
-            
-            const items = await Promise.all(estudiantes.map(async estudiante => {
+        
+            const baseUrl = cacheGlobal.photosBaseUrl || '';
+        
+            return estudiantes.map(estudiante => {
                 const edad = calcularEdadExacta(estudiante.student_birthday);
-                const fotoUrl = await getStudentPhotoUrl(estudiante.student_code);
-                
-                const fotoHtml = fotoUrl
-                    ? `<img class="estudiante-foto" 
-                            src="${fotoUrl}" 
-                            alt="${escapeHtml(estudiante.student_first_name)}"
-                            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">`
-                    : `<div class="estudiante-foto error" style="display:flex;">
-                           <i class="bi bi-person"></i>
-                       </div>`;
-                
+                const code = estudiante.student_code || '';
+                const fotoSrc = (baseUrl && code) ? `${baseUrl}${code}.jpg` : '';
+        
                 return `
                     <div class="estudiante-item">
-                        ${fotoHtml}
-                        <div class="estudiante-foto error" style="display:none;">
-                            <i class="bi bi-person"></i>
-                        </div>
+                        ${fotoSrc 
+                            ? `<img class="estudiante-foto" 
+                                    src="${fotoSrc}" 
+                                    alt="${escapeHtml(estudiante.student_first_name)}"
+                                    loading="lazy"
+                                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                               <div class="estudiante-foto error" style="display:none;">
+                                   <i class="bi bi-person"></i>
+                               </div>`
+                            : `<div class="estudiante-foto error" style="display:flex;">
+                                   <i class="bi bi-person"></i>
+                               </div>`
+                        }
                         <div class="estudiante-info">
                             <div class="estudiante-nombre">${escapeHtml(estudiante.student_first_name || '')}</div>
                             <div class="estudiante-curso">${escapeHtml(estudiante.courses?.course_name || 'Sin curso')}</div>
@@ -1035,9 +1165,7 @@
                         </div>
                     </div>
                 `;
-            }));
-            
-            return items.join('');
+            }).join('');
         }
         
         /**
@@ -1798,31 +1926,7 @@
         document.getElementById('btn-guardar-tarea').addEventListener('click', guardarNuevaTarea);
         document.getElementById('btn-guardar-nota').addEventListener('click', guardarNota);
 
-        // Cargar fotos de estudiantes después de renderizar
-        document.addEventListener('DOMContentLoaded', function() {
-            const observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                    if (mutation.type === 'childList') {
-                        mutation.addedNodes.forEach(function(node) {
-                            if (node.nodeType === 1) {
-                                const fotos = node.querySelectorAll('img[data-student-code]');
-                                fotos.forEach(img => {
-                                    const studentCode = img.getAttribute('data-student-code');
-                                    if (studentCode) {
-                                        cargarFotoEstudiante(img, studentCode);
-                                    }
-                                });
-                            }
-                        });
-                    }
-                });
-            });
-            
-            observer.observe(document.getElementById('alertas-container'), {
-                childList: true,
-                subtree: true
-            });
-        });
+        
     </script>
 </body>
 </html>
