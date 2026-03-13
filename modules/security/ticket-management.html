@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.12.07.40">
+    <meta name="page-version" content="26.03.13.13.50">
     <title>Gestión de Tickets - SchoolNet</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -37,6 +37,7 @@
         .history-item.prioridad::before { background:#ffc107; }
         .history-item.asignacion::before { background:#6f42c1; }
         .history-item.avance::before { background:#fd7e14; }
+        .history-item.categoria::before { background:#e91e63; }
     </style>
 </head>
 
@@ -130,6 +131,7 @@
                         <div class="col-md-5">
                             <h6 class="text-muted mb-3">ACCIONES</h6>
                             <div class="mb-3"><label class="form-label">Cambiar Estado</label><select class="form-select" id="action-status"><option value="pendiente">Pendiente</option><option value="en_revision">En Revisión</option><option value="en_desarrollo">En Desarrollo</option><option value="resuelto">Resuelto</option><option value="cerrado">Cerrado</option></select></div>
+                            <div class="mb-3"><label class="form-label">Cambiar Categoría</label><select class="form-select" id="action-category" onchange="onCategoryChange()"></select></div>
                             <div class="mb-3"><label class="form-label">Cambiar Prioridad</label><select class="form-select" id="action-priority"><!-- dinámico --></select></div>
                             <div class="mb-3"><label class="form-label">Asignar a</label><select class="form-select" id="action-assign"><option value="">Sin asignar</option></select></div>
                             <div class="mb-3"><label class="form-label">Registrar avance / Notas</label><textarea class="form-control" id="action-notes" rows="4" placeholder="Avance o resolución..."></textarea></div>
@@ -290,6 +292,11 @@
             document.getElementById('action-status').value = ticket.ticket_status;
             document.getElementById('action-assign').value = ticket.assigned_to || '';
             document.getElementById('action-notes').value = '';
+            // Cargar categorías en el select
+            const catSelect = document.getElementById('action-category');
+            catSelect.innerHTML = allCategories.map(c =>
+                `<option value="${c.category_id}" ${c.category_id === ticket.category_id ? 'selected' : ''}>${c.category_name}</option>`
+            ).join('');
 
             // Cargar prioridades de la categoría del ticket en el select
             const priSelect = document.getElementById('action-priority');
@@ -302,13 +309,22 @@
             detailModalInstance.show();
         }
 
+        function onCategoryChange() {
+            const newCategoryId = document.getElementById('action-category').value;
+            const priSelect = document.getElementById('action-priority');
+            const catPriorities = allPriorityOptions.filter(p => p.category_id === newCategoryId);
+            priSelect.innerHTML = catPriorities.map(p =>
+                `<option value="${p.priority_option_id}" ${p.is_default ? 'selected' : ''}>${p.priority_label}</option>`
+            ).join('');
+        }
+
         async function loadTicketHistory(ticketId) {
             const c = document.getElementById('history-container');
             c.innerHTML = '<div class="text-muted small">Cargando...</div>';
             try {
                 const history = await supabaseRequest('/ticket_history?select=*,users(user_display_name)&ticket_id=eq.'+ticketId+'&order=created_at.desc') || [];
                 if (history.length === 0) { c.innerHTML = '<div class="text-muted small">Sin historial</div>'; return; }
-                const labels = { creacion:'Ticket creado', estado:'Cambio de estado', prioridad:'Cambio de prioridad', asignacion:'Reasignación', avance:'Avance registrado' };
+                const labels = { creacion:'Ticket creado', estado:'Cambio de estado', prioridad:'Cambio de prioridad', categoria:'Cambio de categoría', asignacion:'Reasignación', avance:'Avance registrado' };
                 c.innerHTML = history.map(h => {
                     const date = new Date(h.created_at).toLocaleString('es-CO');
                     const user = h.users?.user_display_name || 'Sistema';
@@ -329,12 +345,13 @@
             const newPriorityId = document.getElementById('action-priority').value;
             const newAssignedTo = document.getElementById('action-assign').value || null;
             const newNotes = document.getElementById('action-notes').value.trim();
+            const newCategoryId = document.getElementById('action-category').value;
             const session = getStoredSession();
             const currentUserId = session.user.user_id;
 
             showLoading();
             try {
-                const updateData = { ticket_status: newStatus, priority_option_id: newPriorityId, assigned_to: newAssignedTo, updated_at: new Date().toISOString() };
+                const updateData = { ticket_status: newStatus, priority_option_id: newPriorityId, category_id: newCategoryId, assigned_to: newAssignedTo, updated_at: new Date().toISOString() };
                 if ((newStatus === 'resuelto' || newStatus === 'cerrado') && !currentTicket.resolved_at) {
                     updateData.resolved_at = new Date().toISOString();
                     updateData.resolved_by = currentUserId;
@@ -350,6 +367,11 @@
                 // Registrar cambios en historial
                 const changes = [];
                 if (newStatus !== currentTicket.ticket_status) changes.push({ type:'estado', old:currentTicket.ticket_status, new:newStatus });
+                if (newCategoryId !== currentTicket.category_id) {
+                    const oldCatName = currentTicket.ticket_categories?.category_name || '';
+                    const newCatName = allCategories.find(c => c.category_id === newCategoryId)?.category_name || '';
+                    changes.push({ type:'categoria', old:oldCatName, new:newCatName });
+                }
                 if (newPriorityId !== currentTicket.priority_option_id) {
                     const oldLabel = currentTicket.ticket_priority_options?.priority_label || '';
                     const newLabel = allPriorityOptions.find(p => p.priority_option_id === newPriorityId)?.priority_label || '';
@@ -390,7 +412,7 @@
         // ==========================================
         async function notifyTicketOwner(ticket, changes) {
             const num = ticket.ticket_number ? `#${ticket.ticket_number}` : '';
-            const labels = { estado:'Estado', prioridad:'Prioridad', asignacion:'Asignación', avance:'Avance' };
+            const labels = { estado:'Estado', prioridad:'Prioridad', categoria:'Categoría', asignacion:'Asignación', avance:'Avance' };
             let rows = changes.map(c => {
                 if (c.type === 'avance') return `<tr><td style="padding:8px;border:1px solid #dee2e6;"><strong>Avance</strong></td><td style="padding:8px;border:1px solid #dee2e6;">${c.notes}</td></tr>`;
                 return `<tr><td style="padding:8px;border:1px solid #dee2e6;"><strong>${labels[c.type]||c.type}</strong></td><td style="padding:8px;border:1px solid #dee2e6;">${c.old||''} → <strong>${c.new||''}</strong></td></tr>`;
