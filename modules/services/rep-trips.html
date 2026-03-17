@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.09.14.25">
+    <meta name="page-version" content="26.03.17.03.25">
     <title>Salidas de Representación - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -390,8 +390,6 @@
         let catalogMenus = [];
         let catalogWorkers = [];
         let moduleConfig = {};
-        let emailChef = '';
-        let emailSupervisor = '';
         let currentSession = null;
         let currentWorker = null;
 
@@ -451,8 +449,6 @@
                 catalogApprovers = common.approvers;
                 catalogMenus = common.menus;
                 catalogWorkers = common.workers;
-                emailChef = common.emailChef;
-                emailSupervisor = common.emailSupervisor;
 
                 // Catálogo específico de representación: grupos
                 const groups = await supabaseRequest(
@@ -461,7 +457,7 @@
                 catalogGroups = groups || [];
 
                 populateFilterGroups();
-                console.log('📧 Emails fijos cargados:', { emailChef, emailSupervisor });
+                
             } catch (error) {
                 console.error('Error loading catalogs:', error);
                 showMessage('Error cargando catálogos', 'danger');
@@ -1128,18 +1124,51 @@
                         moduleTitle: 'Salida de Representación'
                     });
 
-                    const grp = catalogGroups.find(g => g.group_id === selectedGroupId);
-                    await SvcCommons.notifyFixedRecipients({
-                        tripName: document.getElementById('wz_trip_name').value.trim(),
-                        tripDate: SvcCommons.formatDateDisplay(SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value)),
-                        senderName: senderName,
-                        moduleTitle: 'Salida de Representación',
-                        emailChef: emailChef,
-                        emailSupervisor: emailSupervisor,
-                        plannedStudents: selectedGroupMembers.length,
-                        numAdults: selectedAdultWorkers.length,
-                        extraRows: { 'Grupo': grp?.group_name || '' }
-                    });
+                    // Notificaciones dinámicas por tipo de servicio
+                    try {
+                        const notificaciones = await supabaseRequest(
+                            '/svc_service_type_notifications?select=worker_id,trabajador:workers!svc_service_type_notifications_worker_fkey(worker_first_name,worker_last_name_1,email)&service_type=eq.rep_trip&is_active=eq.true'
+                        );
+                        if (notificaciones && notificaciones.length > 0) {
+                            const grp = catalogGroups.find(g => g.group_id === selectedGroupId);
+                            const tripDate = SvcCommons.formatDateDisplay(SvcCommons.formatDateForDatabase(document.getElementById('wz_trip_date').value));
+                            const tripName = document.getElementById('wz_trip_name').value.trim();
+                            const asunto = `Salida de Representación programada — ${tripName} — ${tripDate}`;
+
+                            for (const notif of notificaciones) {
+                                const w = notif.trabajador;
+                                if (w && w.email) {
+                                    const html = `
+                                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+                                            <div style="background-color: #0d9488; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                                                <h1 style="margin: 0; font-size: 22px;">Notificación de Salida de Representación</h1>
+                                            </div>
+                                            <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                                <p style="font-size: 16px; color: #333;">Estimado/a <strong>${w.worker_first_name} ${w.worker_last_name_1}</strong>,</p>
+                                                <p style="font-size: 14px; color: #666;">Se ha registrado una nueva salida de representación:</p>
+                                                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+                                                    <table style="width: 100%; border-collapse: collapse;">
+                                                        <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Evento:</td><td style="padding: 8px 0; color: #333;">${tripName}</td></tr>
+                                                        <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Fecha:</td><td style="padding: 8px 0; color: #333;">${tripDate}</td></tr>
+                                                        <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Grupo:</td><td style="padding: 8px 0; color: #333;">${grp?.group_name || ''}</td></tr>
+                                                        <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Estudiantes:</td><td style="padding: 8px 0; color: #333;">${selectedGroupMembers.length}</td></tr>
+                                                        <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Adultos:</td><td style="padding: 8px 0; color: #333;">${selectedAdultWorkers.length}</td></tr>
+                                                        <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Solicitado por:</td><td style="padding: 8px 0; color: #333;">${senderName}</td></tr>
+                                                    </table>
+                                                </div>
+                                                <p style="font-size: 12px; color: #999; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center;">
+                                                    Este es un mensaje automático del sistema SchoolNet.<br>Por favor, no responder a este correo.
+                                                </p>
+                                            </div>
+                                        </div>`;
+                                    await sendNotification(w.email, asunto, html, true);
+                                    console.log(`✅ Notificación enviada a ${w.worker_first_name} ${w.worker_last_name_1} (${w.email})`);
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('❌ Error enviando notificaciones de tipo de servicio:', error);
+                    }
                 }
                 
                 bootstrap.Modal.getInstance(document.getElementById('createWizardModal')).hide();
