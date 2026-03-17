@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.13.15.00">
+    <meta name="page-version" content="26.03.17.03.50">
     <title>Costos de Eventos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -132,17 +132,9 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Tipo de servicio</label>
-                            <select class="form-select" id="filtroTipoServicio">
-                                <option value="">Todos los tipos</option>
-                                <option value="staffing">Personal de apoyo</option>
-                                <option value="communications">Comunicaciones</option>
-                                <option value="technology">Recursos tecnologicos</option>
-                                <option value="site_organization">Organizacion del sitio</option>
-                                <option value="resources">Recursos (papeleria)</option>
-                                <option value="nursing">Enfermería</option>
-                                <option value="transport">Transporte</option>
-                                <option value="decoration">Decoración / Menaje</option>
+                            <label class="form-label">Área de apoyo</label>
+                            <select class="form-select" id="filtroArea">
+                                <option value="">Todas las áreas</option>
                             </select>
                         </div>
                         <div class="col-md-4 d-flex align-items-end gap-2">
@@ -275,30 +267,12 @@
         let serviciosData = [];
         let filtrosActivos = {
             estadoCosto: 'pending',
-            tipoServicio: ''
+            areaId: ''
         };
+        let misAreas = []; // Áreas donde el worker actual es responsable
+        let misAreaIds = []; // IDs de esas áreas para filtrar
         
-        const SERVICE_LABELS = {
-            'staffing': 'Personal de Apoyo',
-            'communications': 'Comunicaciones',
-            'technology': 'Recursos Tecnologicos',
-            'site_organization': 'Organizacion del Sitio',
-            'resources': 'Recursos (Papeleria)',
-            'nursing': 'Enfermería',
-            'transport': 'Transporte',
-            'decoration': 'Decoración / Menaje'
-        };
         
-        const SERVICE_COLORS = {
-            'staffing': 'bg-info',
-            'communications': 'bg-success',
-            'technology': 'bg-primary',
-            'site_organization': 'bg-warning text-dark',
-            'resources': 'bg-secondary',
-            'nursing': 'bg-danger',
-            'transport': 'bg-dark',
-            'decoration': 'bg-pink text-dark'
-        };
         
         // ==================== INICIALIZACION ====================
         document.addEventListener('DOMContentLoaded', async function() {
@@ -340,10 +314,11 @@
                     }
                 }
                 
-                if (!currentUserEmail) {
-                    throw new Error('No se pudo determinar el email del usuario');
+                if (!currentWorkerId) {
+                    throw new Error('No se pudo determinar el trabajador del usuario');
                 }
                 
+                await cargarMisAreas();
                 await cargarServicios();
                 
                 console.log('Modulo cargado correctamente');
@@ -353,14 +328,42 @@
                 showMessage('Error al cargar el modulo: ' + error.message, 'danger');
             }
         });
+
+        // ==================== CARGAR MIS ÁREAS ====================
+        async function cargarMisAreas() {
+            try {
+                const data = await supabaseRequest(`/svc_support_areas?select=area_id,area_name&responsible_worker_id=eq.${currentWorkerId}&is_active=eq.true&order=display_order.asc.nullslast`);
+                misAreas = data || [];
+                misAreaIds = misAreas.map(a => a.area_id);
+                
+                // Poblar filtro dinámico
+                const select = document.getElementById('filtroArea');
+                select.innerHTML = '<option value="">Todas mis áreas</option>' +
+                    misAreas.map(a => `<option value="${a.area_id}">${a.area_name}</option>`).join('');
+                
+                console.log(`✅ ${misAreas.length} área(s) asignadas al trabajador actual`);
+            } catch (error) {
+                console.error('Error cargando áreas del trabajador:', error);
+                misAreas = [];
+                misAreaIds = [];
+            }
+        }
         
         // ==================== CARGAR SERVICIOS ====================
         async function cargarServicios() {
             try {
                 showLoading('listaServicios');
                 
-                // Consultar servicios donde notified_email coincide con el email del usuario
-                const query = `/svc_internal_event_services?select=*,evento:svc_internal_events!event_id(event_id,event_name,event_date,start_time,end_time,event_location,event_status,num_students,num_adults,request_id),registrador:workers!svc_internal_event_services_registered_by_fkey(worker_first_name,worker_last_name_1)&notified_email=eq.${currentUserEmail}&order=created_at.desc`;
+                if (misAreaIds.length === 0) {
+                    serviciosData = [];
+                    renderizarServicios();
+                    actualizarEstadisticas();
+                    actualizarContador();
+                    return;
+                }
+                
+                // Consultar servicios donde area_id está en mis áreas
+                const query = `/svc_internal_event_services?select=*,area:svc_support_areas!svc_internal_event_services_area_fkey(area_id,area_name),evento:svc_internal_events!event_id(event_id,event_name,event_date,start_time,end_time,event_location,event_status,num_students,num_adults,request_id),registrador:workers!svc_internal_event_services_registered_by_fkey(worker_first_name,worker_last_name_1)&area_id=in.(${misAreaIds.join(',')})&order=created_at.desc`;
                 
                 const servicios = await supabaseRequest(query);
                 
@@ -372,8 +375,7 @@
                     return;
                 }
                 
-                // Solo mostrar servicios cuya solicitud fue aprobada
-                // Para verificar, consultamos las solicitudes aprobadas
+                // Obtener estados de solicitudes
                 const eventIds = [...new Set(servicios.map(s => {
                     const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
                     return evento?.request_id;
@@ -387,7 +389,6 @@
                     });
                 }
                 
-                // Filtrar: servicios con solicitud pendiente o aprobada
                 serviciosData = servicios.filter(s => {
                     const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
                     return evento && requestsValidas[evento.request_id];
@@ -397,14 +398,13 @@
                     return s;
                 });
                 
-                // Aplicar filtros locales
+                // Filtros locales
                 if (filtrosActivos.estadoCosto === 'pending') {
                     serviciosData = serviciosData.filter(s => {
                         const evento = Array.isArray(s.evento) ? s.evento[0] : s.evento;
                         return !s.cost_value && !s.no_cost_confirmed && evento?.event_status === 'scheduled';
                     });
-                }
-                else if (filtrosActivos.estadoCosto === 'registered') {
+                } else if (filtrosActivos.estadoCosto === 'registered') {
                     serviciosData = serviciosData.filter(s => (s.cost_value !== null && s.cost_value !== undefined) || s.no_cost_confirmed);
                 } else if (filtrosActivos.estadoCosto === 'closed') {
                     serviciosData = serviciosData.filter(s => {
@@ -413,8 +413,8 @@
                     });
                 }
                 
-                if (filtrosActivos.tipoServicio) {
-                    serviciosData = serviciosData.filter(s => s.service_type === filtrosActivos.tipoServicio);
+                if (filtrosActivos.areaId) {
+                    serviciosData = serviciosData.filter(s => s.area_id === filtrosActivos.areaId);
                 }
                 
                 renderizarServicios();
@@ -449,8 +449,7 @@
                 const fechaEvento = formatDateLong(evento.event_date);
                 const horario = `${evento.start_time?.substring(0,5)} - ${evento.end_time?.substring(0,5)}`;
                 const participantes = (evento.num_students || 0) + (evento.num_adults || 0);
-                const tipoLabel = SERVICE_LABELS[servicio.service_type] || servicio.service_type;
-                const tipoBadge = SERVICE_COLORS[servicio.service_type] || 'bg-secondary';
+                const areaName = servicio.area?.area_name || 'Área no identificada';
                 
                 const tieneCosto = servicio.cost_value !== null && servicio.cost_value !== undefined;
                 const eventoAbierto = evento.event_status === 'scheduled';
@@ -513,7 +512,7 @@
                             Evento ${evento.event_status === 'completed' ? 'finalizado' : 'suspendido/cancelado'} - No se pueden registrar costos
                         </div>
                     `;
-                    } else if (solicitudAprobada) {
+                } else if (solicitudAprobada) {
                     cardClass = 'event-closed';
                     estadoHTML = `
                         <div class="alert alert-info mb-0 mt-3 py-2">
@@ -537,7 +536,7 @@
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
-                                    <span class="badge ${tipoBadge} service-type-badge mb-2">${tipoLabel}</span>
+                                    <span class="badge bg-primary service-type-badge mb-2">${areaName}</span>
                                     <h5 class="card-title mb-1">
                                         <i class="bi bi-calendar-event me-2"></i>${evento.event_name}
                                     </h5>
@@ -582,7 +581,7 @@
             const evento = Array.isArray(servicio.evento) ? servicio.evento[0] : servicio.evento;
             
             document.getElementById('modalEventName').textContent = evento?.event_name || 'N/A';
-            document.getElementById('modalServiceType').textContent = SERVICE_LABELS[servicio.service_type] || servicio.service_type;
+            document.getElementById('modalServiceType').textContent = servicio.area?.area_name || 'Área no identificada';
             document.getElementById('modalServiceDesc').textContent = servicio.description || 'Sin descripcion';
             document.getElementById('inputCostValue').value = '';
             document.getElementById('registrarServiceId').value = serviceId;
@@ -649,7 +648,7 @@
             const evento = Array.isArray(servicio.evento) ? servicio.evento[0] : servicio.evento;
             
             document.getElementById('editModalEventName').textContent = evento?.event_name || 'N/A';
-            document.getElementById('editModalServiceType').textContent = SERVICE_LABELS[servicio.service_type] || servicio.service_type;
+            document.getElementById('editModalServiceType').textContent = servicio.area?.area_name || 'Área no identificada';
             document.getElementById('editInputCostValue').value = servicio.cost_value || 0;
             document.getElementById('editarServiceId').value = serviceId;
             
@@ -758,20 +757,20 @@
         }
         
         // ==================== FILTROS ====================
-        function aplicarFiltros() {
+       function aplicarFiltros() {
             filtrosActivos = {
                 estadoCosto: document.getElementById('filtroEstadoCosto').value,
-                tipoServicio: document.getElementById('filtroTipoServicio').value
+                areaId: document.getElementById('filtroArea').value
             };
             cargarServicios();
         }
         
         function limpiarFiltros() {
             document.getElementById('filtroEstadoCosto').value = 'pending';
-            document.getElementById('filtroTipoServicio').value = '';
+            document.getElementById('filtroArea').value = '';
             filtrosActivos = {
                 estadoCosto: 'pending',
-                tipoServicio: ''
+                areaId: ''
             };
             cargarServicios();
         }
@@ -780,7 +779,13 @@
         async function actualizarEstadisticas() {
             try {
                 // Cargar TODOS los servicios del usuario (sin filtros) para estadisticas
-                const todos = await supabaseRequest(`/svc_internal_event_services?select=cost_value,evento:svc_internal_events!event_id(event_status,request_id)&notified_email=eq.${currentUserEmail}`);
+                if (misAreaIds.length === 0) {
+                    document.getElementById('statsPendientes').textContent = '0';
+                    document.getElementById('statsRegistrados').textContent = '0';
+                    document.getElementById('statsCerrados').textContent = '0';
+                    return;
+                }
+                const todos = await supabaseRequest(`/svc_internal_event_services?select=cost_value,no_cost_confirmed,evento:svc_internal_events!event_id(event_status,request_id)&area_id=in.(${misAreaIds.join(',')})`);
                 
                 if (!todos || todos.length === 0) {
                     document.getElementById('statsPendientes').textContent = '0';
