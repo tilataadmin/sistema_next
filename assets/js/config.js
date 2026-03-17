@@ -434,40 +434,109 @@ function getHeaders(options = {}) {
 // FUNCIONES DE UTILIDAD ACTUALIZADAS
 // ==========================================
 
-// Función para hacer requests a Supabase con logging condicional
 // Función mejorada para hacer requests a Supabase
+// Incluye paginación automática para GET sin limit explícito
 async function supabaseRequest(endpoint, options = {}) {
-    const url = `${SUPABASE_CONFIG.apiUrl}${endpoint}`;
-    
-    // Establecer usuario en sesión si existe
+    const method = options.method || 'GET';
+    const isGet = method === 'GET';
+    const hasExplicitLimit = endpoint.toLowerCase().includes('limit=');
+
+    // Establecer usuario en sesión si existe (una sola vez)
     await setCurrentUserInSession();
-    
+
+    // Para GET sin limit explícito: paginación automática
+    if (isGet && !hasExplicitLimit) {
+        return await _supabaseRequestPaginated(endpoint, options);
+    }
+
+    // Para todo lo demás: petición única
+    return await _supabaseRequestSingle(endpoint, options);
+}
+
+// Petición única (POST, PATCH, DELETE, o GET con limit explícito)
+async function _supabaseRequestSingle(endpoint, options = {}) {
+    const url = `${SUPABASE_CONFIG.apiUrl}${endpoint}`;
+
     const config = {
         headers: getHeaders(options.headers),
         ...options
     };
-    
+
     try {
         console.log(`📡 API Request: ${options.method || 'GET'} ${endpoint}`);
-        
+
         const response = await fetch(url, config);
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`❌ API Error: ${response.status} - ${errorText}`);
             throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
-        
+
         const data = await response.json();
         console.log(`✅ API Response: ${data.length || 'OK'}`);
-        
+
         return data;
-        
+
     } catch (error) {
         console.error('❌ Request failed:', error);
         throw error;
     }
 }
+
+// Paginación automática para GET sin limit explícito
+async function _supabaseRequestPaginated(endpoint, options = {}) {
+    const BATCH_SIZE = 1000;
+    let allData = [];
+    let offset = 0;
+
+    try {
+        while (true) {
+            const separator = endpoint.includes('?') ? '&' : '?';
+            const paginatedEndpoint = `${endpoint}${separator}limit=${BATCH_SIZE}&offset=${offset}`;
+            const url = `${SUPABASE_CONFIG.apiUrl}${paginatedEndpoint}`;
+
+            const config = {
+                headers: getHeaders(options.headers),
+                ...options
+            };
+
+            console.log(`📡 API Request: GET ${paginatedEndpoint}`);
+
+            const response = await fetch(url, config);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`❌ API Error: ${response.status} - ${errorText}`);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const data = await response.json();
+            allData = allData.concat(data);
+
+            // Si devolvió menos del lote, ya no hay más registros
+            if (data.length < BATCH_SIZE) {
+                break;
+            }
+
+            offset += BATCH_SIZE;
+        }
+
+        // Log informativo si hubo paginación
+        if (allData.length > 1000) {
+            console.log(`📊 Paginación automática: ${allData.length} registros totales en ${Math.ceil(allData.length / BATCH_SIZE)} lotes`);
+        } else {
+            console.log(`✅ API Response: ${allData.length}`);
+        }
+
+        return allData;
+
+    } catch (error) {
+        console.error('❌ Request failed:', error);
+        throw error;
+    }
+}
+
 
 // Función para consultar logs de auditoría
 async function getAuditLogs(filters = {}) {
