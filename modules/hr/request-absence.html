@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.09.13.15">
+    <meta name="page-version" content="26.03.17.14.05">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -1900,6 +1900,12 @@
             const today = getCurrentDateColombia();
             return request.start_date > today;
         }
+
+        function canCancelRequest(request) {
+            if (request.status === 'cancelled') return false;
+            const today = getCurrentDateColombia();
+            return request.start_date >= today;
+        }
         
         // ==========================================
         // CARGAR HISTORIAL DE SOLICITUDES
@@ -1953,6 +1959,11 @@
                             <i class="bi bi-pencil"></i>
                         </button>` : '';
                     
+                    const cancelButton = canCancelRequest(request) ? 
+                        `<button class="btn btn-sm btn-outline-danger ms-1" onclick="promptCancelRequest('${request.request_id}')" title="Cancelar solicitud">
+                            <i class="bi bi-x-circle"></i>
+                        </button>` : '';
+                    
                     row.innerHTML = `
                         <td>${createdDate}</td>
                         <td>${categoryName}</td>
@@ -1965,6 +1976,7 @@
                                 <i class="bi bi-eye"></i>
                             </button>
                             ${editButton}
+                            ${cancelButton}
                         </td>
                     `;
                     
@@ -2156,6 +2168,207 @@
                 showMessage('Error al cargar la solicitud: ' + error.message, 'danger');
             } finally {
                 showLoading(false);
+            }
+        }
+
+        // ==========================================
+        // CANCELAR SOLICITUD
+        // ==========================================
+        function promptCancelRequest(requestId) {
+            const reason = prompt('Escribe la razón para cancelar esta solicitud:');
+            
+            if (reason === null) return; // Usuario presionó Cancelar
+            
+            if (!reason.trim()) {
+                showMessage('Debes escribir una razón para cancelar la solicitud.', 'warning');
+                return;
+            }
+            
+            if (!confirm('¿Estás seguro de cancelar esta solicitud? Esta acción no se puede deshacer.')) {
+                return;
+            }
+            
+            cancelRequest(requestId, reason.trim());
+        }
+        
+        async function cancelRequest(requestId, reason) {
+            showLoading(true);
+            
+            try {
+                // 1. Obtener datos de la solicitud antes de cancelar
+                const requestData = await supabaseRequest(
+                    '/hr_absence_requests?request_id=eq.' + requestId + '&select=*,hr_absence_categories(name)'
+                );
+                
+                if (!requestData || requestData.length === 0) {
+                    throw new Error('No se encontró la solicitud');
+                }
+                
+                const request = requestData[0];
+                
+                // Verificar que aún se puede cancelar
+                if (!canCancelRequest(request)) {
+                    showMessage('Esta solicitud ya no puede cancelarse.', 'warning');
+                    return;
+                }
+                
+                // 2. Actualizar estado de la solicitud
+                await supabaseRequest('/hr_absence_requests?request_id=eq.' + requestId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        status: 'cancelled',
+                        cancellation_reason: reason,
+                        cancelled_at: new Date().toISOString(),
+                        cancelled_by: currentSession.worker_id
+                    })
+                });
+                
+                // 3. Cancelar autorizaciones asociadas
+                await supabaseRequest('/hr_absence_authorizations?request_id=eq.' + requestId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        status: 'cancelled'
+                    })
+                });
+                
+                // 4. Enviar notificaciones de cancelación
+                await sendCancellationNotifications(requestId, request, reason);
+                
+                // 5. Recargar saldos y solicitudes
+                await loadBalances();
+                await loadMyRequests();
+                
+                showMessage('Solicitud cancelada exitosamente.', 'success');
+                
+            } catch (error) {
+                console.error('❌ Error al cancelar solicitud:', error);
+                showMessage('Error al cancelar la solicitud: ' + error.message, 'danger');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function sendCancellationNotifications(requestId, request, reason) {
+            try {
+                const emailsSet = new Set();
+                
+                // Obtener la categoría completa
+                const categoryData = categories.find(c => c.category_id === request.category_id);
+                if (!categoryData) return;
+                
+                // 1. AUTORIZADORES
+                const authData = await supabaseRequest(
+                    '/hr_absence_authorizations?request_id=eq.' + requestId + '&select=authorizer_id'
+                );
+                
+                if (authData && authData.length > 0) {
+                    const authorizerIds = authData.map(a => a.authorizer_id);
+                    const authorizersData = await supabaseRequest(
+                        '/workers?worker_id=in.(' + authorizerIds.join(',') + ')&select=email'
+                    );
+                    authorizersData.forEach(w => emailsSet.add(w.email));
+                }
+                
+                // 2. TODOS LOS JEFES (si notify_managers = true)
+                if (categoryData.notify_managers) {
+                    const managersData = await supabaseRequest(
+                        '/worker_managers?worker_id=eq.' + currentSession.worker_id + '&assignment_status=eq.active&select=manager_id'
+                    );
+                    
+                    if (managersData && managersData.length > 0) {
+                        const managerIds = managersData.map(m => m.manager_id);
+                        const managersWorkersData = await supabaseRequest(
+                            '/workers?worker_id=in.(' + managerIds.join(',') + ')&select=email'
+                        );
+                        managersWorkersData.forEach(w => emailsSet.add(w.email));
+                    }
+                }
+                
+                // 3. EMAIL DE TALENTO HUMANO (si notify_hr = true)
+                if (categoryData.notify_hr && hrConfig.hr_manager_email) {
+                    emailsSet.add(hrConfig.hr_manager_email);
+                }
+                
+                // 4. EMAIL DE LA SECCIÓN (si notify_section_email = true)
+                if (categoryData.notify_section_email && currentSession.section_id) {
+                    const sectionData = await supabaseRequest(
+                        '/organizational_areas?area_id=eq.' + currentSession.section_id + '&select=section_name'
+                    );
+                    
+                    if (sectionData && sectionData.length > 0) {
+                        const sectionName = sectionData[0].section_name.toLowerCase();
+                        const sectionEmailMap = {
+                            'preescolar': hrConfig.preschool_email,
+                            'primaria': hrConfig.elementary_email,
+                            'media': hrConfig.middle_school_email,
+                            'bachillerato': hrConfig.high_school_email
+                        };
+                        const sectionEmail = sectionEmailMap[sectionName];
+                        if (sectionEmail) emailsSet.add(sectionEmail);
+                    }
+                } else if (categoryData.notify_section_email && !currentSession.section_id && hrConfig.non_school_email) {
+                    emailsSet.add(hrConfig.non_school_email);
+                }
+                
+                // 5. INSTANCIA SUPERIOR (si notify_upper_instance = true)
+                if (categoryData.notify_upper_instance) {
+                    try {
+                        const workerDivisionData = await supabaseRequest(
+                            '/workers?worker_id=eq.' + currentSession.worker_id + '&select=organizational_division_id'
+                        );
+                        
+                        if (workerDivisionData && workerDivisionData.length > 0 && workerDivisionData[0].organizational_division_id) {
+                            const divisionData = await supabaseRequest(
+                                '/organizational_divisions?division_id=eq.' + workerDivisionData[0].organizational_division_id + '&select=division_head_id'
+                            );
+                            
+                            if (divisionData && divisionData.length > 0 && divisionData[0].division_head_id) {
+                                const headWorkerData = await supabaseRequest(
+                                    '/workers?worker_id=eq.' + divisionData[0].division_head_id + '&select=email'
+                                );
+                                if (headWorkerData && headWorkerData.length > 0) {
+                                    emailsSet.add(headWorkerData[0].email);
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error al obtener responsable de división:', error);
+                    }
+                }
+                
+                const emails = Array.from(emailsSet).filter(email => email);
+                
+                if (emails.length === 0) {
+                    console.log('⚠️ No hay destinatarios para notificación de cancelación');
+                    return;
+                }
+                
+                // Preparar datos del correo
+                const dateRange = request.is_full_day ? 
+                    `${request.start_date} al ${request.end_date}` :
+                    `${request.start_date} de ${request.start_time} a ${request.end_time}`;
+                
+                const emailBody = `
+                    <h3>Solicitud de Ausencia Cancelada</h3>
+                    <p><strong>Solicitante:</strong> ${currentSession.worker_name}</p>
+                    <p><strong>Categoría:</strong> ${request.hr_absence_categories?.name || 'N/A'}</p>
+                    <p><strong>Fechas:</strong> ${dateRange}</p>
+                    <p><strong>Total días:</strong> ${request.total_days}</p>
+                    <p><strong>Total horas:</strong> ${request.total_hours}</p>
+                    <p><strong>Razón de cancelación:</strong> ${reason}</p>
+                `;
+                
+                await sendNotification(
+                    emails.join(','),
+                    'Solicitud de ausencia CANCELADA',
+                    emailBody,
+                    false
+                );
+                
+                console.log(`✅ Notificaciones de cancelación enviadas a ${emails.length} destinatarios`);
+                
+            } catch (error) {
+                console.error('Error al enviar notificaciones de cancelación:', error);
             }
         }
 
