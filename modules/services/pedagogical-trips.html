@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.09.14.10">
+    <meta name="page-version" content="26.03.17.03.20">
     <title>Salidas Pedagógicas - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -567,10 +567,6 @@
             salidas: [],
             moduleConfig: {},
             detalleTransporte: null,
-            emailChef: '',
-            emailSupervisor: '',
-            emailSecretariaPreescolarPrimaria: '',
-            emailSecretariaBachillerato: '',
             esAdminSalidas: false
         };
 
@@ -684,26 +680,6 @@
                     datosGlobales.aprobadores = todosWorkers || [];
                 }
 
-                // Emails de secretarías (específico de pedagógicas)
-                try {
-                    const configSecretarias = await supabaseRequest(
-                        '/svc_module_config?select=config_key,config_value&config_key=in.(email_secretary_preschool_primary,email_secretary_high_school)'
-                    );
-                    if (configSecretarias) {
-                        configSecretarias.forEach(c => {
-                            if (c.config_key === 'email_secretary_preschool_primary') {
-                                datosGlobales.emailSecretariaPreescolarPrimaria = c.config_value || '';
-                            }
-                            if (c.config_key === 'email_secretary_high_school') {
-                                datosGlobales.emailSecretariaBachillerato = c.config_value || '';
-                            }
-                        });
-                    }
-                    console.log('✅ Correos de secretarías cargados');
-                } catch (error) {
-                    console.warn('⚠️ Error cargando correos de secretarías:', error);
-                }
-
                 // Llenar selects
                 llenarSelectGrados();
                 llenarSelectDestinos();
@@ -711,7 +687,6 @@
                 llenarSelectAprobadores();
                 llenarSelectNodos();
 
-                console.log('📧 Emails fijos cargados:', { chef: datosGlobales.emailChef, supervisor: datosGlobales.emailSupervisor });
                 console.log('✅ Datos iniciales cargados');
 
             } catch (error) {
@@ -1426,27 +1401,21 @@
         }
 
         /**
-         * Notificación a secretarías según secciones de los grados (específico de pedagógicas)
+         * Notificación dinámica a trabajadores configurados para salidas pedagógicas
+         * Lee de svc_service_type_notifications donde service_type = 'pedagogical_trip'
          */
-        async function enviarNotificacionSecretarias(datosSalida) {
+        async function enviarNotificacionesTipoServicio(datosSalida) {
             try {
-                console.log('📧 Evaluando notificación a secretarías...');
+                console.log('📧 Consultando notificaciones configuradas para pedagogical_trip...');
 
-                const seccionesBachillerato = ['Escuela media', 'Escuela alta'];
-                const seccionesPreescolarPrimaria = ['Preescolar', 'Primaria'];
+                const notificaciones = await supabaseRequest(
+                    '/svc_service_type_notifications?select=worker_id,trabajador:workers!svc_service_type_notifications_worker_fkey(worker_first_name,worker_last_name_1,email)&service_type=eq.pedagogical_trip&is_active=eq.true'
+                );
 
-                const seccionesInvolucradas = new Set();
-                datosSalida.p_grados.forEach(gradeId => {
-                    const grado = datosGlobales.grados.find(g => g.grade_id === gradeId);
-                    if (grado && grado.sections) {
-                        seccionesInvolucradas.add(grado.sections.section_name);
-                    }
-                });
-
-                console.log('📋 Secciones involucradas:', [...seccionesInvolucradas]);
-
-                const notificarBachillerato = [...seccionesInvolucradas].some(s => seccionesBachillerato.includes(s));
-                const notificarPreescolarPrimaria = [...seccionesInvolucradas].some(s => seccionesPreescolarPrimaria.includes(s));
+                if (!notificaciones || notificaciones.length === 0) {
+                    console.log('ℹ️ No hay trabajadores configurados para notificación de salidas pedagógicas');
+                    return;
+                }
 
                 const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
                 const nombreDestino = destino ? destino.destination_name : 'Destino no especificado';
@@ -1469,8 +1438,8 @@
                             <h1 style="margin: 0; font-size: 22px;">Notificación de Salida Pedagógica</h1>
                         </div>
                         <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                            <p style="font-size: 16px; color: #333;">Estimada <strong>${destinatario}</strong>,</p>
-                            <p style="font-size: 14px; color: #666;">Se ha registrado una nueva salida pedagógica que involucra grados de su sección:</p>
+                            <p style="font-size: 16px; color: #333;">Estimado/a <strong>${destinatario}</strong>,</p>
+                            <p style="font-size: 14px; color: #666;">Se ha registrado una nueva salida pedagógica:</p>
                             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
                                 <table style="width: 100%; border-collapse: collapse;">
                                     <tr><td style="padding: 8px 0; color: #666; font-weight: bold;">Destino:</td><td style="padding: 8px 0; color: #333;">${nombreDestino}</td></tr>
@@ -1487,55 +1456,20 @@
                         </div>
                     </div>`;
 
-                if (notificarPreescolarPrimaria && datosGlobales.emailSecretariaPreescolarPrimaria) {
-                    await sendNotification(datosGlobales.emailSecretariaPreescolarPrimaria, asunto, buildHTML('Secretaría de Preescolar y Primaria'), true);
-                    console.log('✅ Notificación enviada a Secretaría Preescolar y Primaria');
-                }
-
-                if (notificarBachillerato && datosGlobales.emailSecretariaBachillerato) {
-                    await sendNotification(datosGlobales.emailSecretariaBachillerato, asunto, buildHTML('Secretaría de Bachillerato'), true);
-                    console.log('✅ Notificación enviada a Secretaría Bachillerato');
-                }
-
-                if (!notificarBachillerato && !notificarPreescolarPrimaria) {
-                    console.warn('⚠️ No se determinó secretaría para los grados seleccionados');
+                for (const notif of notificaciones) {
+                    const w = notif.trabajador;
+                    if (w && w.email) {
+                        const nombre = `${w.worker_first_name} ${w.worker_last_name_1}`;
+                        await sendNotification(w.email, asunto, buildHTML(nombre), true);
+                        console.log(`✅ Notificación enviada a ${nombre} (${w.email})`);
+                    }
                 }
 
             } catch (error) {
-                console.error('❌ Error enviando notificación a secretarías:', error);
+                console.error('❌ Error enviando notificaciones de tipo de servicio:', error);
             }
-        }
-
-        /**
-         * Notificación a Chef y Supervisora vía SvcCommons
-         */
-        async function enviarNotificacionFijos(datosSalida) {
-            try {
-                const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
-                const nombresGrados = datosSalida.p_grados.map(gId => {
-                    const g = datosGlobales.grados.find(gr => gr.grade_id === gId);
-                    return g ? g.grade_name : gId;
-                }).join(', ');
-
-                const senderName = currentWorker ? SvcCommons.workerFullName(currentWorker) : (currentUser.user_display_name || currentUser.user_name);
-
-                await SvcCommons.notifyFixedRecipients({
-                    tripName: datosSalida.p_descripcion || destino?.destination_name || 'Salida Pedagógica',
-                    tripDate: SvcCommons.formatDateDisplay(datosSalida.p_fecha),
-                    senderName: senderName,
-                    moduleTitle: 'Salida Pedagógica',
-                    emailChef: datosGlobales.emailChef,
-                    emailSupervisor: datosGlobales.emailSupervisor,
-                    plannedStudents: datosSalida.p_num_estudiantes,
-                    numAdults: (datosSalida.p_adultos_ids || []).length,
-                    extraRows: { 'Grados': nombresGrados }
-                });
-
-            } catch (error) {
-                console.error('❌ Error enviando notificaciones fijas:', error);
-            }
-        }
-
+        }        
+        
         // ==========================================
         // SUBMIT: CREATE / EDIT
         // ==========================================
@@ -1682,8 +1616,7 @@
                     if (resultado && resultado.success) {
                         showMessage('✅ ' + resultado.message, 'success');
                         await enviarNotificacionAprobador(resultado.trip_id, resultado.request_id, aprobadorId, datosCreate);
-                        await enviarNotificacionSecretarias(datosCreate);
-                        await enviarNotificacionFijos(datosCreate);
+                        await enviarNotificacionesTipoServicio(datosCreate);
                     } else {
                         throw new Error(resultado?.error || 'No se recibió respuesta del servidor');
                     }
