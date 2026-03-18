@@ -732,10 +732,13 @@ function closeAlert(alertId) {
 function formatDate(date, format = APP_CONFIG.ui.dateFormat) {
     if (!date) return '-';
     
-    const d = new Date(date);
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
+    // Parsear como string para evitar desfase de timezone
+    const dateStr = String(date).includes('T') ? String(date).split('T')[0] : String(date);
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return '-';
+    const year = parseInt(parts[0]);
+    const month = String(parseInt(parts[1])).padStart(2, '0');
+    const day = String(parseInt(parts[2])).padStart(2, '0');
     
     switch (format) {
         case 'DD/MM/YYYY':
