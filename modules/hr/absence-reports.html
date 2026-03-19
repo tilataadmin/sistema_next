@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.03.17.13.35">
+    <meta name="page-version" content="26.03.19.10.15">
     
     <title>Reportes de Ausencias - SchoolNet</title>
     
@@ -582,6 +582,7 @@
         let report1Data = [];
         let report2Data = [];
         let report3Data = [];
+        let report3DetailData = {};
         let report4Data = [];
         let chartInstance = null;
 
@@ -1342,6 +1343,7 @@
                 // Agrupar por categoría
                 const categoryStats = {};
                 const monthlyData = {};
+                report3DetailData = {};
                 
                 requests.forEach(req => {
                     const catName = req.category?.name || 'Sin categoría';
@@ -1364,6 +1366,21 @@
                     categoryStats[catName].totalDays += parseFloat(req.total_days || 0);
                     categoryStats[catName].totalHours += parseFloat(req.total_hours || 0);
                     categoryStats[catName].workers.add(getWorkerFullName(req.worker));
+                    // Detalle por trabajador para exportación
+                    const workerName = getWorkerFullName(req.worker);
+                    if (!report3DetailData[catName]) {
+                        report3DetailData[catName] = {};
+                    }
+                    if (!report3DetailData[catName][workerName]) {
+                        report3DetailData[catName][workerName] = {
+                            total: 0, approved: 0, rejected: 0, pending: 0, cancelled: 0,
+                            totalDays: 0, totalHours: 0
+                        };
+                    }
+                    report3DetailData[catName][workerName].total++;
+                    report3DetailData[catName][workerName][req.status]++;
+                    report3DetailData[catName][workerName].totalDays += parseFloat(req.total_days || 0);
+                    report3DetailData[catName][workerName].totalHours += parseFloat(req.total_hours || 0);
                     
                     // Agrupar por mes
                     const month = req.start_date.substring(0, 7); // YYYY-MM
@@ -1634,21 +1651,48 @@
         }
 
         function exportReport3ToExcel() {
-            if (Object.keys(report3Data).length === 0) {
+            if (Object.keys(report3DetailData).length === 0) {
                 showMessage('No hay datos para exportar', 'warning');
                 return;
             }
             
-            const data = Object.entries(report3Data).map(([category, stats]) => ({
-                'Categoría': category,
-                'Total Solicitudes': stats.total,
-                'Aprobadas': stats.approved || 0,
-                'Rechazadas': stats.rejected || 0,
-                'Pendientes': stats.pending || 0,
-                'Total Días': stats.totalDays.toFixed(2),
-                'Total Horas': stats.totalHours.toFixed(2),
-                'Trabajadores': Array.from(stats.workers).join(', ')
-            }));
+            const data = [];
+            
+            Object.entries(report3DetailData).forEach(([category, workers]) => {
+                let subtotal = { total: 0, approved: 0, rejected: 0, pending: 0, totalDays: 0, totalHours: 0 };
+                
+                Object.entries(workers).forEach(([workerName, stats]) => {
+                    data.push({
+                        'Categoría': category,
+                        'Trabajador': workerName,
+                        'Total Solicitudes': stats.total,
+                        'Aprobadas': stats.approved || 0,
+                        'Rechazadas': stats.rejected || 0,
+                        'Pendientes': stats.pending || 0,
+                        'Total Días': parseFloat(stats.totalDays.toFixed(2)),
+                        'Total Horas': parseFloat(stats.totalHours.toFixed(2))
+                    });
+                    
+                    subtotal.total += stats.total;
+                    subtotal.approved += (stats.approved || 0);
+                    subtotal.rejected += (stats.rejected || 0);
+                    subtotal.pending += (stats.pending || 0);
+                    subtotal.totalDays += stats.totalDays;
+                    subtotal.totalHours += stats.totalHours;
+                });
+                
+                // Fila de subtotal por categoría
+                data.push({
+                    'Categoría': 'SUBTOTAL ' + category,
+                    'Trabajador': '',
+                    'Total Solicitudes': subtotal.total,
+                    'Aprobadas': subtotal.approved,
+                    'Rechazadas': subtotal.rejected,
+                    'Pendientes': subtotal.pending,
+                    'Total Días': parseFloat(subtotal.totalDays.toFixed(2)),
+                    'Total Horas': parseFloat(subtotal.totalHours.toFixed(2))
+                });
+            });
             
             exportToExcel(data, 'Reporte_Ausencias_por_Categoria');
         }
