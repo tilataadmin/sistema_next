@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.12.14.15">
+    <meta name="page-version" content="26.03.19.13.35">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -611,7 +611,7 @@
                             <div class="collapse" id="seccion-colaboradores-nueva">
                                 <div class="card-body">
                                     <div class="row g-2 align-items-end mb-3">
-                                        <div class="col-md-9">
+                                        <div class="col-md-5">
                                             <label for="select-colaborador-nueva" class="form-label">
                                                 Agregar colaborador
                                             </label>
@@ -619,7 +619,15 @@
                                                 <option value="">Seleccione un trabajador...</option>
                                             </select>
                                         </div>
+                                        <div class="col-md-4">
+                                            <label for="select-rol-colaborador-nueva" class="form-label">Rol</label>
+                                            <select class="form-select" id="select-rol-colaborador-nueva">
+                                                <option value="Colaborador">Colaborador</option>
+                                                <option value="Observador">Observador</option>
+                                            </select>
+                                        </div>
                                         <div class="col-md-3">
+                                            <label class="form-label">&nbsp;</label>
                                             <button type="button" class="btn btn-outline-success w-100" onclick="agregarColaboradorNuevaTarea()">
                                                 <i class="bi bi-plus"></i> Agregar
                                             </button>
@@ -981,7 +989,7 @@
                         </div>
                         <div class="card-body">
                             <div class="row g-2 align-items-end">
-                                <div class="col-md-8">
+                                <div class="col-md-5">
                                     <label for="select-nuevo-colaborador" class="form-label">
                                         Seleccionar trabajador
                                     </label>
@@ -990,10 +998,18 @@
                                     </select>
                                 </div>
                                 <div class="col-md-4">
+                                    <label for="select-rol-colaborador" class="form-label">Rol</label>
+                                    <select class="form-select" id="select-rol-colaborador">
+                                        <option value="Colaborador">Colaborador</option>
+                                        <option value="Observador">Observador</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">&nbsp;</label>
                                     <button type="button" class="btn btn-success w-100" onclick="agregarColaborador()">
                                         <i class="bi bi-plus-circle me-1"></i>Agregar
                                     </button>
-                                </div>
+                                </div>    
                             </div>
                         </div>
                     </div>
@@ -1150,6 +1166,7 @@
         let notasCache = {};
         let colaboradoresNuevaTarea = [];
         let misColaboraciones = [];
+        let misRolesColaboracion = {};
         
         let currentUser = null;
         let userHasPermission = false;
@@ -1444,13 +1461,20 @@
         async function cargarMisColaboraciones() {
             try {
                 const colaboraciones = await supabaseRequest(
-                    `/task_collaborators?select=task_id&worker_email=eq.${currentUser.user_mail}&collaborator_status=eq.active`
+                    `/task_collaborators?select=task_id,collaborator_role&worker_email=eq.${currentUser.user_mail}&collaborator_status=eq.active`
                 );
                 misColaboraciones = colaboraciones ? colaboraciones.map(c => c.task_id) : [];
-                console.log(`📋 Usuario es colaborador en ${misColaboraciones.length} tareas`);
+                misRolesColaboracion = {};
+                if (colaboraciones) {
+                    colaboraciones.forEach(c => {
+                        misRolesColaboracion[c.task_id] = c.collaborator_role || 'Colaborador';
+                    });
+                }
+                console.log(`📋 Usuario es colaborador/observador en ${misColaboraciones.length} tareas`);
             } catch (error) {
                 console.error('⚠️ Error cargando colaboraciones del usuario:', error);
                 misColaboraciones = [];
+                misRolesColaboracion = {};
             }
         }
 
@@ -1641,7 +1665,9 @@
                 const esResponsable = tarea.assigned_to_mail === currentUser.user_mail;
                 const esCreador = tarea.created_by === currentUser.user_id;
                 const esColaborador = misColaboraciones.includes(tarea.task_id);
-                const estaImplicado = esCreador || esResponsable || esColaborador;
+                const esObservador = esColaborador && misRolesColaboracion[tarea.task_id] === 'Observador';
+                const esColaboradorActivo = esColaborador && !esObservador;
+                const estaImplicado = esCreador || esResponsable || esColaboradorActivo;
                 
                 const canEdit = estaImplicado;
                 const canManageCollaborators = esResponsable || esCreador;
@@ -1679,6 +1705,7 @@
                                     </small>
                                 </div>
                                 
+                                ${tarea.students ? `
                                 <div class="mb-2">
                                     <small class="text-muted">
                                         <i class="bi bi-mortarboard me-1"></i>
@@ -1686,6 +1713,7 @@
                                         ${courseName ? `<span class="badge bg-light text-dark ms-1">${escapeHtml(courseName)}</span>` : ''}
                                     </small>
                                 </div>
+                                ` : ''}
                                 
                                 <div class="mb-2">
                                     <small class="${isOverdue ? 'text-danger fw-bold' : 'text-muted'}">
@@ -1887,12 +1915,13 @@
             
             const email = select.value;
             const nombre = select.selectedOptions[0].dataset.workerName;
+            const rol = document.getElementById('select-rol-colaborador-nueva').value;
             
             if (colaboradoresNuevaTarea.find(c => c.email === email)) {
                 showMessage('Este colaborador ya fue agregado', 'warning'); return;
             }
             
-            colaboradoresNuevaTarea.push({ email, nombre });
+            colaboradoresNuevaTarea.push({ email, nombre, rol });
             actualizarListaColaboradoresNueva();
             actualizarDropdownColaboradoresNueva();
         }
@@ -1924,6 +1953,7 @@
                             <div>
                                 <div class="small fw-semibold">${escapeHtml(colab.nombre)}</div>
                                 <small class="text-muted">${escapeHtml(colab.email)}</small>
+                                <span class="badge ${colab.rol === 'Observador' ? 'bg-secondary' : 'bg-primary'} ms-1">${colab.rol}</span>
                             </div>
                         </div>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="quitarColaboradorNuevaTarea('${colab.email}')" title="Quitar">
@@ -1972,7 +2002,7 @@
             `;
         }
 
-        function getCollaboratorEmailTemplate(taskDescription, dueDate, priority, responsable, addedBy) {
+        function getCollaboratorEmailTemplate(taskDescription, dueDate, priority, responsable, addedBy, rol = 'colaborador') {
             const priorityColors = { 'Alta': '#dc3545', 'Normal': '#0d6efd', 'Baja': '#6c757d' };
             const priorityColor = priorityColors[priority] || '#0d6efd';
             const dueDateFormatted = formatDateSafe(dueDate);
@@ -1980,11 +2010,11 @@
             return `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
                     <div style="background-color: #17a2b8; color: white; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
-                        <h2 style="margin: 0; font-size: 20px;">Has sido agregado como colaborador</h2>
+                        <h2 style="margin: 0; font-size: 20px;">Has sido agregado como ${rol}</h2>
                         <p style="margin: 5px 0 0 0; font-size: 14px;">SchoolNet - Sistema de Gestión Educativa</p>
                     </div>
                     <div style="background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        <p style="margin-top: 0;">Has sido agregado como colaborador en la siguiente tarea:</p>
+                        <p style="margin-top: 0;">Has sido agregado como <strong>${rol}</strong> en la siguiente tarea:</p>
                         <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid ${priorityColor}; margin: 20px 0;">
                             <p style="margin: 0; font-size: 16px; font-weight: bold;">${escapeHtml(stripHtml(taskDescription))}</p>
                         </div>
@@ -1999,7 +2029,7 @@
                                 <td style="padding: 10px;">${escapeHtml(addedBy)}</td></tr>
                         </table>
                         <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; padding: 15px; margin: 20px 0;">
-                            <p style="margin: 0; color: #0c5460;"><strong>Como colaborador puedes:</strong><br>• Ver toda la información de la tarea<br>• Agregar notas de progreso<br><br>Ingresa al sistema SchoolNet para participar en esta tarea.</p>
+                            <p style="margin: 0; color: #0c5460;"><strong>Como ${rol} puedes:</strong><br>• Ver toda la información de la tarea<br>${rol === 'colaborador' ? '• Agregar notas de progreso<br>' : ''}<br>Ingresa al sistema SchoolNet para ${rol === 'observador' ? 'consultar' : 'participar en'} esta tarea.</p>    
                         </div>
                     </div>
                     <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
@@ -2022,11 +2052,11 @@
             } catch (error) { console.error('❌ Error enviando notificación:', error); return false; }
         }
         
-        async function enviarNotificacionColaborador(workerEmail, taskDescription, dueDate, priority, responsable, addedBy) {
+        async function enviarNotificacionColaborador(workerEmail, taskDescription, dueDate, priority, responsable, addedBy, rol = 'colaborador') {
             try {
                 console.log('📧 Enviando notificación de colaborador a:', workerEmail);
-                const subject = 'Has sido agregado como colaborador en una tarea';
-                const htmlContent = getCollaboratorEmailTemplate(taskDescription, dueDate, priority, responsable, addedBy);
+                const subject = `Has sido agregado como ${rol} en una tarea`;
+                const htmlContent = getCollaboratorEmailTemplate(taskDescription, dueDate, priority, responsable, addedBy, rol);
                 const result = await sendNotification(workerEmail, subject, htmlContent, true);
                 if (result) { console.log('✅ Notificación de colaborador enviada'); return true; }
                 else { console.warn('⚠️ No se pudo enviar notificación de colaborador'); return false; }
@@ -2100,14 +2130,16 @@
                                         worker_name: colab.nombre,
                                         added_by: currentUser.user_id,
                                         added_by_name: currentUser.user_display_name || currentUser.user_mail,
-                                        collaborator_status: 'active'
+                                        collaborator_status: 'active',
+                                        collaborator_role: colab.rol || 'Colaborador'
                                     })
                                 });
                                 colaboradoresCreados++;
                                 
+                                const rolTexto = colab.rol === 'Observador' ? 'observador' : 'colaborador';
                                 const notifColab = await enviarNotificacionColaborador(
                                     colab.email, datos.task_description, datos.due_date, datos.task_priority, 
-                                    datos.assigned_to_name, currentUser.user_display_name || currentUser.user_mail
+                                    datos.assigned_to_name, currentUser.user_display_name || currentUser.user_mail, rolTexto
                                 );
                                 if (notifColab) colaboradoresNotificados++;
                                 
@@ -2172,12 +2204,15 @@
                 let html = '';
                 colaboradores.forEach(colab => {
                     const iniciales = obtenerIniciales(colab.worker_name);
+                    const rolBadge = colab.collaborator_role === 'Observador' 
+                        ? '<span class="badge bg-secondary ms-2">Observador</span>' 
+                        : '<span class="badge bg-primary ms-2">Colaborador</span>';
                     html += `
                         <div class="collaborator-item">
                             <div class="collaborator-info">
                                 <div class="collaborator-avatar">${iniciales}</div>
                                 <div>
-                                    <div class="fw-semibold">${escapeHtml(colab.worker_name)}</div>
+                                    <div class="fw-semibold">${escapeHtml(colab.worker_name)}${rolBadge}</div>
                                     <small class="text-muted">${escapeHtml(colab.worker_email)}</small>
                                 </div>
                             </div>
@@ -2208,6 +2243,8 @@
             
             try {
                 mostrarLoading();
+                const collaboratorRole = document.getElementById('select-rol-colaborador').value;
+                
                 await supabaseRequest('/task_collaborators', {
                     method: 'POST',
                     body: JSON.stringify({
@@ -2216,11 +2253,13 @@
                         worker_name: workerName,
                         added_by: currentUser.user_id,
                         added_by_name: currentUser.user_display_name || currentUser.user_mail,
-                        collaborator_status: 'active'
+                        collaborator_status: 'active',
+                        collaborator_role: collaboratorRole
                     })
                 });
                 
-                const emailSent = await enviarNotificacionColaborador(workerEmail, tarea.task_description, tarea.due_date, tarea.task_priority, tarea.assigned_to_name || tarea.assigned_to_mail, currentUser.user_display_name || currentUser.user_mail);
+                const rolTexto = collaboratorRole === 'Observador' ? 'observador' : 'colaborador';
+                const emailSent = await enviarNotificacionColaborador(workerEmail, tarea.task_description, tarea.due_date, tarea.task_priority, tarea.assigned_to_name || tarea.assigned_to_mail, currentUser.user_display_name || currentUser.user_mail, rolTexto);
                 
                 if (emailSent) { showMessage('Colaborador agregado y notificado exitosamente', 'success'); }
                 else { showMessage('Colaborador agregado, pero no se pudo enviar notificación', 'warning'); }
@@ -2499,6 +2538,17 @@
                         })
                     });
                     
+                    // Auto-avanzar a "En Progreso" si sigue en "Asignada"
+                    if (tarea.task_state === 'Asignada') {
+                        await supabaseRequest('/tasks?task_id=eq.' + taskId, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ 
+                                task_state: 'En Progreso', 
+                                updated_at: new Date().toISOString() 
+                            })
+                        });
+                    }
+                    
                     if (archivosNuevaNota.length > 0) {
                         const notasRecientes = await supabaseRequest(
                             `/task_progress_notes?select=note_id&task_id=eq.${taskId}&worker_email=eq.${currentUser.user_mail}&order=created_at.desc&limit=1`
@@ -2570,7 +2620,7 @@
         
         async function cargarColaboradoresDetalle(taskId) {
             try {
-                const colaboradores = await supabaseRequest(`/task_collaborators?select=worker_name,worker_email&task_id=eq.${taskId}&collaborator_status=eq.active`);
+                const colaboradores = await supabaseRequest(`/task_collaborators?select=worker_name,worker_email,collaborator_role&task_id=eq.${taskId}&collaborator_status=eq.active`);
                 const container = document.getElementById('detalle-lista-colaboradores');
                 const contador = document.getElementById('detalle-contador-colaboradores');
                 
@@ -2584,7 +2634,8 @@
                 let html = '';
                 colaboradores.forEach(colab => {
                     const iniciales = obtenerIniciales(colab.worker_name);
-                    html += `<div class="collaborator-item"><div class="collaborator-info"><div class="collaborator-avatar">${iniciales}</div><div><div class="small fw-semibold">${escapeHtml(colab.worker_name)}</div><small class="text-muted">${escapeHtml(colab.worker_email)}</small></div></div></div>`;
+                    const rolBadge = colab.collaborator_role === 'Observador' ? '<span class="badge bg-secondary ms-1">Observador</span>' : '<span class="badge bg-primary ms-1">Colaborador</span>';
+                    html += `<div class="collaborator-item"><div class="collaborator-info"><div class="collaborator-avatar">${iniciales}</div><div><div class="small fw-semibold">${escapeHtml(colab.worker_name)}${rolBadge}</div><small class="text-muted">${escapeHtml(colab.worker_email)}</small></div></div></div>`;
                 });
                 container.innerHTML = html;
             } catch (error) {
