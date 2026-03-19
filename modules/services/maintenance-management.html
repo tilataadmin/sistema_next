@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.03.19.18.00">
+    <title>Gestión de Mantenimiento - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+        .loading-overlay.hidden { display: none; }
+        .loading-content { background: white; padding: 2rem; border-radius: 8px; text-align: center; }
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #0d9488; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .status-badge { font-size: 0.78rem; padding: 0.3rem 0.6rem; border-radius: 1rem; font-weight: 500; }
+        .status-open { background-color: #dbeafe; color: #1e40af; }
+        .status-assigned { background-color: #fef3c7; color: #92400e; }
+        .status-in_progress { background-color: #fce7f3; color: #9d174d; }
+        .status-resolved { background-color: #d1fae5; color: #065f46; }
+        .status-closed { background-color: #f3f4f6; color: #374151; }
+        .status-reopened { background-color: #fee2e2; color: #991b1b; }
+
+        .priority-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 0.4rem; vertical-align: middle; }
+        .request-number { font-weight: 700; color: #0d9488; }
+
+        .table th { font-size: 0.85rem; white-space: nowrap; }
+        .table td { vertical-align: middle; font-size: 0.9rem; }
+
+        .filter-bar { background: #f8f9fa; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+
+        .timeline-item { position: relative; padding-left: 2rem; padding-bottom: 1.25rem; border-left: 2px solid #e5e7eb; }
+        .timeline-item:last-child { border-left: 2px solid transparent; padding-bottom: 0; }
+        .timeline-dot { position: absolute; left: -7px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #0d9488; border: 2px solid white; box-shadow: 0 0 0 2px #0d9488; }
+        .timeline-date { font-size: 0.75rem; color: #6b7280; }
+        .timeline-text { font-size: 0.875rem; color: #374151; }
+        .timeline-author { font-size: 0.75rem; color: #9ca3af; }
+
+        .photo-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #dee2e6; cursor: pointer; transition: transform 0.2s; }
+        .photo-thumb:hover { transform: scale(1.05); }
+
+        .detail-label { font-size: 0.8rem; color: #6b7280; margin-bottom: 0.15rem; }
+        .action-card { border: 1px solid #e5e7eb; border-radius: 10px; }
+
+        .empty-state { text-align: center; padding: 3rem 1rem; color: #6c757d; }
+        .empty-state i { font-size: 3rem; margin-bottom: 1rem; display: block; }
+
+        .stats-mini { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .stat-pill { background: white; border: 1px solid #e5e7eb; border-radius: 2rem; padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 500; }
+    </style>
+</head>
+
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0" id="loading-text">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="index.html">Servicios y Eventos</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Gestión de Mantenimiento</li>
+            </ol>
+        </nav>
+
+        <!-- HEADER -->
+        <div class="row mb-3">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-wrench-adjustable me-2" style="color: #0d9488;"></i>
+                    Gestión de Mantenimiento
+                </h1>
+                <p class="text-muted">Asignar, priorizar y dar seguimiento a las solicitudes de reparación locativa.</p>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- MINI STATS -->
+        <div class="stats-mini" id="stats-container"></div>
+
+        <!-- FILTROS -->
+        <div class="filter-bar">
+            <div class="row g-2 align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label form-label-sm mb-1">Estado</label>
+                    <select class="form-select form-select-sm" id="filtro-estado" onchange="filtrarSolicitudes()">
+                        <option value="">Todos</option>
+                        <option value="open" selected>Abierto</option>
+                        <option value="assigned">Asignado</option>
+                        <option value="in_progress">En proceso</option>
+                        <option value="resolved">Resuelto</option>
+                        <option value="closed">Cerrado</option>
+                        <option value="reopened">Reabierto</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label form-label-sm mb-1">Prioridad</label>
+                    <select class="form-select form-select-sm" id="filtro-prioridad" onchange="filtrarSolicitudes()">
+                        <option value="">Todas</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label form-label-sm mb-1">Espacio</label>
+                    <select class="form-select form-select-sm" id="filtro-espacio" onchange="filtrarSolicitudes()">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label form-label-sm mb-1">Buscar</label>
+                    <input type="text" class="form-control form-control-sm" id="filtro-texto" placeholder="#, espacio, descripción..." oninput="filtrarSolicitudes()">
+                </div>
+                <div class="col-12 col-md-3 text-md-end">
+                    <span class="text-muted small" id="contador-resultados"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- LISTADO -->
+        <div id="listado-container">
+            <div class="text-center py-4 text-muted">Cargando solicitudes...</div>
+        </div>
+
+        <!-- DETALLE (oculto) -->
+        <div id="detalle-container" style="display: none;"></div>
+
+    </div>
+
+    <!-- MODAL IMAGEN AMPLIADA -->
+    <div class="modal fade" id="modal-imagen" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center p-0">
+                    <img id="imagen-ampliada" src="" class="img-fluid" style="max-height: 80vh;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let currentUser = null;
+        let currentWorker = null;
+        let solicitudes = [];
+        let solicitudesFiltradas = [];
+        let cachePrioridades = [];
+        let cacheEspacios = [];
+        let cacheWorkers = [];
+        let modalImagen = null;
+
+        const STATUS_LABELS = {
+            'open': 'Abierto', 'assigned': 'Asignado', 'in_progress': 'En proceso',
+            'resolved': 'Resuelto', 'closed': 'Cerrado', 'reopened': 'Reabierto'
+        };
+
+        // Transiciones de estado válidas
+        const STATUS_TRANSITIONS = {
+            'open': ['assigned'],
+            'assigned': ['in_progress', 'open'],
+            'in_progress': ['resolved'],
+            'resolved': ['closed', 'reopened'],
+            'closed': [],
+            'reopened': ['assigned', 'in_progress']
+        };
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const hasAccess = await validatePageAccess('Gestión de mantenimiento');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showMessage('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+                currentUser = session.user;
+
+                const workers = await supabaseRequest(`/workers?select=worker_id,worker_first_name,worker_last_name_1,email&user_id=eq.${currentUser.user_id}&worker_status=eq.active`);
+                if (workers && workers.length > 0) currentWorker = workers[0];
+
+                modalImagen = new bootstrap.Modal(document.getElementById('modal-imagen'));
+
+                await cargarCatalogos();
+                await cargarSolicitudes();
+
+            } catch (error) {
+                console.error('Error en inicialización:', error);
+                showMessage('Error al cargar la página: ' + error.message, 'danger');
+            }
+        });
+
+        // ==========================================
+        // CARGA DE CATÁLOGOS
+        // ==========================================
+        async function cargarCatalogos() {
+            const [prioridades, espacios, workers] = await Promise.all([
+                supabaseRequest('/svc_maintenance_priorities?select=priority_id,priority_name,priority_color&order=display_order.asc.nullslast'),
+                supabaseRequest('/svc_maintenance_spaces?select=space_id,space_name&order=display_order.asc.nullslast,space_name.asc'),
+                supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,email&worker_status=eq.active&order=worker_first_name.asc')
+            ]);
+
+            cachePrioridades = prioridades || [];
+            cacheEspacios = espacios || [];
+            cacheWorkers = workers || [];
+
+            // Poblar filtros
+            const selPrioridad = document.getElementById('filtro-prioridad');
+            cachePrioridades.forEach(p => {
+                selPrioridad.innerHTML += `<option value="${p.priority_id}">${p.priority_name}</option>`;
+            });
+
+            const selEspacio = document.getElementById('filtro-espacio');
+            cacheEspacios.forEach(e => {
+                selEspacio.innerHTML += `<option value="${e.space_id}">${e.space_name}</option>`;
+            });
+        }
+
+        // ==========================================
+        // CARGA DE SOLICITUDES
+        // ==========================================
+        async function cargarSolicitudes() {
+            try {
+                document.getElementById('loading-overlay').classList.remove('hidden');
+
+                const data = await supabaseRequest('/svc_maintenance_requests?select=*,espacio:svc_maintenance_spaces(space_name),prioridad:svc_maintenance_priorities(priority_id,priority_name,priority_color,expected_days),solicitante:workers!svc_maintenance_requests_requested_by_fkey(worker_first_name,worker_last_name_1,email),asignado:workers!svc_maintenance_requests_assigned_to_fkey(worker_first_name,worker_last_name_1)&order=created_at.desc');
+
+                solicitudes = data || [];
+                renderStats();
+                filtrarSolicitudes();
+                document.getElementById('loading-overlay').classList.add('hidden');
+            } catch (e) {
+                console.error('Error cargando solicitudes:', e);
+                showMessage('Error al cargar solicitudes: ' + e.message, 'danger');
+                document.getElementById('loading-overlay').classList.add('hidden');
+            }
+        }
+
+        // ==========================================
+        // MINI STATS
+        // ==========================================
+        function renderStats() {
+            const stats = {
+                open: solicitudes.filter(s => s.request_status === 'open').length,
+                assigned: solicitudes.filter(s => s.request_status === 'assigned').length,
+                in_progress: solicitudes.filter(s => s.request_status === 'in_progress').length,
+                reopened: solicitudes.filter(s => s.request_status === 'reopened').length,
+                resolved: solicitudes.filter(s => s.request_status === 'resolved').length,
+                closed: solicitudes.filter(s => s.request_status === 'closed').length
+            };
+
+            document.getElementById('stats-container').innerHTML = `
+                <div class="stat-pill"><span class="status-badge status-open">${stats.open}</span> Abiertas</div>
+                <div class="stat-pill"><span class="status-badge status-assigned">${stats.assigned}</span> Asignadas</div>
+                <div class="stat-pill"><span class="status-badge status-in_progress">${stats.in_progress}</span> En proceso</div>
+                <div class="stat-pill"><span class="status-badge status-reopened">${stats.reopened}</span> Reabiertas</div>
+                <div class="stat-pill"><span class="status-badge status-resolved">${stats.resolved}</span> Resueltas</div>
+                <div class="stat-pill"><span class="status-badge status-closed">${stats.closed}</span> Cerradas</div>
+            `;
+        }
+
+        // ==========================================
+        // FILTROS
+        // ==========================================
+        function filtrarSolicitudes() {
+            const estado = document.getElementById('filtro-estado').value;
+            const prioridad = document.getElementById('filtro-prioridad').value;
+            const espacio = document.getElementById('filtro-espacio').value;
+            const texto = document.getElementById('filtro-texto').value.toLowerCase().trim();
+
+            solicitudesFiltradas = solicitudes.filter(s => {
+                if (estado && s.request_status !== estado) return false;
+                if (prioridad && s.priority_id !== prioridad) return false;
+                if (espacio && s.space_id !== espacio) return false;
+                if (texto) {
+                    const num = `#${s.request_number}`;
+                    const esp = (s.espacio?.space_name || '').toLowerCase();
+                    const det = (s.space_detail || '').toLowerCase();
+                    const desc = (s.description || '').toLowerCase();
+                    const sol = `${s.solicitante?.worker_first_name || ''} ${s.solicitante?.worker_last_name_1 || ''}`.toLowerCase();
+                    if (!num.includes(texto) && !esp.includes(texto) && !det.includes(texto) && !desc.includes(texto) && !sol.includes(texto)) return false;
+                }
+                return true;
+            });
+
+            document.getElementById('contador-resultados').textContent = `${solicitudesFiltradas.length} de ${solicitudes.length}`;
+            renderListado();
+        }
+
+        // ==========================================
+        // LISTADO
+        // ==========================================
+        function renderListado() {
+            const container = document.getElementById('listado-container');
+            document.getElementById('detalle-container').style.display = 'none';
+            container.style.display = 'block';
+
+            if (solicitudesFiltradas.length === 0) {
+                container.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i>No hay solicitudes con los filtros seleccionados.</div>';
+                return;
+            }
+
+            let html = `
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Espacio</th>
+                                <th>Solicitante</th>
+                                <th class="text-center">Prioridad</th>
+                                <th class="text-center">Estado</th>
+                                <th>Asignado a</th>
+                                <th>Fecha</th>
+                                <th class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            html += solicitudesFiltradas.map(s => {
+                const pri = s.prioridad;
+                const sol = s.solicitante ? `${s.solicitante.worker_first_name} ${s.solicitante.worker_last_name_1}` : '—';
+                const asig = s.asignado ? `${s.asignado.worker_first_name} ${s.asignado.worker_last_name_1}` : '<span class="text-muted">Sin asignar</span>';
+                const fecha = new Date(s.created_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+
+                return `
+                    <tr style="cursor: pointer;" onclick="verDetalle('${s.request_id}')">
+                        <td><span class="request-number">#${s.request_number}</span></td>
+                        <td>
+                            <div class="fw-semibold">${s.espacio?.space_name || '—'}</div>
+                            <small class="text-muted">${s.space_detail}</small>
+                        </td>
+                        <td>${sol}</td>
+                        <td class="text-center">${pri ? `<span class="priority-dot" style="background-color: ${pri.priority_color};"></span><small>${pri.priority_name}</small>` : '—'}</td>
+                        <td class="text-center"><span class="status-badge status-${s.request_status}">${STATUS_LABELS[s.request_status]}</span></td>
+                        <td>${asig}</td>
+                        <td><small>${fecha}</small></td>
+                        <td class="text-end"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></button></td>
+                    </tr>
+                `;
+            }).join('');
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // DETALLE
+        // ==========================================
+        async function verDetalle(requestId) {
+            const s = solicitudes.find(x => x.request_id === requestId);
+            if (!s) return;
+
+            document.getElementById('listado-container').style.display = 'none';
+            const container = document.getElementById('detalle-container');
+            container.style.display = 'block';
+
+            const espacio = s.espacio?.space_name || '—';
+            const solicitante = s.solicitante ? `${s.solicitante.worker_first_name} ${s.solicitante.worker_last_name_1}` : '—';
+            const solEmail = s.solicitante?.email || '';
+            const asignado = s.asignado ? `${s.asignado.worker_first_name} ${s.asignado.worker_last_name_1}` : 'Sin asignar';
+            const pri = s.prioridad;
+            const fecha = new Date(s.created_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const fechaEsperada = s.expected_date || '';
+
+            // Cargar fotos e historial
+            const [fotos, historial] = await Promise.all([
+                supabaseRequest(`/svc_maintenance_photos?select=*&request_id=eq.${requestId}&order=created_at.asc`).catch(() => []),
+                supabaseRequest(`/svc_maintenance_history?select=*,autor:workers!svc_maintenance_history_changed_by_fkey(worker_first_name,worker_last_name_1)&request_id=eq.${requestId}&order=created_at.asc`).catch(() => [])
+            ]);
+
+            // Fotos
+            let fotosHtml = '';
+            if (fotos && fotos.length > 0) {
+                fotosHtml = `
+                    <div class="mb-3">
+                        <div class="detail-label">Fotos adjuntas</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            ${fotos.map(f => `<img src="${f.public_url}" alt="${f.file_name}" class="photo-thumb" onclick="ampliarImagen('${f.public_url}')">`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Timeline
+            let timelineHtml = '';
+            if (historial && historial.length > 0) {
+                timelineHtml = historial.map(h => {
+                    const hFecha = new Date(h.created_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                    const autor = h.autor ? `${h.autor.worker_first_name} ${h.autor.worker_last_name_1}` : '—';
+                    let texto = '';
+                    switch (h.change_type) {
+                        case 'creation': texto = 'Solicitud creada'; break;
+                        case 'status': texto = `Estado cambiado a <strong>${STATUS_LABELS[h.new_value] || h.new_value}</strong>`; break;
+                        case 'priority': texto = 'Prioridad actualizada'; break;
+                        case 'assignment': texto = `Asignado a <strong>${h.new_value || '—'}</strong>`; break;
+                        case 'progress': texto = h.notes || 'Avance registrado'; break;
+                        case 'expected_date': texto = `Fecha esperada: <strong>${h.new_value || '—'}</strong>`; break;
+                        default: texto = h.notes || h.change_type;
+                    }
+                    return `<div class="timeline-item"><div class="timeline-dot"></div><div class="timeline-date">${hFecha}</div><div class="timeline-text">${texto}</div><div class="timeline-author">${autor}</div></div>`;
+                }).join('');
+            } else {
+                timelineHtml = '<div class="text-muted small">Sin registros.</div>';
+            }
+
+            // Opciones de cambio de estado
+            const transiciones = STATUS_TRANSITIONS[s.request_status] || [];
+            let statusOptionsHtml = transiciones.map(st => `<option value="${st}">${STATUS_LABELS[st]}</option>`).join('');
+
+            // Select de workers para asignar
+            let workersOptionsHtml = '<option value="">Sin asignar</option>' + cacheWorkers.map(w => {
+                const sel = (s.assigned_to === w.worker_id) ? 'selected' : '';
+                return `<option value="${w.worker_id}" ${sel}>${w.worker_first_name} ${w.worker_last_name_1}</option>`;
+            }).join('');
+
+            // Select de prioridades
+            let prioridadesOptionsHtml = cachePrioridades.map(p => {
+                const sel = (s.priority_id === p.priority_id) ? 'selected' : '';
+                return `<option value="${p.priority_id}" ${sel}>${p.priority_name}</option>`;
+            }).join('');
+
+            const isClosed = s.request_status === 'closed';
+
+            container.innerHTML = `
+                <div class="mb-3">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="volverAlListado()">
+                        <i class="bi bi-arrow-left me-1"></i>Volver al listado
+                    </button>
+                </div>
+
+                <div class="row">
+                    <!-- COLUMNA IZQUIERDA: INFO -->
+                    <div class="col-12 col-lg-7">
+                        <div class="card mb-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><span class="request-number">#${s.request_number}</span> — ${espacio} / ${s.space_detail}</h5>
+                                <span class="status-badge status-${s.request_status}">${STATUS_LABELS[s.request_status]}</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <div class="detail-label">Solicitante</div>
+                                        <div>${solicitante}</div>
+                                        <small class="text-muted">${solEmail}</small>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="detail-label">Fecha de solicitud</div>
+                                        <div>${fecha}</div>
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <div class="detail-label">Prioridad actual</div>
+                                        ${pri ? `<span class="priority-dot" style="background-color: ${pri.priority_color};"></span>${pri.priority_name}` : '—'}
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="detail-label">Asignado a</div>
+                                        <div>${asignado}</div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="detail-label">Descripcion del problema</div>
+                                    <p class="mb-0" style="white-space: pre-line;">${s.description}</p>
+                                </div>
+                                ${fotosHtml}
+                            </div>
+                        </div>
+
+                        <!-- TIMELINE -->
+                        <div class="card">
+                            <div class="card-header"><h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Seguimiento</h6></div>
+                            <div class="card-body">${timelineHtml}</div>
+                        </div>
+                    </div>
+
+                    <!-- COLUMNA DERECHA: ACCIONES -->
+                    <div class="col-12 col-lg-5">
+                        ${isClosed ? `
+                            <div class="card action-card mb-3">
+                                <div class="card-body text-center text-muted py-4">
+                                    <i class="bi bi-lock" style="font-size: 2rem;"></i>
+                                    <p class="mt-2 mb-0">Esta solicitud esta cerrada.</p>
+                                </div>
+                            </div>
+                        ` : `
+                            <!-- CAMBIAR ESTADO -->
+                            ${transiciones.length > 0 ? `
+                            <div class="card action-card mb-3">
+                                <div class="card-header"><h6 class="mb-0"><i class="bi bi-arrow-repeat me-2"></i>Cambiar Estado</h6></div>
+                                <div class="card-body">
+                                    <select class="form-select form-select-sm mb-2" id="action-estado">
+                                        <option value="">Seleccionar nuevo estado...</option>
+                                        ${statusOptionsHtml}
+                                    </select>
+                                    <textarea class="form-control form-control-sm mb-2" id="action-estado-nota" rows="2" placeholder="Comentario (opcional)"></textarea>
+                                    <button class="btn btn-sm w-100" style="background-color: #0d9488; color: white;" onclick="cambiarEstado('${s.request_id}')">
+                                        <i class="bi bi-check-lg me-1"></i>Aplicar
+                                    </button>
+                                </div>
+                            </div>
+                            ` : ''}
+
+                            <!-- ASIGNAR -->
+                            <div class="card action-card mb-3">
+                                <div class="card-header"><h6 class="mb-0"><i class="bi bi-person-plus me-2"></i>Asignar Técnico</h6></div>
+                                <div class="card-body">
+                                    <select class="form-select form-select-sm mb-2" id="action-asignar">${workersOptionsHtml}</select>
+                                    <button class="btn btn-sm btn-outline-primary w-100" onclick="asignarTecnico('${s.request_id}')">
+                                        <i class="bi bi-check-lg me-1"></i>Guardar asignación
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- CAMBIAR PRIORIDAD -->
+                            <div class="card action-card mb-3">
+                                <div class="card-header"><h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Cambiar Prioridad</h6></div>
+                                <div class="card-body">
+                                    <select class="form-select form-select-sm mb-2" id="action-prioridad">${prioridadesOptionsHtml}</select>
+                                    <button class="btn btn-sm btn-outline-primary w-100" onclick="cambiarPrioridad('${s.request_id}')">
+                                        <i class="bi bi-check-lg me-1"></i>Actualizar prioridad
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- FECHA ESPERADA -->
+                            <div class="card action-card mb-3">
+                                <div class="card-header"><h6 class="mb-0"><i class="bi bi-calendar-event me-2"></i>Fecha Esperada</h6></div>
+                                <div class="card-body">
+                                    <input type="date" class="form-control form-control-sm mb-2" id="action-fecha" value="${fechaEsperada}">
+                                    <button class="btn btn-sm btn-outline-primary w-100" onclick="cambiarFechaEsperada('${s.request_id}')">
+                                        <i class="bi bi-check-lg me-1"></i>Guardar fecha
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- REGISTRAR AVANCE -->
+                            <div class="card action-card mb-3">
+                                <div class="card-header"><h6 class="mb-0"><i class="bi bi-chat-left-text me-2"></i>Registrar Avance</h6></div>
+                                <div class="card-body">
+                                    <textarea class="form-control form-control-sm mb-2" id="action-avance" rows="3" placeholder="Describa el avance o novedad..."></textarea>
+                                    <button class="btn btn-sm btn-outline-primary w-100" onclick="registrarAvance('${s.request_id}')">
+                                        <i class="bi bi-send me-1"></i>Registrar
+                                    </button>
+                                </div>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ==========================================
+        // ACCIONES
+        // ==========================================
+        async function cambiarEstado(requestId) {
+            const nuevoEstado = document.getElementById('action-estado').value;
+            if (!nuevoEstado) { showMessage('Seleccione un estado.', 'warning'); return; }
+            const nota = document.getElementById('action-estado-nota').value.trim();
+            const s = solicitudes.find(x => x.request_id === requestId);
+
+            try {
+                const payload = { request_status: nuevoEstado, updated_at: new Date().toISOString() };
+
+                if (nuevoEstado === 'resolved') {
+                    payload.resolved_at = new Date().toISOString();
+                    payload.resolved_by = currentWorker?.worker_id || null;
+                }
+                if (nuevoEstado === 'closed') {
+                    payload.closed_at = new Date().toISOString();
+                    payload.closed_by = currentWorker?.worker_id || null;
+                }
+
+                await supabaseRequest(`/svc_maintenance_requests?request_id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+
+                await supabaseRequest('/svc_maintenance_history', { method: 'POST', body: JSON.stringify({
+                    request_id: requestId,
+                    changed_by: currentWorker?.worker_id,
+                    change_type: 'status',
+                    old_value: s.request_status,
+                    new_value: nuevoEstado,
+                    notes: nota || null
+                })});
+
+                // Notificar al solicitante
+                if (s.solicitante?.email) {
+                    await notificarSolicitante(s, nuevoEstado, nota);
+                }
+
+                showMessage('Estado actualizado correctamente.', 'success');
+                await cargarSolicitudes();
+                await verDetalle(requestId);
+            } catch (err) {
+                showMessage('Error al cambiar estado: ' + err.message, 'danger');
+            }
+        }
+
+        async function asignarTecnico(requestId) {
+            const workerId = document.getElementById('action-asignar').value || null;
+            const s = solicitudes.find(x => x.request_id === requestId);
+            const worker = cacheWorkers.find(w => w.worker_id === workerId);
+            const nombreAsignado = worker ? `${worker.worker_first_name} ${worker.worker_last_name_1}` : 'Sin asignar';
+
+            try {
+                await supabaseRequest(`/svc_maintenance_requests?request_id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify({ assigned_to: workerId, updated_at: new Date().toISOString() }) });
+
+                await supabaseRequest('/svc_maintenance_history', { method: 'POST', body: JSON.stringify({
+                    request_id: requestId,
+                    changed_by: currentWorker?.worker_id,
+                    change_type: 'assignment',
+                    old_value: s.assigned_to || null,
+                    new_value: nombreAsignado,
+                    notes: null
+                })});
+
+                showMessage('Asignación guardada.', 'success');
+                await cargarSolicitudes();
+                await verDetalle(requestId);
+            } catch (err) {
+                showMessage('Error al asignar: ' + err.message, 'danger');
+            }
+        }
+
+        async function cambiarPrioridad(requestId) {
+            const nuevaPrioridadId = document.getElementById('action-prioridad').value;
+            const s = solicitudes.find(x => x.request_id === requestId);
+            if (nuevaPrioridadId === s.priority_id) { showMessage('La prioridad no ha cambiado.', 'info'); return; }
+            const nuevaPrioridad = cachePrioridades.find(p => p.priority_id === nuevaPrioridadId);
+
+            try {
+                await supabaseRequest(`/svc_maintenance_requests?request_id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify({ priority_id: nuevaPrioridadId, updated_at: new Date().toISOString() }) });
+
+                await supabaseRequest('/svc_maintenance_history', { method: 'POST', body: JSON.stringify({
+                    request_id: requestId,
+                    changed_by: currentWorker?.worker_id,
+                    change_type: 'priority',
+                    old_value: s.prioridad?.priority_name || null,
+                    new_value: nuevaPrioridad?.priority_name || null,
+                    notes: null
+                })});
+
+                showMessage('Prioridad actualizada.', 'success');
+                await cargarSolicitudes();
+                await verDetalle(requestId);
+            } catch (err) {
+                showMessage('Error al cambiar prioridad: ' + err.message, 'danger');
+            }
+        }
+
+        async function cambiarFechaEsperada(requestId) {
+            const fecha = document.getElementById('action-fecha').value || null;
+            const s = solicitudes.find(x => x.request_id === requestId);
+
+            try {
+                await supabaseRequest(`/svc_maintenance_requests?request_id=eq.${requestId}`, { method: 'PATCH', body: JSON.stringify({ expected_date: fecha, updated_at: new Date().toISOString() }) });
+
+                await supabaseRequest('/svc_maintenance_history', { method: 'POST', body: JSON.stringify({
+                    request_id: requestId,
+                    changed_by: currentWorker?.worker_id,
+                    change_type: 'expected_date',
+                    old_value: s.expected_date || null,
+                    new_value: fecha || null,
+                    notes: null
+                })});
+
+                showMessage('Fecha esperada guardada.', 'success');
+                await cargarSolicitudes();
+                await verDetalle(requestId);
+            } catch (err) {
+                showMessage('Error al guardar fecha: ' + err.message, 'danger');
+            }
+        }
+
+        async function registrarAvance(requestId) {
+            const texto = document.getElementById('action-avance').value.trim();
+            if (!texto) { showMessage('Escriba un comentario de avance.', 'warning'); return; }
+
+            try {
+                await supabaseRequest('/svc_maintenance_history', { method: 'POST', body: JSON.stringify({
+                    request_id: requestId,
+                    changed_by: currentWorker?.worker_id,
+                    change_type: 'progress',
+                    notes: texto
+                })});
+
+                showMessage('Avance registrado.', 'success');
+                await verDetalle(requestId);
+            } catch (err) {
+                showMessage('Error al registrar avance: ' + err.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // NOTIFICACIÓN AL SOLICITANTE
+        // ==========================================
+        async function notificarSolicitante(solicitud, nuevoEstado, comentario) {
+            try {
+                const espacio = solicitud.espacio?.space_name || '—';
+                const subject = `SchoolNet - Actualización de su solicitud de mantenimiento #${solicitud.request_number}`;
+
+                let comentarioHtml = '';
+                if (comentario) {
+                    comentarioHtml = `
+                        <div style="background-color: #f8f9fa; border-left: 3px solid #0d9488; padding: 10px 15px; margin-top: 15px;">
+                            <p style="margin: 0; font-size: 13px; color: #374151;"><strong>Comentario:</strong></p>
+                            <p style="margin: 5px 0 0; color: #4b5563;">${comentario}</p>
+                        </div>
+                    `;
+                }
+
+                const htmlContent = `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                        <div style="background-color: #0d9488; padding: 15px 20px; border-radius: 8px 8px 0 0;">
+                            <h2 style="color: white; margin: 0; font-size: 18px;">Actualizacion de Solicitud de Mantenimiento</h2>
+                        </div>
+                        <div style="background-color: white; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none;">
+                            <p style="margin-top: 0;">Saludos,</p>
+                            <p>Su solicitud <strong>#${solicitud.request_number}</strong> (${espacio} / ${solicitud.space_detail}) ha sido actualizada.</p>
+                            <table style="width: 100%; margin: 15px 0;">
+                                <tr>
+                                    <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 120px;">Nuevo estado:</td>
+                                    <td style="padding: 8px 0;"><strong>${STATUS_LABELS[nuevoEstado] || nuevoEstado}</strong></td>
+                                </tr>
+                            </table>
+                            ${comentarioHtml}
+                        </div>
+                        <p style="color: #6c757d; font-size: 12px; text-align: center; margin-top: 15px;">
+                            Este correo es generado automaticamente por SchoolNet. Por favor, no responder a este mensaje.
+                        </p>
+                    </div>
+                `;
+
+                await sendNotification(solicitud.solicitante.email, subject, htmlContent, true);
+            } catch (err) {
+                console.error('Error notificando al solicitante:', err);
+            }
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function volverAlListado() {
+            document.getElementById('detalle-container').style.display = 'none';
+            document.getElementById('listado-container').style.display = 'block';
+        }
+
+        function ampliarImagen(url) {
+            document.getElementById('imagen-ampliada').src = url;
+            modalImagen.show();
+        }
+
+        console.log('Gestión de mantenimiento cargada');
+    </script>
+</body>
+</html>
