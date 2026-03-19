@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2025.11.21.08.16">
+    <meta name="page-version" content="2026.03.19.10.55">
     <title>Listas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -419,6 +419,12 @@
                                         <input class="form-check-input" type="checkbox" id="checkDocumentoTrab">
                                         <label class="form-check-label" for="checkDocumentoTrab">
                                             Con documento de identidad
+                                        </label>
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" id="checkCumpleanosTrab">
+                                        <label class="form-check-label" for="checkCumpleanosTrab">
+                                            Lista de cumpleaños (ordena por fecha de cumpleaños)
                                         </label>
                                     </div>
                                 </div>
@@ -1414,6 +1420,7 @@ async function generarListaTrabajadores(formato = 'pdf') {
         const opciones = {
             conNumeracion: document.getElementById('checkNumeracionTrab').checked,
             conDocumento: document.getElementById('checkDocumentoTrab').checked,
+            conCumpleanos: document.getElementById('checkCumpleanosTrab').checked,
             columnasPersonalizadas: [],
             tituloPersonalizado: tituloPersonalizado
         };
@@ -1464,6 +1471,17 @@ async function generarListaTrabajadores(formato = 'pdf') {
         mostrarLoading('Obteniendo trabajadores...');
         
         const trabajadores = await obtenerTrabajadoresFiltrados(filtros);
+        // Si es lista de cumpleaños, reordenar por mes y día
+        if (opciones.conCumpleanos) {
+            trabajadores.sort((a, b) => {
+                if (!a.worker_birthday) return 1;
+                if (!b.worker_birthday) return -1;
+                const [, mesA, diaA] = a.worker_birthday.split('-');
+                const [, mesB, diaB] = b.worker_birthday.split('-');
+                const diff = parseInt(mesA) - parseInt(mesB);
+                return diff !== 0 ? diff : parseInt(diaA) - parseInt(diaB);
+            });
+        }
         
         if (trabajadores.length === 0) {
             showMessage('No se encontraron trabajadores con los filtros especificados', 'warning');
@@ -1491,7 +1509,7 @@ async function generarListaTrabajadores(formato = 'pdf') {
 async function obtenerTrabajadoresFiltrados(filtros) {
     try {
         // Construir query base - SOLO filtrar por worker_status
-        let query = '/workers?select=worker_id,worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,organizational_division_id,organizational_cost_center_id,organizational_area_id,organizational_subarea_id,section_id,gender_id&worker_status=eq.active';
+        let query = '/workers?select=worker_id,worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,worker_birthday,organizational_division_id,organizational_cost_center_id,organizational_area_id,organizational_subarea_id,section_id,gender_id&worker_status=eq.active';
         let trabajadores = await supabaseRequest(query);
         
         // Aplicar filtros en cascada (cliente-side)
@@ -1568,6 +1586,33 @@ async function obtenerTrabajadoresFiltrados(filtros) {
     }
 }
 
+// ==========================================
+// HELPERS PARA COLUMNAS Y FILAS DE TRABAJADORES
+// ==========================================
+function buildWorkerColumns(opciones) {
+    const columnas = [];
+    if (opciones.conNumeracion) columnas.push('#');
+    if (opciones.conDocumento) columnas.push('Documento');
+    columnas.push('Nombre Completo');
+    if (opciones.conCumpleanos) columnas.push('Cumpleaños');
+    columnas.push(...opciones.columnasPersonalizadas);
+    return columnas;
+}
+
+function buildWorkerRows(trabajadores, opciones) {
+    return trabajadores.map((trab, idx) => {
+        const fila = [];
+        if (opciones.conNumeracion) fila.push((idx + 1).toString());
+        if (opciones.conDocumento) fila.push(trab.worker_id_doc || '');
+        fila.push(trab.nombreCompleto);
+        if (opciones.conCumpleanos) fila.push(formatBirthdayDisplay(trab.worker_birthday));
+        for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
+            fila.push('');
+        }
+        return fila;
+    });
+}
+
 async function generarPDFTrabajadores(trabajadores, opciones, divisionId, divisionNombre, filtros) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('p', 'mm', 'letter');
@@ -1576,48 +1621,61 @@ async function generarPDFTrabajadores(trabajadores, opciones, divisionId, divisi
     const fechaActual = new Date().toLocaleDateString('es-CO');
     const usuario = currentUser?.user_display_name || 'Usuario';
     
-    // Determinar título del documento
     let tituloDoc = opciones.tituloPersonalizado || 'Lista de Trabajadores';
-    
-    // Si hay división, agregar al título
-    if (divisionNombre) {
-        tituloDoc += ` - ${divisionNombre}`;
-    }
-    
-    // Si hay un centro de costo específico seleccionado, agregarlo
+    if (divisionNombre) tituloDoc += ` - ${divisionNombre}`;
     if (filtros.centrosCostos.length === 1) {
         const centroCosto = centrosCostosData.find(cc => cc.cost_center_id === filtros.centrosCostos[0]);
-        if (centroCosto) {
-            tituloDoc += ` - ${centroCosto.cost_center_name}`;
-        }
+        if (centroCosto) tituloDoc += ` - ${centroCosto.cost_center_name}`;
     }
     
-    // Encabezado principal
     doc.setFontSize(16);
     doc.setTextColor(19, 128, 226);
     doc.text(nombreInstitucion, doc.internal.pageSize.width / 2, 20, { align: 'center' });
-    
     doc.setFontSize(12);
     doc.setTextColor(100);
     doc.text(tituloDoc, doc.internal.pageSize.width / 2, 28, { align: 'center' });
-    
     doc.setFontSize(9);
     doc.text(`Generado por: ${usuario} | Fecha: ${fechaActual}`, doc.internal.pageSize.width / 2, 34, { align: 'center' });
     
     let currentY = 40;
-    
-    // Determinar si se debe dividir por centros de costo
     const dividirPorCentroCosto = divisionId && filtros.centrosCostos.length === 0;
     
-    if (dividirPorCentroCosto) {
-        // MODO: División por centros de costo
+    // Función interna para generar una tabla PDF de trabajadores
+    function renderTablePDF(listaTrabajadores, startY) {
+        const columnas = buildWorkerColumns(opciones);
+        const filas = buildWorkerRows(listaTrabajadores, opciones);
         
-        // Obtener todos los centros de costo de la división
+        doc.autoTable({
+            head: [columnas],
+            body: filas,
+            startY: startY,
+            theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 3 },
+            headStyles: {
+                fillColor: [19, 128, 226],
+                textColor: 255,
+                fontStyle: 'bold',
+                halign: 'center'
+            },
+            columnStyles: (() => {
+                const styles = {};
+                let colIndex = 0;
+                if (opciones.conNumeracion) { styles[colIndex] = { cellWidth: 8 }; colIndex++; }
+                if (opciones.conDocumento) { styles[colIndex] = { cellWidth: 28 }; colIndex++; }
+                styles[colIndex] = { cellWidth: 85 };
+                return styles;
+            })(),
+            alternateRowStyles: { fillColor: [248, 249, 250] }
+        });
+        
+        return doc.lastAutoTable.finalY;
+    }
+    
+    if (dividirPorCentroCosto) {
         const centrosCostosDivision = await supabaseRequest(
             `/cost_centers?select=cost_center_id,cost_center_name&division_id=eq.${divisionId}&cost_center_status=eq.active&order=cost_center_name.asc`
         );
         
-        // Agrupar trabajadores por centro de costo
         const trabajadoresPorCentro = {};
         const trabajadoresSinCentro = [];
         
@@ -1632,19 +1690,12 @@ async function generarPDFTrabajadores(trabajadores, opciones, divisionId, divisi
             }
         });
         
-        // Generar secciones por centro de costo (orden alfabético)
         for (const centro of centrosCostosDivision) {
             const trabajadoresCentro = trabajadoresPorCentro[centro.cost_center_id] || [];
-            
             if (trabajadoresCentro.length === 0) continue;
             
-            // Verificar si necesita nueva página
-            if (currentY > 240) {
-                doc.addPage();
-                currentY = 20;
-            }
+            if (currentY > 240) { doc.addPage(); currentY = 20; }
             
-            // Encabezado de sección
             doc.setFontSize(11);
             doc.setTextColor(19, 128, 226);
             doc.setFont(undefined, 'bold');
@@ -1652,81 +1703,16 @@ async function generarPDFTrabajadores(trabajadores, opciones, divisionId, divisi
             currentY += 8;
             doc.setFont(undefined, 'normal');
             
-            // Preparar columnas
-            const columnas = [];
-            if (opciones.conNumeracion) columnas.push('#');
-            if (opciones.conDocumento) columnas.push('Documento');
-            columnas.push('Nombre Completo');
-            columnas.push(...opciones.columnasPersonalizadas);
+            currentY = renderTablePDF(trabajadoresCentro, currentY) + 5;
             
-            // Preparar filas
-            const filas = trabajadoresCentro.map((trab, idx) => {
-                const fila = [];
-                if (opciones.conNumeracion) fila.push((idx + 1).toString());
-                if (opciones.conDocumento) fila.push(trab.worker_id_doc || '');
-                fila.push(trab.nombreCompleto);
-                
-                for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
-                    fila.push('');
-                }
-                
-                return fila;
-            });
-            
-            // Generar tabla
-            doc.autoTable({
-                head: [columnas],
-                body: filas,
-                startY: currentY,
-                theme: 'grid',
-                styles: {
-                    fontSize: 9,
-                    cellPadding: 3
-                },
-                headStyles: {
-                    fillColor: [19, 128, 226],
-                    textColor: 255,
-                    fontStyle: 'bold',
-                    halign: 'center'
-                },
-                columnStyles: (() => {
-                    const styles = {};
-                    let colIndex = 0;
-                    
-                    if (opciones.conNumeracion) {
-                        styles[colIndex] = { cellWidth: 8 };
-                        colIndex++;
-                    }
-                    
-                    if (opciones.conDocumento) {
-                        styles[colIndex] = { cellWidth: 28 };
-                        colIndex++;
-                    }
-                    
-                    styles[colIndex] = { cellWidth: 85 };
-                    
-                    return styles;
-                })(),
-                alternateRowStyles: {
-                    fillColor: [248, 249, 250]
-                }
-            });
-            
-            currentY = doc.lastAutoTable.finalY + 5;
-            
-            // Total de trabajadores de este centro
             doc.setFontSize(9);
             doc.setTextColor(0);
             doc.text(`Total: ${trabajadoresCentro.length} trabajadores`, 14, currentY);
             currentY += 10;
         }
         
-        // Trabajadores sin centro de costo al final
         if (trabajadoresSinCentro.length > 0) {
-            if (currentY > 240) {
-                doc.addPage();
-                currentY = 20;
-            }
+            if (currentY > 240) { doc.addPage(); currentY = 20; }
             
             doc.setFontSize(11);
             doc.setTextColor(19, 128, 226);
@@ -1735,143 +1721,21 @@ async function generarPDFTrabajadores(trabajadores, opciones, divisionId, divisi
             currentY += 8;
             doc.setFont(undefined, 'normal');
             
-            const columnas = [];
-            if (opciones.conNumeracion) columnas.push('#');
-            if (opciones.conDocumento) columnas.push('Documento');
-            columnas.push('Nombre Completo');
-            columnas.push(...opciones.columnasPersonalizadas);
+            currentY = renderTablePDF(trabajadoresSinCentro, currentY) + 5;
             
-            const filas = trabajadoresSinCentro.map((trab, idx) => {
-                const fila = [];
-                if (opciones.conNumeracion) fila.push((idx + 1).toString());
-                if (opciones.conDocumento) fila.push(trab.worker_id_doc || '');
-                fila.push(trab.nombreCompleto);
-                
-                for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
-                    fila.push('');
-                }
-                
-                return fila;
-            });
-            
-            doc.autoTable({
-                head: [columnas],
-                body: filas,
-                startY: currentY,
-                theme: 'grid',
-                styles: {
-                    fontSize: 9,
-                    cellPadding: 3
-                },
-                headStyles: {
-                    fillColor: [19, 128, 226],
-                    textColor: 255,
-                    fontStyle: 'bold',
-                    halign: 'center'
-                },
-                columnStyles: (() => {
-                    const styles = {};
-                    let colIndex = 0;
-                    
-                    if (opciones.conNumeracion) {
-                        styles[colIndex] = { cellWidth: 8 };
-                        colIndex++;
-                    }
-                    
-                    if (opciones.conDocumento) {
-                        styles[colIndex] = { cellWidth: 28 };
-                        colIndex++;
-                    }
-                    
-                    styles[colIndex] = { cellWidth: 85 };
-                    
-                    return styles;
-                })(),
-                alternateRowStyles: {
-                    fillColor: [248, 249, 250]
-                }
-            });
-            
-            currentY = doc.lastAutoTable.finalY + 5;
             doc.setFontSize(9);
             doc.setTextColor(0);
             doc.text(`Total: ${trabajadoresSinCentro.length} trabajadores`, 14, currentY);
         }
         
-        // Total general al final
-        if (currentY > 260) {
-            doc.addPage();
-            currentY = 20;
-        } else {
-            currentY += 10;
-        }
-        
+        if (currentY > 260) { doc.addPage(); currentY = 20; } else { currentY += 10; }
         doc.setFontSize(10);
         doc.setTextColor(0);
         doc.setFont(undefined, 'bold');
         doc.text(`TOTAL GENERAL: ${trabajadores.length} trabajadores`, 14, currentY);
         
     } else {
-        // MODO: Lista única (sin división o con centro específico)
-        
-        const columnas = [];
-        if (opciones.conNumeracion) columnas.push('#');
-        if (opciones.conDocumento) columnas.push('Documento');
-        columnas.push('Nombre Completo');
-        columnas.push(...opciones.columnasPersonalizadas);
-        
-        const filas = trabajadores.map((trab, idx) => {
-            const fila = [];
-            if (opciones.conNumeracion) fila.push((idx + 1).toString());
-            if (opciones.conDocumento) fila.push(trab.worker_id_doc || '');
-            fila.push(trab.nombreCompleto);
-            
-            for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
-                fila.push('');
-            }
-            
-            return fila;
-        });
-        
-        doc.autoTable({
-            head: [columnas],
-            body: filas,
-            startY: currentY,
-            theme: 'grid',
-            styles: {
-                fontSize: 9,
-                cellPadding: 3
-            },
-            headStyles: {
-                fillColor: [19, 128, 226],
-                textColor: 255,
-                fontStyle: 'bold',
-                halign: 'center'
-            },
-            columnStyles: (() => {
-                const styles = {};
-                let colIndex = 0;
-                
-                if (opciones.conNumeracion) {
-                    styles[colIndex] = { cellWidth: 8 };
-                    colIndex++;
-                }
-                
-                if (opciones.conDocumento) {
-                    styles[colIndex] = { cellWidth: 28 };
-                    colIndex++;
-                }
-                
-                styles[colIndex] = { cellWidth: 85 };
-                
-                return styles;
-            })(),
-            alternateRowStyles: {
-                fillColor: [248, 249, 250]
-            }
-        });
-        
-        const finalY = doc.lastAutoTable.finalY || currentY;
+        const finalY = renderTablePDF(trabajadores, currentY);
         doc.setFontSize(10);
         doc.setTextColor(0);
         doc.text(`Total de trabajadores: ${trabajadores.length}`, 14, finalY + 10);
@@ -1880,11 +1744,16 @@ async function generarPDFTrabajadores(trabajadores, opciones, divisionId, divisi
     const nombreBase = opciones.tituloPersonalizado 
         ? opciones.tituloPersonalizado.replace(/\s+/g, '_')
         : 'Lista_Trabajadores';
-    const nombreArchivo = `${nombreBase}_${Date.now()}.pdf`;
+    doc.save(`${nombreBase}_${Date.now()}.pdf`);
+    console.log('✅ PDF generado');
+}
     
-    doc.save(nombreArchivo);
-    
-    console.log(`✅ PDF generado: ${nombreArchivo}`);
+function formatBirthdayDisplay(dateString) {
+    if (!dateString) return 'N/A';
+    const [year, month, day] = dateString.split('-');
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    return `${meses[parseInt(month) - 1]} ${parseInt(day)}`;
 }
     
 // ==========================================
@@ -2345,57 +2214,108 @@ async function generarDOCXTrabajadores(trabajadores, opciones, divisionId, divis
         const fechaActual = new Date().toLocaleDateString('es-CO');
         const usuario = currentUser?.user_display_name || 'Usuario';
         
-        // Determinar título del documento
         let tituloDoc = opciones.tituloPersonalizado || 'Lista de Trabajadores';
-        
-        // Si hay división, agregar al título
-        if (divisionNombre) {
-            tituloDoc += ` - ${divisionNombre}`;
-        }
-        
-        // Si hay un centro de costo específico seleccionado, agregarlo
+        if (divisionNombre) tituloDoc += ` - ${divisionNombre}`;
         if (filtros.centrosCostos.length === 1) {
             const centroCosto = centrosCostosData.find(cc => cc.cost_center_id === filtros.centrosCostos[0]);
-            if (centroCosto) {
-                tituloDoc += ` - ${centroCosto.cost_center_name}`;
-            }
+            if (centroCosto) tituloDoc += ` - ${centroCosto.cost_center_name}`;
         }
         
-        // Elementos del documento
         const docElements = [];
         
-        // Encabezado principal
         docElements.push(
-            new Paragraph({
-                text: nombreInstitucion,
-                heading: 'Heading1',
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 200 }
-            }),
-            new Paragraph({
-                text: tituloDoc,
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 100 }
-            }),
-            new Paragraph({
-                text: `Generado por: ${usuario} | Fecha: ${fechaActual}`,
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 400 }
-            })
+            new Paragraph({ text: nombreInstitucion, heading: 'Heading1', alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
+            new Paragraph({ text: tituloDoc, alignment: AlignmentType.CENTER, spacing: { after: 100 } }),
+            new Paragraph({ text: `Generado por: ${usuario} | Fecha: ${fechaActual}`, alignment: AlignmentType.CENTER, spacing: { after: 400 } })
         );
         
-        // Determinar si se debe dividir por centros de costo
+        // Función interna para construir columnas DOCX
+        function buildDocxColumns() {
+            const cols = [];
+            if (opciones.conNumeracion) cols.push('#');
+            if (opciones.conDocumento) cols.push('Documento');
+            cols.push('Nombre Completo');
+            if (opciones.conCumpleanos) cols.push('Cumpleaños');
+            cols.push(...opciones.columnasPersonalizadas);
+            return cols;
+        }
+        
+        // Función interna para construir encabezados DOCX
+        function buildDocxHeaderCells(columnas) {
+            return columnas.map(col => 
+                new TableCell({
+                    children: [new Paragraph({ text: col, alignment: AlignmentType.CENTER })],
+                    shading: { fill: '1380E2' },
+                    margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                })
+            );
+        }
+        
+        // Función interna para construir filas DOCX
+        function buildDocxDataRows(listaTrabajadores) {
+            return listaTrabajadores.map((trab, idx) => {
+                const cells = [];
+                
+                if (opciones.conNumeracion) {
+                    cells.push(new TableCell({
+                        children: [new Paragraph({ text: (idx + 1).toString(), alignment: AlignmentType.CENTER })],
+                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    }));
+                }
+                if (opciones.conDocumento) {
+                    cells.push(new TableCell({
+                        children: [new Paragraph({ text: trab.worker_id_doc || '', alignment: AlignmentType.CENTER })],
+                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    }));
+                }
+                cells.push(new TableCell({
+                    children: [new Paragraph({ text: trab.nombreCompleto })],
+                    margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                }));
+                if (opciones.conCumpleanos) {
+                    cells.push(new TableCell({
+                        children: [new Paragraph({ text: formatBirthdayDisplay(trab.worker_birthday) })],
+                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    }));
+                }
+                for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
+                    cells.push(new TableCell({
+                        children: [new Paragraph({ text: '' })],
+                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                    }));
+                }
+                
+                return new TableRow({ children: cells });
+            });
+        }
+        
+        // Función interna para crear tabla DOCX
+        function buildDocxTable(listaTrabajadores) {
+            const columnas = buildDocxColumns();
+            return new Table({
+                rows: [
+                    new TableRow({ children: buildDocxHeaderCells(columnas), tableHeader: true }),
+                    ...buildDocxDataRows(listaTrabajadores)
+                ],
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                borders: {
+                    top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                    bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                    left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                    right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                    insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                    insideVertical: { style: BorderStyle.SINGLE, size: 1, color: '000000' }
+                }
+            });
+        }
+        
         const dividirPorCentroCosto = divisionId && filtros.centrosCostos.length === 0;
         
         if (dividirPorCentroCosto) {
-            // MODO: División por centros de costo
-            
-            // Obtener todos los centros de costo de la división
             const centrosCostosDivision = await supabaseRequest(
                 `/cost_centers?select=cost_center_id,cost_center_name&division_id=eq.${divisionId}&cost_center_status=eq.active&order=cost_center_name.asc`
             );
             
-            // Agrupar trabajadores por centro de costo
             const trabajadoresPorCentro = {};
             const trabajadoresSinCentro = [];
             
@@ -2410,302 +2330,44 @@ async function generarDOCXTrabajadores(trabajadores, opciones, divisionId, divis
                 }
             });
             
-            // Preparar encabezados de tabla
-            const columnas = [];
-            if (opciones.conNumeracion) columnas.push('#');
-            if (opciones.conDocumento) columnas.push('Documento');
-            columnas.push('Nombre Completo');
-            columnas.push(...opciones.columnasPersonalizadas);
-            
-            // Generar secciones por centro de costo (orden alfabético)
             for (const centro of centrosCostosDivision) {
                 const trabajadoresCentro = trabajadoresPorCentro[centro.cost_center_id] || [];
-                
                 if (trabajadoresCentro.length === 0) continue;
                 
-                // Encabezado de sección
-                docElements.push(
-                    new Paragraph({
-                        children: [
-                            new TextRun({
-                                text: `Centro de Costo: ${centro.cost_center_name}`,
-                                bold: true,
-                                size: 24,
-                                color: '1380E2'
-                            })
-                        ],
-                        spacing: { before: 400, after: 200 }
-                    })
-                );
-                
-                // Crear encabezados de tabla
-                const headerCells = columnas.map(col => 
-                    new TableCell({
-                        children: [new Paragraph({
-                            text: col,
-                            alignment: AlignmentType.CENTER,
-                            style: 'headerStyle'
-                        })],
-                        shading: { fill: '1380E2' },
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    })
-                );
-                
-                // Crear filas de datos
-                const dataRows = trabajadoresCentro.map((trab, idx) => {
-                    const cells = [];
-                    
-                    if (opciones.conNumeracion) {
-                        cells.push(new TableCell({
-                            children: [new Paragraph({ text: (idx + 1).toString(), alignment: AlignmentType.CENTER })],
-                            margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                        }));
-                    }
-                    
-                    if (opciones.conDocumento) {
-                        cells.push(new TableCell({
-                            children: [new Paragraph({ text: trab.worker_id_doc || '', alignment: AlignmentType.CENTER })],
-                            margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                        }));
-                    }
-                    
-                    cells.push(new TableCell({
-                        children: [new Paragraph({ text: trab.nombreCompleto })],
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    }));
-                    
-                    for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
-                        cells.push(new TableCell({
-                            children: [new Paragraph({ text: '' })],
-                            margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                        }));
-                    }
-                    
-                    return new TableRow({ children: cells });
-                });
-                
-                // Crear tabla
-                const table = new Table({
-                    rows: [
-                        new TableRow({ children: headerCells, tableHeader: true }),
-                        ...dataRows
-                    ],
-                    width: { size: 100, type: WidthType.PERCENTAGE },
-                    borders: {
-                        top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        insideVertical: { style: BorderStyle.SINGLE, size: 1, color: '000000' }
-                    }
-                });
-                
-                docElements.push(table);
-                
-                // Total de trabajadores de este centro
-                docElements.push(
-                    new Paragraph({
-                        text: `Total: ${trabajadoresCentro.length} trabajadores`,
-                        spacing: { before: 200, after: 200 }
-                    })
-                );
+                docElements.push(new Paragraph({
+                    children: [new TextRun({ text: `Centro de Costo: ${centro.cost_center_name}`, bold: true, size: 24, color: '1380E2' })],
+                    spacing: { before: 400, after: 200 }
+                }));
+                docElements.push(buildDocxTable(trabajadoresCentro));
+                docElements.push(new Paragraph({ text: `Total: ${trabajadoresCentro.length} trabajadores`, spacing: { before: 200, after: 200 } }));
             }
             
-            // Trabajadores sin centro de costo al final
             if (trabajadoresSinCentro.length > 0) {
-                docElements.push(
-                    new Paragraph({
-                        children: [
-                            new TextRun({
-                                text: 'Sin Centro de Costo',
-                                bold: true,
-                                size: 24,
-                                color: '1380E2'
-                            })
-                        ],
-                        spacing: { before: 400, after: 200 }
-                    })
-                );
-                
-                const headerCells = columnas.map(col => 
-                    new TableCell({
-                        children: [new Paragraph({
-                            text: col,
-                            alignment: AlignmentType.CENTER,
-                            style: 'headerStyle'
-                        })],
-                        shading: { fill: '1380E2' },
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    })
-                );
-                
-                const dataRows = trabajadoresSinCentro.map((trab, idx) => {
-                    const cells = [];
-                    
-                    if (opciones.conNumeracion) {
-                        cells.push(new TableCell({
-                            children: [new Paragraph({ text: (idx + 1).toString(), alignment: AlignmentType.CENTER })],
-                            margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                        }));
-                    }
-                    
-                    if (opciones.conDocumento) {
-                        cells.push(new TableCell({
-                            children: [new Paragraph({ text: trab.worker_id_doc || '', alignment: AlignmentType.CENTER })],
-                            margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                        }));
-                    }
-                    
-                    cells.push(new TableCell({
-                        children: [new Paragraph({ text: trab.nombreCompleto })],
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    }));
-                    
-                    for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
-                        cells.push(new TableCell({
-                            children: [new Paragraph({ text: '' })],
-                            margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                        }));
-                    }
-                    
-                    return new TableRow({ children: cells });
-                });
-                
-                const table = new Table({
-                    rows: [
-                        new TableRow({ children: headerCells, tableHeader: true }),
-                        ...dataRows
-                    ],
-                    width: { size: 100, type: WidthType.PERCENTAGE },
-                    borders: {
-                        top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                        insideVertical: { style: BorderStyle.SINGLE, size: 1, color: '000000' }
-                    }
-                });
-                
-                docElements.push(table);
-                
-                docElements.push(
-                    new Paragraph({
-                        text: `Total: ${trabajadoresSinCentro.length} trabajadores`,
-                        spacing: { before: 200, after: 200 }
-                    })
-                );
+                docElements.push(new Paragraph({
+                    children: [new TextRun({ text: 'Sin Centro de Costo', bold: true, size: 24, color: '1380E2' })],
+                    spacing: { before: 400, after: 200 }
+                }));
+                docElements.push(buildDocxTable(trabajadoresSinCentro));
+                docElements.push(new Paragraph({ text: `Total: ${trabajadoresSinCentro.length} trabajadores`, spacing: { before: 200, after: 200 } }));
             }
             
-            // Total general
-            docElements.push(
-                new Paragraph({
-                    children: [
-                        new TextRun({
-                            text: `TOTAL GENERAL: ${trabajadores.length} trabajadores`,
-                            bold: true
-                        })
-                    ],
-                    spacing: { before: 400 }
-                })
-            );
+            docElements.push(new Paragraph({
+                children: [new TextRun({ text: `TOTAL GENERAL: ${trabajadores.length} trabajadores`, bold: true })],
+                spacing: { before: 400 }
+            }));
             
         } else {
-            // MODO: Lista única (sin división o con centro específico)
-            
-            const columnas = [];
-            if (opciones.conNumeracion) columnas.push('#');
-            if (opciones.conDocumento) columnas.push('Documento');
-            columnas.push('Nombre Completo');
-            columnas.push(...opciones.columnasPersonalizadas);
-            
-            const headerCells = columnas.map(col => 
-                new TableCell({
-                    children: [new Paragraph({
-                        text: col,
-                        alignment: AlignmentType.CENTER,
-                        style: 'headerStyle'
-                    })],
-                    shading: { fill: '1380E2' },
-                    margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                })
-            );
-            
-            const dataRows = trabajadores.map((trab, idx) => {
-                const cells = [];
-                
-                if (opciones.conNumeracion) {
-                    cells.push(new TableCell({
-                        children: [new Paragraph({ text: (idx + 1).toString(), alignment: AlignmentType.CENTER })],
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    }));
-                }
-                
-                if (opciones.conDocumento) {
-                    cells.push(new TableCell({
-                        children: [new Paragraph({ text: trab.worker_id_doc || '', alignment: AlignmentType.CENTER })],
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    }));
-                }
-                
-                cells.push(new TableCell({
-                    children: [new Paragraph({ text: trab.nombreCompleto })],
-                    margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                }));
-                
-                for (let i = 0; i < opciones.columnasPersonalizadas.length; i++) {
-                    cells.push(new TableCell({
-                        children: [new Paragraph({ text: '' })],
-                        margins: { top: 100, bottom: 100, left: 100, right: 100 }
-                    }));
-                }
-                
-                return new TableRow({ children: cells });
-            });
-            
-            const table = new Table({
-                rows: [
-                    new TableRow({ children: headerCells, tableHeader: true }),
-                    ...dataRows
-                ],
-                width: { size: 100, type: WidthType.PERCENTAGE },
-                borders: {
-                    top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                    bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                    left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                    right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                    insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
-                    insideVertical: { style: BorderStyle.SINGLE, size: 1, color: '000000' }
-                }
-            });
-            
-            docElements.push(table);
-            
-            docElements.push(
-                new Paragraph({
-                    text: `Total de trabajadores: ${trabajadores.length}`,
-                    spacing: { before: 400 }
-                })
-            );
+            docElements.push(buildDocxTable(trabajadores));
+            docElements.push(new Paragraph({ text: `Total de trabajadores: ${trabajadores.length}`, spacing: { before: 400 } }));
         }
         
-        // Crear documento
-        const doc = new Document({
-            sections: [{
-                properties: {},
-                children: docElements
-            }]
-        });
-        
+        const doc = new Document({ sections: [{ properties: {}, children: docElements }] });
         const blob = await Packer.toBlob(doc);
         const nombreBase = opciones.tituloPersonalizado 
             ? opciones.tituloPersonalizado.replace(/\s+/g, '_')
             : 'Lista_Trabajadores';
-        const nombreArchivo = `${nombreBase}_${Date.now()}.docx`;
-        
-        descargarBlob(blob, nombreArchivo);
-        console.log(`✅ DOCX generado: ${nombreArchivo}`);
+        descargarBlob(blob, `${nombreBase}_${Date.now()}.docx`);
+        console.log('✅ DOCX generado');
         
     } catch (error) {
         console.error('❌ Error generando DOCX de trabajadores:', error);
