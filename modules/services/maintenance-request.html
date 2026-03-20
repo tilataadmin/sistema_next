@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.19.16.00">
+    <meta name="page-version" content="26.03.20.08.35">
     <title>Solicitud de Reparación Locativa - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -22,10 +22,14 @@
         .priority-option input[type="radio"] { display: none; }
         .priority-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; margin-right: 0.5rem; vertical-align: middle; }
 
-        .photo-preview { position: relative; display: inline-block; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        .photo-upload-area { border: 2px dashed #dee2e6; border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all 0.3s; background-color: #f8f9fa; }
+        .photo-upload-area:hover { border-color: #0d9488; background-color: #f0fdfa; }
+        .photo-upload-area.drag-over { border-color: #0d9488; background-color: #ccfbf1; }
+
+        .photo-preview { position: relative; display: inline-block; }
         .photo-preview img { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #dee2e6; }
         .photo-preview .btn-remove { position: absolute; top: -6px; right: -6px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-
+        
         .success-card { text-align: center; padding: 3rem 1rem; }
         .success-card i { font-size: 4rem; color: #0d9488; }
     </style>
@@ -104,9 +108,41 @@
                                 <!-- FOTOS -->
                                 <div class="mb-4">
                                     <label class="form-label fw-bold">Fotos del problema <small class="text-muted fw-normal">(opcional, máx. 2)</small></label>
-                                    <input type="file" class="form-control" id="sol-fotos" accept="image/jpeg,image/png,image/webp" multiple onchange="previsualizarFotos(this)">
-                                    <div class="form-text">Formatos aceptados: JPG, PNG, WebP. Máximo 5 MB por foto.</div>
-                                    <div id="fotos-preview" class="mt-2"></div>
+                                    
+                                    <!-- Área de upload / drag & drop -->
+                                    <div id="photo-upload-container">
+                                        <div class="photo-upload-area" id="photo-drop-zone" onclick="document.getElementById('photo-file-input').click()">
+                                            <i class="bi bi-cloud-upload" style="font-size: 2.5rem; color: #6c757d;"></i>
+                                            <p class="mt-2 mb-1"><strong>Haz clic o arrastra una imagen aquí</strong></p>
+                                            <p class="text-muted small mb-0">JPG, PNG o WebP (máx. 5 MB por foto)</p>
+                                            <div class="mt-3">
+                                                <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="event.stopPropagation(); abrirCamara()">
+                                                    <i class="bi bi-camera me-1"></i>Tomar Foto
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation(); document.getElementById('photo-file-input').click()">
+                                                    <i class="bi bi-upload me-1"></i>Subir Archivo
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <input type="file" id="photo-file-input" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="manejarArchivoSeleccionado(event)">
+                                    </div>
+
+                                    <!-- Vista previa de cámara -->
+                                    <div id="camera-container" style="display: none;">
+                                        <video id="video-preview" autoplay playsinline style="width: 100%; max-height: 350px; border-radius: 8px; background: #000;"></video>
+                                        <canvas id="photo-canvas" style="display: none;"></canvas>
+                                        <div class="text-center mt-2">
+                                            <button type="button" class="btn btn-success me-2" onclick="capturarFoto()">
+                                                <i class="bi bi-camera-fill me-1"></i>Capturar
+                                            </button>
+                                            <button type="button" class="btn btn-secondary" onclick="cerrarCamara()">
+                                                <i class="bi bi-x-circle me-1"></i>Cancelar
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Previews de fotos seleccionadas -->
+                                    <div id="fotos-preview" class="mt-2 d-flex flex-wrap gap-2"></div>
                                 </div>
 
                                 <!-- BOTÓN ENVIAR -->
@@ -204,6 +240,9 @@
                 // Inicializar cliente Supabase para Storage
                 supabaseClient = supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
 
+                // Configurar drag & drop para fotos
+                configurarDragAndDrop();
+
                 // Cargar catálogos
                 await Promise.all([
                     cargarEspacios(),
@@ -265,64 +304,85 @@
         }
 
         // ==========================================
-        // MANEJO DE FOTOS
+        // MANEJO DE FOTOS (cámara, drag & drop, upload)
         // ==========================================
-        function previsualizarFotos(input) {
-            const archivos = Array.from(input.files);
-            const preview = document.getElementById('fotos-preview');
+        let videoStream = null;
 
-            // Validar cantidad
-            const totalFotos = fotosSeleccionadas.length + archivos.length;
-            if (totalFotos > MAX_FOTOS) {
+        function configurarDragAndDrop() {
+            const dropZone = document.getElementById('photo-drop-zone');
+            if (!dropZone) return;
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {
+                dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(ev => {
+                dropZone.addEventListener(ev, () => dropZone.classList.add('drag-over'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(ev => {
+                dropZone.addEventListener(ev, () => dropZone.classList.remove('drag-over'), false);
+            });
+
+            dropZone.addEventListener('drop', e => {
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    for (const file of files) {
+                        agregarFoto(file);
+                    }
+                }
+            }, false);
+        }
+
+        function manejarArchivoSeleccionado(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            for (const file of files) {
+                agregarFoto(file);
+            }
+            event.target.value = '';
+        }
+
+        function agregarFoto(file) {
+            if (fotosSeleccionadas.length >= MAX_FOTOS) {
                 showMessage(`Puede adjuntar máximo ${MAX_FOTOS} fotos.`, 'warning');
-                input.value = '';
                 return;
             }
 
-            for (const file of archivos) {
-                // Validar tamaño
-                if (file.size > MAX_FILE_SIZE) {
-                    showMessage(`La foto "${file.name}" excede el límite de 5 MB.`, 'warning');
-                    continue;
-                }
-
-                // Validar tipo
-                if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-                    showMessage(`El archivo "${file.name}" no es una imagen válida.`, 'warning');
-                    continue;
-                }
-
-                fotosSeleccionadas.push(file);
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const idx = fotosSeleccionadas.indexOf(file);
-                    const div = document.createElement('div');
-                    div.className = 'photo-preview';
-                    div.id = `photo-${idx}`;
-                    div.innerHTML = `
-                        <img src="${e.target.result}" alt="Vista previa">
-                        <button type="button" class="btn-remove" onclick="removerFoto(${idx})">&times;</button>
-                    `;
-                    preview.appendChild(div);
-                };
-                reader.readAsDataURL(file);
+            if (file.size > MAX_FILE_SIZE) {
+                showMessage(`La foto "${file.name}" excede el límite de 5 MB.`, 'warning');
+                return;
             }
 
-            // Limpiar input para permitir seleccionar de nuevo
-            input.value = '';
+            if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                showMessage(`El archivo "${file.name}" no es una imagen válida.`, 'warning');
+                return;
+            }
+
+            fotosSeleccionadas.push(file);
+            actualizarVistaFotos();
+            actualizarVisibilidadUpload();
         }
 
-        function removerFoto(index) {
-            fotosSeleccionadas.splice(index, 1);
-            // Re-renderizar todas las previews
+        function agregarFotoDesdeBlob(blob) {
+            if (fotosSeleccionadas.length >= MAX_FOTOS) {
+                showMessage(`Puede adjuntar máximo ${MAX_FOTOS} fotos.`, 'warning');
+                return;
+            }
+            fotosSeleccionadas.push(blob);
+            actualizarVistaFotos();
+            actualizarVisibilidadUpload();
+        }
+
+        function actualizarVistaFotos() {
             const preview = document.getElementById('fotos-preview');
             preview.innerHTML = '';
+
             fotosSeleccionadas.forEach((file, idx) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const div = document.createElement('div');
                     div.className = 'photo-preview';
-                    div.id = `photo-${idx}`;
                     div.innerHTML = `
                         <img src="${e.target.result}" alt="Vista previa">
                         <button type="button" class="btn-remove" onclick="removerFoto(${idx})">&times;</button>
@@ -331,6 +391,68 @@
                 };
                 reader.readAsDataURL(file);
             });
+        }
+
+        function removerFoto(index) {
+            fotosSeleccionadas.splice(index, 1);
+            actualizarVistaFotos();
+            actualizarVisibilidadUpload();
+        }
+
+        function actualizarVisibilidadUpload() {
+            const uploadContainer = document.getElementById('photo-upload-container');
+            if (fotosSeleccionadas.length >= MAX_FOTOS) {
+                uploadContainer.style.display = 'none';
+            } else {
+                uploadContainer.style.display = 'block';
+            }
+        }
+
+        // ==========================================
+        // CÁMARA
+        // ==========================================
+        async function abrirCamara() {
+            try {
+                const video = document.getElementById('video-preview');
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+                video.srcObject = videoStream;
+
+                document.getElementById('photo-upload-container').style.display = 'none';
+                document.getElementById('camera-container').style.display = 'block';
+            } catch (error) {
+                console.error('Error abriendo cámara:', error);
+                showMessage('No se pudo acceder a la cámara: ' + error.message, 'danger');
+            }
+        }
+
+        function capturarFoto() {
+            const video = document.getElementById('video-preview');
+            const canvas = document.getElementById('photo-canvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob((blob) => {
+                cerrarCamara();
+                agregarFotoDesdeBlob(blob);
+            }, 'image/jpeg', 0.9);
+        }
+
+        function cerrarCamara() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            document.getElementById('camera-container').style.display = 'none';
+            actualizarVisibilidadUpload();
         }
 
         // ==========================================
@@ -535,6 +657,8 @@
             document.querySelectorAll('.priority-option').forEach(el => el.classList.remove('selected'));
             fotosSeleccionadas = [];
             document.getElementById('fotos-preview').innerHTML = '';
+            document.getElementById('photo-upload-container').style.display = 'block';
+            document.getElementById('camera-container').style.display = 'none';
             document.getElementById('success-container').style.display = 'none';
             document.getElementById('form-container').style.display = 'block';
             const btn = document.getElementById('btn-enviar');
