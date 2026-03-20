@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.05.16.32">
+    <meta name="page-version" content="26.03.20.10.00">
     <title>Autorizar Ausencias - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -724,7 +724,7 @@
                 // Obtener datos completos de la solicitud
                 const requestData = await supabaseRequest(
                     '/hr_absence_requests?request_id=eq.' + requestId + 
-                    '&select=*,hr_absence_categories(*),worker:worker_id(*),replacement:replacement_worker_id(*)'
+                    '&select=*,hr_absence_categories(*),worker:worker_id(*)'
                 );
                 
                 if (!requestData || requestData.length === 0) {
@@ -791,10 +791,10 @@
                                 <span class="info-label">Total horas:</span>
                                 <span class="info-value"><strong>${request.total_hours.toFixed(2)}</strong></span>
                             </div>
-                            ${request.replacement_worker_id ? `
+                            ${request.replacement_info ? `
                             <div class="info-row">
-                                <span class="info-label">Reemplazo:</span>
-                                <span class="info-value">${request.replacement.worker_first_name} ${request.replacement.worker_last_name_1}</span>
+                                <span class="info-label">Reemplazo(s):</span>
+                                <span class="info-value">${request.replacement_info}</span>
                             </div>
                             ` : ''}
                         </div>
@@ -1155,29 +1155,57 @@
                         console.log('📧 Notificación enviada a TH');
                     }
                 }
-                
-                // Notificar al reemplazo si existe
-                if (request.replacement_worker_id && request.replacement) {
-                    const replacementEmailBody = `
-                        <h3>Asignación como Reemplazo</h3>
-                        <p>Hola ${request.replacement.worker_first_name},</p>
-                        <p>Has sido asignado como reemplazo de <strong>${worker.worker_first_name} ${worker.worker_last_name_1}</strong>.</p>
-                        <hr>
-                        <p><strong>Fechas:</strong> ${dateInfo}</p>
-                        <p><strong>Motivo:</strong> ${category.name}</p>
-                        <hr>
-                        <p>Por favor, coordina con tu jefe las actividades a realizar.</p>
-                    `;
-                    
-                    await sendNotification(
-                        request.replacement.email,
-                        'Asignación como reemplazo - SchoolNet',
-                        replacementEmailBody,
-                        true
-                    );
-                    
-                    console.log('📧 Notificación enviada al reemplazo');
+
+                // Notificar a otros jefes (si notify_managers está activo)
+                if (category.notify_managers) {
+                    try {
+                        const managersData = await supabaseRequest(
+                            '/worker_managers?worker_id=eq.' + request.worker_id + '&assignment_status=eq.active&select=manager_id'
+                        );
+                        
+                        if (managersData && managersData.length > 0) {
+                            // Excluir al autorizador actual para no duplicar
+                            const otherManagerIds = managersData
+                                .map(m => m.manager_id)
+                                .filter(id => id !== currentSession.worker_id);
+                            
+                            if (otherManagerIds.length > 0) {
+                                const managersEmails = await supabaseRequest(
+                                    '/workers?worker_id=in.(' + otherManagerIds.join(',') + ')&select=email'
+                                );
+                                
+                                const emails = managersEmails.map(w => w.email).filter(e => e);
+                                
+                                if (emails.length > 0) {
+                                    const managersEmailBody = `
+                                        <h3>Solicitud de Ausencia Aprobada</h3>
+                                        <p>Se informa que la siguiente solicitud de ausencia fue <strong>aprobada</strong>.</p>
+                                        <hr>
+                                        <p><strong>Trabajador:</strong> ${worker.worker_first_name} ${worker.worker_last_name_1}</p>
+                                        <p><strong>Categoría:</strong> ${category.name}</p>
+                                        <p><strong>Fechas:</strong> ${dateInfo}</p>
+                                        <p><strong>Total días:</strong> ${request.total_days.toFixed(2)}</p>
+                                        <p><strong>Total horas:</strong> ${request.total_hours.toFixed(2)}</p>
+                                        <p><strong>Aprobada por:</strong> ${currentSession.worker_name}</p>
+                                    `;
+                                    
+                                    await sendNotification(
+                                        emails.join(','),
+                                        'Ausencia aprobada - ' + worker.worker_first_name + ' ' + worker.worker_last_name_1,
+                                        managersEmailBody,
+                                        true
+                                    );
+                                    
+                                    console.log('📧 Notificación de aprobación enviada a ' + emails.length + ' jefe(s) adicional(es)');
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error al notificar a otros jefes (aprobación):', error);
+                    }
                 }
+                
+                
                 
             } catch (error) {
                 console.error('Error al enviar notificaciones de aprobación:', error);
@@ -1249,6 +1277,53 @@
                     );
                     
                     console.log('📧 Notificación de rechazo enviada a TH');
+                }
+
+                // Notificar a otros jefes (si notify_managers está activo)
+                if (category.notify_managers) {
+                    try {
+                        const managersData = await supabaseRequest(
+                            '/worker_managers?worker_id=eq.' + request.worker_id + '&assignment_status=eq.active&select=manager_id'
+                        );
+                        
+                        if (managersData && managersData.length > 0) {
+                            const otherManagerIds = managersData
+                                .map(m => m.manager_id)
+                                .filter(id => id !== currentSession.worker_id);
+                            
+                            if (otherManagerIds.length > 0) {
+                                const managersEmails = await supabaseRequest(
+                                    '/workers?worker_id=in.(' + otherManagerIds.join(',') + ')&select=email'
+                                );
+                                
+                                const emails = managersEmails.map(w => w.email).filter(e => e);
+                                
+                                if (emails.length > 0) {
+                                    const managersEmailBody = `
+                                        <h3 style="color: #dc3545;">Solicitud de Ausencia Rechazada</h3>
+                                        <p>Se informa que la siguiente solicitud de ausencia fue <strong>rechazada</strong>.</p>
+                                        <hr>
+                                        <p><strong>Trabajador:</strong> ${worker.worker_first_name} ${worker.worker_last_name_1}</p>
+                                        <p><strong>Categoría:</strong> ${category.name}</p>
+                                        <p><strong>Fechas:</strong> ${dateInfo}</p>
+                                        <p><strong>Rechazada por:</strong> ${currentSession.worker_name}</p>
+                                        <p><strong>Motivo:</strong> ${rejectionReason}</p>
+                                    `;
+                                    
+                                    await sendNotification(
+                                        emails.join(','),
+                                        'Ausencia rechazada - ' + worker.worker_first_name + ' ' + worker.worker_last_name_1,
+                                        managersEmailBody,
+                                        true
+                                    );
+                                    
+                                    console.log('📧 Notificación de rechazo enviada a ' + emails.length + ' jefe(s) adicional(es)');
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error al notificar a otros jefes (rechazo):', error);
+                    }
                 }
                 
             } catch (error) {
