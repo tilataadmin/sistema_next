@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.03.24.14.00">
     <title>Vista Detallada por Categoría - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -584,6 +585,73 @@
         </div>
     </div>
 
+    <!-- MODAL DE TRASLADOS (Nivel 5) -->
+    <div class="modal fade" id="modal-traslados" tabindex="-1" aria-labelledby="modalTrasladosLabel" aria-hidden="true" style="z-index: 1120;">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTrasladosLabel">
+                        <i class="bi bi-arrow-left-right me-2"></i>Traslados Presupuestales
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Categoría:</strong> <span id="info-traslado-categoria">-</span>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Ítem:</strong> <span id="info-traslado-item">-</span>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Asignación:</strong> <span id="info-traslado-detalle">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong><i class="bi bi-signpost-split me-1"></i>Trazabilidad del Saldo</strong>
+                        </div>
+                        <div class="card-body py-2" id="trazabilidad-contenido">
+                            <p class="text-muted mb-0">Cargando...</p>
+                        </div>
+                    </div>
+
+                    <div class="table-scroll">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 90px;">Fecha</th>
+                                    <th style="min-width: 80px;">Tipo</th>
+                                    <th style="min-width: 120px;">Ítem Contraparte</th>
+                                    <th style="min-width: 130px;">Detalle Contraparte</th>
+                                    <th style="min-width: 100px;" class="text-end">Valor</th>
+                                    <th style="min-width: 200px;">Razón</th>
+                                    <th style="min-width: 80px;" class="text-center">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-traslados-modal">
+                                <tr>
+                                    <td colspan="7" class="empty-state">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        <p>Cargando traslados...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts - ORDEN CRÍTICO -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
@@ -604,6 +672,7 @@
         let modalAssignments = null;
         let modalRequests = null;
         let modalPayments = null;
+        let modalTraslados = null;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -636,6 +705,7 @@
             modalAssignments = new bootstrap.Modal(document.getElementById('modal-assignments'));
             modalRequests = new bootstrap.Modal(document.getElementById('modal-requests'));
             modalPayments = new bootstrap.Modal(document.getElementById('modal-payments'));
+            modalTraslados = new bootstrap.Modal(document.getElementById('modal-traslados'));
 
             console.log('✅ Componentes inicializados');
         }
@@ -931,6 +1001,9 @@
                             <td class="text-center">
                                 <button class="btn-ver" onclick="abrirModalRequests('${asig.assignment_id}', '${escapeHtml(asig.category_detail || 'Sin detalle')}')">
                                     <i class="bi bi-arrow-right-circle me-1"></i>Ver Requerimientos
+                                </button>
+                                <button class="btn btn-sm btn-outline-info ms-1" onclick="abrirModalTraslados('${asig.assignment_id}', '${escapeHtml(asig.category_detail || 'Sin detalle')}', ${aprobado}, ${ejecutado})">
+                                    <i class="bi bi-arrow-left-right me-1"></i>Traslados
                                 </button>
                             </td>
                         </tr>
@@ -1245,12 +1318,122 @@
         }
 
         // ==========================================
+        // ABRIR MODAL DE TRASLADOS
+        // ==========================================
+        async function abrirModalTraslados(assignmentId, detalle, aprobado, ejecutado) {
+            document.getElementById('info-traslado-categoria').textContent = currentCategoryName;
+            document.getElementById('info-traslado-item').textContent = currentItemName;
+            document.getElementById('info-traslado-detalle').textContent = detalle;
+            document.getElementById('trazabilidad-contenido').innerHTML = '<p class="text-muted mb-0">Cargando...</p>';
+            document.getElementById('tbody-traslados-modal').innerHTML = '<tr><td colspan="7" class="empty-state"><i class="bi bi-hourglass-split"></i><p>Cargando traslados...</p></td></tr>';
+
+            modalTraslados.show();
+
+            try {
+                const [salidas, entradas] = await Promise.all([
+                    supabaseRequest(`/budget_transfers?select=transfer_id,transfer_value,request_reason,transfer_status,start_date,end_date,destination_assignment_id&source_assignment_id=eq.${assignmentId}&order=start_date.desc`),
+                    supabaseRequest(`/budget_transfers?select=transfer_id,transfer_value,request_reason,transfer_status,start_date,end_date,source_assignment_id&destination_assignment_id=eq.${assignmentId}&order=start_date.desc`)
+                ]);
+
+                const contraparteIds = new Set();
+                (salidas || []).forEach(t => { if (t.destination_assignment_id) contraparteIds.add(t.destination_assignment_id); });
+                (entradas || []).forEach(t => { if (t.source_assignment_id) contraparteIds.add(t.source_assignment_id); });
+
+                let contraparteMap = {};
+                if (contraparteIds.size > 0) {
+                    const idsParam = Array.from(contraparteIds).join(',');
+                    const contrapartes = await supabaseRequest(
+                        `/budget_assignments?select=assignment_id,category_detail,budget_items(item_name)&assignment_id=in.(${idsParam})`
+                    );
+                    (contrapartes || []).forEach(c => {
+                        contraparteMap[c.assignment_id] = {
+                            item: c.budget_items?.item_name || 'N/A',
+                            detalle: c.category_detail || 'Sin detalle'
+                        };
+                    });
+                }
+
+                const movimientos = [];
+                (salidas || []).forEach(t => {
+                    const cp = contraparteMap[t.destination_assignment_id] || { item: 'N/A', detalle: '-' };
+                    movimientos.push({ ...t, tipo: 'Salida', contraparte_item: cp.item, contraparte_detalle: cp.detalle });
+                });
+                (entradas || []).forEach(t => {
+                    const cp = contraparteMap[t.source_assignment_id] || { item: 'N/A', detalle: '-' };
+                    movimientos.push({ ...t, tipo: 'Entrada', contraparte_item: cp.item, contraparte_detalle: cp.detalle });
+                });
+
+                movimientos.sort((a, b) => new Date(b.start_date || 0) - new Date(a.start_date || 0));
+
+                let totalSalidas = 0;
+                let totalEntradas = 0;
+                movimientos.forEach(m => {
+                    if (m.transfer_status === 'approved') {
+                        if (m.tipo === 'Salida') totalSalidas += m.transfer_value || 0;
+                        if (m.tipo === 'Entrada') totalEntradas += m.transfer_value || 0;
+                    }
+                });
+                const aprobadoOriginal = aprobado + totalSalidas - totalEntradas;
+
+                document.getElementById('trazabilidad-contenido').innerHTML = `
+                    <div class="d-flex flex-wrap gap-3 align-items-center">
+                        <span><strong>Aprobado original:</strong> ${formatCurrency(aprobadoOriginal)}</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="text-danger"><strong>Salidas:</strong> -${formatCurrency(totalSalidas)}</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="text-success"><strong>Entradas:</strong> +${formatCurrency(totalEntradas)}</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="text-primary"><strong>Aprobado actual:</strong> ${formatCurrency(aprobado)}</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span><strong>Ejecutado:</strong> ${formatCurrency(ejecutado)}</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="text-success"><strong>Disponible:</strong> ${formatCurrency(aprobado - ejecutado)}</span>
+                    </div>
+                `;
+
+                const tbody = document.getElementById('tbody-traslados-modal');
+                if (movimientos.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="bi bi-inbox"></i><p>No hay traslados para esta asignación</p></td></tr>';
+                    return;
+                }
+
+                const estadoLabels = { pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', executed: 'Ejecutado' };
+                const estadoColors = { pending: 'warning', approved: 'success', rejected: 'danger', executed: 'info' };
+
+                tbody.innerHTML = movimientos.map(m => {
+                    const fecha = m.start_date ? formatDate(m.start_date) : '-';
+                    const tipoBadge = m.tipo === 'Salida'
+                        ? '<span class="badge bg-danger">Salida</span>'
+                        : '<span class="badge bg-success">Entrada</span>';
+                    const estadoBadge = `<span class="badge bg-${estadoColors[m.transfer_status] || 'secondary'}">${estadoLabels[m.transfer_status] || m.transfer_status}</span>`;
+                    const razon = m.request_reason || '-';
+
+                    return `<tr>
+                        <td>${fecha}</td>
+                        <td>${tipoBadge}</td>
+                        <td><strong>${escapeHtml(m.contraparte_item)}</strong></td>
+                        <td>${escapeHtml(m.contraparte_detalle)}</td>
+                        <td class="valor-cell">${formatCurrency(m.transfer_value)}</td>
+                        <td class="detalle-cell"><div class="detalle-content">${razon}</div></td>
+                        <td class="text-center">${estadoBadge}</td>
+                    </tr>`;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error cargando traslados:', error);
+                document.getElementById('tbody-traslados-modal').innerHTML = '<tr><td colspan="7" class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>Error al cargar traslados</p></td></tr>';
+                document.getElementById('trazabilidad-contenido').innerHTML = '<p class="text-danger mb-0">Error al calcular trazabilidad</p>';
+            }
+        }
+
+        // ==========================================
         // HACER FUNCIONES GLOBALES
         // ==========================================
         window.abrirModalItems = abrirModalItems;
         window.abrirModalAssignments = abrirModalAssignments;
         window.abrirModalRequests = abrirModalRequests;
         window.abrirModalPayments = abrirModalPayments;
+        window.abrirModalTraslados = abrirModalTraslados;
 
         console.log('✅ Página de Vista Detallada por Categoría cargada correctamente');
     </script>
