@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.05.08.25">
+    <meta name="page-version" content="26.03.24.13.35">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -372,6 +372,7 @@
                             <option value="executed">Ejecutado</option>
                             <option value="pre-closed">Pre-cerrado</option>
                             <option value="closed">Cerrado</option>
+                            <option value="rejected">Anulado</option>
                         </select>
                     </div>
                     <span id="total-requerimientos" class="badge bg-primary">0 requerimientos</span>
@@ -533,6 +534,9 @@
                     <button type="button" class="btn btn-warning" onclick="cerrarRequerimiento()">
                         <i class="bi bi-lock me-1"></i>Cerrar Requerimiento
                     </button>
+                    <button type="button" class="btn btn-danger" onclick="mostrarModalAnular()">
+                        <i class="bi bi-x-octagon me-1"></i>Anular Requerimiento
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         Cerrar
                     </button>
@@ -541,7 +545,43 @@
         </div>
     </div>
 
-    <!-- Bootstrap JS -->
+<!-- Modal para anular requerimiento -->
+    <div class="modal fade" id="modalAnular" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-x-octagon me-2"></i>Anular Requerimiento</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Atención:</strong> Esta acción anulará el requerimiento, cancelará todas las facturas asociadas y devolverá el valor al presupuesto disponible.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Valor del requerimiento:</strong></label>
+                        <p id="anular-valor" class="valor-money fs-5"></p>
+                    </div>
+                    <div class="mb-3">
+                        <label for="anular-razon" class="form-label">
+                            Razón de la anulación <span class="text-danger">*</span>
+                        </label>
+                        <textarea id="anular-razon" class="form-control" rows="4" required
+                            placeholder="Explique detalladamente la razón por la cual se anula este requerimiento..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-danger" onclick="ejecutarAnulacion()">
+                        <i class="bi bi-x-octagon me-1"></i>Confirmar Anulación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<!-- Bootstrap JS -->
+    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Configuración del sistema -->
     <script src="../../assets/js/config.js"></script>
@@ -565,6 +605,7 @@
         let valorAnterior = 0;
         let tipoAnterior = '';
         let modalInstance = null;
+        let modalAnularInstance = null;
         let requerimientosFiltrados = [];
 
         // Referencias DOM
@@ -646,6 +687,7 @@
 
             // Inicializar modal de Bootstrap
             modalInstance = new bootstrap.Modal(elementos.modalAsociarFacturas);
+            modalAnularInstance = new bootstrap.Modal(document.getElementById('modalAnular'));
         }
 
         /**
@@ -719,7 +761,7 @@
                 cargarSelectProveedores();
                 
                 // Consulta con joins para obtener solicitante y aprobador
-                const requerimientosData = await supabaseRequest('/execution_requests?select=request_id,request_details,requested_value,requested_at,request_status,requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),budget_assignments!execution_requests_assignment_fkey(assignment_id,category_detail,authorizer:workers!budget_assignments_worker_id_fkey(email,worker_first_name,worker_last_name_1,worker_last_name_2),budget_items!budget_assignments_item_fkey(item_id,item_name))&request_status=in.(approved,executed,pre-closed,closed)&order=requested_at.desc');
+                const requerimientosData = await supabaseRequest('/execution_requests?select=request_id,request_details,requested_value,requested_at,request_status,worker_email,requester:workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),budget_assignments!execution_requests_assignment_fkey(assignment_id,category_detail,authorizer:workers!budget_assignments_worker_id_fkey(email,worker_first_name,worker_last_name_1,worker_last_name_2),budget_items!budget_assignments_item_fkey(item_id,item_name))&request_status=in.(approved,executed,pre-closed,closed,rejected)&order=requested_at.desc');
                 
                 if (!requerimientosData || requerimientosData.length === 0) {
                     datosCompletos.requerimientos = [];
@@ -740,7 +782,9 @@
                     aprobador_nombre: formatWorkerName(req.budget_assignments?.authorizer),
                     aprobador_email: req.budget_assignments?.authorizer?.email || '',
                     rubro_nombre: req.budget_assignments?.budget_items?.item_name || 'Sin rubro',
-                    subitem_nombre: req.budget_assignments?.category_detail || 'Sin subítem'
+                    subitem_nombre: req.budget_assignments?.category_detail || 'Sin subítem',
+                    worker_email: req.worker_email || '',
+                    assignment_id: req.budget_assignments?.assignment_id || null
                 }));
                 
                 // Poblar filtro de aprobadores
@@ -930,6 +974,27 @@
             
             // Ocultar formulario inicialmente
             elementos.formFacturaContainer.classList.add('d-none');
+            
+            // Si está anulado o cerrado, ocultar botones de acción
+            if (requerimientoActual.request_status === 'rejected' || requerimientoActual.request_status === 'closed') {
+                elementos.modalFooterActions.innerHTML = `
+                    <span class="badge bg-${obtenerColorEstado(requerimientoActual.request_status)} fs-6 me-auto">${obtenerLabelEstado(requerimientoActual.request_status)}</span>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                `;
+            } else {
+                elementos.modalFooterActions.innerHTML = `
+                    <button type="button" class="btn btn-primary" onclick="mostrarFormularioFactura()">
+                        <i class="bi bi-plus-circle me-1"></i>Nueva Factura/NC
+                    </button>
+                    <button type="button" class="btn btn-warning" onclick="cerrarRequerimiento()">
+                        <i class="bi bi-lock me-1"></i>Cerrar Requerimiento
+                    </button>
+                    <button type="button" class="btn btn-danger" onclick="mostrarModalAnular()">
+                        <i class="bi bi-x-octagon me-1"></i>Anular Requerimiento
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                `;
+            }
             elementos.modalFooterActions.style.display = 'flex';
             
             // Mostrar modal
@@ -1463,14 +1528,189 @@ async function cerrarRequerimiento() {
             const labels = {
                 'pending': 'Pendiente',
                 'approved': 'Aprobado',
-                'rejected': 'Rechazado',
+                'rejected': 'Anulado',
                 'executed': 'Ejecutado',
                 'pre-closed': 'Pre-cerrado',
                 'closed': 'Cerrado'
             };
             return labels[estado] || estado;
         }
+        
+                /**
+         * Muestra el modal de anulación
+         */
+        function mostrarModalAnular() {
+            if (!requerimientoActual) {
+                showMessage('No hay requerimiento seleccionado', 'warning');
+                return;
+            }
+            if (requerimientoActual.request_status === 'rejected') {
+                showMessage('Este requerimiento ya está anulado', 'warning');
+                return;
+            }
+            if (requerimientoActual.request_status === 'closed') {
+                showMessage('No se puede anular un requerimiento cerrado', 'warning');
+                return;
+            }
+            
+            document.getElementById('anular-valor').textContent = formatearMoneda(requerimientoActual.requested_value);
+            document.getElementById('anular-razon').value = '';
+            modalAnularInstance.show();
+        }
 
+        /**
+         * Ejecuta la anulación del requerimiento
+         */
+        async function ejecutarAnulacion() {
+            const razon = document.getElementById('anular-razon').value.trim();
+            if (!razon) {
+                showMessage('Debe indicar la razón de la anulación', 'warning');
+                return;
+            }
+            if (razon.length < 10) {
+                showMessage('La razón debe tener al menos 10 caracteres', 'warning');
+                return;
+            }
+
+            try {
+                mostrarLoading('Procesando anulación...');
+
+                // 1. Cambiar estado del requerimiento a rejected y registrar razón
+                await supabaseRequest(`/execution_requests?request_id=eq.${requerimientoActual.request_id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        request_status: 'rejected',
+                        overrun_reasons: razon,
+                        closed_value: 0,
+                        invoice_value: 0,
+                        notes_value: 0,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                // 2. Cancelar todas las facturas asociadas
+                if (datosCompletos.facturasActuales && datosCompletos.facturasActuales.length > 0) {
+                    await supabaseRequest(`/budget_payments?execution_request_id=eq.${requerimientoActual.request_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            payment_status: 'cancelled',
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+                }
+
+                // 3. Devolver valor al presupuesto (restar del executed_value)
+                if (requerimientoActual.assignment_id) {
+                    const assignmentData = await supabaseRequest(
+                        `/budget_assignments?select=executed_value&assignment_id=eq.${requerimientoActual.assignment_id}`
+                    );
+                    if (assignmentData && assignmentData.length > 0) {
+                        const nuevoExecuted = Math.max(0, (assignmentData[0].executed_value || 0) - requerimientoActual.requested_value);
+                        await supabaseRequest(`/budget_assignments?assignment_id=eq.${requerimientoActual.assignment_id}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({
+                                executed_value: nuevoExecuted,
+                                updated_at: new Date().toISOString()
+                            })
+                        });
+                    }
+                }
+
+                // 4. Notificar al solicitante
+                if (requerimientoActual.worker_email) {
+                    try {
+                        const htmlSolicitante = getAnulacionEmailTemplate(
+                            requerimientoActual.solicitante_nombre,
+                            requerimientoActual.request_details,
+                            requerimientoActual.requested_value,
+                            razon,
+                            'solicitante'
+                        );
+                        await sendNotification(
+                            requerimientoActual.worker_email,
+                            '[SchoolNet] Requerimiento Anulado',
+                            htmlSolicitante,
+                            true
+                        );
+                    } catch (e) { console.warn('⚠️ Error notificando solicitante:', e); }
+                }
+
+                // 5. Notificar al aprobador
+                if (requerimientoActual.aprobador_email) {
+                    try {
+                        const htmlAprobador = getAnulacionEmailTemplate(
+                            requerimientoActual.solicitante_nombre,
+                            requerimientoActual.request_details,
+                            requerimientoActual.requested_value,
+                            razon,
+                            'aprobador'
+                        );
+                        await sendNotification(
+                            requerimientoActual.aprobador_email,
+                            '[SchoolNet] Requerimiento Anulado - ' + requerimientoActual.solicitante_nombre,
+                            htmlAprobador,
+                            true
+                        );
+                    } catch (e) { console.warn('⚠️ Error notificando aprobador:', e); }
+                }
+
+                modalAnularInstance.hide();
+                modalInstance.hide();
+                showMessage('Requerimiento anulado exitosamente. Se devolvió el valor al presupuesto disponible.', 'success');
+                await cargarDatosIniciales();
+
+            } catch (error) {
+                console.error('Error al anular requerimiento:', error);
+                showMessage('Error al anular: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        /**
+         * Template de email para notificación de anulación
+         */
+        function getAnulacionEmailTemplate(solicitante, detalle, valor, razon, destinatario) {
+            const esAprobador = destinatario === 'aprobador';
+            const intro = esAprobador
+                ? `Se ha anulado un requerimiento de <strong>${escapeHtml(solicitante)}</strong> que usted había aprobado.`
+                : 'Su requerimiento ha sido anulado. El valor ha sido devuelto al presupuesto disponible.';
+
+            return `
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                    <div style="background:#e74c3c;color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+                        <h2 style="margin:0;">⛔ Requerimiento Anulado</h2>
+                    </div>
+                    <div style="padding:20px;background:#f8f9fa;">
+                        <div style="background:white;padding:20px;border-radius:8px;margin-bottom:15px;">
+                            <p>${intro}</p>
+                            <table style="width:100%;border-collapse:collapse;margin:15px 0;">
+                                <tr style="border-bottom:1px solid #dee2e6;">
+                                    <td style="padding:10px;font-weight:bold;">Solicitante:</td>
+                                    <td style="padding:10px;">${escapeHtml(solicitante)}</td>
+                                </tr>
+                                <tr style="border-bottom:1px solid #dee2e6;">
+                                    <td style="padding:10px;font-weight:bold;">Valor:</td>
+                                    <td style="padding:10px;font-family:Courier New;font-weight:bold;">${formatearMoneda(valor)}</td>
+                                </tr>
+                                <tr style="border-bottom:1px solid #dee2e6;">
+                                    <td style="padding:10px;font-weight:bold;">Detalle:</td>
+                                    <td style="padding:10px;">${detalle ? detalle.substring(0, 200) : '-'}</td>
+                                </tr>
+                            </table>
+                            <div style="background:#fff3cd;padding:15px;border-radius:8px;border-left:4px solid #e74c3c;margin-top:15px;">
+                                <p style="margin:0 0 5px 0;font-weight:bold;">Razón de la anulación:</p>
+                                <p style="margin:0;white-space:pre-wrap;">${escapeHtml(razon)}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="background:#e9ecef;padding:15px;text-align:center;font-size:12px;color:#6c757d;border-radius:0 0 8px 8px;">
+                        Mensaje automático - SchoolNet - Colegio Tilata
+                    </div>
+                </div>
+            `;
+        }
+        
         /**
          * Manejo de errores globales de JavaScript
          */
@@ -1489,6 +1729,8 @@ async function cerrarRequerimiento() {
         window.cancelarFormularioFactura = cancelarFormularioFactura;
         window.editarFactura = editarFactura;
         window.cerrarRequerimiento = cerrarRequerimiento;
+        window.mostrarModalAnular = mostrarModalAnular;
+        window.ejecutarAnulacion = ejecutarAnulacion;
         window.formatText = formatText;
 
         console.log('🎉 Formulario de Asociar Facturas - SchoolNet v1.0');
