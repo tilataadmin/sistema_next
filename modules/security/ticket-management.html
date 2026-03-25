@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.25.14.30">
+    <meta name="page-version" content="26.03.25.14.45">
     <title>Gestión de Tickets - SchoolNet</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -593,20 +593,19 @@
         
             try {
                 // Calcular usuarios por módulo
-                const moduleUserCounts = await calcularUsuariosPorModulo();
+                const permUserCounts = await calcularUsuariosPorPermiso();
         
                 // Calcular score para cada ticket
                 const scored = pendientes.map(t => {
                     const catWeight = allCategories.find(c => c.category_id === t.category_id)?.category_weight || 5;
                     const priNorm = calcularPrioridadNormalizada(t);
                     const dias = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 86400000);
-                    const moduleName = t.permissions?.permission_module || '';
-                    const usrMod = moduleUserCounts[moduleName] || 0;
+                    const usrPerm = permUserCounts[t.module_id] || 0;
                     const similares = contarTicketsSimilares(t, pendientes);
         
-                    const score = (catWeight * 3) + (priNorm * 4) + (dias * 2) + (usrMod * 1) + (similares * 1.5);
+                    const score = (catWeight * 3) + (priNorm * 4) + (dias * 2) + (usrPerm * 1) + (similares * 1.5);
         
-                    return { ...t, score: Math.round(score * 100) / 100, catWeight, priNorm: Math.round(priNorm * 100) / 100, dias, usrMod, similares };
+                    return { ...t, score: Math.round(score * 100) / 100, catWeight, priNorm: Math.round(priNorm * 100) / 100, dias, usrPerm, similares };
                 });
         
                 // Ordenar por score descendente
@@ -628,7 +627,7 @@
                         <td>${catBadge}</td>
                         <td>${priBadge}</td>
                         <td class="text-center">${t.dias}d</td>
-                        <td>${modName} <small class="text-muted">(${t.usrMod})</small></td>
+                        <td>${modName} <small class="text-muted">(${t.usrPerm})</small></td>
                         <td class="text-center">${t.similares}</td>
                         <td class="small">${user}</td>
                     </tr>`;
@@ -665,34 +664,31 @@
             }).length;
         }
         
-        async function calcularUsuariosPorModulo() {
+        async function calcularUsuariosPorPermiso() {
             const counts = {};
             try {
                 const data = await supabaseRequest(
-                    '/role_permissions?select=permissions(permission_module),role_id'
+                    '/role_permissions?select=permission_id,role_id'
                 );
         
-                // Obtener módulos únicos con sus role_ids
-                const moduleRoles = {};
+                // Agrupar roles por permission_id
+                const permRoles = {};
                 (data || []).forEach(rp => {
-                    const mod = rp.permissions?.permission_module;
-                    if (mod) {
-                        if (!moduleRoles[mod]) moduleRoles[mod] = new Set();
-                        moduleRoles[mod].add(rp.role_id);
-                    }
+                    if (!permRoles[rp.permission_id]) permRoles[rp.permission_id] = new Set();
+                    permRoles[rp.permission_id].add(rp.role_id);
                 });
         
-                // Contar usuarios por módulo
+                // Contar usuarios por permiso
                 const userRoles = await supabaseRequest('/user_roles?select=user_id,role_id');
-                for (const [mod, roleSet] of Object.entries(moduleRoles)) {
+                for (const [permId, roleSet] of Object.entries(permRoles)) {
                     const userIds = new Set();
                     (userRoles || []).forEach(ur => {
                         if (roleSet.has(ur.role_id)) userIds.add(ur.user_id);
                     });
-                    counts[mod] = userIds.size;
+                    counts[permId] = userIds.size;
                 }
             } catch (e) {
-                console.error('Error calculando usuarios por módulo:', e);
+                console.error('Error calculando usuarios por permiso:', e);
             }
             return counts;
         }
