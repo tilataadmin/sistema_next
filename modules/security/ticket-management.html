@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.19.12.50">
+    <meta name="page-version" content="26.03.25.14.10">
     <title>Gestión de Tickets - SchoolNet</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -95,6 +95,7 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Tickets (<span id="ticket-count">0</span>)</h5>
+                <button class="btn btn-sm btn-outline-primary me-2" onclick="priorizarPendientes()"><i class="bi bi-sort-numeric-down me-1"></i>Priorizar Pendientes</button>
                 <button class="btn btn-sm btn-outline-secondary" onclick="exportToCSV()"><i class="bi bi-download me-1"></i>Exportar</button>
             </div>
             <div class="card-body" id="tickets-container">
@@ -149,6 +150,45 @@
         </div>
     </div>
 
+    <!-- MODAL PRIORIZACIÓN -->
+    <div class="modal fade" id="priorityModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-sort-numeric-down me-2"></i>Priorización de Tickets Pendientes</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>Fórmula:</strong> (Peso categoría × 3) + (Prioridad normalizada × 4) + (Días pendiente × 2) + (Usuarios módulo × 1) + (Tickets similares × 1.5)
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th width="50">#</th>
+                                    <th width="80">Score</th>
+                                    <th>Ticket</th>
+                                    <th>Categoría</th>
+                                    <th>Prioridad</th>
+                                    <th>Días</th>
+                                    <th>Módulo (usuarios)</th>
+                                    <th>Similares</th>
+                                    <th>Reportado por</th>
+                                </tr>
+                            </thead>
+                            <tbody id="priority-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     
@@ -186,7 +226,7 @@
         }
 
         async function loadCategories() {
-            allCategories = await supabaseRequest('/ticket_categories?select=category_id,category_name,category_icon,category_color&is_active=eq.true&order=category_order') || [];
+            allCategories = await supabaseRequest('/ticket_categories?select=category_id,category_name,category_icon,category_color,category_weight&is_active=eq.true&order=category_order') || [];
             const sel = document.getElementById('filter-category');
             sel.innerHTML = '<option value="">Todas</option>';
             allCategories.forEach(c => { const o = document.createElement('option'); o.value = c.category_id; o.textContent = c.category_name; sel.appendChild(o); });
@@ -501,6 +541,127 @@
             const csv = [h.join(','), ...rows.map(r=>r.join(','))].join('\n');
             const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
             const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `tickets_${new Date().toISOString().split('T')[0]}.csv`; link.click();
+        }
+
+        // ==========================================
+        // PRIORIZACIÓN DE TICKETS
+        // ==========================================
+        async function priorizarPendientes() {
+            const pendientes = allTickets.filter(t => 
+                t.ticket_status === 'pendiente' || t.ticket_status === 'asignado'
+            );
+        
+            if (pendientes.length === 0) {
+                showMessage('No hay tickets pendientes para priorizar', 'info');
+                return;
+            }
+        
+            showLoading();
+        
+            try {
+                // Calcular usuarios por módulo
+                const moduleUserCounts = await calcularUsuariosPorModulo();
+        
+                // Calcular score para cada ticket
+                const scored = pendientes.map(t => {
+                    const catWeight = allCategories.find(c => c.category_id === t.category_id)?.category_weight || 5;
+                    const priNorm = calcularPrioridadNormalizada(t);
+                    const dias = Math.floor((Date.now() - new Date(t.created_at).getTime()) / 86400000);
+                    const moduleName = t.permissions?.permission_module || '';
+                    const usrMod = moduleUserCounts[moduleName] || 0;
+                    const similares = contarTicketsSimilares(t, pendientes);
+        
+                    const score = (catWeight * 3) + (priNorm * 4) + (dias * 2) + (usrMod * 1) + (similares * 1.5);
+        
+                    return { ...t, score: Math.round(score * 100) / 100, catWeight, priNorm: Math.round(priNorm * 100) / 100, dias, usrMod, similares };
+                });
+        
+                // Ordenar por score descendente
+                scored.sort((a, b) => b.score - a.score);
+        
+                // Renderizar tabla
+                const tbody = document.getElementById('priority-table-body');
+                tbody.innerHTML = scored.map((t, i) => {
+                    const catBadge = getCategoryBadge(t.ticket_categories);
+                    const priBadge = getPriorityBadge(t.ticket_priority_options);
+                    const user = t.users?.user_display_name || 'Desconocido';
+                    const modName = t.permissions?.permission_module || 'Sin módulo';
+                    const num = t.ticket_number ? `#${t.ticket_number}` : '';
+        
+                    return `<tr style="cursor:pointer;" onclick="document.querySelector('[data-bs-dismiss=modal]').click(); openDetailModal(allTickets.find(x=>x.ticket_id==='${t.ticket_id}'));">
+                        <td class="text-center"><span class="badge ${i < 3 ? 'bg-danger' : i < 7 ? 'bg-warning' : 'bg-secondary'}">${i + 1}</span></td>
+                        <td><strong>${t.score}</strong></td>
+                        <td>${num} ${(t.description || '').substring(0, 60)}...</td>
+                        <td>${catBadge}</td>
+                        <td>${priBadge}</td>
+                        <td class="text-center">${t.dias}d</td>
+                        <td>${modName} <small class="text-muted">(${t.usrMod})</small></td>
+                        <td class="text-center">${t.similares}</td>
+                        <td class="small">${user}</td>
+                    </tr>`;
+                }).join('');
+        
+                new bootstrap.Modal(document.getElementById('priorityModal')).show();
+        
+            } catch (e) {
+                console.error('❌ Error priorizando:', e);
+                showMessage('Error al priorizar: ' + e.message, 'danger');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        function calcularPrioridadNormalizada(ticket) {
+            const catId = ticket.category_id;
+            const catPriorities = allPriorityOptions.filter(p => p.category_id === catId);
+            if (catPriorities.length === 0) return 0.5;
+            const currentOrder = ticket.ticket_priority_options?.priority_order || 1;
+            return currentOrder / catPriorities.length;
+        }
+        
+        function contarTicketsSimilares(ticket, pendientes) {
+            const modId = ticket.module_id;
+            const pageUrl = ticket.page_url;
+            if (!modId && !pageUrl) return 0;
+        
+            return pendientes.filter(t => {
+                if (t.ticket_id === ticket.ticket_id) return false;
+                if (modId && t.module_id === modId) return true;
+                if (pageUrl && t.page_url === pageUrl) return true;
+                return false;
+            }).length;
+        }
+        
+        async function calcularUsuariosPorModulo() {
+            const counts = {};
+            try {
+                const data = await supabaseRequest(
+                    '/role_permissions?select=permissions(permission_module),role_id'
+                );
+        
+                // Obtener módulos únicos con sus role_ids
+                const moduleRoles = {};
+                (data || []).forEach(rp => {
+                    const mod = rp.permissions?.permission_module;
+                    if (mod) {
+                        if (!moduleRoles[mod]) moduleRoles[mod] = new Set();
+                        moduleRoles[mod].add(rp.role_id);
+                    }
+                });
+        
+                // Contar usuarios por módulo
+                const userRoles = await supabaseRequest('/user_roles?select=user_id,role_id');
+                for (const [mod, roleSet] of Object.entries(moduleRoles)) {
+                    const userIds = new Set();
+                    (userRoles || []).forEach(ur => {
+                        if (roleSet.has(ur.role_id)) userIds.add(ur.user_id);
+                    });
+                    counts[mod] = userIds.size;
+                }
+            } catch (e) {
+                console.error('Error calculando usuarios por módulo:', e);
+            }
+            return counts;
         }
 
         function showLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
