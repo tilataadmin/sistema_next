@@ -984,7 +984,32 @@
             document.getElementById('categoryHelp').textContent = helpText;
             
             // Campos de fecha según configuración
-            if (category.full_day_only) {
+            if (category.is_recurring) {
+                // Categoría recurrente: rango de fechas + horas diarias
+                html += `
+                    <div class="alert alert-info">
+                        <i class="bi bi-arrow-repeat me-2"></i>
+                        <strong>Ausencia recurrente:</strong> Define el rango de fechas y las horas diarias.
+                        Se aplicará la misma cantidad de horas cada día hábil del período.
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="startDate" class="form-label required-field">Fecha Inicial</label>
+                            <input type="date" class="form-control" id="startDate" required onchange="calculateTotals()">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="endDate" class="form-label required-field">Fecha Final</label>
+                            <input type="date" class="form-control" id="endDate" required onchange="calculateTotals()">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="dailyHoursInput" class="form-label required-field">Horas Diarias</label>
+                            <input type="number" class="form-control" id="dailyHoursInput" required
+                                min="0.5" max="8" step="0.5" placeholder="Ej: 1"
+                                onchange="calculateTotals()">
+                        </div>
+                    </div>
+                `;
+            } else if (category.full_day_only) {
                 html += `
                     <div class="row mb-3">
                         <div class="col-md-6">
@@ -1048,7 +1073,7 @@
             
             // Establecer fechas mínimas (permite fechas pasadas según configuración)
             const minDate = getMinAllowedDate();
-            if (category.full_day_only) {
+            if (category.is_recurring || category.full_day_only) {
                 document.getElementById('startDate').min = minDate;
                 document.getElementById('endDate').min = minDate;
             } else {
@@ -1107,8 +1132,39 @@
             let totalHours = 0;
             let hasTimeError = false;
             let timeErrorMessage = '';
-            
-            if (selectedCategory.full_day_only) {
+
+            if (selectedCategory.is_recurring) {
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+                const dailyHours = parseFloat(document.getElementById('dailyHoursInput').value);
+
+                if (!startDate || !endDate || !dailyHours) return;
+
+                // Validar plazo de registro
+                const dateValidation = validateStartDate(startDate);
+                if (!dateValidation.valid) {
+                    showMessage(dateValidation.message, 'danger');
+                    document.getElementById('totalDays').value = '0';
+                    document.getElementById('totalHours').value = '0';
+                    document.getElementById('submitBtn').disabled = true;
+                    return;
+                }
+                document.getElementById('submitBtn').disabled = false;
+
+                if (new Date(endDate) < new Date(startDate)) {
+                    showMessage('La fecha final debe ser mayor o igual a la fecha inicial', 'warning');
+                    return;
+                }
+
+                const workDays = countWorkDays(startDate, endDate);
+                totalHours = workDays * dailyHours;
+
+                const workdayStart = hrConfig.workday_start_time || '07:00:00';
+                const workdayEnd = hrConfig.workday_end_time || '15:00:00';
+                const hoursPerDay = calculateHoursPerDay(workdayStart, workdayEnd);
+                totalDays = totalHours / hoursPerDay;
+
+           } else if (selectedCategory.full_day_only) {
                 const startDate = document.getElementById('startDate').value;
                 const endDate = document.getElementById('endDate').value;
                 
@@ -1449,7 +1505,20 @@
             }
             
             // Validar campos requeridos
-            if (selectedCategory.full_day_only) {
+            if (selectedCategory.is_recurring) {
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+                const dailyHours = document.getElementById('dailyHoursInput').value;
+                if (!startDate || !endDate || !dailyHours) {
+                    showMessage('Debes completar las fechas y las horas diarias', 'warning');
+                    return;
+                }
+                const dateCheck = validateStartDate(startDate);
+                if (!dateCheck.valid) {
+                    showMessage(dateCheck.message, 'danger');
+                    return;
+                }
+            } else if (selectedCategory.full_day_only) {
                 const startDate = document.getElementById('startDate').value;
                 const endDate = document.getElementById('endDate').value;
                 if (!startDate || !endDate) {
@@ -1562,7 +1631,12 @@
                 status: selectedCategory.requires_authorization ? 'pending' : 'approved'
             };
             
-            if (selectedCategory.full_day_only) {
+            if (selectedCategory.is_recurring) {
+                requestData.start_date = formatDateForDatabase(document.getElementById('startDate').value);
+                requestData.end_date = formatDateForDatabase(document.getElementById('endDate').value);
+                requestData.is_full_day = false;
+                requestData.daily_recurring_hours = parseFloat(document.getElementById('dailyHoursInput').value);
+            } else if (selectedCategory.full_day_only) {
                 requestData.start_date = formatDateForDatabase(document.getElementById('startDate').value);
                 requestData.end_date = formatDateForDatabase(document.getElementById('endDate').value);
                 requestData.is_full_day = true;
@@ -1606,7 +1680,14 @@
                 edited_at: new Date().toISOString()
             };
             
-            if (selectedCategory.full_day_only) {
+            if (selectedCategory.is_recurring) {
+                updateData.start_date = formatDateForDatabase(document.getElementById('startDate').value);
+                updateData.end_date = formatDateForDatabase(document.getElementById('endDate').value);
+                updateData.start_time = null;
+                updateData.end_time = null;
+                updateData.is_full_day = false;
+                updateData.daily_recurring_hours = parseFloat(document.getElementById('dailyHoursInput').value);
+            } else if (selectedCategory.full_day_only) {
                 updateData.start_date = formatDateForDatabase(document.getElementById('startDate').value);
                 updateData.end_date = formatDateForDatabase(document.getElementById('endDate').value);
                 updateData.start_time = null;
@@ -2097,7 +2178,7 @@
                 modalBody.innerHTML = `
                     <div class="mb-3">
                         <p><strong>Categoría:</strong> ${request.hr_absence_categories?.name || 'N/A'}</p>
-                        <p><strong>Fechas:</strong> ${request.is_full_day ? `${request.start_date} al ${request.end_date}` : `${request.start_date} (${request.start_time} - ${request.end_time})`}</p>
+                        <p><strong>Fechas:</strong> ${request.is_full_day ? `${request.start_date} al ${request.end_date}` : request.daily_recurring_hours ? `${request.start_date} al ${request.end_date} (${request.daily_recurring_hours} hrs/día)` : `${request.start_date} (${request.start_time} - ${request.end_time})`}</p>
                         <p><strong>Total días:</strong> ${request.total_days.toFixed(2)}</p>
                         <p><strong>Total horas:</strong> ${request.total_hours.toFixed(2)}</p>
                         <p><strong>Estado:</strong> ${request.status}</p>
@@ -2151,7 +2232,11 @@
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
                 // Llenar los campos según tipo
-                if (request.is_full_day) {
+                if (selectedCategory.is_recurring) {
+                    document.getElementById('startDate').value = request.start_date;
+                    document.getElementById('endDate').value = request.end_date;
+                    document.getElementById('dailyHoursInput').value = request.daily_recurring_hours || '';
+                } else if (request.is_full_day) {
                     document.getElementById('startDate').value = request.start_date;
                     document.getElementById('endDate').value = request.end_date;
                 } else {
