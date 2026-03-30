@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.30.13.10">
+    <meta name="page-version" content="26.03.30.13.15">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -3186,14 +3186,78 @@
                     })
                 });
 
-                // Enviar notificación al responsable
+                // Enviar notificación informativa al responsable
                 if (workerEmail) {
                     try {
-                        await enviarNotificacionPasoProcedimiento(
-                            workerEmail, workerName,
-                            procedimiento.procedure_name, paso.step_name, null
+                        // Obtener form_data de la instancia
+                        const instDataNotif = await supabaseRequest(
+                            `/procedure_instances?instance_id=eq.${instanceId}&select=form_data`
                         );
-                        console.log(`✅ Notificación enviada a ${workerEmail}`);
+                        const formData = instDataNotif[0]?.form_data || {};
+
+                        // Construir tabla de datos del formulario
+                        let formDataHtml = '';
+                        const entries = Object.entries(formData);
+                        if (entries.length > 0) {
+                            formDataHtml = '<table style="width:100%;border-collapse:collapse;margin:15px 0;">';
+                            entries.forEach(([campo, valor]) => {
+                                const campoLegible = campo.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                const valorStr = valor !== null && valor !== undefined && valor !== '' ? String(valor) : '—';
+                                formDataHtml += `<tr>
+                                    <td style="padding:8px;border:1px solid #dee2e6;font-weight:600;background:#f8f9fa;width:40%;">${escapeHtml(campoLegible)}</td>
+                                    <td style="padding:8px;border:1px solid #dee2e6;">${escapeHtml(valorStr)}</td>
+                                </tr>`;
+                            });
+                            formDataHtml += '</table>';
+                        }
+
+                        // Determinar siguiente paso
+                        let siguientePasoInfo = '';
+                        let nextId = paso.next_step_id;
+                        if (!paso.is_final_step && nextId) {
+                            const nextData = await supabaseRequest(
+                                `/procedure_steps?step_id=eq.${nextId}&select=step_name,step_sequence,workers:responsible_worker_id(worker_first_name,worker_last_name_1)`
+                            );
+                            if (nextData && nextData[0]) {
+                                const ns = nextData[0];
+                                const nsWorker = ns.workers ? `${ns.workers.worker_first_name} ${ns.workers.worker_last_name_1}` : 'Sin asignar';
+                                siguientePasoInfo = `
+                                    <div style="background-color:#e7f1ff;padding:12px;border-radius:5px;margin:15px 0;">
+                                        <p style="margin:0;font-weight:600;">Siguiente paso: ${escapeHtml(ns.step_name)}</p>
+                                        <p style="margin:5px 0 0 0;">Responsable: ${escapeHtml(nsWorker)}</p>
+                                    </div>
+                                `;
+                            }
+                        } else if (paso.is_final_step) {
+                            siguientePasoInfo = '<p style="color:#198754;font-weight:600;">Este es el último paso. El procedimiento se cerrará automáticamente.</p>';
+                        }
+
+                        const subject = `Notificación: ${procedimiento.procedure_name}`;
+                        const body = `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <div style="background-color: #0dcaf0; color: #000; padding: 15px; border-radius: 5px;">
+                                    <h2 style="margin: 0;">Notificación de procedimiento</h2>
+                                    <p style="margin: 5px 0 0 0; font-size: 14px;">SchoolNet - ${escapeHtml(procedimiento.procedure_name)}</p>
+                                </div>
+                                <div style="background-color: white; padding: 20px; border-radius: 5px; margin-top: 15px; border: 1px solid #dee2e6;">
+                                    <p>Hola ${escapeHtml(workerName)},</p>
+                                    <p>Te informamos que el procedimiento <strong>${escapeHtml(procedimiento.procedure_name)}</strong> 
+                                       iniciado por <strong>${escapeHtml(instancia.initiated_by_name || '')}</strong> 
+                                       ha pasado por el paso <strong>${escapeHtml(paso.step_name)}</strong>.</p>
+                                    
+                                    ${paso.step_description ? `<p style="color:#64748b;font-style:italic;">${escapeHtml(paso.step_description)}</p>` : ''}
+                                    
+                                    <h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:5px;margin-top:20px;">Datos de la solicitud</h3>
+                                    ${formDataHtml || '<p style="color:#6c757d;">Sin datos de formulario</p>'}
+                                    
+                                    ${siguientePasoInfo}
+                                    
+                                    <p style="color:#6c757d;font-size:0.85rem;margin-top:20px;">Este correo es solo informativo. No requiere acción de tu parte.</p>
+                                </div>
+                            </div>
+                        `;
+                        await sendNotification(workerEmail, subject, body, true);
+                        console.log(`✅ Notificación informativa enviada a ${workerEmail}`);
                     } catch (e) { console.warn('⚠️ Error enviando notificación:', e); }
                 }
 
