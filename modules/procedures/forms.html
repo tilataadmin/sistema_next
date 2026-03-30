@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.29.03.00">
+    <meta name="page-version" content="26.03.30.08.50">
     
     <title>Gestionar Formularios - SchoolNet</title>
     
@@ -781,6 +781,7 @@
                 });
 
                 currentFields = loadedFields.map(field => ({
+                    field_id: field.field_id,
                     field_label: field.field_label,
                     field_type: field.field_type,
                     is_required: field.is_required,
@@ -796,6 +797,7 @@
                     options: field.field_option_catalog ? field.field_option_catalog
                         .sort((a, b) => a.option_order - b.option_order)
                         .map(opt => ({
+                            option_id: opt.option_id,
                             label: opt.option_label,
                             value: opt.option_value
                         })) : [],
@@ -816,17 +818,35 @@
         // ==========================================
         
         async function saveForm() {
+            const saveBtn = document.querySelector('#formModal .modal-footer .btn-primary');
+            if (saveBtn.disabled) return;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando...';
+            
+            // Overlay visual sobre el modal
+            const modalBody = document.querySelector('#formModal .modal-body');
+            const overlay = document.createElement('div');
+            overlay.id = 'saveOverlay';
+            overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.85);display:flex;align-items:center;justify-content:center;z-index:10;border-radius:8px;';
+            overlay.innerHTML = '<div class="text-center"><div class="spinner-border text-primary mb-2" role="status"></div><p class="text-muted mb-0">Guardando formulario...</p></div>';
+            modalBody.style.position = 'relative';
+            modalBody.appendChild(overlay);
+            
             const formName = document.getElementById('formName').value.trim();
             const formDescription = document.getElementById('formDescription').value.trim();
             const formStatus = document.querySelector('input[name="formStatus"]:checked').value;
             
             if (!formName) {
                 showAlert('El nombre del formulario es obligatorio', 'warning');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="bi bi-save me-2"></i>Guardar Formulario';
                 return;
             }
             
             if (currentFields.length === 0) {
                 showAlert('Debes agregar al menos un campo al formulario', 'warning');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="bi bi-save me-2"></i>Guardar Formulario';
                 return;
             }
             
@@ -872,9 +892,13 @@
             } catch (error) {
                 console.error('❌ Error:', error);
                 showAlert('Error al guardar el formulario: ' + error.message, 'danger');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="bi bi-save me-2"></i>Guardar Formulario';
+                const existingOverlay = document.getElementById('saveOverlay');
+                if (existingOverlay) existingOverlay.remove();
             }
         }
-
         // ==========================================
         // GUARDAR CAMPOS
         // ==========================================
@@ -882,23 +906,33 @@
         async function saveFields(formId) {
             console.log(`💾 Guardando ${currentFields.length} campos...`);
             
-            // Eliminar campos existentes si estamos editando
-            if (currentForm) {
-                // Primero eliminar opciones de todos los campos
-                const existingFields = await supabaseRequest(`/form_fields?form_id=eq.${formId}&select=field_id`);
-                for (const f of existingFields) {
-                    await supabaseRequest(`/field_option_catalog?field_id=eq.${f.field_id}`, { method: 'DELETE' });
+            // 1. Obtener campos existentes en BD
+            const existingFields = await supabaseRequest(`/form_fields?form_id=eq.${formId}&select=field_id`);
+            const existingFieldIds = existingFields.map(f => f.field_id);
+            const keptFieldIds = currentFields.filter(f => f.field_id).map(f => f.field_id);
+            const removedFieldIds = existingFieldIds.filter(id => !keptFieldIds.includes(id));
+            
+            // 2. Campos eliminados: desactivar si tienen respuestas, borrar si no
+            for (const fieldId of removedFieldIds) {
+                const responses = await supabaseRequest(`/form_responses?field_id=eq.${fieldId}&select=response_id&limit=1`);
+                if (responses && responses.length > 0) {
+                    await supabaseRequest(`/form_fields?field_id=eq.${fieldId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ is_active: false })
+                    });
+                    console.log(`🔒 Campo ${fieldId} desactivado (tiene respuestas)`);
+                } else {
+                    await supabaseRequest(`/field_option_catalog?field_id=eq.${fieldId}`, { method: 'DELETE' });
+                    await supabaseRequest(`/form_fields?field_id=eq.${fieldId}`, { method: 'DELETE' });
+                    console.log(`🗑️ Campo ${fieldId} eliminado`);
                 }
-                // Luego eliminar campos
-                await supabaseRequest(`/form_fields?form_id=eq.${formId}`, { method: 'DELETE' });
             }
             
-            // PASO 1: Insertar todos los campos y guardar IDs
+            // 3. Actualizar o crear campos
             for (let i = 0; i < currentFields.length; i++) {
                 const field = currentFields[i];
                 
                 const fieldData = {
-                    form_id: formId,
                     field_name: generateFieldName(field.field_label),
                     field_label: field.field_label,
                     field_type: field.field_type,
@@ -914,51 +948,107 @@
                     help_text: field.help_text || null,
                     system_table_name: field.system_table_name || null,
                     is_active: true,
-                    show_if_field_id: null,
                     show_if_value: field.show_if_value || null,
-                    // Mantener compatibilidad con campos legacy de Tilata
                     is_prefilled: field.auto_fill_type && field.auto_fill_type !== 'none',
                     prefill_source: field.auto_fill_type && field.auto_fill_type !== 'none' ? field.auto_fill_type : null
                 };
                 
-                const result = await supabaseRequest('/form_fields', {
-                    method: 'POST',
-                    body: JSON.stringify(fieldData)
-                });
-                
-                const savedField = result[0];
-                field.saved_field_id = savedField.field_id;
-                
-                // Guardar opciones si es SELECT o RADIO
-                if ((field.field_type === 'select' || field.field_type === 'radio') && Array.isArray(field.options) && field.options.length > 0) {
-                    await saveOptions(savedField.field_id, field.options);
+                if (field.field_id) {
+                    // Campo existente → PATCH
+                    await supabaseRequest(`/form_fields?field_id=eq.${field.field_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(fieldData)
+                    });
+                    field.saved_field_id = field.field_id;
+                    
+                    // Actualizar opciones
+                    if (field.field_type === 'select' || field.field_type === 'radio') {
+                        await updateOptions(field.field_id, field.options || []);
+                    }
+                } else {
+                    // Campo nuevo → POST
+                    fieldData.form_id = formId;
+                    const result = await supabaseRequest('/form_fields', {
+                        method: 'POST',
+                        body: JSON.stringify(fieldData)
+                    });
+                    field.saved_field_id = result[0].field_id;
+                    
+                    // Crear opciones nuevas
+                    if ((field.field_type === 'select' || field.field_type === 'radio') && Array.isArray(field.options) && field.options.length > 0) {
+                        await createOptions(field.saved_field_id, field.options);
+                    }
                 }
             }
             
-            // PASO 2: Actualizar show_if_field_id con IDs reales
+            // 4. Actualizar show_if_field_id con IDs reales
             for (let i = 0; i < currentFields.length; i++) {
                 const field = currentFields[i];
+                const showIfFieldId = field.show_if_field_index !== undefined
+                    ? currentFields[field.show_if_field_index]?.saved_field_id || null
+                    : null;
                 
-                if (field.show_if_field_index !== undefined && field.saved_field_id) {
-                    const parentField = currentFields[field.show_if_field_index];
-                    
-                    if (parentField && parentField.saved_field_id) {
-                        await supabaseRequest(`/form_fields?field_id=eq.${field.saved_field_id}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({
-                                show_if_field_id: parentField.saved_field_id
-                            })
-                        });
-                    }
+                if (field.saved_field_id) {
+                    await supabaseRequest(`/form_fields?field_id=eq.${field.saved_field_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ show_if_field_id: showIfFieldId })
+                    });
                 }
             }
             
             console.log('✅ Campos guardados');
         }
         
-        async function saveOptions(fieldId, options) {
-            if (!Array.isArray(options) || options.length === 0) return;
+        // Actualizar opciones de un campo existente
+        async function updateOptions(fieldId, options) {
+            const existingOptions = await supabaseRequest(`/field_option_catalog?field_id=eq.${fieldId}&select=option_id`);
+            const existingOptionIds = existingOptions.map(o => o.option_id);
+            const keptOptionIds = options.filter(o => o.option_id).map(o => o.option_id);
+            const removedOptionIds = existingOptionIds.filter(id => !keptOptionIds.includes(id));
             
+            // Opciones eliminadas: desactivar si tienen respuestas, borrar si no
+            for (const optionId of removedOptionIds) {
+                const responses = await supabaseRequest(`/form_responses?selected_option_id=eq.${optionId}&select=response_id&limit=1`);
+                if (responses && responses.length > 0) {
+                    await supabaseRequest(`/field_option_catalog?option_id=eq.${optionId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ is_active: false })
+                    });
+                } else {
+                    await supabaseRequest(`/field_option_catalog?option_id=eq.${optionId}`, { method: 'DELETE' });
+                }
+            }
+            
+            // Actualizar existentes y crear nuevas
+            for (let i = 0; i < options.length; i++) {
+                const opt = options[i];
+                if (opt.option_id) {
+                    await supabaseRequest(`/field_option_catalog?option_id=eq.${opt.option_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            option_label: opt.label,
+                            option_value: opt.value,
+                            option_order: i + 1,
+                            is_active: true
+                        })
+                    });
+                } else {
+                    await supabaseRequest('/field_option_catalog', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            field_id: fieldId,
+                            option_label: opt.label,
+                            option_value: opt.value,
+                            option_order: i + 1,
+                            is_active: true
+                        })
+                    });
+                }
+            }
+        }
+        
+        // Crear opciones para un campo nuevo
+        async function createOptions(fieldId, options) {
             for (let i = 0; i < options.length; i++) {
                 await supabaseRequest('/field_option_catalog', {
                     method: 'POST',
@@ -972,7 +1062,7 @@
                 });
             }
         }
-
+        
         // ==========================================
         // MODAL: CAMPO
         // ==========================================
@@ -1135,6 +1225,12 @@
             } else if (fieldType === 'system_table') {
                 systemTableSection.style.display = 'block';
             }
+            
+            // Ocultar descripción para checkbox (usa help_text para el texto de la casilla)
+            const helpTextGroup = document.getElementById('helpText').closest('.mb-3');
+            if (helpTextGroup) {
+                helpTextGroup.style.display = fieldType === 'checkbox' ? 'none' : 'block';
+            }
         }
 
         // ==========================================
@@ -1208,6 +1304,9 @@
             }
             
             if (editingFieldIndex >= 0) {
+                if (currentFields[editingFieldIndex].field_id) {
+                    fieldData.field_id = currentFields[editingFieldIndex].field_id;
+                }
                 currentFields[editingFieldIndex] = fieldData;
             } else {
                 currentFields.push(fieldData);
