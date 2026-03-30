@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.24.13.00">
+    <meta name="page-version" content="26.03.30.12.20">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1189,6 +1189,72 @@
         </div>
     </div>
 
+    <!-- MODAL: INFO PROCEDIMIENTO -->
+    <div class="modal fade" id="modal-info-procedimiento" tabindex="-1" aria-labelledby="modalInfoProcedimientoLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary bg-opacity-10">
+                    <h5 class="modal-title" id="modalInfoProcedimientoLabel">
+                        <i class="bi bi-diagram-3 me-2"></i>Información del Procedimiento
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Encabezado del procedimiento -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary bg-opacity-10">
+                            <h6 class="mb-0"><i class="bi bi-file-earmark-text me-1"></i>Procedimiento</h6>
+                        </div>
+                        <div class="card-body">
+                            <h5 id="proc-info-nombre" class="fw-bold"></h5>
+                            <p id="proc-info-descripcion" class="text-muted mb-2"></p>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <small class="text-muted"><i class="bi bi-person me-1"></i>Solicitante:</small>
+                                    <p id="proc-info-solicitante" class="mb-0 fw-semibold"></p>
+                                </div>
+                                <div class="col-md-6">
+                                    <small class="text-muted"><i class="bi bi-calendar me-1"></i>Fecha de inicio:</small>
+                                    <p id="proc-info-fecha-inicio" class="mb-0 fw-semibold"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Detalle del paso asignado -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-success bg-opacity-10">
+                            <h6 class="mb-0"><i class="bi bi-signpost-split me-1"></i>Tu Paso Asignado</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="badge bg-primary me-2" id="proc-info-paso-numero"></span>
+                                <h6 id="proc-info-paso-nombre" class="mb-0 fw-bold"></h6>
+                            </div>
+                            <div id="proc-info-paso-descripcion" class="text-muted mb-2"></div>
+                            <div id="proc-info-paso-sla" class="small"></div>
+                        </div>
+                    </div>
+
+                    <!-- Datos del formulario inicial -->
+                    <div class="card">
+                        <div class="card-header bg-warning bg-opacity-10">
+                            <h6 class="mb-0"><i class="bi bi-ui-checks me-1"></i>Datos del Formulario Inicial</h6>
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="proc-info-form-data" class="p-3">
+                                <div class="text-center text-muted py-3">Cargando...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Supabase JS para Storage -->
@@ -1233,6 +1299,7 @@
         let modalEditarProgreso = null;
         let modalVerDetalle = null;
         let modalColaboradores = null;
+        let modalInfoProcedimiento = null;
 
         // ==========================================
         // UTILIDAD PARA MANEJO CORRECTO DE FECHAS
@@ -1344,6 +1411,7 @@
                 modalEditarProgreso = new bootstrap.Modal(document.getElementById('modal-editar-progreso'));
                 modalVerDetalle = new bootstrap.Modal(document.getElementById('modal-ver-detalle'));
                 modalColaboradores = new bootstrap.Modal(document.getElementById('modal-colaboradores'));
+                modalInfoProcedimiento = new bootstrap.Modal(document.getElementById('modal-info-procedimiento'));
                 supabaseClient = supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
                 
                 inicializarEditoresQuill();
@@ -1808,6 +1876,11 @@
                                     <button class="btn btn-outline-primary" onclick="verDetalle(${tarea.task_id})" title="Ver detalle">
                                         <i class="bi bi-eye"></i>
                                     </button>
+                                    ${tarea.module_type === 'procedures' && tarea.procedure_id ? `
+                                        <button class="btn btn-outline-secondary" onclick="verInfoProcedimiento(${tarea.task_id})" title="Ver procedimiento">
+                                            <i class="bi bi-diagram-3"></i>
+                                        </button>
+                                    ` : ''}
                                     ${canManageCollaborators && tarea.task_state !== 'Terminada' && tarea.task_state !== 'Cancelada' ? `
                                         <button class="btn btn-outline-info" onclick="gestionarColaboradores(${tarea.task_id})" title="Colaboradores">
                                             <i class="bi bi-people"></i>
@@ -2744,6 +2817,93 @@
                 console.error('⚠️ Error cargando notas detalle:', error);
             }
         }
+
+        // ==========================================
+        // VER INFO PROCEDIMIENTO
+        // ==========================================
+        async function verInfoProcedimiento(taskId) {
+            const tarea = tareasCache.find(t => t.task_id === taskId);
+            if (!tarea || !tarea.procedure_id) {
+                showMessage('Esta tarea no está asociada a un procedimiento', 'warning');
+                return;
+            }
+
+            try {
+                mostrarLoading();
+
+                // 1. Obtener procedimiento
+                const procData = await supabaseRequest(
+                    `/procedures?procedure_id=eq.${tarea.procedure_id}&select=procedure_name,procedure_description`
+                );
+                const procedimiento = procData && procData[0] ? procData[0] : null;
+
+                // 2. Obtener paso asignado
+                let paso = null;
+                if (tarea.procedure_step_id) {
+                    const stepData = await supabaseRequest(
+                        `/procedure_steps?step_id=eq.${tarea.procedure_step_id}&select=step_name,step_description,step_sequence,sla_days`
+                    );
+                    paso = stepData && stepData[0] ? stepData[0] : null;
+                }
+
+                // 3. Obtener instancia (via procedure_instance_steps usando task_id)
+                let instancia = null;
+                const instanceStepData = await supabaseRequest(
+                    `/procedure_instance_steps?task_id=eq.${taskId}&select=instance_id`
+                );
+                if (instanceStepData && instanceStepData[0]) {
+                    const instData = await supabaseRequest(
+                        `/procedure_instances?instance_id=eq.${instanceStepData[0].instance_id}&select=form_data,initiated_by_name,initiated_by_email,started_at`
+                    );
+                    instancia = instData && instData[0] ? instData[0] : null;
+                }
+
+                // Renderizar encabezado
+                document.getElementById('proc-info-nombre').textContent = procedimiento ? procedimiento.procedure_name : 'No disponible';
+                document.getElementById('proc-info-descripcion').textContent = procedimiento?.procedure_description || 'Sin descripción';
+                document.getElementById('proc-info-solicitante').textContent = instancia ? `${instancia.initiated_by_name || ''} (${instancia.initiated_by_email || ''})` : 'No disponible';
+                document.getElementById('proc-info-fecha-inicio').textContent = instancia ? formatDateTime(instancia.started_at) : 'No disponible';
+
+                // Renderizar paso
+                if (paso) {
+                    document.getElementById('proc-info-paso-numero').textContent = `Paso ${paso.step_sequence}`;
+                    document.getElementById('proc-info-paso-nombre').textContent = paso.step_name;
+                    document.getElementById('proc-info-paso-descripcion').textContent = paso.step_description || 'Sin descripción para este paso';
+                    document.getElementById('proc-info-paso-sla').innerHTML = paso.sla_days
+                        ? `<i class="bi bi-clock me-1"></i>Plazo: <strong>${paso.sla_days} día(s) hábil(es)</strong>`
+                        : '';
+                } else {
+                    document.getElementById('proc-info-paso-numero').textContent = '-';
+                    document.getElementById('proc-info-paso-nombre').textContent = 'No disponible';
+                    document.getElementById('proc-info-paso-descripcion').textContent = '';
+                    document.getElementById('proc-info-paso-sla').innerHTML = '';
+                }
+
+                // Renderizar formulario (form_data es un JSON clave-valor)
+                const formContainer = document.getElementById('proc-info-form-data');
+                if (instancia && instancia.form_data && Object.keys(instancia.form_data).length > 0) {
+                    let formHtml = '<table class="table table-sm table-striped mb-0">';
+                    formHtml += '<thead><tr><th style="width:40%">Campo</th><th>Valor</th></tr></thead><tbody>';
+                    for (const [campo, valor] of Object.entries(instancia.form_data)) {
+                        const campoLegible = campo.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        const valorMostrar = valor !== null && valor !== undefined && valor !== '' ? escapeHtml(String(valor)) : '<span class="text-muted">—</span>';
+                        formHtml += `<tr><td class="fw-semibold">${escapeHtml(campoLegible)}</td><td>${valorMostrar}</td></tr>`;
+                    }
+                    formHtml += '</tbody></table>';
+                    formContainer.innerHTML = formHtml;
+                } else {
+                    formContainer.innerHTML = '<div class="text-center text-muted py-3"><i class="bi bi-inbox me-1"></i>No hay datos de formulario disponibles</div>';
+                }
+
+                modalInfoProcedimiento.show();
+
+            } catch (error) {
+                console.error('❌ Error cargando info del procedimiento:', error);
+                showMessage('Error al cargar información del procedimiento: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
         
         // ==========================================
         // CERRAR Y CANCELAR TAREA
@@ -3254,6 +3414,7 @@
         window.quitarEnlaceNuevaTarea = quitarEnlaceNuevaTarea;
         window.agregarEnlaceNota = agregarEnlaceNota;
         window.quitarEnlaceNota = quitarEnlaceNota;
+        window.verInfoProcedimiento = verInfoProcedimiento;
         
         console.log('🎉 tasks.html v3.0 - Fechas corregidas + Modal editable para creador');
     </script>

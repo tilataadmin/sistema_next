@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.30.08.50">
+    <meta name="page-version" content="26.03.30.10.00">
     
     <title>Gestionar Formularios - SchoolNet</title>
     
@@ -555,6 +555,7 @@
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     
     <script>
@@ -697,6 +698,10 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editForm('${form.form_id}')" title="Editar">
                                 <i class="bi bi-pencil"></i>
                             </button>
+                            ${form.form_mode === 'standalone_only' || form.form_mode === 'both' ? `
+                            <button type="button" class="btn btn-sm btn-outline-success" onclick="showShareModal('${form.form_id}', '${form.form_mode}', ${form.standalone_is_public || false})" title="Compartir enlace">
+                                <i class="bi bi-share"></i>
+                            </button>` : ''}
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDelete('${form.form_id}')" title="Eliminar">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -1078,14 +1083,10 @@
                 document.getElementById('fieldType').value = field.field_type;
                 document.getElementById('fieldRequired').checked = field.is_required;
                 document.getElementById('autoFillType').value = field.auto_fill_type || 'none';
-                document.getElementById('placeholderText').value = field.placeholder_text || '';
+                document.getElementById('placeholderText').value = (field.field_type === 'checkbox') ? '' : (field.placeholder_text || '');
                 document.getElementById('systemTableName').value = field.system_table_name || '';
                 
-                if (field.field_type === 'checkbox') {
-                    document.getElementById('helpText').value = '';
-                } else {
-                    document.getElementById('helpText').value = field.help_text || '';
-                }
+                document.getElementById('helpText').value = field.help_text || '';
                 
                 if (field.options) {
                     tempOptions = [...field.options];
@@ -1110,10 +1111,15 @@
                 updateFieldValidations();
                 
                 // Cargar datos específicos después de updateFieldValidations
-                if (field.field_type === 'checkbox' && field.help_text) {
+                if (field.field_type === 'checkbox') {
+                    const checkboxValue = field.placeholder_text || field.help_text || '';
                     setTimeout(() => {
                         const el = document.getElementById('checkboxText');
-                        if (el) el.value = field.help_text;
+                        if (el) el.value = checkboxValue;
+                        // Si el texto venía de help_text (formato viejo), limpiar descripción
+                        if (!field.placeholder_text && field.help_text) {
+                            document.getElementById('helpText').value = '';
+                        }
                     }, 100);
                 } else if (field.field_type === 'text' || field.field_type === 'textarea') {
                     setTimeout(() => {
@@ -1226,13 +1232,14 @@
                 systemTableSection.style.display = 'block';
             }
             
-            // Ocultar descripción para checkbox (usa help_text para el texto de la casilla)
-            const helpTextGroup = document.getElementById('helpText').closest('.mb-3');
-            if (helpTextGroup) {
-                helpTextGroup.style.display = fieldType === 'checkbox' ? 'none' : 'block';
+            // Ocultar placeholder para checkbox (no aplica)
+            const placeholderGroup = document.getElementById('placeholderText').closest('.mb-3');
+            if (placeholderGroup) {
+                placeholderGroup.style.display = fieldType === 'checkbox' ? 'none' : 'block';
             }
         }
 
+        
         // ==========================================
         // GUARDAR CAMPO
         // ==========================================
@@ -1241,8 +1248,8 @@
             const fieldLabel = document.getElementById('fieldLabel').value.trim();
             const fieldType = document.getElementById('fieldType').value;
             
-            if (!fieldLabel || !fieldType) {
-                showAlert('Completa los campos obligatorios', 'warning');
+           if (!fieldLabel || !fieldType) {
+                alert('Completa los campos obligatorios');
                 return;
             }
             
@@ -1266,7 +1273,7 @@
                     fieldData.show_if_field_index = parseInt(fieldIndex);
                     fieldData.show_if_value = showIfValue;
                 } else {
-                    showAlert('Debe completar la configuración de la condición', 'warning');
+                    alert('Debe completar la configuración de la condición');
                     return;
                 }
             }
@@ -1280,24 +1287,24 @@
                 fieldData.max_value = document.getElementById('maxValue')?.value || null;
             } else if (fieldType === 'select' || fieldType === 'radio') {
                 if (tempOptions.length === 0) {
-                    showAlert('Debes agregar al menos una opción', 'warning');
+                    alert('Debes agregar al menos una opción');
                     return;
                 }
                 fieldData.options = [...tempOptions];
             } else if (fieldType === 'checkbox') {
                 const checkboxText = document.getElementById('checkboxText')?.value.trim();
                 if (!checkboxText) {
-                    showAlert('Debes ingresar el texto de la casilla', 'warning');
+                    alert('Debes ingresar el texto de la casilla');
                     return;
                 }
-                fieldData.help_text = checkboxText;
+                fieldData.placeholder_text = checkboxText;
             } else if (fieldType === 'file') {
                 fieldData.max_file_size = document.getElementById('maxFileSize')?.value || 5;
                 fieldData.allowed_file_types = document.getElementById('allowedFileTypes')?.value || null;
             } else if (fieldType === 'system_table') {
                 const tableName = document.getElementById('systemTableName')?.value;
                 if (!tableName) {
-                    showAlert('Debes seleccionar una tabla del sistema', 'warning');
+                    alert('Debes seleccionar una tabla del sistema');
                     return;
                 }
                 fieldData.system_table_name = tableName;
@@ -1726,6 +1733,84 @@
             modal.addEventListener('hidden.bs.modal', () => modal.remove());
         }
 
+        function showShareModal(formId, formMode, isPublic) {
+            const baseUrl = window.location.origin;
+            
+            let internalLink = `${baseUrl}/modules/procedures/execute-form.html?form_id=${formId}`;
+            let publicLink = isPublic ? `${baseUrl}/modules/procedures/execute-form-public.html?form_id=${formId}` : null;
+            
+            let linksHtml = `
+                <div class="mb-4">
+                    <label class="form-label fw-semibold"><i class="bi bi-lock me-1"></i>Enlace interno (requiere login)</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="internalLink" value="${internalLink}" readonly>
+                        <button class="btn btn-outline-primary" onclick="copyLink('internalLink')" title="Copiar">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            if (publicLink) {
+                linksHtml += `
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold"><i class="bi bi-globe me-1"></i>Enlace público (sin login)</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="publicLink" value="${publicLink}" readonly>
+                            <button class="btn btn-outline-primary" onclick="copyLink('publicLink')" title="Copiar">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            const primaryLink = publicLink || internalLink;
+            
+            const content = `
+                ${linksHtml}
+                <hr>
+                <div class="text-center">
+                    <label class="form-label fw-semibold mb-3">Código QR</label>
+                    <div id="qrCodeContainer" class="d-flex justify-content-center mb-3"></div>
+                    <small class="text-muted">${publicLink ? 'Enlace público' : 'Enlace interno'}</small>
+                </div>
+            `;
+            
+            showModal('Compartir Formulario', content);
+            
+            setTimeout(() => {
+                const container = document.getElementById('qrCodeContainer');
+                if (container) {
+                    container.innerHTML = '';
+                    new QRCode(container, {
+                        text: primaryLink,
+                        width: 200,
+                        height: 200,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                }
+            }, 300);
+        }
+        
+        function copyLink(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            
+            navigator.clipboard.writeText(input.value).then(() => {
+                const btn = input.nextElementSibling;
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+                btn.classList.replace('btn-outline-primary', 'btn-success');
+                setTimeout(() => {
+                    btn.innerHTML = originalHtml;
+                    btn.classList.replace('btn-success', 'btn-outline-primary');
+                }, 2000);
+            });
+        }
+        
         console.log('✅ Gestionar Formularios cargado correctamente');
     </script>
 </body>
