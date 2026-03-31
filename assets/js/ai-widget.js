@@ -236,38 +236,27 @@
     // BOTÓN EN EL NAVBAR
     // ==========================================
     function inyectarBoton() {
-        // Buscar el contenedor de botones del navbar (donde está Manual)
-        const navbar = document.querySelector('.top-navbar');
-        if (!navbar) {
-            console.warn('Rigoberto: navbar no encontrado');
+        const manualBtn = document.getElementById('manual-button');
+        if (!manualBtn) {
+            console.warn('Rigoberto: botón Manual no encontrado');
             return;
         }
 
-        const rightSection = navbar.querySelector('.d-flex.align-items-center.gap-2') ||
-                             navbar.querySelector('.navbar-right') ||
-                             navbar.querySelector('[id="helpButtonContainer"]')?.parentElement;
-
-        if (!rightSection) {
-            console.warn('Rigoberto: sección derecha del navbar no encontrada');
-            return;
-        }
-
+        const container = manualBtn.parentElement;
         const btn = document.createElement('button');
         btn.className = 'rigo-btn';
         btn.innerHTML = `${RIGOBERTO_SVG_WHITE} Rigoberto`;
         btn.addEventListener('click', abrirChat);
 
-        // Insertar antes del menú de usuario
-        const userMenu = rightSection.querySelector('[id="userMenuContainer"]') ||
-                         rightSection.querySelector('#navbarUserDropdown')?.parentElement;
-
+        // Insertar entre Manual y el menú de usuario
+        const userMenu = container.querySelector('.user-menu');
         if (userMenu) {
-            rightSection.insertBefore(btn, userMenu);
+            container.insertBefore(btn, userMenu);
         } else {
-            rightSection.appendChild(btn);
+            manualBtn.insertAdjacentElement('afterend', btn);
         }
     }
-
+    
     // ==========================================
     // ABRIR / CERRAR
     // ==========================================
