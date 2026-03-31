@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.29.09.00">
+    <meta name="page-version" content="26.03.31.08.10">
     
     <title>Dashboard de Procedimientos - SchoolNet</title>
     
@@ -132,6 +132,9 @@
                     <option value="90">Últimos 90 días</option>
                     <option value="365">Último año</option>
                 </select>
+                <button class="btn btn-light btn-sm" id="btnCompare" onclick="toggleCompare()">
+                    <i class="bi bi-arrow-left-right me-2"></i>Comparar
+                </button>
                 <button class="btn btn-light btn-sm" onclick="loadDashboard()">
                     <i class="bi bi-arrow-clockwise me-2"></i>Actualizar
                 </button>
@@ -177,6 +180,28 @@
             <div class="section-card">
                 <h6 class="section-title"><i class="bi bi-exclamation-triangle"></i>Cuellos de Botella</h6>
                 <div class="row g-3" id="bottlenecksContent"></div>
+            </div>
+
+            <!-- Análisis por Paso (solo visible cuando se filtra un procedimiento) -->
+            <div class="section-card" id="stepAnalysisSection" style="display: none;">
+                <h6 class="section-title"><i class="bi bi-diagram-3"></i>Análisis por Paso</h6>
+                <p class="text-muted mb-3" style="font-size: 0.9rem;">Tiempo promedio y cumplimiento por cada paso del procedimiento seleccionado</p>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Paso</th>
+                                <th>Tipo</th>
+                                <th>Completados</th>
+                                <th>Tiempo Promedio</th>
+                                <th>SLA (días)</th>
+                                <th>Cumplimiento</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stepAnalysisBody"></tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="section-card">
@@ -241,6 +266,8 @@
         let dashboardData = null;
         let charts = {};
         let allProcedures = [];
+        let compareMode = false;
+        let previousPeriodData = null;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -335,6 +362,10 @@
                 console.log(`✅ ${(instances||[]).length} instancias, ${(tasks||[]).length} tareas cargadas`);
                 
                 dashboardData = calculateMetrics(instances || [], tasks || [], procedures || []);
+
+                if (compareMode) {
+                    await loadPreviousPeriod(days, procedureId);
+                }
                 
                 renderKPIs(dashboardData.kpis);
                 renderTrendChart(dashboardData.trend);
@@ -345,7 +376,8 @@
                 
                 document.getElementById('loadingContainer').style.display = 'none';
                 document.getElementById('dashboardContent').style.display = 'block';
-                
+
+                await loadStepAnalysis(procedureId);
                 console.log('✅ Dashboard cargado');
                 
             } catch (error) {
@@ -540,27 +572,153 @@
         }
 
         // ==========================================
+        // ANÁLISIS POR PASO
+        // ==========================================
+        
+        async function loadStepAnalysis(procedureId) {
+            const section = document.getElementById('stepAnalysisSection');
+            
+            if (!procedureId) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            try {
+                const days = parseInt(document.getElementById('timeRange').value);
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - days);
+                const startDateISO = startDate.toISOString();
+                
+                // Traer pasos del procedimiento
+                const steps = await supabaseRequest(
+                    `/procedure_steps?procedure_id=eq.${procedureId}&select=step_id,step_sequence,step_name,step_type,sla_days&order=step_sequence`
+                );
+                
+                if (!steps || steps.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                
+                // Traer instancias del período para obtener sus IDs
+                const instances = await supabaseRequest(
+                    `/procedure_instances?procedure_id=eq.${procedureId}&started_at=gte.${startDateISO}&select=instance_id`
+                );
+                
+                if (!instances || instances.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                
+                const instanceIds = instances.map(i => i.instance_id);
+                
+                // Traer ejecuciones de pasos para esas instancias
+                const executions = await supabaseRequest(
+                    `/procedure_instance_steps?instance_id=in.(${instanceIds.join(',')})&select=step_id,step_status,started_at,completed_at`
+                );
+                
+                const tbody = document.getElementById('stepAnalysisBody');
+                
+                tbody.innerHTML = steps.map(step => {
+                    const stepExecs = (executions || []).filter(e => e.step_id === step.step_id);
+                    const completed = stepExecs.filter(e => e.step_status === 'completed' && e.started_at && e.completed_at);
+                    
+                    // Tiempo promedio en horas
+                    let avgTimeText = '-';
+                    let avgHours = 0;
+                    if (completed.length > 0) {
+                        avgHours = completed.reduce((sum, e) => {
+                            return sum + (new Date(e.completed_at) - new Date(e.started_at)) / (1000 * 60 * 60);
+                        }, 0) / completed.length;
+                        
+                        if (avgHours < 1) {
+                            avgTimeText = `${Math.round(avgHours * 60)} min`;
+                        } else if (avgHours < 24) {
+                            avgTimeText = `${Math.round(avgHours)} hrs`;
+                        } else {
+                            avgTimeText = `${(avgHours / 24).toFixed(1)} días`;
+                        }
+                    }
+                    
+                    // Cumplimiento SLA
+                    let slaText = '-';
+                    let slaClass = '';
+                    if (step.sla_days && completed.length > 0) {
+                        const slaHours = step.sla_days * 24;
+                        const onTime = completed.filter(e => {
+                            const hours = (new Date(e.completed_at) - new Date(e.started_at)) / (1000 * 60 * 60);
+                            return hours <= slaHours;
+                        });
+                        const pct = Math.round((onTime.length / completed.length) * 100);
+                        slaText = `${pct}%`;
+                        slaClass = pct >= 80 ? 'bg-success' : pct >= 60 ? 'bg-warning' : 'bg-danger';
+                    }
+                    
+                    const typeLabels = { manual: 'Manual', notification: 'Notificación', automatic: 'Automático' };
+                    
+                    return `
+                        <tr>
+                            <td>${step.step_sequence}</td>
+                            <td>${escapeHtml(step.step_name)}</td>
+                            <td><small class="text-muted">${typeLabels[step.step_type] || step.step_type}</small></td>
+                            <td>${completed.length}</td>
+                            <td>${avgTimeText}</td>
+                            <td>${step.sla_days || '-'}</td>
+                            <td>${slaClass ? `<span class="badge-custom ${slaClass}">${slaText}</span>` : slaText}</td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                section.style.display = 'block';
+                
+            } catch (error) {
+                console.error('❌ Error cargando análisis por paso:', error);
+                section.style.display = 'none';
+            }
+        }
+
+        // ==========================================
         // RENDERIZAR KPIs
         // ==========================================
         
         function renderKPIs(kpis) {
             const container = document.getElementById('kpiGrid');
+            const prev = compareMode && previousPeriodData ? previousPeriodData.kpis : null;
             
             const kpiCards = [
-                { label: 'Total Activos', value: kpis.totalActive, type: 'info' },
-                { label: 'En Progreso', value: kpis.inProgress, type: 'warning' },
-                { label: 'Completados (mes)', value: kpis.completedThisMonth, type: 'success' },
-                { label: 'Tiempo Promedio', value: `${kpis.avgDuration} días`, type: 'info' },
-                { label: 'Cumplimiento SLA', value: `${kpis.slaPercentage}%`, type: kpis.slaPercentage >= 80 ? 'success' : kpis.slaPercentage >= 60 ? 'warning' : 'danger' },
-                { label: 'Tareas Vencidas', value: kpis.overdueTasks, type: kpis.overdueTasks === 0 ? 'success' : 'danger' }
+                { label: 'Total Activos', value: kpis.totalActive, prevValue: prev?.totalActive, type: 'info', lowerIsBetter: false },
+                { label: 'En Progreso', value: kpis.inProgress, prevValue: prev?.inProgress, type: 'warning', lowerIsBetter: true },
+                { label: 'Completados (mes)', value: kpis.completedThisMonth, prevValue: prev?.completedThisMonth, type: 'success', lowerIsBetter: false },
+                { label: 'Tiempo Promedio', value: kpis.avgDuration, prevValue: prev?.avgDuration, type: 'info', suffix: ' días', lowerIsBetter: true },
+                { label: 'Cumplimiento SLA', value: kpis.slaPercentage, prevValue: prev?.slaPercentage, type: kpis.slaPercentage >= 80 ? 'success' : kpis.slaPercentage >= 60 ? 'warning' : 'danger', suffix: '%', lowerIsBetter: false },
+                { label: 'Tareas Vencidas', value: kpis.overdueTasks, prevValue: prev?.overdueTasks, type: kpis.overdueTasks === 0 ? 'success' : 'danger', lowerIsBetter: true }
             ];
             
-            container.innerHTML = kpiCards.map(kpi => `
-                <div class="kpi-card ${kpi.type}">
-                    <div class="kpi-label">${kpi.label}</div>
-                    <div class="kpi-value">${kpi.value}</div>
-                </div>
-            `).join('');
+            container.innerHTML = kpiCards.map(kpi => {
+                const displayValue = kpi.suffix ? `${kpi.value}${kpi.suffix}` : kpi.value;
+                let deltaHtml = '';
+                
+                if (prev && kpi.prevValue !== undefined && kpi.prevValue !== null) {
+                    const diff = kpi.value - kpi.prevValue;
+                    if (diff !== 0) {
+                        const isGood = kpi.lowerIsBetter ? diff < 0 : diff > 0;
+                        const arrow = diff > 0 ? '▲' : '▼';
+                        const color = isGood ? '#22c55e' : '#ef4444';
+                        const absDiff = Math.abs(diff);
+                        const displayDiff = kpi.suffix ? `${absDiff}${kpi.suffix}` : absDiff;
+                        deltaHtml = `<div style="font-size: 0.8rem; color: ${color}; margin-top: 0.25rem;">${arrow} ${displayDiff} vs anterior</div>`;
+                    } else {
+                        deltaHtml = `<div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">= sin cambio</div>`;
+                    }
+                }
+                
+                return `
+                    <div class="kpi-card ${kpi.type}">
+                        <div class="kpi-label">${kpi.label}</div>
+                        <div class="kpi-value">${displayValue}</div>
+                        ${deltaHtml}
+                    </div>
+                `;
+            }).join('');
         }
 
         // ==========================================
@@ -949,6 +1107,60 @@
                     bsAlert.close();
                 }
             }, 6000);
+        }
+
+        // ==========================================
+        // MODO COMPARACIÓN
+        // ==========================================
+        
+        function toggleCompare() {
+            compareMode = !compareMode;
+            const btn = document.getElementById('btnCompare');
+            
+            if (compareMode) {
+                btn.classList.remove('btn-light');
+                btn.classList.add('btn-warning');
+                btn.innerHTML = '<i class="bi bi-arrow-left-right me-2"></i>Comparando';
+            } else {
+                btn.classList.remove('btn-warning');
+                btn.classList.add('btn-light');
+                btn.innerHTML = '<i class="bi bi-arrow-left-right me-2"></i>Comparar';
+                previousPeriodData = null;
+            }
+            
+            loadDashboard();
+        }
+        
+        async function loadPreviousPeriod(days, procedureId) {
+            try {
+                const endDate = new Date();
+                endDate.setDate(endDate.getDate() - days);
+                const endDateISO = endDate.toISOString();
+                
+                const startDate = new Date(endDate);
+                startDate.setDate(startDate.getDate() - days);
+                const startDateISO = startDate.toISOString();
+                
+                let instancesQuery = `/procedure_instances?started_at=gte.${startDateISO}&started_at=lt.${endDateISO}&select=*,procedures(procedure_name),procedure_steps!procedure_instances_current_step_id_fkey(step_name,sla_days)`;
+                let tasksQuery = `/tasks?module_type=eq.procedures&created_at=gte.${startDateISO}&created_at=lt.${endDateISO}&select=task_id,task_description,assigned_to_mail,assigned_to_name,task_state,task_priority,due_date,close_date,created_at,procedure_id`;
+                
+                if (procedureId) {
+                    instancesQuery += `&procedure_id=eq.${procedureId}`;
+                    tasksQuery += `&procedure_id=eq.${procedureId}`;
+                }
+                
+                const [instances, tasks] = await Promise.all([
+                    supabaseRequest(instancesQuery),
+                    supabaseRequest(tasksQuery)
+                ]);
+                
+                previousPeriodData = calculateMetrics(instances || [], tasks || [], allProcedures);
+                console.log('✅ Datos del período anterior cargados');
+                
+            } catch (error) {
+                console.error('❌ Error cargando período anterior:', error);
+                previousPeriodData = null;
+            }
         }
 
         console.log('✅ dashboard.html cargado correctamente');

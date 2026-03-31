@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.30.12.20">
+    <meta name="page-version" content="26.03.30.13.17x">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1189,6 +1189,28 @@
         </div>
     </div>
 
+    <!-- MODAL: SELECCIONAR BIFURCACIÓN -->
+    <div class="modal fade" id="modal-bifurcacion" tabindex="-1" aria-labelledby="modalBifurcacionLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning bg-opacity-10">
+                    <h5 class="modal-title" id="modalBifurcacionLabel">
+                        <i class="bi bi-signpost-split me-2"></i>Seleccionar Siguiente Ruta
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Este paso tiene múltiples opciones. Selecciona hacia dónde continúa el procedimiento:</p>
+                    <div id="bifurcacion-opciones"></div>
+                    <input type="hidden" id="bifurcacion-task-id">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL: INFO PROCEDIMIENTO -->
     <div class="modal fade" id="modal-info-procedimiento" tabindex="-1" aria-labelledby="modalInfoProcedimientoLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -1300,6 +1322,7 @@
         let modalVerDetalle = null;
         let modalColaboradores = null;
         let modalInfoProcedimiento = null;
+        let modalBifurcacion = null;
 
         // ==========================================
         // UTILIDAD PARA MANEJO CORRECTO DE FECHAS
@@ -1412,6 +1435,7 @@
                 modalVerDetalle = new bootstrap.Modal(document.getElementById('modal-ver-detalle'));
                 modalColaboradores = new bootstrap.Modal(document.getElementById('modal-colaboradores'));
                 modalInfoProcedimiento = new bootstrap.Modal(document.getElementById('modal-info-procedimiento'));
+                modalBifurcacion = new bootstrap.Modal(document.getElementById('modal-bifurcacion'));
                 supabaseClient = supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
                 
                 inicializarEditoresQuill();
@@ -2904,6 +2928,594 @@
                 ocultarLoading();
             }
         }
+
+        // ==========================================
+        // AVANCE DE PROCEDIMIENTO
+        // ==========================================
+        async function avanzarProcedimiento(taskId) {
+            const tarea = tareasCache.find(t => t.task_id === taskId);
+            if (!tarea) return;
+
+            try {
+                mostrarLoading();
+
+                // 1. Obtener contexto del paso
+                const instanceStepData = await supabaseRequest(
+                    `/procedure_instance_steps?task_id=eq.${taskId}&select=instance_step_id,instance_id,step_id`
+                );
+                if (!instanceStepData || instanceStepData.length === 0) {
+                    showMessage('No se encontró el registro del paso en el procedimiento', 'danger');
+                    ocultarLoading();
+                    return;
+                }
+                const instanceStep = instanceStepData[0];
+
+                // 2. Obtener detalle del paso
+                const stepData = await supabaseRequest(
+                    `/procedure_steps?step_id=eq.${instanceStep.step_id}&select=*`
+                );
+                if (!stepData || stepData.length === 0) {
+                    showMessage('No se encontró la configuración del paso', 'danger');
+                    ocultarLoading();
+                    return;
+                }
+                const paso = stepData[0];
+
+                // 3. Si es paralelo, verificar tareas hermanas
+                if (paso.step_type === 'parallel') {
+                    const hermanas = await supabaseRequest(
+                        `/procedure_instance_steps?instance_id=eq.${instanceStep.instance_id}&step_id=eq.${paso.step_id}&select=instance_step_id,step_status,task_id`
+                    );
+                    const pendientes = hermanas.filter(h => h.task_id !== taskId && h.step_status !== 'completed');
+                    if (pendientes.length > 0) {
+                        if (!confirm(`Este es un paso paralelo. Hay ${pendientes.length} tarea(s) pendiente(s) de otros responsables.\n\n¿Deseas cerrar TU tarea? El procedimiento avanzará cuando todas se completen.`)) {
+                            ocultarLoading();
+                            return;
+                        }
+                        await cerrarTareaProcedimiento(taskId, instanceStep, null);
+                        showMessage('Tu tarea fue completada. El procedimiento avanzará cuando todas las tareas paralelas se completen.', 'info');
+                        await cargarTareas();
+                        ocultarLoading();
+                        return;
+                    }
+                }
+
+                // 4. Si tiene bifurcación, mostrar modal
+                if (paso.has_branches) {
+                    const branches = await supabaseRequest(
+                        `/procedure_step_branches?step_id=eq.${paso.step_id}&select=*&order=branch_order.asc`
+                    );
+                    if (!branches || branches.length === 0) {
+                        showMessage('El paso tiene bifurcación pero no hay opciones definidas', 'danger');
+                        ocultarLoading();
+                        return;
+                    }
+
+                    const container = document.getElementById('bifurcacion-opciones');
+                    container.innerHTML = branches.map(branch => `
+                        <button class="btn btn-outline-primary w-100 mb-2 text-start p-3" onclick="confirmarAvanceProcedimiento(${taskId}, '${branch.branch_id}')">
+                            <i class="bi bi-arrow-right-circle me-2"></i>
+                            <strong>${escapeHtml(branch.branch_label)}</strong>
+                        </button>
+                    `).join('');
+
+                    document.getElementById('bifurcacion-task-id').value = taskId;
+                    ocultarLoading();
+                    modalBifurcacion.show();
+                    return;
+                }
+
+                // 5. Paso normal: confirmar directamente
+                ocultarLoading();
+                confirmarAvanceProcedimiento(taskId, null);
+
+            } catch (error) {
+                console.error('❌ Error en avanzarProcedimiento:', error);
+                showMessage('Error al procesar el avance: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        async function confirmarAvanceProcedimiento(taskId, selectedBranchId) {
+            if (modalBifurcacion) modalBifurcacion.hide();
+
+            if (!confirm('¿Completar esta tarea y avanzar el procedimiento?')) return;
+
+            try {
+                mostrarLoading();
+
+                // 1. Obtener contexto
+                const instanceStepData = await supabaseRequest(
+                    `/procedure_instance_steps?task_id=eq.${taskId}&select=instance_step_id,instance_id,step_id`
+                );
+                const instanceStep = instanceStepData[0];
+
+                const stepData = await supabaseRequest(
+                    `/procedure_steps?step_id=eq.${instanceStep.step_id}&select=*`
+                );
+                const paso = stepData[0];
+
+                // 2. Cerrar tarea y marcar paso completado
+                await cerrarTareaProcedimiento(taskId, instanceStep, selectedBranchId);
+
+                // 3. Si es paralelo, marcar todos los hermanos como completados
+                if (paso.step_type === 'parallel') {
+                    await supabaseRequest(
+                        `/procedure_instance_steps?instance_id=eq.${instanceStep.instance_id}&step_id=eq.${paso.step_id}&step_status=neq.completed`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            step_status: 'completed',
+                            completed_at: new Date().toISOString(),
+                            completed_by: currentUser.user_id
+                        })
+                    });
+                }
+
+                // 4. Determinar siguiente paso
+                let nextStepId = null;
+                if (paso.is_final_step) {
+                    nextStepId = null;
+                } else if (selectedBranchId) {
+                    const branchData = await supabaseRequest(
+                        `/procedure_step_branches?branch_id=eq.${selectedBranchId}&select=next_step_id`
+                    );
+                    nextStepId = branchData && branchData[0] ? branchData[0].next_step_id : null;
+                } else {
+                    nextStepId = paso.next_step_id;
+                }
+
+                // 5. Obtener datos de instancia y procedimiento
+                const instanceData = await supabaseRequest(
+                    `/procedure_instances?instance_id=eq.${instanceStep.instance_id}&select=procedure_id,initiated_by_email,initiated_by_name`
+                );
+                const instancia = instanceData[0];
+
+                const procData = await supabaseRequest(
+                    `/procedures?procedure_id=eq.${instancia.procedure_id}&select=procedure_name`
+                );
+                const procedimiento = procData[0];
+
+                // 6. Si no hay siguiente paso → cerrar instancia
+                if (!nextStepId) {
+                    await supabaseRequest(
+                        `/procedure_instances?instance_id=eq.${instanceStep.instance_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            instance_status: 'completed',
+                            completed_at: new Date().toISOString()
+                        })
+                    });
+
+                    if (instancia.initiated_by_email) {
+                        try {
+                            const subject = `Procedimiento completado: ${procedimiento.procedure_name}`;
+                            const body = `
+                                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                    <div style="background-color: #198754; color: white; padding: 15px; border-radius: 5px;">
+                                        <h2 style="margin: 0;">Procedimiento completado</h2>
+                                    </div>
+                                    <div style="background-color: white; padding: 20px; border-radius: 5px; margin-top: 15px;">
+                                        <p>Hola ${escapeHtml(instancia.initiated_by_name || '')},</p>
+                                        <p>Tu solicitud de <strong>${escapeHtml(procedimiento.procedure_name)}</strong> ha sido completada exitosamente.</p>
+                                    </div>
+                                </div>
+                            `;
+                            await sendNotification(instancia.initiated_by_email, subject, body, true);
+                        } catch (e) { console.warn('⚠️ No se pudo notificar al solicitante:', e); }
+                    }
+
+                    showMessage('Procedimiento completado exitosamente', 'success');
+                    await cargarTareas();
+                    ocultarLoading();
+                    return;
+                }
+
+                // 7. Ejecutar siguiente paso (puede ser recursivo si es automático)
+                await ejecutarSiguientePaso(nextStepId, instanceStep.instance_id, instancia, procedimiento);
+                await cargarTareas();
+
+            } catch (error) {
+                console.error('❌ Error en confirmarAvanceProcedimiento:', error);
+                showMessage('Error al avanzar el procedimiento: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        async function cerrarTareaProcedimiento(taskId, instanceStep, selectedBranchId) {
+            await supabaseRequest('/tasks?task_id=eq.' + taskId, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    task_state: 'Terminada',
+                    close_date: getCurrentDateColombia(),
+                    updated_at: new Date().toISOString()
+                })
+            });
+
+            const updateData = {
+                step_status: 'completed',
+                completed_at: new Date().toISOString(),
+                completed_by: currentUser.user_id
+            };
+            if (selectedBranchId) {
+                updateData.selected_branch_id = selectedBranchId;
+            }
+
+            await supabaseRequest(
+                `/procedure_instance_steps?instance_step_id=eq.${instanceStep.instance_step_id}`, {
+                method: 'PATCH',
+                body: JSON.stringify(updateData)
+            });
+        }
+
+        async function ejecutarSiguientePaso(stepId, instanceId, instancia, procedimiento) {
+            const stepData = await supabaseRequest(
+                `/procedure_steps?step_id=eq.${stepId}&select=*,workers:responsible_worker_id(worker_id,worker_first_name,worker_last_name_1,email)`
+            );
+            if (!stepData || stepData.length === 0) {
+                showMessage('Error: el siguiente paso configurado no existe', 'danger');
+                return;
+            }
+            const paso = stepData[0];
+
+            // Actualizar current_step_id
+            await supabaseRequest(`/procedure_instances?instance_id=eq.${instanceId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ current_step_id: stepId })
+            });
+
+            // === PASO AUTOMÁTICO: notification ===
+            if (paso.step_type === 'notification') {
+                console.log(`📧 Paso automático (notificación): ${paso.step_name}`);
+
+                const workerName = paso.workers
+                    ? `${paso.workers.worker_first_name} ${paso.workers.worker_last_name_1}` : '';
+                const workerEmail = paso.workers?.email || '';
+
+                // Registrar paso como completado
+                await supabaseRequest('/procedure_instance_steps', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        instance_id: instanceId,
+                        step_id: paso.step_id,
+                        task_id: null,
+                        step_status: 'completed',
+                        started_at: new Date().toISOString(),
+                        completed_at: new Date().toISOString(),
+                        completed_by: currentUser.user_id
+                    })
+                });
+
+                // Enviar notificación informativa al responsable
+                if (workerEmail) {
+                    try {
+                        // Obtener form_data de la instancia
+                        const instDataNotif = await supabaseRequest(
+                            `/procedure_instances?instance_id=eq.${instanceId}&select=form_data`
+                        );
+                        const formData = instDataNotif[0]?.form_data || {};
+
+                        // Construir tabla de datos del formulario
+                        let formDataHtml = '';
+                        const entries = Object.entries(formData);
+                        if (entries.length > 0) {
+                            formDataHtml = '<table style="width:100%;border-collapse:collapse;margin:15px 0;">';
+                            entries.forEach(([campo, valor]) => {
+                                const campoLegible = campo.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                const valorStr = valor !== null && valor !== undefined && valor !== '' ? String(valor) : '—';
+                                formDataHtml += `<tr>
+                                    <td style="padding:8px;border:1px solid #dee2e6;font-weight:600;background:#f8f9fa;width:40%;">${escapeHtml(campoLegible)}</td>
+                                    <td style="padding:8px;border:1px solid #dee2e6;">${escapeHtml(valorStr)}</td>
+                                </tr>`;
+                            });
+                            formDataHtml += '</table>';
+                        }
+
+                        // Determinar siguiente paso
+                        let siguientePasoInfo = '';
+                        let nextId = paso.next_step_id;
+                        if (!paso.is_final_step && nextId) {
+                            const nextData = await supabaseRequest(
+                                `/procedure_steps?step_id=eq.${nextId}&select=step_name,step_sequence,workers:responsible_worker_id(worker_first_name,worker_last_name_1)`
+                            );
+                            if (nextData && nextData[0]) {
+                                const ns = nextData[0];
+                                const nsWorker = ns.workers ? `${ns.workers.worker_first_name} ${ns.workers.worker_last_name_1}` : 'Sin asignar';
+                                siguientePasoInfo = `
+                                    <div style="background-color:#e7f1ff;padding:12px;border-radius:5px;margin:15px 0;">
+                                        <p style="margin:0;font-weight:600;">Siguiente paso: ${escapeHtml(ns.step_name)}</p>
+                                        <p style="margin:5px 0 0 0;">Responsable: ${escapeHtml(nsWorker)}</p>
+                                    </div>
+                                `;
+                            }
+                        } else if (paso.is_final_step) {
+                            siguientePasoInfo = '<p style="color:#198754;font-weight:600;">Este es el último paso. El procedimiento se cerrará automáticamente.</p>';
+                        }
+
+                        const subject = `Notificación: ${procedimiento.procedure_name}`;
+                        const body = `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <div style="background-color: #0dcaf0; color: #000; padding: 15px; border-radius: 5px;">
+                                    <h2 style="margin: 0;">Notificación de procedimiento</h2>
+                                    <p style="margin: 5px 0 0 0; font-size: 14px;">SchoolNet - ${escapeHtml(procedimiento.procedure_name)}</p>
+                                </div>
+                                <div style="background-color: white; padding: 20px; border-radius: 5px; margin-top: 15px; border: 1px solid #dee2e6;">
+                                    <p>Hola ${escapeHtml(workerName)},</p>
+                                    <p>Te informamos que el procedimiento <strong>${escapeHtml(procedimiento.procedure_name)}</strong> 
+                                       iniciado por <strong>${escapeHtml(instancia.initiated_by_name || '')}</strong> 
+                                       ha pasado por el paso <strong>${escapeHtml(paso.step_name)}</strong>.</p>
+                                    
+                                    ${paso.step_description ? `<p style="color:#64748b;font-style:italic;">${escapeHtml(paso.step_description)}</p>` : ''}
+                                    
+                                    <h3 style="color:#0d6efd;border-bottom:2px solid #0d6efd;padding-bottom:5px;margin-top:20px;">Datos de la solicitud</h3>
+                                    ${formDataHtml || '<p style="color:#6c757d;">Sin datos de formulario</p>'}
+                                    
+                                    ${siguientePasoInfo}
+                                    
+                                    <p style="color:#6c757d;font-size:0.85rem;margin-top:20px;">Este correo es solo informativo. No requiere acción de tu parte.</p>
+                                </div>
+                            </div>
+                        `;
+                        await sendNotification(workerEmail, subject, body, true);
+                        console.log(`✅ Notificación informativa enviada a ${workerEmail}`);
+                    } catch (e) { console.warn('⚠️ Error enviando notificación:', e); }
+                }
+
+                // Avanzar al siguiente
+                return await avanzarPasoAutomatico(paso, instanceId, instancia, procedimiento);
+            }
+
+            // === PASO AUTOMÁTICO: send_email ===
+            if (paso.step_type === 'send_email') {
+                console.log(`📧 Paso automático (enviar correo): ${paso.step_name}`);
+
+                // Registrar paso como completado
+                await supabaseRequest('/procedure_instance_steps', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        instance_id: instanceId,
+                        step_id: paso.step_id,
+                        task_id: null,
+                        step_status: 'completed',
+                        started_at: new Date().toISOString(),
+                        completed_at: new Date().toISOString(),
+                        completed_by: currentUser.user_id
+                    })
+                });
+
+                // Obtener email del destinatario desde form_data
+                if (paso.email_config) {
+                    try {
+                        const instanceData = await supabaseRequest(
+                            `/procedure_instances?instance_id=eq.${instanceId}&select=form_data`
+                        );
+                        const formData = instanceData[0]?.form_data || {};
+
+                        // Obtener field_name del campo de email
+                        const fieldData = await supabaseRequest(
+                            `/form_fields?field_id=eq.${paso.email_config.source_field_id}&select=field_name`
+                        );
+                        const fieldName = fieldData[0]?.field_name || '';
+                        const destinatarioEmail = formData[fieldName] || '';
+
+                        if (destinatarioEmail) {
+                            const subject = resolverPlantillaProcedimiento(
+                                paso.email_config.subject_template || '',
+                                procedimiento.procedure_name,
+                                instancia.initiated_by_name || '',
+                                instancia.initiated_by_email || '',
+                                formData
+                            );
+                            const body = resolverPlantillaProcedimiento(
+                                paso.email_config.body_template || '',
+                                procedimiento.procedure_name,
+                                instancia.initiated_by_name || '',
+                                instancia.initiated_by_email || '',
+                                formData
+                            );
+
+                            await sendNotification(destinatarioEmail, subject, body, true);
+                            console.log(`✅ Correo enviado a destinatario: ${destinatarioEmail}`);
+                        } else {
+                            console.warn('⚠️ No se encontró email del destinatario en form_data');
+                        }
+                    } catch (e) { console.warn('⚠️ Error enviando correo a destinatario:', e); }
+                }
+
+                // Avanzar al siguiente
+                return await avanzarPasoAutomatico(paso, instanceId, instancia, procedimiento);
+            }
+
+            // === PASO MANUAL O PARALELO: crear tarea(s) ===
+            const dueDate = calcularFechaLimiteProcedimiento(paso.sla_days || 5);
+
+            if (paso.step_type === 'parallel') {
+                const assignments = await supabaseRequest(
+                    `/procedure_step_parallel_assignments?step_id=eq.${paso.step_id}&select=*,workers:worker_id(worker_first_name,worker_last_name_1,email)&order=assignment_order.asc`
+                );
+
+                for (const assignment of assignments) {
+                    const workerName = assignment.workers
+                        ? `${assignment.workers.worker_first_name} ${assignment.workers.worker_last_name_1}` : '';
+                    const workerEmail = assignment.workers?.email || '';
+
+                    const taskResult = await supabaseRequest('/tasks', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            task_description: `${procedimiento.procedure_name} - ${assignment.assignment_label}`,
+                            assigned_to_mail: workerEmail,
+                            assigned_to_name: workerName,
+                            due_date: dueDate,
+                            task_state: 'Asignada',
+                            task_priority: paso.sla_days && paso.sla_days <= 2 ? 'Alta' : 'Normal',
+                            module_type: 'procedures',
+                            procedure_id: instancia.procedure_id,
+                            procedure_step_id: paso.step_id,
+                            created_by: currentUser.user_id,
+                            created_by_name: currentUser.user_display_name || currentUser.user_mail
+                        })
+                    });
+
+                    await supabaseRequest('/procedure_instance_steps', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            instance_id: instanceId,
+                            step_id: paso.step_id,
+                            task_id: taskResult[0].task_id,
+                            step_status: 'pending',
+                            started_at: new Date().toISOString()
+                        })
+                    });
+
+                    if (workerEmail) {
+                        try {
+                            await enviarNotificacionPasoProcedimiento(workerEmail, workerName, procedimiento.procedure_name, paso.step_name, dueDate);
+                        } catch (e) { console.warn('⚠️ Error notificando:', e); }
+                    }
+                }
+                showMessage(`Tarea completada. ${assignments.length} tareas paralelas creadas.`, 'success');
+
+            } else {
+                const workerName = paso.workers
+                    ? `${paso.workers.worker_first_name} ${paso.workers.worker_last_name_1}` : '';
+                const workerEmail = paso.workers?.email || '';
+
+                const taskResult = await supabaseRequest('/tasks', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        task_description: `Paso ${paso.step_sequence}: ${paso.step_name} - ${procedimiento.procedure_name}`,
+                        assigned_to_mail: workerEmail,
+                        assigned_to_name: workerName,
+                        due_date: dueDate,
+                        task_state: 'Asignada',
+                        task_priority: paso.sla_days && paso.sla_days <= 2 ? 'Alta' : 'Normal',
+                        module_type: 'procedures',
+                        procedure_id: instancia.procedure_id,
+                        procedure_step_id: paso.step_id,
+                        created_by: currentUser.user_id,
+                        created_by_name: currentUser.user_display_name || currentUser.user_mail
+                    })
+                });
+
+                await supabaseRequest('/procedure_instance_steps', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        instance_id: instanceId,
+                        step_id: paso.step_id,
+                        task_id: taskResult[0].task_id,
+                        step_status: 'pending',
+                        started_at: new Date().toISOString()
+                    })
+                });
+
+                if (workerEmail) {
+                    try {
+                        await enviarNotificacionPasoProcedimiento(workerEmail, workerName, procedimiento.procedure_name, paso.step_name, dueDate);
+                    } catch (e) { console.warn('⚠️ Error notificando:', e); }
+                }
+                showMessage('Tarea completada y siguiente paso asignado.', 'success');
+            }
+        }
+
+        async function avanzarPasoAutomatico(pasoActual, instanceId, instancia, procedimiento) {
+            let nextStepId = null;
+
+            if (pasoActual.is_final_step) {
+                nextStepId = null;
+            } else if (pasoActual.has_branches) {
+                // Pasos automáticos con bifurcación no tienen sentido, tomar primera opción
+                const branches = await supabaseRequest(
+                    `/procedure_step_branches?step_id=eq.${pasoActual.step_id}&select=next_step_id&order=branch_order.asc&limit=1`
+                );
+                nextStepId = branches && branches[0] ? branches[0].next_step_id : null;
+            } else {
+                nextStepId = pasoActual.next_step_id;
+            }
+
+            if (!nextStepId) {
+                // Cerrar instancia
+                await supabaseRequest(`/procedure_instances?instance_id=eq.${instanceId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        instance_status: 'completed',
+                        completed_at: new Date().toISOString()
+                    })
+                });
+
+                if (instancia.initiated_by_email) {
+                    try {
+                        const subject = `Procedimiento completado: ${procedimiento.procedure_name}`;
+                        const body = `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <div style="background-color: #198754; color: white; padding: 15px; border-radius: 5px;">
+                                    <h2 style="margin: 0;">Procedimiento completado</h2>
+                                </div>
+                                <div style="background-color: white; padding: 20px; border-radius: 5px; margin-top: 15px;">
+                                    <p>Hola ${escapeHtml(instancia.initiated_by_name || '')},</p>
+                                    <p>Tu solicitud de <strong>${escapeHtml(procedimiento.procedure_name)}</strong> ha sido completada exitosamente.</p>
+                                </div>
+                            </div>
+                        `;
+                        await sendNotification(instancia.initiated_by_email, subject, body, true);
+                    } catch (e) { console.warn('⚠️ No se pudo notificar al solicitante:', e); }
+                }
+
+                showMessage('Procedimiento completado exitosamente.', 'success');
+                return;
+            }
+
+            // Recursión: ejecutar el siguiente paso
+            await ejecutarSiguientePaso(nextStepId, instanceId, instancia, procedimiento);
+        }
+
+        function resolverPlantillaProcedimiento(template, procedureName, requesterName, requesterEmail, formData) {
+            if (!template) return '';
+            let result = template;
+            result = result.replace(/\{\{procedure_name\}\}/g, procedureName || '');
+            result = result.replace(/\{\{requester_name\}\}/g, requesterName || '');
+            result = result.replace(/\{\{requester_email\}\}/g, requesterEmail || '');
+            result = result.replace(/\{\{current_date\}\}/g, formatDateSafe(getCurrentDateColombia()));
+            result = result.replace(/\{\{field:(\w+)\}\}/g, (match, fieldName) => {
+                return formData[fieldName] || '';
+            });
+            return result;
+        }
+
+        function calcularFechaLimiteProcedimiento(slaDays) {
+            if (!slaDays) return null;
+            const today = new Date();
+            let daysAdded = 0;
+            let currentDate = new Date(today);
+            while (daysAdded < slaDays) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                const day = currentDate.getDay();
+                if (day !== 0 && day !== 6) daysAdded++;
+            }
+            return currentDate.toISOString().split('T')[0];
+        }
+
+        async function enviarNotificacionPasoProcedimiento(email, workerName, procedureName, stepName, dueDate) {
+            const subject = `Nueva tarea asignada: ${procedureName}`;
+            const body = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background-color: #0d6efd; color: white; padding: 15px; border-radius: 5px;">
+                        <h2 style="margin: 0;">Nueva tarea asignada</h2>
+                        <p style="margin: 5px 0 0 0; font-size: 14px;">SchoolNet - Procedimientos</p>
+                    </div>
+                    <div style="background-color: white; padding: 20px; border-radius: 5px; margin-top: 15px;">
+                        <p>Hola ${escapeHtml(workerName)},</p>
+                        <p>Se te ha asignado una nueva tarea:</p>
+                        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #0d6efd; margin: 15px 0;">
+                            <p style="margin: 0;"><strong>${escapeHtml(stepName)}</strong></p>
+                            <p style="margin: 5px 0 0 0;">Procedimiento: ${escapeHtml(procedureName)}</p>
+                        </div>
+                        ${dueDate ? `<p>Fecha límite: <strong>${formatDateSafe(dueDate)}</strong></p>` : ''}
+                        <p>Ingresa al sistema para ver los detalles.</p>
+                    </div>
+                </div>
+            `;
+            await sendNotification(email, subject, body, true);
+        }
         
         // ==========================================
         // CERRAR Y CANCELAR TAREA
@@ -2917,6 +3529,12 @@
             
             if (!tieneProgreso && !tieneNotas) {
                 showMessage('No puedes cerrar una tarea sin progreso documentado. Agrega al menos una nota de progreso.', 'warning');
+                return;
+            }
+            
+            // Si es tarea de procedimiento, delegar al flujo de avance
+            if (tarea.module_type === 'procedures' && tarea.procedure_id) {
+                await avanzarProcedimiento(taskId);
                 return;
             }
             
@@ -3415,6 +4033,8 @@
         window.agregarEnlaceNota = agregarEnlaceNota;
         window.quitarEnlaceNota = quitarEnlaceNota;
         window.verInfoProcedimiento = verInfoProcedimiento;
+        window.avanzarProcedimiento = avanzarProcedimiento;
+        window.confirmarAvanceProcedimiento = confirmarAvanceProcedimiento;
         
         console.log('🎉 tasks.html v3.0 - Fechas corregidas + Modal editable para creador');
     </script>
