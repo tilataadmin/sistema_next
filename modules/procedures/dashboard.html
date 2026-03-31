@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.31.08.05">
+    <meta name="page-version" content="26.03.31.08.10">
     
     <title>Dashboard de Procedimientos - SchoolNet</title>
     
@@ -132,6 +132,9 @@
                     <option value="90">Últimos 90 días</option>
                     <option value="365">Último año</option>
                 </select>
+                <button class="btn btn-light btn-sm" id="btnCompare" onclick="toggleCompare()">
+                    <i class="bi bi-arrow-left-right me-2"></i>Comparar
+                </button>
                 <button class="btn btn-light btn-sm" onclick="loadDashboard()">
                     <i class="bi bi-arrow-clockwise me-2"></i>Actualizar
                 </button>
@@ -263,6 +266,8 @@
         let dashboardData = null;
         let charts = {};
         let allProcedures = [];
+        let compareMode = false;
+        let previousPeriodData = null;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -357,6 +362,10 @@
                 console.log(`✅ ${(instances||[]).length} instancias, ${(tasks||[]).length} tareas cargadas`);
                 
                 dashboardData = calculateMetrics(instances || [], tasks || [], procedures || []);
+
+                if (compareMode) {
+                    await loadPreviousPeriod(days, procedureId);
+                }
                 
                 renderKPIs(dashboardData.kpis);
                 renderTrendChart(dashboardData.trend);
@@ -673,22 +682,43 @@
         
         function renderKPIs(kpis) {
             const container = document.getElementById('kpiGrid');
+            const prev = compareMode && previousPeriodData ? previousPeriodData.kpis : null;
             
             const kpiCards = [
-                { label: 'Total Activos', value: kpis.totalActive, type: 'info' },
-                { label: 'En Progreso', value: kpis.inProgress, type: 'warning' },
-                { label: 'Completados (mes)', value: kpis.completedThisMonth, type: 'success' },
-                { label: 'Tiempo Promedio', value: `${kpis.avgDuration} días`, type: 'info' },
-                { label: 'Cumplimiento SLA', value: `${kpis.slaPercentage}%`, type: kpis.slaPercentage >= 80 ? 'success' : kpis.slaPercentage >= 60 ? 'warning' : 'danger' },
-                { label: 'Tareas Vencidas', value: kpis.overdueTasks, type: kpis.overdueTasks === 0 ? 'success' : 'danger' }
+                { label: 'Total Activos', value: kpis.totalActive, prevValue: prev?.totalActive, type: 'info', lowerIsBetter: false },
+                { label: 'En Progreso', value: kpis.inProgress, prevValue: prev?.inProgress, type: 'warning', lowerIsBetter: true },
+                { label: 'Completados (mes)', value: kpis.completedThisMonth, prevValue: prev?.completedThisMonth, type: 'success', lowerIsBetter: false },
+                { label: 'Tiempo Promedio', value: kpis.avgDuration, prevValue: prev?.avgDuration, type: 'info', suffix: ' días', lowerIsBetter: true },
+                { label: 'Cumplimiento SLA', value: kpis.slaPercentage, prevValue: prev?.slaPercentage, type: kpis.slaPercentage >= 80 ? 'success' : kpis.slaPercentage >= 60 ? 'warning' : 'danger', suffix: '%', lowerIsBetter: false },
+                { label: 'Tareas Vencidas', value: kpis.overdueTasks, prevValue: prev?.overdueTasks, type: kpis.overdueTasks === 0 ? 'success' : 'danger', lowerIsBetter: true }
             ];
             
-            container.innerHTML = kpiCards.map(kpi => `
-                <div class="kpi-card ${kpi.type}">
-                    <div class="kpi-label">${kpi.label}</div>
-                    <div class="kpi-value">${kpi.value}</div>
-                </div>
-            `).join('');
+            container.innerHTML = kpiCards.map(kpi => {
+                const displayValue = kpi.suffix ? `${kpi.value}${kpi.suffix}` : kpi.value;
+                let deltaHtml = '';
+                
+                if (prev && kpi.prevValue !== undefined && kpi.prevValue !== null) {
+                    const diff = kpi.value - kpi.prevValue;
+                    if (diff !== 0) {
+                        const isGood = kpi.lowerIsBetter ? diff < 0 : diff > 0;
+                        const arrow = diff > 0 ? '▲' : '▼';
+                        const color = isGood ? '#22c55e' : '#ef4444';
+                        const absDiff = Math.abs(diff);
+                        const displayDiff = kpi.suffix ? `${absDiff}${kpi.suffix}` : absDiff;
+                        deltaHtml = `<div style="font-size: 0.8rem; color: ${color}; margin-top: 0.25rem;">${arrow} ${displayDiff} vs anterior</div>`;
+                    } else {
+                        deltaHtml = `<div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">= sin cambio</div>`;
+                    }
+                }
+                
+                return `
+                    <div class="kpi-card ${kpi.type}">
+                        <div class="kpi-label">${kpi.label}</div>
+                        <div class="kpi-value">${displayValue}</div>
+                        ${deltaHtml}
+                    </div>
+                `;
+            }).join('');
         }
 
         // ==========================================
@@ -1077,6 +1107,60 @@
                     bsAlert.close();
                 }
             }, 6000);
+        }
+
+        // ==========================================
+        // MODO COMPARACIÓN
+        // ==========================================
+        
+        function toggleCompare() {
+            compareMode = !compareMode;
+            const btn = document.getElementById('btnCompare');
+            
+            if (compareMode) {
+                btn.classList.remove('btn-light');
+                btn.classList.add('btn-warning');
+                btn.innerHTML = '<i class="bi bi-arrow-left-right me-2"></i>Comparando';
+            } else {
+                btn.classList.remove('btn-warning');
+                btn.classList.add('btn-light');
+                btn.innerHTML = '<i class="bi bi-arrow-left-right me-2"></i>Comparar';
+                previousPeriodData = null;
+            }
+            
+            loadDashboard();
+        }
+        
+        async function loadPreviousPeriod(days, procedureId) {
+            try {
+                const endDate = new Date();
+                endDate.setDate(endDate.getDate() - days);
+                const endDateISO = endDate.toISOString();
+                
+                const startDate = new Date(endDate);
+                startDate.setDate(startDate.getDate() - days);
+                const startDateISO = startDate.toISOString();
+                
+                let instancesQuery = `/procedure_instances?started_at=gte.${startDateISO}&started_at=lt.${endDateISO}&select=*,procedures(procedure_name),procedure_steps!procedure_instances_current_step_id_fkey(step_name,sla_days)`;
+                let tasksQuery = `/tasks?module_type=eq.procedures&created_at=gte.${startDateISO}&created_at=lt.${endDateISO}&select=task_id,task_description,assigned_to_mail,assigned_to_name,task_state,task_priority,due_date,close_date,created_at,procedure_id`;
+                
+                if (procedureId) {
+                    instancesQuery += `&procedure_id=eq.${procedureId}`;
+                    tasksQuery += `&procedure_id=eq.${procedureId}`;
+                }
+                
+                const [instances, tasks] = await Promise.all([
+                    supabaseRequest(instancesQuery),
+                    supabaseRequest(tasksQuery)
+                ]);
+                
+                previousPeriodData = calculateMetrics(instances || [], tasks || [], allProcedures);
+                console.log('✅ Datos del período anterior cargados');
+                
+            } catch (error) {
+                console.error('❌ Error cargando período anterior:', error);
+                previousPeriodData = null;
+            }
         }
 
         console.log('✅ dashboard.html cargado correctamente');
