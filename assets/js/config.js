@@ -2015,6 +2015,11 @@ function injectUserNavbar() {
     }
     
     console.log('✅ Navbar de usuario inyectado correctamente');
+
+    // Cargar Rigoberto (asistente IA)
+    const rigoScript = document.createElement('script');
+    rigoScript.src = '/assets/js/ai-widget.js';
+    document.body.appendChild(rigoScript);
 }
 
 // Configurar event listeners del navbar
