@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.29.09.00">
+    <meta name="page-version" content="26.03.31.08.05">
     
     <title>Dashboard de Procedimientos - SchoolNet</title>
     
@@ -179,6 +179,28 @@
                 <div class="row g-3" id="bottlenecksContent"></div>
             </div>
 
+            <!-- Análisis por Paso (solo visible cuando se filtra un procedimiento) -->
+            <div class="section-card" id="stepAnalysisSection" style="display: none;">
+                <h6 class="section-title"><i class="bi bi-diagram-3"></i>Análisis por Paso</h6>
+                <p class="text-muted mb-3" style="font-size: 0.9rem;">Tiempo promedio y cumplimiento por cada paso del procedimiento seleccionado</p>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Paso</th>
+                                <th>Tipo</th>
+                                <th>Completados</th>
+                                <th>Tiempo Promedio</th>
+                                <th>SLA (días)</th>
+                                <th>Cumplimiento</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stepAnalysisBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="section-card">
                 <h6 class="section-title"><i class="bi bi-list-check"></i>Rendimiento por Procedimiento</h6>
                 <div class="table-responsive">
@@ -345,7 +367,8 @@
                 
                 document.getElementById('loadingContainer').style.display = 'none';
                 document.getElementById('dashboardContent').style.display = 'block';
-                
+
+                await loadStepAnalysis(procedureId);
                 console.log('✅ Dashboard cargado');
                 
             } catch (error) {
@@ -537,6 +560,111 @@
                 mostOverdue,
                 worstSLA
             };
+        }
+
+        // ==========================================
+        // ANÁLISIS POR PASO
+        // ==========================================
+        
+        async function loadStepAnalysis(procedureId) {
+            const section = document.getElementById('stepAnalysisSection');
+            
+            if (!procedureId) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            try {
+                const days = parseInt(document.getElementById('timeRange').value);
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - days);
+                const startDateISO = startDate.toISOString();
+                
+                // Traer pasos del procedimiento
+                const steps = await supabaseRequest(
+                    `/procedure_steps?procedure_id=eq.${procedureId}&select=step_id,step_sequence,step_name,step_type,sla_days&order=step_sequence`
+                );
+                
+                if (!steps || steps.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                
+                // Traer instancias del período para obtener sus IDs
+                const instances = await supabaseRequest(
+                    `/procedure_instances?procedure_id=eq.${procedureId}&started_at=gte.${startDateISO}&select=instance_id`
+                );
+                
+                if (!instances || instances.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                
+                const instanceIds = instances.map(i => i.instance_id);
+                
+                // Traer ejecuciones de pasos para esas instancias
+                const executions = await supabaseRequest(
+                    `/procedure_instance_steps?instance_id=in.(${instanceIds.join(',')})&select=step_id,step_status,started_at,completed_at`
+                );
+                
+                const tbody = document.getElementById('stepAnalysisBody');
+                
+                tbody.innerHTML = steps.map(step => {
+                    const stepExecs = (executions || []).filter(e => e.step_id === step.step_id);
+                    const completed = stepExecs.filter(e => e.step_status === 'completed' && e.started_at && e.completed_at);
+                    
+                    // Tiempo promedio en horas
+                    let avgTimeText = '-';
+                    let avgHours = 0;
+                    if (completed.length > 0) {
+                        avgHours = completed.reduce((sum, e) => {
+                            return sum + (new Date(e.completed_at) - new Date(e.started_at)) / (1000 * 60 * 60);
+                        }, 0) / completed.length;
+                        
+                        if (avgHours < 1) {
+                            avgTimeText = `${Math.round(avgHours * 60)} min`;
+                        } else if (avgHours < 24) {
+                            avgTimeText = `${Math.round(avgHours)} hrs`;
+                        } else {
+                            avgTimeText = `${(avgHours / 24).toFixed(1)} días`;
+                        }
+                    }
+                    
+                    // Cumplimiento SLA
+                    let slaText = '-';
+                    let slaClass = '';
+                    if (step.sla_days && completed.length > 0) {
+                        const slaHours = step.sla_days * 24;
+                        const onTime = completed.filter(e => {
+                            const hours = (new Date(e.completed_at) - new Date(e.started_at)) / (1000 * 60 * 60);
+                            return hours <= slaHours;
+                        });
+                        const pct = Math.round((onTime.length / completed.length) * 100);
+                        slaText = `${pct}%`;
+                        slaClass = pct >= 80 ? 'bg-success' : pct >= 60 ? 'bg-warning' : 'bg-danger';
+                    }
+                    
+                    const typeLabels = { manual: 'Manual', notification: 'Notificación', automatic: 'Automático' };
+                    
+                    return `
+                        <tr>
+                            <td>${step.step_sequence}</td>
+                            <td>${escapeHtml(step.step_name)}</td>
+                            <td><small class="text-muted">${typeLabels[step.step_type] || step.step_type}</small></td>
+                            <td>${completed.length}</td>
+                            <td>${avgTimeText}</td>
+                            <td>${step.sla_days || '-'}</td>
+                            <td>${slaClass ? `<span class="badge-custom ${slaClass}">${slaText}</span>` : slaText}</td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                section.style.display = 'block';
+                
+            } catch (error) {
+                console.error('❌ Error cargando análisis por paso:', error);
+                section.style.display = 'none';
+            }
         }
 
         // ==========================================
