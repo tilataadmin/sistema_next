@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.29.07.00">
+    <meta name="page-version" content="26.03.31.08.15">
     
     <title>Consultar Registros - SchoolNet</title>
     
@@ -207,8 +207,22 @@
                     <button type="button" class="btn btn-success" onclick="exportToCSV()">
                         <i class="bi bi-download me-2"></i>Exportar
                     </button>
+                    <button type="button" class="btn btn-outline-primary" id="btnAggregated" onclick="loadAggregatedView()" style="display: none;">
+                        <i class="bi bi-bar-chart me-2"></i>Vista Agregada
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="btnListView" onclick="backToListView()" style="display: none;">
+                        <i class="bi bi-list-ul me-2"></i>Vista Lista
+                    </button>
                 </div>
             </div>
+        </div>
+
+        <!-- Aggregated View -->
+        <div class="records-container" id="aggregatedContainer" style="display: none;">
+            <div class="records-header">
+                <span class="records-count" id="aggregatedTitle">Vista Agregada</span>
+            </div>
+            <div id="aggregatedContent"></div>
         </div>
 
         <!-- Loading -->
@@ -293,6 +307,7 @@
         let currentPage = 1;
         let recordsPerPage = 20;
         let currentInstanceId = null;
+        let aggregatedVisible = false;
         
         const detailModalInstance = new bootstrap.Modal(document.getElementById('detailModal'));
         const historyModalInstance = new bootstrap.Modal(document.getElementById('historyModal'));
@@ -368,6 +383,7 @@
                 
                 console.log(`✅ ${allRecords.length} registros cargados`);
                 renderRecords();
+                toggleAggregatedButton();
                 
             } catch (error) {
                 console.error('❌ Error:', error);
@@ -420,6 +436,7 @@
             currentPage = 1;
             renderRecords();
             console.log(`🔍 Filtros aplicados: ${filteredRecords.length} registros`);
+            toggleAggregatedButton();
         }
         
         function clearFilters() {
@@ -433,6 +450,7 @@
             filteredRecords = [...allRecords];
             currentPage = 1;
             renderRecords();
+            toggleAggregatedButton();
         }
 
         // ==========================================
@@ -989,6 +1007,257 @@
                     bsAlert.close();
                 }
             }, 6000);
+        }
+
+        // ==========================================
+        // VISTA AGREGADA
+        // ==========================================
+        
+        function toggleAggregatedButton() {
+            const procedureId = document.getElementById('filterProcedure').value;
+            document.getElementById('btnAggregated').style.display = procedureId ? 'inline-block' : 'none';
+            
+            if (!procedureId && aggregatedVisible) {
+                backToListView();
+            }
+        }
+        
+        function backToListView() {
+            aggregatedVisible = false;
+            document.getElementById('aggregatedContainer').style.display = 'none';
+            document.getElementById('recordsContainer').style.display = 'block';
+            document.getElementById('btnListView').style.display = 'none';
+            document.getElementById('btnAggregated').style.display = document.getElementById('filterProcedure').value ? 'inline-block' : 'none';
+        }
+        
+        async function loadAggregatedView() {
+            const procedureId = document.getElementById('filterProcedure').value;
+            if (!procedureId) return;
+            
+            try {
+                aggregatedVisible = true;
+                document.getElementById('recordsContainer').style.display = 'none';
+                document.getElementById('aggregatedContainer').style.display = 'block';
+                document.getElementById('btnAggregated').style.display = 'none';
+                document.getElementById('btnListView').style.display = 'inline-block';
+                document.getElementById('aggregatedContent').innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2 text-muted">Calculando estadísticas...</p>
+                    </div>
+                `;
+                
+                // Obtener form_id del procedimiento
+                const [proc] = await supabaseRequest(
+                    `/procedures?procedure_id=eq.${procedureId}&select=form_id,procedure_name`
+                );
+                
+                if (!proc) throw new Error('Procedimiento no encontrado');
+                
+                // Obtener campos del formulario
+                const fields = await supabaseRequest(
+                    `/form_fields?form_id=eq.${proc.form_id}&select=field_id,field_label,field_type,field_order&is_prefilled=eq.false&order=field_order`
+                );
+                
+                if (!fields || fields.length === 0) {
+                    document.getElementById('aggregatedContent').innerHTML = '<p class="text-muted text-center py-4">Este formulario no tiene campos analizables</p>';
+                    return;
+                }
+                
+                // Obtener IDs de instancias filtradas
+                const instanceIds = filteredRecords
+                    .filter(r => r.procedure_id == procedureId)
+                    .map(r => r.instance_id);
+                
+                if (instanceIds.length === 0) {
+                    document.getElementById('aggregatedContent').innerHTML = '<p class="text-muted text-center py-4">No hay instancias con los filtros actuales</p>';
+                    return;
+                }
+                
+                // Obtener respuestas
+                const responses = await supabaseRequest(
+                    `/form_responses?instance_id=in.(${instanceIds.join(',')})&select=field_id,response_text,response_number,response_date,selected_option_id,field_option_catalog(option_label)`
+                );
+                
+                // Título
+                const procName = allProcedures.find(p => p.procedure_id == procedureId)?.procedure_name || '';
+                document.getElementById('aggregatedTitle').textContent = `Vista Agregada: ${procName} (${instanceIds.length} instancias)`;
+                
+                // Generar estadísticas por campo
+                let html = '<div class="row g-3">';
+                
+                fields.forEach(field => {
+                    const fieldResponses = (responses || []).filter(r => r.field_id === field.field_id);
+                    const totalResponses = fieldResponses.length;
+                    
+                    html += `<div class="col-md-6"><div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">`;
+                    html += `<h6 style="color: var(--primary-color); margin-bottom: 0.75rem;">${escapeHtml(field.field_label)}</h6>`;
+                    html += `<small class="text-muted d-block mb-2">${totalResponses} respuestas</small>`;
+                    
+                    if (totalResponses === 0) {
+                        html += '<p class="text-muted mb-0" style="font-size: 0.9rem;">Sin datos</p>';
+                    } else {
+                        switch (field.field_type) {
+                            case 'select':
+                                html += renderSelectStats(fieldResponses);
+                                break;
+                            case 'number':
+                                html += renderNumberStats(fieldResponses);
+                                break;
+                            case 'boolean':
+                                html += renderBooleanStats(fieldResponses);
+                                break;
+                            case 'date':
+                                html += renderDateStats(fieldResponses);
+                                break;
+                            case 'text':
+                            case 'textarea':
+                                html += renderTextStats(fieldResponses);
+                                break;
+                            case 'system_table':
+                                html += renderTextStats(fieldResponses);
+                                break;
+                            case 'file':
+                                html += `<p class="mb-0" style="font-size: 0.9rem;">${fieldResponses.filter(r => r.file_path).length} archivos adjuntados</p>`;
+                                break;
+                            default:
+                                html += renderTextStats(fieldResponses);
+                        }
+                    }
+                    
+                    html += '</div></div>';
+                });
+                
+                html += '</div>';
+                document.getElementById('aggregatedContent').innerHTML = html;
+                
+            } catch (error) {
+                console.error('❌ Error cargando vista agregada:', error);
+                document.getElementById('aggregatedContent').innerHTML = `
+                    <div class="alert alert-danger">Error al cargar la vista agregada: ${error.message}</div>
+                `;
+            }
+        }
+        
+        function renderSelectStats(responses) {
+            const counts = {};
+            responses.forEach(r => {
+                const label = r.field_option_catalog?.option_label || r.response_text || 'Sin respuesta';
+                counts[label] = (counts[label] || 0) + 1;
+            });
+            
+            const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+            const total = responses.length;
+            
+            let html = '';
+            sorted.forEach(([label, count]) => {
+                const pct = Math.round((count / total) * 100);
+                html += `
+                    <div style="margin-bottom: 0.5rem;">
+                        <div class="d-flex justify-content-between" style="font-size: 0.85rem;">
+                            <span>${escapeHtml(label)}</span>
+                            <span class="text-muted">${count} (${pct}%)</span>
+                        </div>
+                        <div style="height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 2px;">
+                            <div style="height: 100%; width: ${pct}%; background: var(--primary-color); border-radius: 3px;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            return html;
+        }
+        
+        function renderNumberStats(responses) {
+            const values = responses.map(r => r.response_number).filter(v => v !== null && v !== undefined);
+            if (values.length === 0) return '<p class="text-muted mb-0" style="font-size: 0.9rem;">Sin datos numéricos</p>';
+            
+            const sum = values.reduce((a, b) => a + Number(b), 0);
+            const avg = (sum / values.length).toFixed(1);
+            const min = Math.min(...values.map(Number));
+            const max = Math.max(...values.map(Number));
+            
+            return `
+                <div class="d-flex gap-3" style="font-size: 0.9rem;">
+                    <div><strong>Promedio:</strong> ${avg}</div>
+                    <div><strong>Mín:</strong> ${min}</div>
+                    <div><strong>Máx:</strong> ${max}</div>
+                </div>
+            `;
+        }
+        
+        function renderBooleanStats(responses) {
+            const trueCount = responses.filter(r => r.response_text === 'true').length;
+            const falseCount = responses.filter(r => r.response_text === 'false').length;
+            const total = trueCount + falseCount;
+            if (total === 0) return '<p class="text-muted mb-0" style="font-size: 0.9rem;">Sin datos</p>';
+            
+            const truePct = Math.round((trueCount / total) * 100);
+            const falsePct = 100 - truePct;
+            
+            return `
+                <div style="margin-bottom: 0.5rem;">
+                    <div class="d-flex justify-content-between" style="font-size: 0.85rem;">
+                        <span>Sí</span><span class="text-muted">${trueCount} (${truePct}%)</span>
+                    </div>
+                    <div style="height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 2px;">
+                        <div style="height: 100%; width: ${truePct}%; background: #22c55e; border-radius: 3px;"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="d-flex justify-content-between" style="font-size: 0.85rem;">
+                        <span>No</span><span class="text-muted">${falseCount} (${falsePct}%)</span>
+                    </div>
+                    <div style="height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 2px;">
+                        <div style="height: 100%; width: ${falsePct}%; background: #ef4444; border-radius: 3px;"></div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderDateStats(responses) {
+            const dates = responses.map(r => r.response_date).filter(Boolean).sort();
+            if (dates.length === 0) return '<p class="text-muted mb-0" style="font-size: 0.9rem;">Sin fechas</p>';
+            
+            return `
+                <div style="font-size: 0.9rem;">
+                    <div><strong>Más antigua:</strong> ${formatDate(dates[0])}</div>
+                    <div><strong>Más reciente:</strong> ${formatDate(dates[dates.length - 1])}</div>
+                </div>
+            `;
+        }
+        
+        function renderTextStats(responses) {
+            const values = responses.map(r => r.response_text).filter(Boolean);
+            if (values.length === 0) return '<p class="text-muted mb-0" style="font-size: 0.9rem;">Sin respuestas</p>';
+            
+            // Contar valores únicos
+            const counts = {};
+            values.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+            const uniqueCount = Object.keys(counts).length;
+            
+            // Si hay pocas opciones únicas (< 10), mostrar como distribución
+            if (uniqueCount <= 10) {
+                const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+                const total = values.length;
+                let html = '';
+                sorted.forEach(([label, count]) => {
+                    const pct = Math.round((count / total) * 100);
+                    html += `
+                        <div style="margin-bottom: 0.5rem;">
+                            <div class="d-flex justify-content-between" style="font-size: 0.85rem;">
+                                <span>${escapeHtml(label.length > 50 ? label.substring(0, 50) + '...' : label)}</span>
+                                <span class="text-muted">${count} (${pct}%)</span>
+                            </div>
+                            <div style="height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 2px;">
+                                <div style="height: 100%; width: ${pct}%; background: var(--secondary-color); border-radius: 3px;"></div>
+                            </div>
+                        </div>
+                    `;
+                });
+                return html;
+            }
+            
+            return `<p class="mb-0" style="font-size: 0.9rem;">${values.length} respuestas, ${uniqueCount} valores únicos</p>`;
         }
 
         console.log('✅ records.html cargado correctamente');
