@@ -364,7 +364,7 @@ async function notificarAusenciaAutomatica(worker, fecha, horasDeficit, esDiaCom
 // ==========================================
 // HANDLER DEL ENDPOINT
 // ==========================================
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     // Verificar que sea invocación del cron de Vercel
     const authHeader = req.headers['authorization'];
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
