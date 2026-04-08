@@ -1700,6 +1700,48 @@ const navbarStyles = `
         background: #e9ecef;
         margin: 0.5rem 0;
     }
+
+    @media (max-width: 768px) {
+        #schoolnet-user-navbar .navbar-brand span {
+            display: none;
+        }
+        
+        #schoolnet-user-navbar .navbar-brand {
+            font-size: 1.1rem;
+        }
+        
+        #page-version-badge {
+            display: none !important;
+        }
+        
+        #schoolnet-user-navbar .user-button span {
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        #schoolnet-user-navbar .user-button {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+        }
+        
+        #schoolnet-user-navbar .manual-button {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+        }
+        
+        #schoolnet-user-navbar .container-fluid {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        
+        #schoolnet-user-navbar .d-flex.gap-3 {
+            gap: 0.5rem !important;
+        }
+    }
     
     /* Ajustar contenido para compensar navbar fijo */
     body {
