@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.30.10.00">
+    <meta name="page-version" content="26.04.08.16.25">
     
     <title>Gestionar Formularios - SchoolNet</title>
     
@@ -375,6 +375,22 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Acceso a Resultados -->
+                        <hr>
+                        <h6 class="mb-3"><i class="bi bi-people me-2"></i>Acceso a Resultados</h6>
+                        <p class="text-muted small mb-2">Workers que podrán consultar las respuestas de este formulario (además del creador)</p>
+                        <div class="mb-3">
+                            <div class="input-group">
+                                <select class="form-select" id="accessWorkerSelect">
+                                    <option value="">Seleccione un worker...</option>
+                                </select>
+                                <button type="button" class="btn btn-outline-primary" onclick="addAccessWorker()">
+                                    <i class="bi bi-plus-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="accessWorkersList"></div>
                         
                         <hr>
 
@@ -570,6 +586,8 @@
         let currentFields = [];
         let editingFieldIndex = -1;
         let tempOptions = [];
+        let allWorkers = [];
+        let selectedAccessWorkers = [];
         
         const formModalInstance = new bootstrap.Modal(document.getElementById('formModal'));
         const fieldModalInstance = new bootstrap.Modal(document.getElementById('fieldModal'));
@@ -602,8 +620,20 @@
                 }
             }
             
+            await loadWorkers();
             await loadForms();
         });
+
+        async function loadWorkers() {
+            try {
+                allWorkers = await supabaseRequest(
+                    '/workers?select=worker_id,worker_first_name,worker_last_name_1,email&worker_status=eq.active&order=worker_last_name_1'
+                ) || [];
+                console.log(`✅ ${allWorkers.length} workers cargados`);
+            } catch (error) {
+                console.error('❌ Error cargando workers:', error);
+            }
+        }
 
         // ==========================================
         // CARGAR FORMULARIOS
@@ -748,6 +778,10 @@
                         <p class="mb-0">No hay campos agregados. Haz clic en "Agregar Campo" para comenzar.</p>
                     </div>
                 `;
+
+                selectedAccessWorkers = [];
+                populateAccessWorkerSelect();
+                renderAccessWorkersList();
             }
             
             formModalInstance.show();
@@ -811,6 +845,18 @@
                 }));
                 
                 renderFieldsList();
+
+                // Cargar workers con acceso
+                const accessData = await supabaseRequest(
+                    `/form_access_workers?form_id=eq.${formId}&select=worker_id,workers(worker_first_name,worker_last_name_1,email)`
+                );
+                selectedAccessWorkers = (accessData || []).map(a => ({
+                    worker_id: a.worker_id,
+                    name: `${a.workers.worker_last_name_1} ${a.workers.worker_first_name}`,
+                    email: a.workers.email
+                }));
+                populateAccessWorkerSelect();
+                renderAccessWorkersList();
                 
             } catch (error) {
                 console.error('❌ Error cargando formulario:', error);
@@ -889,6 +935,19 @@
                 
                 // Guardar campos
                 await saveFields(formId);
+
+                // Guardar acceso a resultados
+                await supabaseRequest(`/form_access_workers?form_id=eq.${formId}`, { method: 'DELETE' });
+                if (selectedAccessWorkers.length > 0) {
+                    const accessPayload = selectedAccessWorkers.map(w => ({
+                        form_id: formId,
+                        worker_id: w.worker_id
+                    }));
+                    await supabaseRequest('/form_access_workers', {
+                        method: 'POST',
+                        body: JSON.stringify(accessPayload)
+                    });
+                }
                 
                 showAlert('Formulario guardado exitosamente', 'success');
                 formModalInstance.hide();
@@ -1470,6 +1529,60 @@
         function removeOption(index) {
             tempOptions.splice(index, 1);
             renderOptionsList();
+        }
+
+        // ==========================================
+        // ACCESO A RESULTADOS (Workers)
+        // ==========================================
+
+        function populateAccessWorkerSelect() {
+            const select = document.getElementById('accessWorkerSelect');
+            select.innerHTML = '<option value="">Seleccione un worker...</option>';
+            allWorkers.forEach(w => {
+                if (selectedAccessWorkers.some(s => s.worker_id === w.worker_id)) return;
+                const name = `${w.worker_last_name_1} ${w.worker_first_name}`;
+                select.innerHTML += `<option value="${w.worker_id}">${escapeHtml(name)} (${escapeHtml(w.email)})</option>`;
+            });
+        }
+
+        function addAccessWorker() {
+            const select = document.getElementById('accessWorkerSelect');
+            const workerId = select.value;
+            if (!workerId) return;
+
+            const worker = allWorkers.find(w => w.worker_id === workerId);
+            if (!worker || selectedAccessWorkers.some(s => s.worker_id === workerId)) return;
+
+            selectedAccessWorkers.push({
+                worker_id: worker.worker_id,
+                name: `${worker.worker_last_name_1} ${worker.worker_first_name}`,
+                email: worker.email
+            });
+
+            renderAccessWorkersList();
+            populateAccessWorkerSelect();
+        }
+
+        function removeAccessWorker(workerId) {
+            selectedAccessWorkers = selectedAccessWorkers.filter(w => w.worker_id !== workerId);
+            renderAccessWorkersList();
+            populateAccessWorkerSelect();
+        }
+
+        function renderAccessWorkersList() {
+            const container = document.getElementById('accessWorkersList');
+            if (selectedAccessWorkers.length === 0) {
+                container.innerHTML = '<small class="text-muted">Solo el creador podrá consultar las respuestas</small>';
+                return;
+            }
+            container.innerHTML = selectedAccessWorkers.map(w => `
+                <div class="d-flex justify-content-between align-items-center py-1 px-2 mb-1 rounded" style="background:#f8f9fa;">
+                    <small><strong>${escapeHtml(w.name)}</strong> · ${escapeHtml(w.email)}</small>
+                    <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeAccessWorker('${w.worker_id}')">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            `).join('');
         }
 
         // ==========================================
