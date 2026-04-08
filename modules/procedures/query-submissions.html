@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.30.10.10">
+    <meta name="page-version" content="26.04.08.16.30">
     
     <title>Consultar Respuestas - SchoolNet</title>
     
@@ -244,6 +244,7 @@
         
         let currentUser = null;
         let isSuperAdmin = false;
+        let currentWorkerId = null;
         let availableForms = [];
         let selectedForm = null;
         let selectedFormFields = [];
@@ -284,37 +285,61 @@
         // ==========================================
         // CARGAR FORMULARIOS DISPONIBLES
         // ==========================================
-        
         async function loadAvailableForms() {
             try {
                 console.log('📡 Cargando formularios...');
-                
-                // Obtener formularios que tienen instancias (están vinculados a procedimientos)
-                let formsQuery = '/forms?select=form_id,form_name,form_description&order=form_name';
-                if (!isSuperAdmin) {
-                    formsQuery += `&created_by=eq.${currentUser.user_id}`;
+
+                // Obtener worker_id del usuario logueado
+                const workerData = await supabaseRequest(
+                    `/workers?select=worker_id&email=eq.${encodeURIComponent(currentUser.user_mail)}&limit=1`
+                );
+                currentWorkerId = workerData?.[0]?.worker_id || null;
+
+                if (isSuperAdmin) {
+                    // Super admin ve todos
+                    const forms = await supabaseRequest('/forms?select=form_id,form_name,form_description&order=form_name');
+                    availableForms = forms || [];
+                } else {
+                    // Formularios creados por el usuario
+                    const ownForms = await supabaseRequest(
+                        `/forms?select=form_id,form_name,form_description&created_by=eq.${currentUser.user_id}&order=form_name`
+                    );
+
+                    // Formularios donde el worker tiene acceso
+                    let sharedForms = [];
+                    if (currentWorkerId) {
+                        const accessData = await supabaseRequest(
+                            `/form_access_workers?select=form_id,forms(form_id,form_name,form_description)&worker_id=eq.${currentWorkerId}`
+                        );
+                        sharedForms = (accessData || [])
+                            .filter(a => a.forms)
+                            .map(a => a.forms);
+                    }
+
+                    // Unir sin duplicados
+                    const formMap = new Map();
+                    (ownForms || []).forEach(f => formMap.set(f.form_id, f));
+                    sharedForms.forEach(f => formMap.set(f.form_id, f));
+                    availableForms = Array.from(formMap.values()).sort((a, b) => a.form_name.localeCompare(b.form_name));
                 }
-                const forms = await supabaseRequest(formsQuery);
-                
-                availableForms = forms || [];
+
                 console.log(`✅ ${availableForms.length} formularios disponibles`);
-                
+
                 const selector = document.getElementById('formSelector');
                 selector.innerHTML = '<option value="">-- Selecciona un formulario --</option>';
-                
                 availableForms.forEach(form => {
                     const option = document.createElement('option');
                     option.value = form.form_id;
                     option.textContent = form.form_name;
                     selector.appendChild(option);
                 });
-                
+
             } catch (error) {
                 console.error('❌ Error:', error);
                 showAlert('Error al cargar los formularios', 'danger');
             }
         }
-
+        
         // ==========================================
         // SELECCIÓN DE FORMULARIO
         // ==========================================
