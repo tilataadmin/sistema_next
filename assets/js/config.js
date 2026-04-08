@@ -40,8 +40,9 @@ const ENVIRONMENT_CONFIGS = {
             debugMode: true,
             rlsEnabled: false,
             testData: true,
-            logging: 'verbose'
-        }
+           logging: 'verbose'
+        },
+        institutionName: 'Colegio Tilatá'
     },
     production: {
         name: 'Producción',
@@ -54,7 +55,8 @@ const ENVIRONMENT_CONFIGS = {
             rlsEnabled: true,
             testData: false,
             logging: 'minimal'
-        }
+        },
+        institutionName: 'Colegio Tilatá'
     },
     // 🆕 NUEVO AMBIENTE - PRESUCORTI
     presucorti: {
@@ -68,7 +70,8 @@ const ENVIRONMENT_CONFIGS = {
             rlsEnabled: true,
             testData: false,
             logging: 'minimal'
-        }
+        },
+        institutionName: 'Cortilatá'
     }
 };
 
@@ -183,7 +186,7 @@ const APP_CONFIG = {
     
     // Información de la institución
     institution: {
-        name: 'Colegio Tilatá',
+        name: ENV_CONFIG.institutionName || 'SchoolNet',
         domain: 'colegiotilata.edu.co',
         logo: '/assets/images/logo.png'
     },
