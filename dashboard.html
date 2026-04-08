@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.26.13.35">
+    <meta name="page-version" content="26.04.08.16.35">
     <title>Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -655,8 +655,10 @@
                 await cargarPermisosDeModulos();
                 await cargarDatosUsuario();
                 await personalizarBienvenida();
-                await cargarPendientes();
-                await cargarModulos();
+                await Promise.all([
+                    cargarPendientes(),
+                    cargarModulos()
+                ]);
                 
                 console.log('✅ Dashboard inicializado correctamente');
                 
@@ -751,26 +753,31 @@
         async function personalizarBienvenida() {
             const welcomeMessage = document.getElementById('welcome-message');
             let primerNombre = '';
-        
-            try {
-                const workerData = await supabaseRequest(`/workers?select=worker_first_name&email=eq.${currentUser.user_mail}&limit=1`);
-                if (workerData && workerData.length > 0) {
-                    primerNombre = workerData[0].worker_first_name.split(' ')[0];
+
+            // Obtener datos del worker (una sola vez, reutilizable por pendientes)
+            // Worker ya cargado en personalizarBienvenida()
+
+            if (currentWorkerId) {
+                try {
+                    const workerData = await supabaseRequest(`/workers?select=worker_first_name&worker_id=eq.${currentWorkerId}&limit=1`);
+                    if (workerData && workerData.length > 0) {
+                        primerNombre = workerData[0].worker_first_name.split(' ')[0];
+                    }
+                } catch (e) {
+                    console.warn('⚠️ No se pudo obtener el nombre del worker');
                 }
-            } catch (e) {
-                console.warn('⚠️ No se pudo obtener el nombre del worker');
             }
-        
+
             if (!primerNombre && currentUser.user_display_name) {
                 primerNombre = currentUser.user_display_name.split(' ')[0];
             }
-        
+
             const saludo = SALUDOS_NEUTROS[Math.floor(Math.random() * SALUDOS_NEUTROS.length)];
             welcomeMessage.textContent = primerNombre ? `${saludo}, ${primerNombre}` : saludo;
-        
+
             document.querySelector('.dashboard-header').classList.add('loaded');
         }
-
+        
         // ==========================================
         // 🔧 CARGAR MÓDULOS - LÓGICA CORREGIDA
         // ==========================================
@@ -944,27 +951,23 @@
         async function contarSolicitudesTTE() {
             if (!currentWorkerEmail) return 0;
             try {
-                // Obtener categorías donde el usuario es responsable
                 const categorias = await supabaseRequest('/tte_categories?select=category_id&responsible_email=eq.' + currentWorkerEmail + '&category_status=eq.active');
                 if (!categorias || categorias.length === 0) return 0;
-                
-                let totalPending = 0;
-                for (const cat of categorias) {
-                    // Fragmentos pendientes de esta categoría
-                    const fragments = await supabaseRequest('/tte_request_fragments?select=fragment_id&category_id=eq.' + cat.category_id + '&response_status=eq.pending');
-                    if (fragments) totalPending += fragments.length;
-                    
-                    // Solicitudes completas (sin fragmentos) pendientes
-                    const requests = await supabaseRequest('/tte_requests?select=request_id&category_id=eq.' + cat.category_id + '&has_fragments=eq.false&response_status=eq.pending');
-                    if (requests) totalPending += requests.length;
-                }
-                return totalPending;
+
+                const catIds = categorias.map(c => `"${c.category_id}"`).join(',');
+
+                const [fragments, requests] = await Promise.all([
+                    supabaseRequest('/tte_request_fragments?select=fragment_id&category_id=in.(' + catIds + ')&response_status=eq.pending'),
+                    supabaseRequest('/tte_requests?select=request_id&category_id=in.(' + catIds + ')&has_fragments=eq.false&response_status=eq.pending')
+                ]);
+
+                return (fragments?.length || 0) + (requests?.length || 0);
             } catch (error) {
                 console.error('❌ Error contando solicitudes TTE:', error);
                 return 0;
             }
         }
-
+        
         // 5. Proveedores asignados al worker
         async function contarMisProveedores() {
             if (!currentWorkerId) return 0;
