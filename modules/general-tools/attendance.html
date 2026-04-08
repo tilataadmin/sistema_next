@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.03.05.13.10"
+    <meta name="page-version" content="26.04.08.09.40"
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2857,258 +2857,114 @@
         // ==========================================
         // SECCIÓN 5: PARSER DE CÓDIGOS DE CÉDULA
         // ==========================================
+        
+        /**
+         * PARSER PARA FORMATO DE 3 CAMPOS (HONEYWELL XENON 1960g)
+         * Formato configurado: documento[TAB]apellidos[TAB]nombres[ENTER]
+         * Este es el formato PRIORITARIO - se ejecuta PRIMERO
+         */
+        function parsearFormato3Campos(codigo) {
+            try {
+                console.log('🔍 Intentando parsear formato de 3 campos...');
+                console.log('Código recibido:', JSON.stringify(codigo));
+                console.log('Longitud:', codigo.length);
+                console.log('¿Tiene TABs?', codigo.includes('\t'));
+                
+                // Verificar que el código contiene TABs
+                if (!codigo.includes('\t')) {
+                    console.log('❌ No tiene TABs, no es formato de 3 campos');
+                    return null;
+                }
+                
+                // Dividir por TABs
+                const partes = codigo.split('\t');
+                console.log('Partes encontradas:', partes.length);
+                partes.forEach((p, i) => console.log(`Parte ${i + 1}:`, JSON.stringify(p)));
+                
+                // Validar que tenemos exactamente 3 campos
+                if (partes.length !== 3) {
+                    console.log(`❌ Se esperaban 3 campos, se encontraron ${partes.length}`);
+                    return null;
+                }
+                
+                let [documento, apellidos, nombres] = partes.map(p => p.trim());
+                
+                console.log('Campo 1 (documento):', JSON.stringify(documento));
+                console.log('Campo 2 (apellidos):', JSON.stringify(apellidos));
+                console.log('Campo 3 (nombres):', JSON.stringify(nombres));
+                
+                // Validar documento (6-12 dígitos)
+                const documentoLimpio = documento.replace(/\D/g, '');
+                if (documentoLimpio.length < 6 || documentoLimpio.length > 12) {
+                    console.log(`❌ Documento inválido: ${documentoLimpio.length} dígitos`);
+                    return null;
+                }
+                
+                // Limpiar ceros a la izquierda del documento
+                documento = documentoLimpio.replace(/^0+/, '');
+                if (documento.length === 0) documento = '0'; // Si era todo ceros, dejamos un cero
+                console.log('✓ Ceros eliminados:', `${documentoLimpio} → ${documento}`);
+                
+                // Limpiar nombres y apellidos
+                // Reemplazar punto medio (·) con espacio si existe
+                apellidos = apellidos.replace(/·/g, ' ');
+                nombres = nombres.replace(/·/g, ' ');
+                
+                // Reemplazar múltiples espacios con uno solo
+                apellidos = apellidos.replace(/\s+/g, ' ').trim();
+                nombres = nombres.replace(/\s+/g, ' ').trim();
+                
+                // Eliminar marcadores MRZ (<<) si existen (cédulas digitales)
+                apellidos = apellidos.replace(/</g, ' ').replace(/\s+/g, ' ').trim();
+                nombres = nombres.replace(/</g, ' ').replace(/\s+/g, ' ').trim();
+                
+                console.log('✅ Datos limpios finales:');
+                console.log('Documento:', documento);
+                console.log('Apellidos:', apellidos);
+                console.log('Nombres:', nombres);
+                
+                // Validar que tengamos al menos nombres o apellidos
+                if (!nombres && !apellidos) {
+                    console.log('❌ No hay nombres ni apellidos');
+                    return null;
+                }
+                
+                console.log('✅ ¡FORMATO DE 3 CAMPOS DETECTADO!');
+                
+                return {
+                    documento: documento,
+                    nombres: nombres || null,
+                    apellidos: apellidos || null,
+                    tipoDocumento: 'CC',
+                    datosCompletos: !!(nombres && apellidos),
+                    formato: 'Formato 3 campos (Honeywell configurado)'
+                };
+                
+            } catch (error) {
+                console.error('❌ Error parseando formato de 3 campos:', error);
+                return null;
+            }
+        }
+        
         function parsearCodigoCedula(codigo) {
             console.log('🔍 Intentando parsear código:', codigo);
             
-            // Intentar diferentes formatos
-            
-            // FORMATO 1: Cédula Digital (QR) - Basado en MRZ
-            // El QR contiene datos en formato similar a MRZ
-            if (codigo.includes('ICCOL') || codigo.includes('COL')) {
-                const resultado = parsearCedulaDigital(codigo);
-                if (resultado) return resultado;
+            // ==========================================
+            // PRIORIDAD 0: FORMATO DE 3 CAMPOS (HONEYWELL)
+            // ==========================================
+            // Este es el nuevo formato configurado en el Honeywell Xenon 1960g
+            // documento[TAB]apellidos[TAB]nombres
+            const formato3Campos = parsearFormato3Campos(codigo);
+            if (formato3Campos) {
+                console.log('✅ Código parseado con formato de 3 campos (Honeywell)');
+                return formato3Campos;
             }
+            console.log('⏭️ Formato de 3 campos no detectado');
             
-            // FORMATO 2: Cédula Amarilla (PDF417)
-            // Formato: puede variar, pero generalmente tiene el número de cédula
-            if (codigo.includes('-') || codigo.match(/^\d{6,}/)) {
-                const resultado = parsearCedulaAmarilla(codigo);
-                if (resultado) return resultado;
-            }
-            
-            // FORMATO 3: Intentar extraer solo número de documento
-            // Si el código es solo números, asumimos que es el documento
-            const soloNumeros = codigo.replace(/\D/g, '');
-            if (soloNumeros.length >= 6 && soloNumeros.length <= 12) {
-                return {
-                    documento: soloNumeros,
-                    nombres: null,
-                    apellidos: null,
-                    tipoDocumento: 'CC',
-                    datosCompletos: false
-                };
-            }
-            
-            return null;
-        }
+            // ==========================================
+            // Intentar diferentes formatos (parsers existentes)
+            // ==========================================
 
-        // Parser para cédula digital (QR con formato MRZ)
-        function parsearCedulaDigital(codigo) {
-            try {
-                console.log('🔍 Parseando cédula digital (QR-MRZ)');
-                
-                // El código QR puede tener varias líneas o ser continuo
-                let lineas = codigo.split(/[\n\r]+/).filter(l => l.trim());
-                
-                // Si es una sola línea muy larga, intentar dividir en chunks de ~30 chars
-                if (lineas.length === 1 && codigo.length > 60) {
-                    // El MRZ típico tiene líneas de 30-44 caracteres
-                    lineas = codigo.match(/.{1,44}/g) || [codigo];
-                }
-                
-                console.log(`📋 Líneas detectadas: ${lineas.length}`, lineas);
-                
-                let documento = null;
-                let nombres = null;
-                let apellidos = null;
-                let fechaNacimiento = null;
-                let sexo = null;
-                
-                for (let i = 0; i < lineas.length; i++) {
-                    const linea = lineas[i];
-                    
-                    // LÍNEA 1: ICCOL + NUIP
-                    if (linea.startsWith('ICCOL') || linea.startsWith('IC') && linea.includes('COL')) {
-                        console.log('✅ Línea 1 (ICCOL) detectada');
-                        // La cédula a veces está en el NUIP (últimos dígitos significativos)
-                        const nuip = linea.replace(/^ICCOL/, '').replace(/[^0-9]/g, '');
-                        if (nuip.length >= 8) {
-                            // Los últimos 8-10 dígitos suelen ser la cédula
-                            const posibleCedula = nuip.substring(nuip.length - 10, nuip.length - 2);
-                            if (!documento && posibleCedula.length >= 6) {
-                                documento = posibleCedula.replace(/^0+/, ''); // Quitar ceros a la izquierda
-                            }
-                        }
-                    }
-                    
-                    // LÍNEA 2: Fechas + Sexo + COL + Cédula
-                    if (linea.includes('COL') && linea.match(/[MF]/)) {
-                        console.log('✅ Línea 2 (Fechas+Sexo) detectada');
-                        
-                        // Buscar el patrón: AAMMDD + M/F + AAMMDD + COL + Cédula
-                        const patronLinea2 = /(\d{6})([MF])(\d{6})COL[<\d]*(\d{7,10})</;
-                        const match = linea.match(patronLinea2);
-                        
-                        if (match) {
-                            fechaNacimiento = match[1]; // AAMMDD
-                            sexo = match[2]; // M o F
-                            documento = match[4].replace(/^0+/, ''); // Cédula sin ceros iniciales
-                            console.log(`✅ Datos extraídos - Cédula: ${documento}, Sexo: ${sexo}, FechaNac: ${fechaNacimiento}`);
-                        }
-                        
-                        // Método alternativo: buscar números después de COL
-                        if (!documento) {
-                            const partesDespuesCOL = linea.split('COL');
-                            if (partesDespuesCOL.length > 1) {
-                                const numeroDespuesCOL = partesDespuesCOL[1].replace(/[^0-9]/g, '');
-                                if (numeroDespuesCOL.length >= 6) {
-                                    // Tomar los primeros 7-10 dígitos
-                                    documento = numeroDespuesCOL.substring(0, Math.min(10, numeroDespuesCOL.length));
-                                    documento = documento.replace(/^0+/, '');
-                                }
-                            }
-                        }
-                    }
-                    
-                    // LÍNEA 3: Apellidos<<Nombres
-                    if (linea.includes('<<') || (linea.includes('<') && linea.match(/[A-Z]{2,}/))) {
-                        console.log('✅ Línea 3 (Nombres) detectada');
-                        
-                        // Formato: APELLIDO1<APELLIDO2<<NOMBRE1<NOMBRE2
-                        const partes = linea.split('<<');
-                        
-                        if (partes.length >= 2) {
-                            // Apellidos antes de 
-                            apellidos = partes[0].replace(/<+/g, ' ').trim();
-                            // Nombres después de 
-                            nombres = partes[1].replace(/<+/g, ' ').trim();
-                            
-                            console.log(`✅ Nombres extraídos - Apellidos: ${apellidos}, Nombres: ${nombres}`);
-                        }
-                    }
-                }
-                
-                // Si no se encontró el documento en las líneas estructuradas, buscar en todo el texto
-                if (!documento) {
-                    console.log('⚠️ Método de respaldo: buscando números en todo el código');
-                    const todosLosNumeros = codigo.match(/\d{7,10}/g);
-                    if (todosLosNumeros) {
-                        // Filtrar fechas y tomar el número más probable
-                        const candidatos = todosLosNumeros.filter(num => {
-                            // No es fecha (no empieza con 19 o 20 si tiene 8 dígitos)
-                            if (num.length === 8 && (num.startsWith('19') || num.startsWith('20'))) {
-                                return false;
-                            }
-                            return num.length >= 7 && num.length <= 10;
-                        });
-                        
-                        if (candidatos.length > 0) {
-                            // Preferir el número más largo
-                            documento = candidatos.reduce((a, b) => a.length >= b.length ? a : b);
-                            documento = documento.replace(/^0+/, '');
-                        }
-                    }
-                }
-                
-                if (documento) {
-                    console.log('✅ Parser exitoso:', { documento, apellidos, nombres });
-                    return {
-                        documento: documento,
-                        nombres: nombres || null,
-                        apellidos: apellidos || null,
-                        tipoDocumento: 'CC',
-                        datosCompletos: !!(nombres && apellidos)
-                    };
-                }
-                
-                console.warn('⚠️ No se pudo extraer documento de la cédula digital');
-                
-            } catch (error) {
-                console.error('❌ Error parseando cédula digital:', error);
-            }
-            
-            return null;
-        }
-
-
-        
-        // Parser para cédula amarilla (PDF417)
-        function parsearCedulaAmarilla(codigo) {
-            try {
-                console.log('🔍 Parseando cédula amarilla PDF417');
-                
-                let documento = null;
-                let apellidos = null;
-                let nombres = null;
-                
-                // FORMATO PDF417 CÉDULA COLOMBIANA AMARILLA:
-                // El código tiene una estructura fija con campos de longitud específica
-                
-                // Patrón 1: Buscar secuencia de apellidos y nombres con espacios largos
-                // Formato típico: ...APELLIDO1     APELLIDO2     NOMBRE1     NOMBRE2     ...
-                const patronNombres = /([A-Z]+\s{2,})([A-Z]+\s{2,})([A-Z]+\s{2,})([A-Z]+\s{2,})/;
-                const matchNombres = codigo.match(patronNombres);
-                
-                if (matchNombres) {
-                    // Extraer y limpiar apellidos y nombres
-                    apellidos = (matchNombres[1].trim() + ' ' + matchNombres[2].trim()).trim();
-                    nombres = (matchNombres[3].trim() + ' ' + matchNombres[4].trim()).trim();
-                    
-                    console.log('✅ Apellidos extraídos:', apellidos);
-                    console.log('✅ Nombres extraídos:', nombres);
-                    
-                    // Buscar el número de cédula ANTES de los apellidos
-                    // Generalmente está en una secuencia larga de números
-                    const parteAntesNombres = codigo.substring(0, matchNombres.index);
-                    
-                    // Buscar secuencias de números (generalmente 8-10 dígitos)
-                    const numerosEncontrados = parteAntesNombres.match(/\d{7,10}/g);
-                    
-                    if (numerosEncontrados && numerosEncontrados.length > 0) {
-                        // La cédula suele ser el número más largo o el último número significativo
-                        // Filtrar números que parecen fechas (comienzan con 19 o 20 y tienen 8 dígitos)
-                        const posiblesCedulas = numerosEncontrados.filter(num => {
-                            // No es fecha completa (YYYYMMDD)
-                            if (num.length === 8 && (num.startsWith('19') || num.startsWith('20'))) {
-                                return false;
-                            }
-                            // Longitud típica de cédula colombiana (7-10 dígitos)
-                            return num.length >= 7 && num.length <= 10;
-                        });
-                        
-                        if (posiblesCedulas.length > 0) {
-                            // Tomar el último número encontrado (generalmente es la cédula)
-                            documento = posiblesCedulas[posiblesCedulas.length - 1];
-                            console.log('✅ Documento extraído:', documento);
-                        }
-                    }
-                }
-                
-                // Patrón 2: Si no se encontró con el método anterior, intentar buscar
-                // el número de cédula en la secuencia que generalmente tiene el formato:
-                // [tipo][fecha][cédula] antes de los apellidos
-                if (!documento) {
-                    // Buscar secuencia de 16-20 dígitos que suele contener la cédula
-                    const secuenciaLarga = codigo.match(/\d{16,20}/);
-                    if (secuenciaLarga) {
-                        const secuencia = secuenciaLarga[0];
-                        // Los últimos 7-10 dígitos suelen ser la cédula
-                        documento = secuencia.substring(secuencia.length - 10, secuencia.length - 2);
-                        // Limpiar ceros a la izquierda
-                        documento = documento.replace(/^0+/, '');
-                        console.log('✅ Documento extraído (método alternativo):', documento);
-                    }
-                }
-                
-                if (documento) {
-                    return {
-                        documento: documento,
-                        nombres: nombres || null,
-                        apellidos: apellidos || null,
-                        tipoDocumento: 'CC',
-                        datosCompletos: !!(nombres && apellidos)
-                    };
-                }
-                
-                console.warn('⚠️ No se pudo extraer el documento de la cédula amarilla');
-                
-            } catch (error) {
-                console.error('Error parseando cédula amarilla:', error);
-            }
-            
-            return null;
-        }
-        
         // ==========================================
         // SECCIÓN 6: REGISTRO DE VISITANTES
         // ==========================================
