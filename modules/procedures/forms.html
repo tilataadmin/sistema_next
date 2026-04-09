@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.08.16.25">
+    <meta name="page-version" content="26.04.09.13.30">
     
     <title>Gestionar Formularios - SchoolNet</title>
     
@@ -1704,22 +1704,33 @@
             try {
                 // Verificar si está en uso por procedimientos
                 const procedures = await supabaseRequest(`/procedures?form_id=eq.${formId}&select=procedure_id`);
-                
                 if (procedures && procedures.length > 0) {
                     showAlert('No se puede eliminar. Este formulario está siendo usado en procedimientos activos.', 'danger');
                     return;
                 }
                 
-                // Eliminar opciones de campos
+                // Verificar si tiene respuestas
+                const responses = await supabaseRequest(`/form_responses?select=response_id&instance_id=not.is.null&limit=1`);
                 const fields = await supabaseRequest(`/form_fields?form_id=eq.${formId}&select=field_id`);
-                if (fields) {
+                
+                if (fields && fields.length > 0) {
+                    const fieldIds = fields.map(f => f.field_id).join(',');
+                    const fieldResponses = await supabaseRequest(`/form_responses?field_id=in.(${fieldIds})&select=response_id&limit=1`);
+                    
+                    if (fieldResponses && fieldResponses.length > 0) {
+                        showAlert('No se puede eliminar. Este formulario ya tiene respuestas registradas. Puedes desactivarlo cambiando su estado a "Inactivo".', 'danger');
+                        return;
+                    }
+                    
+                    // Sin respuestas: eliminar opciones y campos
                     for (const f of fields) {
                         await supabaseRequest(`/field_option_catalog?field_id=eq.${f.field_id}`, { method: 'DELETE' });
                     }
+                    await supabaseRequest(`/form_fields?form_id=eq.${formId}`, { method: 'DELETE' });
                 }
                 
-                // Eliminar campos
-                await supabaseRequest(`/form_fields?form_id=eq.${formId}`, { method: 'DELETE' });
+                // Eliminar acceso de workers
+                await supabaseRequest(`/form_access_workers?form_id=eq.${formId}`, { method: 'DELETE' });
                 
                 // Eliminar formulario
                 await supabaseRequest(`/forms?form_id=eq.${formId}`, { method: 'DELETE' });
