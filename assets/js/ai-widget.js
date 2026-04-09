@@ -204,7 +204,7 @@
                 <div class="rigo-welcome">
                     <div class="rigo-welcome-icon">${RIGOBERTO_SVG_COLOR}</div>
                     <p><strong>Soy Rigoberto</strong></p>
-                    <p>Pregúntame lo que necesites sobre<br>los documentos de la organización.</p>
+                    <p>Pregúntame lo que necesites sobre los<br>documentos y funcionalidades de SchoolNet.</p>
                 </div>
             </div>
             <div class="rigo-typing" id="rigoTyping">
@@ -280,7 +280,7 @@
             <div class="rigo-welcome">
                 <div class="rigo-welcome-icon">${RIGOBERTO_SVG_COLOR}</div>
                 <p><strong>Soy Rigoberto</strong></p>
-                <p>Pregúntame lo que necesites sobre<br>los documentos de la organización.</p>
+                <p>Pregúntame lo que necesites sobre los<br>documentos y funcionalidades de SchoolNet.</p>
             </div>
         `;
         document.getElementById('rigoInput').focus();
