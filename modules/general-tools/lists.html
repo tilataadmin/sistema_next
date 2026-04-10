@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.03.24.14.31">
+    <meta name="page-version" content="2026.04.10.13.40">
     <title>Listas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -377,7 +377,11 @@
                             </div>
                         </div>
 
-                        <div class="text-end mt-4">
+                        <div class="d-flex justify-content-between align-items-center mt-4">
+                            <button type="button" class="btn btn-outline-secondary" onclick="generarRotulosFamilias()">
+                                <i class="bi bi-printer me-2"></i>Imprimir Rótulos (66×25.4mm)
+                            </button>
+                            <div>
                             <button type="button" class="btn btn-generate me-2" onclick="generarListaFamilias('pdf')">
                                 <i class="bi bi-file-pdf me-2"></i>Generar PDF
                             </button>
@@ -385,6 +389,7 @@
                                     style="background-color: #2b579a;">
                                 <i class="bi bi-file-word me-2"></i>Generar Word
                             </button>
+                            </div>
                         </div>
                     </div>
 
@@ -2477,6 +2482,138 @@ function descargarBlob(blob, nombreArchivo) {
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
 }
+
+// ==========================================
+// GENERAR RÓTULOS DE FAMILIAS (66x25.4mm, 3x10)
+// ==========================================
+async function generarRotulosFamilias() {
+    try {
+        mostrarLoading('Generando rótulos de familias...');
+
+        // Obtener familias activas
+        const familias = await supabaseRequest(
+            '/families?select=family_code,family_name&family_status=eq.active&order=family_name.asc'
+        );
+
+        if (!familias || familias.length === 0) {
+            ocultarLoading();
+            showMessage('No hay familias activas', 'warning');
+            return;
+        }
+
+        // Para cada familia, obtener hijos activos
+        const familiasConHijos = [];
+
+        for (const familia of familias) {
+            const hijos = await supabaseRequest(
+                `/students?select=student_first_name,student_last_name_1,courses(course_name,course_order),student_status!inner(status_description)&family_id=eq.${familia.family_code}&student_status.status_description=eq.Activo&order=courses(course_order).asc,student_first_name.asc`
+            );
+
+            if (hijos.length > 0) {
+                familiasConHijos.push({
+                    nombre: familia.family_name,
+                    hijos: hijos.map(h => ({
+                        nombre: `${h.student_first_name} ${h.student_last_name_1}`,
+                        curso: h.courses?.course_name || 'Sin curso'
+                    }))
+                });
+            }
+        }
+
+        if (familiasConHijos.length === 0) {
+            ocultarLoading();
+            showMessage('No hay familias con hijos activos', 'warning');
+            return;
+        }
+
+        // Configuración de rótulos
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'letter'); // 216 x 279 mm
+
+        const ROTULO_ANCHO = 66;
+        const ROTULO_ALTO = 25.4;
+        const COLUMNAS = 3;
+        const FILAS = 10;
+        const ROTULOS_POR_PAGINA = COLUMNAS * FILAS;
+
+        // Márgenes para centrar la grilla en la hoja
+        const MARGEN_IZQ = (216 - (COLUMNAS * ROTULO_ANCHO)) / 2;
+        const MARGEN_TOP = (279 - (FILAS * ROTULO_ALTO)) / 2;
+
+        const PADDING_X = 3;    // margen interno horizontal
+        const PADDING_Y = 2.5;  // margen interno vertical
+
+        let rotuloActual = 0;
+
+        for (const familia of familiasConHijos) {
+            // Nueva página si es necesario
+            if (rotuloActual > 0 && rotuloActual % ROTULOS_POR_PAGINA === 0) {
+                doc.addPage();
+            }
+
+            const indexEnPagina = rotuloActual % ROTULOS_POR_PAGINA;
+            const col = indexEnPagina % COLUMNAS;
+            const fila = Math.floor(indexEnPagina / COLUMNAS);
+
+            const x = MARGEN_IZQ + (col * ROTULO_ANCHO) + PADDING_X;
+            const y = MARGEN_TOP + (fila * ROTULO_ALTO) + PADDING_Y;
+            const anchoDisponible = ROTULO_ANCHO - (PADDING_X * 2);
+            const altoDisponible = ROTULO_ALTO - (PADDING_Y * 2);
+
+            // Línea 1: "Familia Apellidos" en negrita
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(0);
+
+            const tituloFamilia = `Familia ${familia.nombre}`;
+            const tituloRecortado = doc.getTextWidth(tituloFamilia) > anchoDisponible
+                ? tituloFamilia.substring(0, Math.floor(anchoDisponible / 1.8)) + '...'
+                : tituloFamilia;
+            doc.text(tituloRecortado, x, y + 3.5);
+
+            // Líneas de hijos
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6.5);
+            doc.setTextColor(60);
+
+            const maxLineasHijos = 3;
+            let lineaY = y + 7.5;
+
+            for (let i = 0; i < Math.min(familia.hijos.length, maxLineasHijos); i++) {
+                const hijo = familia.hijos[i];
+                let textoHijo = `${hijo.nombre} — ${hijo.curso}`;
+
+                if (doc.getTextWidth(textoHijo) > anchoDisponible) {
+                    textoHijo = textoHijo.substring(0, Math.floor(anchoDisponible / 1.5)) + '...';
+                }
+
+                doc.text(textoHijo, x, lineaY);
+                lineaY += 3.5;
+            }
+
+            // Si hay más hijos que el máximo visible
+            if (familia.hijos.length > maxLineasHijos) {
+                const restantes = familia.hijos.length - maxLineasHijos;
+                doc.setFontSize(5.5);
+                doc.setTextColor(130);
+                doc.text(`+${restantes} más`, x, lineaY);
+            }
+
+            rotuloActual++;
+        }
+
+        doc.save(`Rotulos_Familias_${Date.now()}.pdf`);
+        ocultarLoading();
+        showMessage(`${rotuloActual} rótulos generados en ${Math.ceil(rotuloActual / ROTULOS_POR_PAGINA)} página(s)`, 'success');
+
+    } catch (error) {
+        console.error('❌ Error generando rótulos:', error);
+        ocultarLoading();
+        showMessage('Error al generar rótulos: ' + error.message, 'danger');
+    }
+}
+
+window.generarRotulosFamilias = generarRotulosFamilias;
 
 window.generarListaRestriccionFotos = generarListaRestriccionFotos;
 </script>
