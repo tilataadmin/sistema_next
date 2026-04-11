@@ -567,6 +567,10 @@
                 <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-value" style="color: #0ea5e9;">${data.totalEvaluators}</div><div class="kpi-label">Evaluadores</div></div></div>
                 <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-value" style="color: #0ea5e9;">${data.totalResponses}</div><div class="kpi-label">Respuestas</div></div></div>
                 <div class="col-6 col-md-3"><div class="kpi-card"><div class="kpi-value" style="color: #0ea5e9;">${Object.keys(data.behaviorScores).length}</div><div class="kpi-label">Conductas evaluadas</div></div></div>`;
+                // Validez estadística
+            if (document.getElementById('filter-view').value === 'individual') {
+                verificarValidezEstadistica();
+            }
         }
 
         // ==========================================
@@ -928,6 +932,54 @@
                     `<tr class="table-light"><td><strong>Total</strong></td><td class="text-center"><strong>${totalF}</strong></td><td class="text-center"><strong>${totalO}</strong></td><td class="text-center"><strong>${totalF + totalO}</strong></td></tr>`;
                 document.getElementById('bitacora-summary-section').style.display = 'block';
             } catch (error) { console.error('Error cargando resumen bitácora:', error); document.getElementById('bitacora-summary-section').style.display = 'none'; }
+        }
+
+        // ==========================================
+        // VALIDEZ ESTADÍSTICA
+        // ==========================================
+        async function verificarValidezEstadistica() {
+            const evaluateeId = document.getElementById('filter-evaluatee').value;
+            if (!evaluateeId) return;
+
+            const evaluators = await supabaseRequest(
+                `/leadership_cycle_evaluators?select=group_id,evaluation_status,leadership_interest_groups(group_code,group_name)&evaluatee_id=eq.${evaluateeId}`
+            );
+            if (!evaluators) return;
+
+            const minimums = { 'GI1': 1, 'GI2': 1, 'GI3': 0.7, 'GI4': 0.6 };
+            const groupStats = {};
+            evaluators.forEach(e => {
+                const code = e.leadership_interest_groups?.group_code;
+                if (!code) return;
+                if (!groupStats[code]) groupStats[code] = { name: e.leadership_interest_groups.group_name, total: 0, completada: 0 };
+                groupStats[code].total++;
+                if (e.evaluation_status === 'completada') groupStats[code].completada++;
+            });
+
+            const warnings = [];
+            Object.entries(groupStats).forEach(([code, stats]) => {
+                const minRatio = minimums[code];
+                if (minRatio === undefined) return;
+                const actualRatio = stats.total > 0 ? stats.completada / stats.total : 0;
+                if (minRatio <= 1 && stats.completada < minRatio) {
+                    warnings.push(`${stats.name}: sin respuesta (requerida)`);
+                } else if (minRatio < 1 && actualRatio < minRatio) {
+                    const needed = Math.ceil(stats.total * minRatio);
+                    warnings.push(`${stats.name}: ${stats.completada}/${stats.total} completadas (mínimo sugerido: ${needed})`);
+                }
+            });
+
+            if (warnings.length > 0) {
+                const kpiContainer = document.getElementById('kpis-container');
+                kpiContainer.innerHTML += `
+                    <div class="col-12">
+                        <div class="alert alert-warning mb-0 py-2" style="font-size: 0.85rem;">
+                            <i class="bi bi-exclamation-triangle me-2"></i><strong>Validez estadística:</strong>
+                            Los siguientes grupos no alcanzan la muestra mínima sugerida:
+                            ${warnings.map(w => `<br>• ${w}`).join('')}
+                        </div>
+                    </div>`;
+            }
         }
         
         function mostrarLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
