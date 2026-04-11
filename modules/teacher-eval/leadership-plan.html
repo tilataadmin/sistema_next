@@ -374,7 +374,7 @@
         async function crearPlan(e) {
             e.preventDefault();
             try {
-                await supabaseRequest('/leadership_improvement_plans', {
+                const newPlanResult = await supabaseRequest('/leadership_improvement_plans', {
                     method: 'POST',
                     body: JSON.stringify({
                         leader_id: currentWorkerId,
@@ -382,8 +382,47 @@
                         plan_status: 'activo'
                     })
                 });
+                const newPlanId = newPlanResult?.[0]?.plan_id;
+
+                // Buscar plan anterior con acciones no completadas
+                const previousPlan = cachePlans.find(p => p.plan_status !== 'archivado');
+                if (previousPlan && newPlanId) {
+                    const prevActions = await supabaseRequest(
+                        `/leadership_improvement_actions?select=*&plan_id=eq.${previousPlan.plan_id}&action_status=neq.completada`
+                    );
+                    if (prevActions && prevActions.length > 0) {
+                        const carry = confirm(`El plan anterior (${previousPlan.leadership_cycles?.cycle_name || ''}) tiene ${prevActions.length} acción(es) no completada(s).\n\n¿Desea trasladarlas al nuevo plan?`);
+                        if (carry) {
+                            for (const action of prevActions) {
+                                await supabaseRequest('/leadership_improvement_actions', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        plan_id: newPlanId,
+                                        dimension_id: action.dimension_id,
+                                        attribute_id: action.attribute_id,
+                                        behavior_id: action.behavior_id,
+                                        action_description: action.action_description,
+                                        success_indicator: action.success_indicator,
+                                        target_date: null,
+                                        action_status: 'pendiente',
+                                        action_source: action.action_source,
+                                        observation_id: action.observation_id,
+                                        closing_reflection: null
+                                    })
+                                });
+                            }
+                            showMessage(`Plan creado con ${prevActions.length} acción(es) trasladada(s) del plan anterior`, 'success');
+                        } else {
+                            showMessage('Plan creado correctamente', 'success');
+                        }
+                    } else {
+                        showMessage('Plan creado correctamente', 'success');
+                    }
+                } else {
+                    showMessage('Plan creado correctamente', 'success');
+                }
+
                 modalPlan.hide();
-                showMessage('Plan creado correctamente', 'success');
                 await cargarPlanes();
                 renderizarPlanes();
             } catch (error) { showMessage('Error: ' + error.message, 'danger'); }
@@ -407,6 +446,7 @@
             renderizarKPIsPlan();
 
             await cargarSugerencias(plan);
+            await mostrarEstadoPlanAnterior(plan);
 
             document.getElementById('vista-planes').style.display = 'none';
             document.getElementById('vista-detalle').style.display = 'block';
@@ -596,6 +636,41 @@
             } catch (error) {
                 console.error('Error cargando sugerencias:', error);
             }
+        }
+
+        // ==========================================
+        // ESTADO DEL PLAN ANTERIOR
+        // ==========================================
+        async function mostrarEstadoPlanAnterior(currentPlan) {
+            const previousPlans = cachePlans.filter(p =>
+                p.plan_id !== currentPlan.plan_id &&
+                new Date(p.created_at) < new Date(currentPlan.created_at)
+            ).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            if (previousPlans.length === 0) return;
+            const prev = previousPlans[0];
+
+            const prevActions = await supabaseRequest(
+                `/leadership_improvement_actions?select=action_status&plan_id=eq.${prev.plan_id}`
+            );
+            if (!prevActions || prevActions.length === 0) return;
+
+            const total = prevActions.length;
+            const completadas = prevActions.filter(a => a.action_status === 'completada').length;
+            const pct = Math.round((completadas / total) * 100);
+            const prevCycle = prev.leadership_cycles?.cycle_name || '';
+
+            const existingAlert = document.getElementById('prev-plan-alert');
+            if (existingAlert) existingAlert.remove();
+
+            const kpis = document.getElementById('plan-kpis');
+            kpis.insertAdjacentHTML('afterend', `
+                <div class="alert alert-info py-2 mb-3" style="font-size: 0.85rem;" id="prev-plan-alert">
+                    <i class="bi bi-clock-history me-2"></i><strong>Plan anterior (${prevCycle}):</strong>
+                    ${completadas}/${total} acciones completadas (${pct}%).
+                    Estado: ${prev.plan_status}.
+                </div>
+            `);
         }
 
         function crearAccionDesdeSugerencia(dimensionId, description) {
