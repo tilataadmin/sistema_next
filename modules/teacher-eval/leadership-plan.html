@@ -69,8 +69,23 @@
 
         <div id="alertContainer"></div>
 
-        <!-- VISTA: MIS PLANES -->
+        <!-- TABS MIS PLANES / LIDERADOS -->
         <div id="vista-planes">
+            <ul class="nav nav-tabs mb-3" id="planTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-mis-planes" type="button">
+                        <i class="bi bi-person me-1"></i>Mis Planes
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation" id="tab-liderados-li" style="display: none;">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-planes-liderados" type="button">
+                        <i class="bi bi-people me-1"></i>Planes de mis liderados
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+            <div class="tab-pane fade show active" id="tab-mis-planes" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="text-muted mb-0"><i class="bi bi-list-check me-2"></i>Mis Planes de Mejora</h5>
                 <button class="btn btn-primary btn-sm" onclick="abrirModalNuevoPlan()">
@@ -83,6 +98,14 @@
                     <p class="mt-2">Cargando planes...</p>
                 </div>
             </div>
+        </div><!-- fin tab-mis-planes -->
+
+            <div class="tab-pane fade" id="tab-planes-liderados" role="tabpanel">
+                <div class="row g-3" id="subordinate-plans-container">
+                    <div class="col-12 text-center text-muted py-4">Cargando...</div>
+                </div>
+            </div>
+            </div><!-- fin tab-content -->
         </div>
 
         <!-- VISTA: DETALLE DEL PLAN -->
@@ -286,6 +309,7 @@
 
                 await cargarPlanes();
                 renderizarPlanes();
+                await cargarPlanesLiderados();
                 ocultarLoading();
             } catch (error) { showMessage('Error: ' + error.message, 'danger'); ocultarLoading(); }
         }
@@ -391,6 +415,8 @@
         function volverAPlanes() {
             document.getElementById('vista-detalle').style.display = 'none';
             document.getElementById('vista-planes').style.display = 'block';
+            document.getElementById('plan-status-select').style.display = '';
+            document.querySelector('[onclick="abrirModalAccion()"]').style.display = '';
             currentPlanId = null;
         }
 
@@ -687,6 +713,76 @@
             if (!dateStr) return '—';
             const d = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T00:00:00');
             return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        // ==========================================
+        // PLANES DE LIDERADOS (lectura)
+        // ==========================================
+        async function cargarPlanesLiderados() {
+            try {
+                const subordinates = await supabaseRequest(
+                    `/worker_managers?select=worker_id,workers!worker_managers_worker_fkey(worker_id,worker_first_name,worker_last_name_1)&manager_id=eq.${currentWorkerId}&assignment_status=eq.active`
+                );
+                if (!subordinates || subordinates.length === 0) return;
+
+                document.getElementById('tab-liderados-li').style.display = 'block';
+
+                const workerIds = subordinates.map(s => s.worker_id);
+                const plans = await supabaseRequest(
+                    `/leadership_improvement_plans?select=*,leadership_cycles(cycle_name,cycle_year),workers!leadership_improvement_plans_leader_fkey(worker_first_name,worker_last_name_1)&leader_id=in.(${workerIds.join(',')})&order=created_at.desc`
+                );
+
+                const container = document.getElementById('subordinate-plans-container');
+                if (!plans || plans.length === 0) {
+                    container.innerHTML = '<div class="col-12 text-center text-muted py-4">Ninguno de sus liderados tiene planes de mejora creados.</div>';
+                    return;
+                }
+
+                container.innerHTML = plans.map(p => {
+                    const cycle = p.leadership_cycles || {};
+                    const w = p.workers || {};
+                    const name = `${w.worker_first_name || ''} ${w.worker_last_name_1 || ''}`.trim();
+                    const statusLabel = { activo: 'Activo', completado: 'Completado', archivado: 'Archivado' }[p.plan_status];
+                    const statusBadgeClass = `status-badge-${p.plan_status === 'activo' ? 'en_progreso' : p.plan_status === 'completado' ? 'completada' : 'pendiente'}`;
+
+                    return `
+                    <div class="col-12 col-md-6 col-lg-4">
+                        <div class="card plan-card h-100" onclick="abrirPlanLiderado('${p.plan_id}', '${name}')">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="mb-0">${name}</h6>
+                                    <span class="badge ${statusBadgeClass}">${statusLabel}</span>
+                                </div>
+                                <p class="text-muted small mb-1"><i class="bi bi-arrow-repeat me-1"></i>${cycle.cycle_name || ''}</p>
+                                <p class="text-muted small mb-0"><i class="bi bi-calendar3 me-1"></i>${cycle.cycle_year || ''}</p>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch (error) { console.error('Error cargando planes de liderados:', error); }
+        }
+
+        async function abrirPlanLiderado(planId, leaderName) {
+            currentPlanId = planId;
+
+            document.getElementById('plan-title').textContent = `Plan de: ${leaderName}`;
+            document.getElementById('plan-subtitle').textContent = 'Vista de lectura — Superior';
+            document.getElementById('plan-status-select').style.display = 'none';
+            document.querySelector('[onclick="abrirModalAccion()"]').style.display = 'none';
+
+            const actions = await supabaseRequest(
+                `/leadership_improvement_actions?select=*,leadership_dimensions(dimension_code,dimension_name),leadership_attributes(attribute_code,attribute_name),leadership_observations(observation_id,description)&plan_id=eq.${planId}&order=created_at.asc`
+            );
+            cacheActions = actions || [];
+            renderizarAcciones();
+            renderizarKPIsPlan();
+
+            // Ocultar sugerencias y botones de edición en las acciones
+            document.getElementById('suggestions-container').style.display = 'none';
+            document.querySelectorAll('#actions-container .btn-outline-primary').forEach(btn => btn.style.display = 'none');
+
+            document.getElementById('vista-planes').style.display = 'none';
+            document.getElementById('vista-detalle').style.display = 'block';
         }
         function mostrarLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
         function ocultarLoading() { document.getElementById('loading-overlay').classList.add('hidden'); }
