@@ -174,6 +174,23 @@
                 </div>
             </div>
 
+            <!-- RESUMEN DE BITÁCORA -->
+            <div class="report-section" id="bitacora-summary-section" style="display: none;">
+                <div class="card">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-journal-text me-2"></i>Resumen de Bitácora del Período</h6></div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-dark">
+                                    <tr><th>Dimensión</th><th class="text-center">Fortalezas</th><th class="text-center">Oportunidades</th><th class="text-center">Total</th></tr>
+                                </thead>
+                                <tbody id="bitacora-summary-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- TOP/BOTTOM CONDUCTAS -->
             <div class="row g-4 report-section">
                 <div class="col-md-6">
@@ -531,6 +548,11 @@
             renderizarTablaDimGrupo(data.dimGroupScores);
             renderizarBrechas(data.dimGroupScores);
             renderizarTopBottom(data.behaviorScores);
+            if (view === 'individual' && evaluateeId) {
+                await renderizarResumenBitacora(evaluateeId);
+            } else {
+                document.getElementById('bitacora-summary-section').style.display = 'none';
+            }
         }
 
         // ==========================================
@@ -867,6 +889,47 @@
         function scoreClass(val) { if (val >= 3) return 'score-high'; if (val >= 2) return 'score-mid'; return 'score-low'; }
         function getActiveGroups(scores) { const ids = new Set(); Object.values(scores).forEach(g => Object.keys(g).forEach(id => ids.add(id))); return cacheGroups.filter(g => ids.has(g.group_id)).map(g => g.group_id); }
         function getActiveGrades(scores) { const ids = new Set(); Object.values(scores).forEach(g => Object.keys(g).forEach(id => ids.add(id))); return [...ids]; }
+
+        // ==========================================
+        // RESUMEN DE BITÁCORA
+        // ==========================================
+        async function renderizarResumenBitacora(evaluateeId) {
+            try {
+                const evaluatee = cacheEvaluatees.find(e => e.evaluatee_id === evaluateeId);
+                const workerId = evaluatee?.workers?.worker_id;
+                if (!workerId) { document.getElementById('bitacora-summary-section').style.display = 'none'; return; }
+
+                const cycle = cacheCycles.find(c => c.cycle_id === document.getElementById('filter-cycle').value);
+                let query = `/leadership_observations?select=dimension_id,observation_type&evaluatee_id=eq.${workerId}&visibility=neq.privada`;
+                if (cycle) {
+                    query += `&observation_date=gte.${cycle.start_date}&observation_date=lte.${cycle.end_date}`;
+                }
+                const obs = await supabaseRequest(query);
+                if (!obs || obs.length === 0) { document.getElementById('bitacora-summary-section').style.display = 'none'; return; }
+
+                const summary = {};
+                obs.forEach(o => {
+                    if (!summary[o.dimension_id]) summary[o.dimension_id] = { fortaleza: 0, oportunidad_mejora: 0 };
+                    summary[o.dimension_id][o.observation_type]++;
+                });
+
+                let totalF = 0, totalO = 0;
+                const bodyHtml = cacheDimensions.map(d => {
+                    const s = summary[d.dimension_id] || { fortaleza: 0, oportunidad_mejora: 0 };
+                    const total = s.fortaleza + s.oportunidad_mejora;
+                    totalF += s.fortaleza; totalO += s.oportunidad_mejora;
+                    if (total === 0) return '';
+                    return `<tr><td><strong>${d.dimension_code}</strong> — ${d.dimension_name}</td><td class="text-center"><span class="badge bg-success">${s.fortaleza}</span></td><td class="text-center"><span class="badge bg-warning text-dark">${s.oportunidad_mejora}</span></td><td class="text-center">${total}</td></tr>`;
+                }).join('');
+
+                if (totalF + totalO === 0) { document.getElementById('bitacora-summary-section').style.display = 'none'; return; }
+
+                document.getElementById('bitacora-summary-body').innerHTML = bodyHtml +
+                    `<tr class="table-light"><td><strong>Total</strong></td><td class="text-center"><strong>${totalF}</strong></td><td class="text-center"><strong>${totalO}</strong></td><td class="text-center"><strong>${totalF + totalO}</strong></td></tr>`;
+                document.getElementById('bitacora-summary-section').style.display = 'block';
+            } catch (error) { console.error('Error cargando resumen bitácora:', error); document.getElementById('bitacora-summary-section').style.display = 'none'; }
+        }
+        
         function mostrarLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
         function ocultarLoading() { document.getElementById('loading-overlay').classList.add('hidden'); }
     </script>
