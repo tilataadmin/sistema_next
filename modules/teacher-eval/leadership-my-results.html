@@ -57,12 +57,18 @@
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-3 align-items-end">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label">Ciclo de evaluación</label>
-                        <select class="form-select" id="filter-cycle" onchange="generarMiReporte()">
+                        <select class="form-select" id="filter-cycle" onchange="onCycleChange()">
                             <option value="">Seleccione un ciclo...</option>
                         </select>
                         <small class="text-muted">Solo se muestran ciclos cerrados</small>
+                    </div>
+                    <div class="col-md-4" id="subordinate-selector" style="display: none;">
+                        <label class="form-label">Ver resultados de</label>
+                        <select class="form-select" id="filter-person" onchange="generarMiReporte()">
+                            <option value="self">Mis resultados</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -162,6 +168,8 @@
 
     <script>
         let currentWorkerId = null;
+        let cacheSubordinates = [];
+        let allClosedCycles = [];
         let cacheDimensions = [], cacheAttributes = [], cacheGroups = [];
         let radarDimChart = null, radarAttrChart = null;
 
@@ -213,6 +221,31 @@
                     document.getElementById('no-data').innerHTML = '<i class="bi bi-hourglass-split" style="font-size: 3rem;"></i><p class="mt-2">No hay ciclos cerrados con sus resultados disponibles.</p>';
                 }
 
+                allClosedCycles = closedCycles;
+
+                // Verificar si soy manager de alguien
+                const subordinates = await supabaseRequest(
+                    `/worker_managers?select=worker_id,workers!worker_managers_worker_fkey(worker_id,worker_first_name,worker_last_name_1)&manager_id=eq.${currentWorkerId}&assignment_status=eq.active`
+                );
+                cacheSubordinates = subordinates || [];
+                if (cacheSubordinates.length > 0) {
+                    // Cargar ciclos cerrados de liderados también
+                    const subWorkerIds = cacheSubordinates.map(s => s.worker_id);
+                    const subEvaluatees = await supabaseRequest(
+                        `/leadership_cycle_evaluatees?select=cycle_id,worker_id,leadership_cycles(cycle_id,cycle_name,cycle_year,cycle_status)&worker_id=in.(${subWorkerIds.join(',')})&leadership_cycles.cycle_status=eq.cerrado`
+                    );
+                    const subCycles = (subEvaluatees || []).filter(e => e.leadership_cycles?.cycle_status === 'cerrado').map(e => e.leadership_cycles);
+                    // Merge unique cycles
+                    subCycles.forEach(sc => {
+                        if (!allClosedCycles.find(c => c.cycle_id === sc.cycle_id)) {
+                            allClosedCycles.push(sc);
+                        }
+                    });
+                    // Rebuild cycle selector
+                    document.getElementById('filter-cycle').innerHTML = '<option value="">Seleccione un ciclo...</option>' +
+                        allClosedCycles.map(c => `<option value="${c.cycle_id}">${c.cycle_name} (${c.cycle_year})</option>`).join('');
+                }
+
                 document.getElementById('no-data').style.display = 'block';
                 ocultarLoading();
             } catch (error) { showMessage('Error: ' + error.message, 'danger'); ocultarLoading(); }
@@ -225,8 +258,12 @@
             try {
                 mostrarLoading();
 
+                const personSelect = document.getElementById('filter-person');
+                const selectedPerson = personSelect ? personSelect.value : 'self';
+                const targetWorkerId = selectedPerson === 'self' ? currentWorkerId : selectedPerson;
+
                 const evaluatees = await supabaseRequest(
-                    `/leadership_cycle_evaluatees?select=evaluatee_id&cycle_id=eq.${cycleId}&worker_id=eq.${currentWorkerId}&limit=1`
+                    `/leadership_cycle_evaluatees?select=evaluatee_id&cycle_id=eq.${cycleId}&worker_id=eq.${targetWorkerId}&limit=1`
                 );
                 if (!evaluatees || evaluatees.length === 0) { ocultarLoading(); showMessage('No se encontró como evaluado en este ciclo.', 'warning'); return; }
                 const evaluateeId = evaluatees[0].evaluatee_id;
@@ -397,6 +434,37 @@
             document.getElementById('top-behaviors').innerHTML = render(ranked.slice(0, 5), 'bg-success');
             document.getElementById('bottom-behaviors').innerHTML = render(ranked.slice(-5).reverse(), 'bg-danger');
         }
+async function onCycleChange() {
+            const cycleId = document.getElementById('filter-cycle').value;
+            if (!cycleId || cacheSubordinates.length === 0) {
+                document.getElementById('subordinate-selector').style.display = 'none';
+                generarMiReporte();
+                return;
+            }
+
+            // Buscar qué liderados están evaluados en este ciclo
+            const subWorkerIds = cacheSubordinates.map(s => s.worker_id);
+            const evaluateesInCycle = await supabaseRequest(
+                `/leadership_cycle_evaluatees?select=worker_id,workers(worker_first_name,worker_last_name_1)&cycle_id=eq.${cycleId}&worker_id=in.(${subWorkerIds.join(',')})`
+            );
+
+            const select = document.getElementById('filter-person');
+            select.innerHTML = '<option value="self">Mis resultados</option>';
+
+            if (evaluateesInCycle && evaluateesInCycle.length > 0) {
+                evaluateesInCycle.forEach(e => {
+                    const w = e.workers || {};
+                    const name = `${w.worker_first_name || ''} ${w.worker_last_name_1 || ''}`.trim();
+                    select.innerHTML += `<option value="${e.worker_id}">${name}</option>`;
+                });
+                document.getElementById('subordinate-selector').style.display = 'block';
+            } else {
+                document.getElementById('subordinate-selector').style.display = 'none';
+            }
+
+            generarMiReporte();
+        }
+        
 
         function scoreClass(v) { if (v >= 3) return 'score-high'; if (v >= 2) return 'score-mid'; return 'score-low'; }
         function mostrarLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
