@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.04.11.22.00">
+    <title>Reportes de Liderazgo - SchoolNet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex; justify-content: center;
+            align-items: center; z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content { background: white; padding: 2rem; border-radius: 8px; text-align: center; }
+        .spinner {
+            border: 3px solid #f3f3f3; border-top: 3px solid #0ea5e9;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin: 0 auto 1rem;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .radar-container { max-width: 500px; margin: 0 auto; }
+        .score-cell { font-weight: 600; font-size: 1.1rem; }
+        .score-high { color: #059669; }
+        .score-mid { color: #d97706; }
+        .score-low { color: #dc2626; }
+        .gap-positive { color: #dc2626; }
+        .gap-negative { color: #059669; }
+        .gap-neutral { color: #6b7280; }
+        .report-section { margin-bottom: 2rem; }
+        .kpi-card {
+            border: none; border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            text-align: center; padding: 1.25rem;
+        }
+        .kpi-value { font-size: 2rem; font-weight: 700; }
+        .kpi-label { font-size: 0.8rem; color: #6b7280; }
+        .behavior-rank { font-size: 0.875rem; }
+        .rank-icon-top { color: #059669; }
+        .rank-icon-bottom { color: #dc2626; }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content"><div class="spinner"></div><p class="mb-0">Cargando reportes...</p></div>
+    </div>
+
+    <div class="container-fluid">
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="index.html">Evaluación de Desempeño</a></li>
+                <li class="breadcrumb-item active">Reportes de Liderazgo</li>
+            </ol>
+        </nav>
+
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3"><i class="bi bi-radar me-2" style="color: #0ea5e9;"></i>Reportes de Liderazgo</h1>
+                <p class="text-muted">Resultados individuales y grupales de evaluación de liderazgo 360°</p>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- FILTROS -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Ciclo de evaluación</label>
+                        <select class="form-select" id="filter-cycle" onchange="cargarEvaluadosDelCiclo()">
+                            <option value="">Seleccione un ciclo...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Líder evaluado</label>
+                        <select class="form-select" id="filter-evaluatee" onchange="generarReporte()">
+                            <option value="">Seleccione...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Vista</label>
+                        <select class="form-select" id="filter-view" onchange="generarReporte()">
+                            <option value="individual">Individual</option>
+                            <option value="grupal">Grupal (todos del ciclo)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTENIDO DEL REPORTE -->
+        <div id="report-content" style="display: none;">
+
+            <!-- KPIs -->
+            <div class="row g-3 mb-4" id="kpis-container"></div>
+
+            <!-- RADARES -->
+            <div class="row g-4 report-section">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header"><h6 class="mb-0"><i class="bi bi-radar me-2"></i>Radar por Dimensiones</h6></div>
+                        <div class="card-body">
+                            <div class="radar-container"><canvas id="radar-dimensions"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header"><h6 class="mb-0"><i class="bi bi-radar me-2"></i>Radar por Atributos</h6></div>
+                        <div class="card-body">
+                            <div class="radar-container"><canvas id="radar-attributes"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TABLA DIMENSIÓN × GRUPO -->
+            <div class="report-section">
+                <div class="card">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-table me-2"></i>Resultados por Dimensión y Grupo de Interés</h6></div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0" id="table-dim-group">
+                                <thead class="table-dark"><tr id="table-dim-group-header"></tr></thead>
+                                <tbody id="table-dim-group-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BRECHAS -->
+            <div class="report-section">
+                <div class="card">
+                    <div class="card-header"><h6 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Brecha: Autoevaluación vs. Percepción de Otros</h6></div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Dimensión</th>
+                                        <th class="text-center">Autoevaluación</th>
+                                        <th class="text-center">Promedio otros</th>
+                                        <th class="text-center">Brecha</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-gaps-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TOP/BOTTOM CONDUCTAS -->
+            <div class="row g-4 report-section">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header"><h6 class="mb-0"><i class="bi bi-trophy me-2 rank-icon-top"></i>Conductas mejor evaluadas</h6></div>
+                        <div class="card-body" id="top-behaviors"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header"><h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2 rank-icon-bottom"></i>Conductas con mayor oportunidad</h6></div>
+                        <div class="card-body" id="bottom-behaviors"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SIN DATOS -->
+        <div id="no-data" style="display: none;" class="text-center text-muted py-5">
+            <i class="bi bi-bar-chart-line" style="font-size: 3rem;"></i>
+            <p class="mt-2">Seleccione un ciclo y un evaluado para ver los resultados.</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let cacheCycles = [];
+        let cacheEvaluatees = [];
+        let cacheDimensions = [];
+        let cacheAttributes = [];
+        let cacheGroups = [];
+        let radarDimChart = null;
+        let radarAttrChart = null;
+
+        const GROUP_COLORS = {
+            'GI1': { bg: 'rgba(239, 68, 68, 0.2)', border: '#ef4444' },   // Autoevaluación - rojo
+            'GI2': { bg: 'rgba(59, 130, 246, 0.2)', border: '#3b82f6' },   // Superior - azul
+            'GI3': { bg: 'rgba(16, 185, 129, 0.2)', border: '#10b981' },   // Equipo - verde
+            'GI4': { bg: 'rgba(245, 158, 11, 0.2)', border: '#f59e0b' },   // Pares - amarillo
+            'GI5': { bg: 'rgba(139, 92, 246, 0.2)', border: '#8b5cf6' },   // Familias - morado
+            'GI6': { bg: 'rgba(236, 72, 153, 0.2)', border: '#ec4899' },   // Estudiantes - rosa
+        };
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const hasAccess = await validatePageAccess('Reportes de liderazgo');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session) {
+                    showMessage('Sesión no válida.', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                await inicializarPagina();
+            } catch (error) {
+                console.error('❌ Error:', error);
+                showMessage('Error: ' + error.message, 'danger');
+            }
+        });
+
+        async function inicializarPagina() {
+            try {
+                mostrarLoading();
+
+                const [cycles, dimensions, attributes, groups] = await Promise.all([
+                    supabaseRequest('/leadership_cycles?select=*&order=created_at.desc&cycle_status=in.(cerrado,abierto,archivado)'),
+                    supabaseRequest('/leadership_dimensions?select=*&order=dimension_order.asc&is_active=eq.true'),
+                    supabaseRequest('/leadership_attributes?select=*&order=attribute_order.asc&is_active=eq.true'),
+                    supabaseRequest('/leadership_interest_groups?select=*&order=group_order.asc&is_active=eq.true')
+                ]);
+
+                cacheCycles = cycles || [];
+                cacheDimensions = dimensions || [];
+                cacheAttributes = attributes || [];
+                cacheGroups = groups || [];
+
+                document.getElementById('filter-cycle').innerHTML = '<option value="">Seleccione un ciclo...</option>' +
+                    cacheCycles.map(c => `<option value="${c.cycle_id}">${c.cycle_name} (${c.cycle_status})</option>`).join('');
+
+                document.getElementById('no-data').style.display = 'block';
+                ocultarLoading();
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // CARGAR EVALUADOS DEL CICLO
+        // ==========================================
+        async function cargarEvaluadosDelCiclo() {
+            const cycleId = document.getElementById('filter-cycle').value;
+            const select = document.getElementById('filter-evaluatee');
+            select.innerHTML = '<option value="">Seleccione...</option>';
+
+            if (!cycleId) return;
+
+            try {
+                cacheEvaluatees = await supabaseRequest(
+                    `/leadership_cycle_evaluatees?select=*,workers(worker_first_name,worker_last_name_1,worker_last_name_2),leadership_grades(grade_code,grade_name)&cycle_id=eq.${cycleId}&order=created_at.asc`
+                );
+
+                select.innerHTML = '<option value="">Seleccione...</option>' +
+                    (cacheEvaluatees || []).map(e => {
+                        const w = e.workers || {};
+                        const name = `${w.worker_first_name || ''} ${w.worker_last_name_1 || ''}`.trim();
+                        const grade = e.leadership_grades?.grade_code || '';
+                        return `<option value="${e.evaluatee_id}">${name} (${grade})</option>`;
+                    }).join('');
+            } catch (error) {
+                showMessage('Error cargando evaluados: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // GENERAR REPORTE
+        // ==========================================
+        async function generarReporte() {
+            const cycleId = document.getElementById('filter-cycle').value;
+            const evaluateeId = document.getElementById('filter-evaluatee').value;
+            const view = document.getElementById('filter-view').value;
+
+            if (!cycleId) return;
+            if (view === 'individual' && !evaluateeId) return;
+
+            try {
+                mostrarLoading();
+
+                let evaluateeIds = [];
+                if (view === 'individual') {
+                    evaluateeIds = [evaluateeId];
+                } else {
+                    evaluateeIds = (cacheEvaluatees || []).map(e => e.evaluatee_id);
+                }
+
+                if (evaluateeIds.length === 0) {
+                    ocultarLoading();
+                    return;
+                }
+
+                // Cargar evaluadores y respuestas
+                const evaluators = await supabaseRequest(
+                    `/leadership_cycle_evaluators?select=evaluator_id,evaluatee_id,group_id,evaluation_status&evaluatee_id=in.(${evaluateeIds.join(',')})&evaluation_status=eq.completada`
+                );
+
+                if (!evaluators || evaluators.length === 0) {
+                    document.getElementById('report-content').style.display = 'none';
+                    document.getElementById('no-data').style.display = 'block';
+                    document.getElementById('no-data').innerHTML = `
+                        <i class="bi bi-hourglass-split" style="font-size: 3rem;"></i>
+                        <p class="mt-2">No hay evaluaciones completadas para esta selección.</p>`;
+                    ocultarLoading();
+                    return;
+                }
+
+                const evaluatorIds = evaluators.map(e => e.evaluator_id);
+                const responses = await supabaseRequest(
+                    `/leadership_responses?select=*,leadership_questions(question_id,behavior_id,attribute_id,question_text,leadership_behaviors(behavior_code,behavior_description,dimension_id,grade_id))&evaluator_id=in.(${evaluatorIds.join(',')})&no_elements=eq.false`
+                );
+
+                // Procesar datos
+                const data = procesarDatos(evaluators, responses || []);
+                renderizarReporte(data);
+
+                document.getElementById('report-content').style.display = 'block';
+                document.getElementById('no-data').style.display = 'none';
+                ocultarLoading();
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                showMessage('Error generando reporte: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // PROCESAR DATOS
+        // ==========================================
+        function procesarDatos(evaluators, responses) {
+            // Mapear evaluator_id → group_id
+            const evaluatorGroupMap = {};
+            evaluators.forEach(e => { evaluatorGroupMap[e.evaluator_id] = e.group_id; });
+
+            // Agrupar respuestas por dimensión × grupo
+            const dimGroupScores = {};   // { dim_id: { group_id: [values] } }
+            const attrGroupScores = {};  // { attr_id: { group_id: [values] } }
+            const behaviorScores = {};   // { behavior_code: { sum, count, description, dim_id } }
+
+            responses.forEach(r => {
+                if (r.response_value === null) return;
+                const groupId = evaluatorGroupMap[r.evaluator_id];
+                const q = r.leadership_questions;
+                if (!q || !q.leadership_behaviors) return;
+
+                const dimId = q.leadership_behaviors.dimension_id;
+                const attrId = q.attribute_id;
+                const behCode = q.leadership_behaviors.behavior_code;
+                const behDesc = q.leadership_behaviors.behavior_description;
+
+                // Dimensión × Grupo
+                if (!dimGroupScores[dimId]) dimGroupScores[dimId] = {};
+                if (!dimGroupScores[dimId][groupId]) dimGroupScores[dimId][groupId] = [];
+                dimGroupScores[dimId][groupId].push(r.response_value);
+
+                // Atributo × Grupo
+                if (!attrGroupScores[attrId]) attrGroupScores[attrId] = {};
+                if (!attrGroupScores[attrId][groupId]) attrGroupScores[attrId][groupId] = [];
+                attrGroupScores[attrId][groupId].push(r.response_value);
+
+                // Conductas
+                if (!behaviorScores[behCode]) behaviorScores[behCode] = { sum: 0, count: 0, description: behDesc, dim_id: dimId };
+                behaviorScores[behCode].sum += r.response_value;
+                behaviorScores[behCode].count++;
+            });
+
+            return { dimGroupScores, attrGroupScores, behaviorScores, totalResponses: responses.length, totalEvaluators: evaluators.length };
+        }
+
+        // ==========================================
+        // RENDERIZAR REPORTE
+        // ==========================================
+        function renderizarReporte(data) {
+            renderizarKPIs(data);
+            renderizarRadarDimensiones(data.dimGroupScores);
+            renderizarRadarAtributos(data.attrGroupScores);
+            renderizarTablaDimGrupo(data.dimGroupScores);
+            renderizarBrechas(data.dimGroupScores);
+            renderizarTopBottom(data.behaviorScores);
+        }
+
+        // ==========================================
+        // KPIs
+        // ==========================================
+        function renderizarKPIs(data) {
+            // Promedio general
+            let totalSum = 0, totalCount = 0;
+            Object.values(data.dimGroupScores).forEach(groups => {
+                Object.values(groups).forEach(values => {
+                    values.forEach(v => { totalSum += v; totalCount++; });
+                });
+            });
+            const avgGeneral = totalCount > 0 ? (totalSum / totalCount).toFixed(2) : '—';
+
+            document.getElementById('kpis-container').innerHTML = `
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card">
+                        <div class="kpi-value" style="color: #0ea5e9;">${avgGeneral}</div>
+                        <div class="kpi-label">Promedio General</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card">
+                        <div class="kpi-value" style="color: #0ea5e9;">${data.totalEvaluators}</div>
+                        <div class="kpi-label">Evaluadores</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card">
+                        <div class="kpi-value" style="color: #0ea5e9;">${data.totalResponses}</div>
+                        <div class="kpi-label">Respuestas</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="kpi-card">
+                        <div class="kpi-value" style="color: #0ea5e9;">${Object.keys(data.behaviorScores).length}</div>
+                        <div class="kpi-label">Conductas evaluadas</div>
+                    </div>
+                </div>`;
+        }
+
+        // ==========================================
+        // RADAR DIMENSIONES
+        // ==========================================
+        function renderizarRadarDimensiones(dimGroupScores) {
+            if (radarDimChart) radarDimChart.destroy();
+
+            const labels = cacheDimensions.map(d => d.dimension_name);
+            const activeGroups = getActiveGroups(dimGroupScores);
+
+            const datasets = activeGroups.map(g => {
+                const group = cacheGroups.find(gr => gr.group_id === g);
+                const colors = GROUP_COLORS[group?.group_code] || { bg: 'rgba(107,114,128,0.2)', border: '#6b7280' };
+
+                const values = cacheDimensions.map(d => {
+                    const scores = dimGroupScores[d.dimension_id]?.[g] || [];
+                    return scores.length > 0 ? avg(scores) : null;
+                });
+
+                return {
+                    label: group?.group_name || g,
+                    data: values,
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    borderWidth: 2,
+                    pointRadius: 4
+                };
+            });
+
+            const ctx = document.getElementById('radar-dimensions').getContext('2d');
+            radarDimChart = new Chart(ctx, {
+                type: 'radar',
+                data: { labels, datasets },
+                options: radarOptions('Dimensiones')
+            });
+        }
+
+        // ==========================================
+        // RADAR ATRIBUTOS
+        // ==========================================
+        function renderizarRadarAtributos(attrGroupScores) {
+            if (radarAttrChart) radarAttrChart.destroy();
+
+            const labels = cacheAttributes.map(a => a.attribute_name);
+            const activeGroups = getActiveGroups(attrGroupScores);
+
+            const datasets = activeGroups.map(g => {
+                const group = cacheGroups.find(gr => gr.group_id === g);
+                const colors = GROUP_COLORS[group?.group_code] || { bg: 'rgba(107,114,128,0.2)', border: '#6b7280' };
+
+                const values = cacheAttributes.map(a => {
+                    const scores = attrGroupScores[a.attribute_id]?.[g] || [];
+                    return scores.length > 0 ? avg(scores) : null;
+                });
+
+                return {
+                    label: group?.group_name || g,
+                    data: values,
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    borderWidth: 2,
+                    pointRadius: 4
+                };
+            });
+
+            const ctx = document.getElementById('radar-attributes').getContext('2d');
+            radarAttrChart = new Chart(ctx, {
+                type: 'radar',
+                data: { labels, datasets },
+                options: radarOptions('Atributos')
+            });
+        }
+
+        function radarOptions(title) {
+            return {
+                responsive: true,
+                scales: {
+                    r: {
+                        min: 0, max: 4,
+                        ticks: { stepSize: 1, font: { size: 11 } },
+                        pointLabels: { font: { size: 12 } },
+                        grid: { color: 'rgba(0,0,0,0.08)' }
+                    }
+                },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 }, usePointStyle: true } }
+                }
+            };
+        }
+
+        // ==========================================
+        // TABLA DIMENSIÓN × GRUPO
+        // ==========================================
+        function renderizarTablaDimGrupo(dimGroupScores) {
+            const activeGroups = getActiveGroups(dimGroupScores);
+            const activeGroupObjs = activeGroups.map(gid => cacheGroups.find(g => g.group_id === gid)).filter(Boolean);
+
+            // Header
+            document.getElementById('table-dim-group-header').innerHTML =
+                '<th>Dimensión</th>' +
+                activeGroupObjs.map(g => `<th class="text-center">${g.group_name}</th>`).join('') +
+                '<th class="text-center">Promedio</th>';
+
+            // Body
+            let bodyHtml = '';
+            cacheDimensions.forEach(d => {
+                let rowSum = 0, rowCount = 0;
+                const cells = activeGroups.map(gid => {
+                    const scores = dimGroupScores[d.dimension_id]?.[gid] || [];
+                    if (scores.length === 0) return '<td class="text-center text-muted">—</td>';
+                    const a = avg(scores);
+                    rowSum += a; rowCount++;
+                    return `<td class="text-center score-cell ${scoreClass(a)}">${a.toFixed(2)}</td>`;
+                }).join('');
+
+                const rowAvg = rowCount > 0 ? (rowSum / rowCount).toFixed(2) : '—';
+                bodyHtml += `<tr><td><strong>${d.dimension_code}</strong> — ${d.dimension_name}</td>${cells}<td class="text-center score-cell ${scoreClass(parseFloat(rowAvg))}">${rowAvg}</td></tr>`;
+            });
+
+            document.getElementById('table-dim-group-body').innerHTML = bodyHtml;
+        }
+
+        // ==========================================
+        // BRECHAS
+        // ==========================================
+        function renderizarBrechas(dimGroupScores) {
+            const autoGroup = cacheGroups.find(g => g.group_code === 'GI1');
+            if (!autoGroup) return;
+
+            let bodyHtml = '';
+            cacheDimensions.forEach(d => {
+                const autoScores = dimGroupScores[d.dimension_id]?.[autoGroup.group_id] || [];
+                const autoAvg = autoScores.length > 0 ? avg(autoScores) : null;
+
+                // Promedio de otros (todos menos autoevaluación)
+                let othersSum = 0, othersCount = 0;
+                Object.entries(dimGroupScores[d.dimension_id] || {}).forEach(([gid, values]) => {
+                    if (gid !== autoGroup.group_id) {
+                        values.forEach(v => { othersSum += v; othersCount++; });
+                    }
+                });
+                const othersAvg = othersCount > 0 ? othersSum / othersCount : null;
+
+                const gap = (autoAvg !== null && othersAvg !== null) ? (autoAvg - othersAvg) : null;
+                const gapStr = gap !== null ? (gap > 0 ? `+${gap.toFixed(2)}` : gap.toFixed(2)) : '—';
+                const gapClass = gap === null ? 'gap-neutral' : (gap > 0.3 ? 'gap-positive' : (gap < -0.3 ? 'gap-negative' : 'gap-neutral'));
+
+                bodyHtml += `<tr>
+                    <td><strong>${d.dimension_code}</strong> — ${d.dimension_name}</td>
+                    <td class="text-center score-cell">${autoAvg !== null ? autoAvg.toFixed(2) : '—'}</td>
+                    <td class="text-center score-cell">${othersAvg !== null ? othersAvg.toFixed(2) : '—'}</td>
+                    <td class="text-center score-cell ${gapClass}">${gapStr}</td>
+                </tr>`;
+            });
+
+            document.getElementById('table-gaps-body').innerHTML = bodyHtml;
+        }
+
+        // ==========================================
+        // TOP / BOTTOM CONDUCTAS
+        // ==========================================
+        function renderizarTopBottom(behaviorScores) {
+            const ranked = Object.entries(behaviorScores)
+                .map(([code, data]) => ({
+                    code,
+                    avg: data.count > 0 ? data.sum / data.count : 0,
+                    description: data.description,
+                    dim: cacheDimensions.find(d => d.dimension_id === data.dim_id)
+                }))
+                .sort((a, b) => b.avg - a.avg);
+
+            const top5 = ranked.slice(0, 5);
+            const bottom5 = ranked.slice(-5).reverse();
+
+            document.getElementById('top-behaviors').innerHTML = top5.map((b, i) => `
+                <div class="behavior-rank d-flex align-items-start gap-2 mb-2 ${i < top5.length - 1 ? 'pb-2 border-bottom' : ''}">
+                    <span class="badge bg-success">${b.avg.toFixed(2)}</span>
+                    <div>
+                        <small class="text-muted">${b.dim?.dimension_code || ''} | ${b.code}</small><br>
+                        ${b.description.substring(0, 120)}${b.description.length > 120 ? '...' : ''}
+                    </div>
+                </div>
+            `).join('') || '<p class="text-muted">Sin datos</p>';
+
+            document.getElementById('bottom-behaviors').innerHTML = bottom5.map((b, i) => `
+                <div class="behavior-rank d-flex align-items-start gap-2 mb-2 ${i < bottom5.length - 1 ? 'pb-2 border-bottom' : ''}">
+                    <span class="badge bg-danger">${b.avg.toFixed(2)}</span>
+                    <div>
+                        <small class="text-muted">${b.dim?.dimension_code || ''} | ${b.code}</small><br>
+                        ${b.description.substring(0, 120)}${b.description.length > 120 ? '...' : ''}
+                    </div>
+                </div>
+            `).join('') || '<p class="text-muted">Sin datos</p>';
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function avg(arr) { return arr.reduce((s, v) => s + v, 0) / arr.length; }
+
+        function scoreClass(val) {
+            if (val >= 3) return 'score-high';
+            if (val >= 2) return 'score-mid';
+            return 'score-low';
+        }
+
+        function getActiveGroups(scores) {
+            const groupIds = new Set();
+            Object.values(scores).forEach(groups => {
+                Object.keys(groups).forEach(gid => groupIds.add(gid));
+            });
+            return cacheGroups.filter(g => groupIds.has(g.group_id)).map(g => g.group_id);
+        }
+
+        function mostrarLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
+        function ocultarLoading() { document.getElementById('loading-overlay').classList.add('hidden'); }
+    </script>
+</body>
+</html>
