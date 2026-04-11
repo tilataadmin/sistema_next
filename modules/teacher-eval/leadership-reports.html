@@ -403,23 +403,30 @@
 
                 // Comparación temporal
                 const compareCycleIds = Array.from(document.getElementById('filter-compare').selectedOptions).map(o => o.value);
-                if (compareCycleIds.length > 0 && view === 'individual' && evaluateeId) {
-                    const evaluatee = cacheEvaluatees.find(e => e.evaluatee_id === evaluateeId);
-                    const workerId = evaluatee?.workers?.worker_id;
-                    if (workerId) {
-                        const allCycleData = [{ cycleId, data: currentData, name: cacheCycles.find(c => c.cycle_id === cycleId)?.cycle_name || 'Actual' }];
-                        for (const cid of compareCycleIds) {
-                            const cData = await cargarDatosCicloParaWorker(cid, workerId);
-                            if (cData) {
-                                allCycleData.push({ cycleId: cid, data: cData, name: cacheCycles.find(c => c.cycle_id === cid)?.cycle_name || cid });
+                if (compareCycleIds.length > 0) {
+                    const allCycleData = [{ cycleId, data: currentData, name: cacheCycles.find(c => c.cycle_id === cycleId)?.cycle_name || 'Actual' }];
+
+                    if (view === 'individual' && evaluateeId) {
+                        const evaluatee = cacheEvaluatees.find(e => e.evaluatee_id === evaluateeId);
+                        const workerId = evaluatee?.workers?.worker_id;
+                        if (workerId) {
+                            for (const cid of compareCycleIds) {
+                                const cData = await cargarDatosCicloParaWorker(cid, workerId);
+                                if (cData) allCycleData.push({ cycleId: cid, data: cData, name: cacheCycles.find(c => c.cycle_id === cid)?.cycle_name || cid });
                             }
                         }
-                        if (allCycleData.length > 1) {
-                            renderizarEvolucionTemporal(allCycleData);
-                            document.getElementById('temporal-section').style.display = 'block';
-                        } else {
-                            document.getElementById('temporal-section').style.display = 'none';
+                    } else if (view === 'grupal') {
+                        for (const cid of compareCycleIds) {
+                            const cData = await cargarDatosCicloGrupal(cid);
+                            if (cData) allCycleData.push({ cycleId: cid, data: cData, name: cacheCycles.find(c => c.cycle_id === cid)?.cycle_name || cid });
                         }
+                    }
+
+                    if (allCycleData.length > 1) {
+                        renderizarEvolucionTemporal(allCycleData);
+                        document.getElementById('temporal-section').style.display = 'block';
+                    } else {
+                        document.getElementById('temporal-section').style.display = 'none';
                     }
                 } else {
                     document.getElementById('temporal-section').style.display = 'none';
@@ -454,6 +461,27 @@
                 `/leadership_responses?select=*,leadership_questions(question_id,behavior_id,attribute_id,question_text,leadership_behaviors(behavior_code,behavior_description,dimension_id,grade_id))&evaluator_id=in.(${evaluatorIds.join(',')})&no_elements=eq.false`
             );
             return procesarDatos(evaluators, responses || [], view === 'grupal' ? cacheEvaluatees : null);
+        }
+
+        async function cargarDatosCicloGrupal(cycleId) {
+            try {
+                const evaluatees = await supabaseRequest(
+                    `/leadership_cycle_evaluatees?select=evaluatee_id&cycle_id=eq.${cycleId}`
+                );
+                if (!evaluatees || evaluatees.length === 0) return null;
+                const evaluateeIds = evaluatees.map(e => e.evaluatee_id);
+
+                const evaluators = await supabaseRequest(
+                    `/leadership_cycle_evaluators?select=evaluator_id,evaluatee_id,group_id,evaluation_status&evaluatee_id=in.(${evaluateeIds.join(',')})&evaluation_status=eq.completada`
+                );
+                if (!evaluators || evaluators.length === 0) return null;
+
+                const evaluatorIds = evaluators.map(e => e.evaluator_id);
+                const responses = await supabaseRequest(
+                    `/leadership_responses?select=*,leadership_questions(question_id,behavior_id,attribute_id,question_text,leadership_behaviors(behavior_code,behavior_description,dimension_id,grade_id))&evaluator_id=in.(${evaluatorIds.join(',')})&no_elements=eq.false`
+                );
+                return procesarDatos(evaluators, responses || [], null);
+            } catch (e) { console.error('Error cargando ciclo grupal:', e); return null; }
         }
 
         async function cargarDatosCicloParaWorker(cycleId, workerId) {
