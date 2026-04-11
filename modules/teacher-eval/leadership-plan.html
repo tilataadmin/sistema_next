@@ -110,6 +110,17 @@
             <!-- KPIs del plan -->
             <div class="row g-3 mb-4" id="plan-kpis"></div>
 
+            <!-- Sugerencias desde evaluación -->
+            <div id="suggestions-container" style="display: none;" class="mb-4">
+                <div class="card border-warning">
+                    <div class="card-header bg-warning bg-opacity-10">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb me-2 text-warning"></i>Conductas con mayor oportunidad de mejora</h6>
+                        <small class="text-muted">Basado en los resultados de la evaluación del ciclo asociado</small>
+                    </div>
+                    <div class="card-body" id="suggestions-list"></div>
+                </div>
+            </div>
+
             <!-- Acciones -->
             <div id="actions-container"></div>
         </div>
@@ -365,6 +376,8 @@
             renderizarAcciones();
             renderizarKPIsPlan();
 
+            await cargarSugerencias(plan);
+
             document.getElementById('vista-planes').style.display = 'none';
             document.getElementById('vista-detalle').style.display = 'block';
         }
@@ -477,6 +490,91 @@
                     ${a.closing_reflection ? `<div class="mt-2 p-2 bg-light rounded"><small class="text-muted"><i class="bi bi-chat-quote me-1"></i><strong>Reflexión:</strong> ${a.closing_reflection}</small></div>` : ''}
                 </div>`;
             }).join('');
+        }
+
+        // ==========================================
+        // SUGERENCIAS DESDE EVALUACIÓN
+        // ==========================================
+        async function cargarSugerencias(plan) {
+            const container = document.getElementById('suggestions-container');
+            const list = document.getElementById('suggestions-list');
+            container.style.display = 'none';
+
+            try {
+                // Buscar el evaluatee_id del líder en este ciclo
+                const evaluatees = await supabaseRequest(
+                    `/leadership_cycle_evaluatees?select=evaluatee_id&cycle_id=eq.${plan.cycle_id}&worker_id=eq.${currentWorkerId}&limit=1`
+                );
+                if (!evaluatees || evaluatees.length === 0) return;
+                const evaluateeId = evaluatees[0].evaluatee_id;
+
+                // Cargar evaluadores completados
+                const evaluators = await supabaseRequest(
+                    `/leadership_cycle_evaluators?select=evaluator_id,group_id&evaluatee_id=eq.${evaluateeId}&evaluation_status=eq.completada`
+                );
+                if (!evaluators || evaluators.length === 0) return;
+
+                const evaluatorIds = evaluators.map(e => e.evaluator_id);
+                const responses = await supabaseRequest(
+                    `/leadership_responses?select=response_value,leadership_questions(behavior_id,leadership_behaviors(behavior_code,behavior_description,dimension_id,leadership_dimensions(dimension_code,dimension_name)))&evaluator_id=in.(${evaluatorIds.join(',')})&no_elements=eq.false`
+                );
+                if (!responses || responses.length === 0) return;
+
+                // Promediar por conducta
+                const behaviorScores = {};
+                responses.forEach(r => {
+                    if (r.response_value === null) return;
+                    const q = r.leadership_questions;
+                    if (!q?.leadership_behaviors) return;
+                    const code = q.leadership_behaviors.behavior_code;
+                    if (!behaviorScores[code]) {
+                        behaviorScores[code] = {
+                            sum: 0, count: 0,
+                            description: q.leadership_behaviors.behavior_description,
+                            dimension: q.leadership_behaviors.leadership_dimensions?.dimension_name || '',
+                            dimension_id: q.leadership_behaviors.dimension_id
+                        };
+                    }
+                    behaviorScores[code].sum += r.response_value;
+                    behaviorScores[code].count++;
+                });
+
+                // Ordenar de menor a mayor y tomar las 5 peores
+                const ranked = Object.entries(behaviorScores)
+                    .map(([code, data]) => ({ code, avg: data.sum / data.count, ...data }))
+                    .sort((a, b) => a.avg - b.avg)
+                    .slice(0, 5);
+
+                if (ranked.length === 0) return;
+
+                list.innerHTML = ranked.map(b => `
+                    <div class="d-flex align-items-start gap-2 mb-2 pb-2 border-bottom">
+                        <span class="badge bg-danger">${b.avg.toFixed(2)}</span>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">${b.dimension} | ${b.code}</small><br>
+                            <span style="font-size: 0.9rem;">${b.description.substring(0, 150)}${b.description.length > 150 ? '...' : ''}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-warning" onclick="crearAccionDesdeSugerencia('${b.dimension_id}', '${b.description.replace(/'/g, "\\'")}')">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
+                `).join('');
+
+                container.style.display = 'block';
+            } catch (error) {
+                console.error('Error cargando sugerencias:', error);
+            }
+        }
+
+        function crearAccionDesdeSugerencia(dimensionId, description) {
+            document.getElementById('form-action').reset();
+            document.getElementById('action-id').value = '';
+            document.getElementById('action-dimension').value = dimensionId;
+            document.getElementById('action-source').value = 'evaluacion';
+            document.getElementById('action-description').value = 'Fortalecer: ' + description;
+            document.getElementById('reflection-container').style.display = 'none';
+            document.getElementById('modal-action-title').innerHTML = '<i class="bi bi-lightbulb me-2"></i>Acción desde sugerencia';
+            modalAction.show();
         }
 
         // ==========================================
