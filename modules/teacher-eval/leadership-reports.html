@@ -192,8 +192,15 @@
         let cacheDimensions = [];
         let cacheAttributes = [];
         let cacheGroups = [];
+        let cacheGrades = [];
         let radarDimChart = null;
         let radarAttrChart = null;
+
+        const GRADE_COLORS = {
+            'G3': { bg: 'rgba(59, 130, 246, 0.2)', border: '#3b82f6' },
+            'G2': { bg: 'rgba(16, 185, 129, 0.2)', border: '#10b981' },
+            'G1': { bg: 'rgba(245, 158, 11, 0.2)', border: '#f59e0b' },
+        };
 
         const GROUP_COLORS = {
             'GI1': { bg: 'rgba(239, 68, 68, 0.2)', border: '#ef4444' },   // Autoevaluación - rojo
@@ -230,17 +237,20 @@
             try {
                 mostrarLoading();
 
-                const [cycles, dimensions, attributes, groups] = await Promise.all([
+                const [cycles, dimensions, attributes, groups, grades] = await Promise.all([
                     supabaseRequest('/leadership_cycles?select=*&order=created_at.desc&cycle_status=in.(cerrado,abierto,archivado)'),
                     supabaseRequest('/leadership_dimensions?select=*&order=dimension_order.asc&is_active=eq.true'),
                     supabaseRequest('/leadership_attributes?select=*&order=attribute_order.asc&is_active=eq.true'),
-                    supabaseRequest('/leadership_interest_groups?select=*&order=group_order.asc&is_active=eq.true')
+                    supabaseRequest('/leadership_interest_groups?select=*&order=group_order.asc&is_active=eq.true'),
+                    supabaseRequest('/leadership_grades?select=*&order=grade_level.desc&is_active=eq.true')
+                    
                 ]);
 
                 cacheCycles = cycles || [];
                 cacheDimensions = dimensions || [];
                 cacheAttributes = attributes || [];
                 cacheGroups = groups || [];
+                cacheGrades = grades || [];
 
                 document.getElementById('filter-cycle').innerHTML = '<option value="">Seleccione un ciclo...</option>' +
                     cacheCycles.map(c => `<option value="${c.cycle_id}">${c.cycle_name} (${c.cycle_status})</option>`).join('');
@@ -327,8 +337,9 @@
                 );
 
                 // Procesar datos
-                const data = procesarDatos(evaluators, responses || []);
-                renderizarReporte(data);
+                const view = document.getElementById('filter-view').value;
+                const data = procesarDatos(evaluators, responses || [], view === 'grupal' ? cacheEvaluatees : null);
+                renderizarReporte(data, view);
 
                 document.getElementById('report-content').style.display = 'block';
                 document.getElementById('no-data').style.display = 'none';
@@ -344,19 +355,34 @@
         // ==========================================
         // PROCESAR DATOS
         // ==========================================
-        function procesarDatos(evaluators, responses) {
-            // Mapear evaluator_id → group_id
+        function procesarDatos(evaluators, responses, evaluateesForGroupView) {
             const evaluatorGroupMap = {};
-            evaluators.forEach(e => { evaluatorGroupMap[e.evaluator_id] = e.group_id; });
+            const evaluatorEvaluateeMap = {};
+            evaluators.forEach(e => {
+                evaluatorGroupMap[e.evaluator_id] = e.group_id;
+                evaluatorEvaluateeMap[e.evaluator_id] = e.evaluatee_id;
+            });
 
-            // Agrupar respuestas por dimensión × grupo
-            const dimGroupScores = {};   // { dim_id: { group_id: [values] } }
-            const attrGroupScores = {};  // { attr_id: { group_id: [values] } }
-            const behaviorScores = {};   // { behavior_code: { sum, count, description, dim_id } }
+            // Mapear evaluatee_id → grade_id
+            const evaluateeGradeMap = {};
+            if (evaluateesForGroupView) {
+                evaluateesForGroupView.forEach(ev => {
+                    evaluateeGradeMap[ev.evaluatee_id] = ev.grade_id;
+                });
+            }
+
+            const dimGroupScores = {};
+            const attrGroupScores = {};
+            const behaviorScores = {};
+
+            // Para vista grupal por grado
+            const dimGradeScores = {};  // { dim_id: { grade_id: [values] } }
+            const attrGradeScores = {}; // { attr_id: { grade_id: [values] } }
 
             responses.forEach(r => {
                 if (r.response_value === null) return;
                 const groupId = evaluatorGroupMap[r.evaluator_id];
+                const evaluateeId = evaluatorEvaluateeMap[r.evaluator_id];
                 const q = r.leadership_questions;
                 if (!q || !q.leadership_behaviors) return;
 
@@ -379,18 +405,35 @@
                 if (!behaviorScores[behCode]) behaviorScores[behCode] = { sum: 0, count: 0, description: behDesc, dim_id: dimId };
                 behaviorScores[behCode].sum += r.response_value;
                 behaviorScores[behCode].count++;
+
+                // Dimensión × Grado (solo vista grupal)
+                if (evaluateesForGroupView && evaluateeGradeMap[evaluateeId]) {
+                    const gradeId = evaluateeGradeMap[evaluateeId];
+                    if (!dimGradeScores[dimId]) dimGradeScores[dimId] = {};
+                    if (!dimGradeScores[dimId][gradeId]) dimGradeScores[dimId][gradeId] = [];
+                    dimGradeScores[dimId][gradeId].push(r.response_value);
+
+                    if (!attrGradeScores[attrId]) attrGradeScores[attrId] = {};
+                    if (!attrGradeScores[attrId][gradeId]) attrGradeScores[attrId][gradeId] = [];
+                    attrGradeScores[attrId][gradeId].push(r.response_value);
+                }
             });
 
-            return { dimGroupScores, attrGroupScores, behaviorScores, totalResponses: responses.length, totalEvaluators: evaluators.length };
+            return { dimGroupScores, attrGroupScores, behaviorScores, dimGradeScores, attrGradeScores, totalResponses: responses.length, totalEvaluators: evaluators.length };
         }
-
+        
         // ==========================================
         // RENDERIZAR REPORTE
         // ==========================================
-        function renderizarReporte(data) {
+        function renderizarReporte(data, view) {
             renderizarKPIs(data);
-            renderizarRadarDimensiones(data.dimGroupScores);
-            renderizarRadarAtributos(data.attrGroupScores);
+            if (view === 'grupal') {
+                renderizarRadarDimensionesPorGrado(data.dimGradeScores);
+                renderizarRadarAtributosPorGrado(data.attrGradeScores);
+            } else {
+                renderizarRadarDimensiones(data.dimGroupScores);
+                renderizarRadarAtributos(data.attrGroupScores);
+            }
             renderizarTablaDimGrupo(data.dimGroupScores);
             renderizarBrechas(data.dimGroupScores);
             renderizarTopBottom(data.behaviorScores);
@@ -506,6 +549,86 @@
                 data: { labels, datasets },
                 options: radarOptions('Atributos')
             });
+        }
+
+        // ==========================================
+        // RADAR DIMENSIONES POR GRADO (vista grupal)
+        // ==========================================
+        function renderizarRadarDimensionesPorGrado(dimGradeScores) {
+            if (radarDimChart) radarDimChart.destroy();
+
+            const labels = cacheDimensions.map(d => d.dimension_name);
+            const activeGrades = getActiveGrades(dimGradeScores);
+
+            const datasets = activeGrades.map(gradeId => {
+                const grade = cacheGrades.find(g => g.grade_id === gradeId);
+                const colors = GRADE_COLORS[grade?.grade_code] || { bg: 'rgba(107,114,128,0.2)', border: '#6b7280' };
+
+                const values = cacheDimensions.map(d => {
+                    const scores = dimGradeScores[d.dimension_id]?.[gradeId] || [];
+                    return scores.length > 0 ? avg(scores) : null;
+                });
+
+                return {
+                    label: grade?.grade_name || gradeId,
+                    data: values,
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    borderWidth: 2,
+                    pointRadius: 4
+                };
+            });
+
+            const ctx = document.getElementById('radar-dimensions').getContext('2d');
+            radarDimChart = new Chart(ctx, {
+                type: 'radar',
+                data: { labels, datasets },
+                options: radarOptions('Dimensiones por Grado')
+            });
+        }
+
+        // ==========================================
+        // RADAR ATRIBUTOS POR GRADO (vista grupal)
+        // ==========================================
+        function renderizarRadarAtributosPorGrado(attrGradeScores) {
+            if (radarAttrChart) radarAttrChart.destroy();
+
+            const labels = cacheAttributes.map(a => a.attribute_name);
+            const activeGrades = getActiveGrades(attrGradeScores);
+
+            const datasets = activeGrades.map(gradeId => {
+                const grade = cacheGrades.find(g => g.grade_id === gradeId);
+                const colors = GRADE_COLORS[grade?.grade_code] || { bg: 'rgba(107,114,128,0.2)', border: '#6b7280' };
+
+                const values = cacheAttributes.map(a => {
+                    const scores = attrGradeScores[a.attribute_id]?.[gradeId] || [];
+                    return scores.length > 0 ? avg(scores) : null;
+                });
+
+                return {
+                    label: grade?.grade_name || gradeId,
+                    data: values,
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    borderWidth: 2,
+                    pointRadius: 4
+                };
+            });
+
+            const ctx = document.getElementById('radar-attributes').getContext('2d');
+            radarAttrChart = new Chart(ctx, {
+                type: 'radar',
+                data: { labels, datasets },
+                options: radarOptions('Atributos por Grado')
+            });
+        }
+
+        function getActiveGrades(scores) {
+            const gradeIds = new Set();
+            Object.values(scores).forEach(grades => {
+                Object.keys(grades).forEach(gid => gradeIds.add(gid));
+            });
+            return [...gradeIds];
         }
 
         function radarOptions(title) {
