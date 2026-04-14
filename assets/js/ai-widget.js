@@ -83,7 +83,7 @@
 
         .rigo-header {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 16px; background: #5F1C1F; color: white; flex-shrink: 0;
+            padding: 12px 16px; background: var(--system-primary-color, #1B365D); color: white; flex-shrink: 0;
         }
         .rigo-header-left { display: flex; align-items: center; gap: 10px; }
         .rigo-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
