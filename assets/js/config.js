@@ -1052,7 +1052,7 @@ async function loadAndApplyBrandColors() {
                     const img = document.createElement('img');
                     img.src = colors.logo_url;
                     img.alt = APP_CONFIG.institution.name;
-                    img.style.cssText = 'height:28px;width:auto;';
+                    img.style.cssText = 'height:32px;width:auto;background:white;border-radius:6px;padding:2px 4px;';
                     brandIcon.replaceWith(img);
                 }
             }
