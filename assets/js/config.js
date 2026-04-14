@@ -1013,7 +1013,7 @@ async function loadAndApplyBrandColors() {
     try {
         console.log('🎨 Cargando colores corporativos...');
         
-        const configData = await supabaseRequest('/system_config?select=primary_color_hex,secondary_color_hex,tertiary_color_hex&limit=1');
+        const configData = await supabaseRequest('/system_config?select=primary_color_hex,secondary_color_hex,tertiary_color_hex,logo_url&limit=1');
         
         if (configData && configData.length > 0) {
             const colors = configData[0];
@@ -1045,6 +1045,17 @@ async function loadAndApplyBrandColors() {
                 secondary: colors.secondary_color_hex || '#667eea',
                 tertiary: colors.tertiary_color_hex || '#f59e0b'
             };
+
+            if (colors.logo_url) {
+                const brandIcon = document.querySelector('#schoolnet-user-navbar .navbar-brand i');
+                if (brandIcon) {
+                    const img = document.createElement('img');
+                    img.src = colors.logo_url;
+                    img.alt = APP_CONFIG.institution.name;
+                    img.style.cssText = 'height:28px;width:auto;';
+                    brandIcon.replaceWith(img);
+                }
+            }
             
             console.log('🎨 Colores corporativos aplicados correctamente');
             return colors;
