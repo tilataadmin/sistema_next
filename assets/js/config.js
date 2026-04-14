@@ -1348,7 +1348,7 @@ async function obtenerTodosLosPermisosUsuario(userId, modulePermissions = []) {
             return [];
         }
         
-        // Extraer todos los permisos en un array
+        // Extraer todos los permisos por roles
         const permissions = [];
         data[0].user_roles?.forEach(userRole => {
             userRole.roles?.role_permissions?.forEach(rolePermission => {
@@ -1357,6 +1357,16 @@ async function obtenerTodosLosPermisosUsuario(userId, modulePermissions = []) {
                     permissions.push(permName);
                 }
             });
+        });
+        
+        // Agregar permisos universales
+        const universals = await supabaseRequest(
+            '/permissions?select=permission_name&is_universal=eq.true&permission_status=eq.active'
+        );
+        universals?.forEach(p => {
+            if (p.permission_name && !permissions.includes(p.permission_name)) {
+                permissions.push(p.permission_name);
+            }
         });
         
         return permissions;
