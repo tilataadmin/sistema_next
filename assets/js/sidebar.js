@@ -377,15 +377,17 @@ function buildSidebarHTML(permData) {
 
                 html += `<div class="sn-subsection-label">${sub.label}</div>`;
                 subPerms.forEach(p => {
-                    const isCurrent = p.url && currentPath.endsWith(p.url);
-                    const href = p.url || '#';
+                    if (!p.url) return;
+                    const isCurrent = currentPath.endsWith(p.url);
+                    const href = p.url;
                     html += `<a href="${href}" class="sn-mod-item ${isCurrent ? 'sn-current' : ''}">${p.name}</a>`;
                 });
             });
         } else {
             modPerms.forEach(p => {
-                const isCurrent = p.url && currentPath.endsWith(p.url);
-                const href = p.url || '#';
+                if (!p.url) return;
+                const isCurrent = currentPath.endsWith(p.url);
+                const href = p.url;
                 html += `<a href="${href}" class="sn-mod-item ${isCurrent ? 'sn-current' : ''}">${p.name}</a>`;
             });
         }
