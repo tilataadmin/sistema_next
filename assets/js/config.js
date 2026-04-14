@@ -2081,6 +2081,11 @@ function injectUserNavbar() {
     
     console.log('✅ Navbar de usuario inyectado correctamente');
 
+    // Cargar sidebar de navegación
+    const sidebarScript = document.createElement('script');
+    sidebarScript.src = '/assets/js/sidebar.js';
+    document.body.appendChild(sidebarScript);
+
     // Cargar Rigoberto (asistente IA)
     const rigoScript = document.createElement('script');
     rigoScript.src = '/assets/js/ai-widget.js';
