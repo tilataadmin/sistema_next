@@ -350,11 +350,7 @@ function buildSidebarHTML(permData) {
         });
     });
 
-    // Si estamos en dashboard o raíz, activar my-space
-    if (currentPath.includes('dashboard.html') || currentPath === '/' || currentPath === '/index.html') {
-        currentModuleId = 'my-space';
-    }
-
+   
     // Recuperar estado del módulo expandido
     const savedOpen = sessionStorage.getItem('sn_open_module');
     const openModuleId = currentModuleId || savedOpen || null;
