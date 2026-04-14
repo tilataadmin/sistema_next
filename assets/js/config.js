@@ -1152,7 +1152,17 @@ async function checkUserPermission(userId, permissionName) {
             return true;
         }
         
-        // Si no es super admin, verificar permiso específico
+        // Verificar si el permiso es universal (acceso para todos los usuarios autenticados)
+        const universalCheck = await supabaseRequest(
+            `/permissions?select=permission_id&permission_name=eq.${encodeURIComponent(permissionName)}&is_universal=eq.true&permission_status=eq.active&limit=1`
+        );
+        
+        if (universalCheck && universalCheck.length > 0) {
+            console.log(`✅ Permiso universal: ${permissionName}`);
+            return true;
+        }
+        
+        // Si no es super admin ni universal, verificar permiso específico por roles
         const permissionQuery = `/users?select=user_roles!user_roles_user_id_fkey(role_id,roles(role_permissions(permissions(permission_name))))&user_id=eq.${userId}`;
         const permissionData = await supabaseRequest(permissionQuery);
         
