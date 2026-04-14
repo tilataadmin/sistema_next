@@ -448,6 +448,9 @@ async function injectSidebar() {
     // Event listeners
     setupSidebarEvents(sidebarEl, backdrop);
 
+    // Actualizar breadcrumbs con nombres de módulos correctos
+    updateBreadcrumb(permData);
+
     console.log('✅ Sidebar inyectado correctamente');
 }
 
@@ -588,5 +591,47 @@ if (document.readyState === 'loading') {
 // Exponer funciones globalmente
 window.clearSidebarCache = clearSidebarCache;
 window.injectSidebar = injectSidebar;
+
+// ==========================================
+// 8. ACTUALIZACIÓN AUTOMÁTICA DE BREADCRUMBS
+// ==========================================
+
+function updateBreadcrumb(permData) {
+    const breadcrumb = document.querySelector('.breadcrumb');
+    if (!breadcrumb) return;
+
+    const currentPath = window.location.pathname;
+    let currentModule = null;
+
+    // Buscar a qué módulo pertenece la página actual
+    for (const mod of SIDEBAR_MODULE_ORDER) {
+        const modPerms = permData.modules[mod.id];
+        if (!modPerms) continue;
+        for (const p of modPerms) {
+            if (p.url && currentPath.endsWith(p.url)) {
+                currentModule = mod;
+                break;
+            }
+        }
+        if (currentModule) break;
+    }
+
+    if (!currentModule) return;
+
+    // Buscar el segundo breadcrumb-item (el del módulo)
+    const items = breadcrumb.querySelectorAll('.breadcrumb-item');
+    if (items.length < 2) return;
+
+    const moduleItem = items[1];
+
+    // Si es un enlace, reemplazar con el nombre correcto
+    const link = moduleItem.querySelector('a');
+    if (link) {
+        link.textContent = currentModule.name;
+        link.href = '/dashboard.html';
+    } else if (!moduleItem.classList.contains('active')) {
+        moduleItem.textContent = currentModule.name;
+    }
+}
 
 console.log('✅ Módulo sidebar.js cargado');
