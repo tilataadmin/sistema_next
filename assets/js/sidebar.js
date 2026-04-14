@@ -357,7 +357,7 @@ function buildSidebarHTML(permData) {
 
     // Recuperar estado del módulo expandido
     const savedOpen = sessionStorage.getItem('sn_open_module');
-    const openModuleId = currentModuleId || savedOpen || 'my-space';
+    const openModuleId = currentModuleId || savedOpen || null;
 
     SIDEBAR_MODULE_ORDER.forEach(mod => {
         const modPerms = permData.modules[mod.id];
