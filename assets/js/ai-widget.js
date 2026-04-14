@@ -61,12 +61,9 @@
     const style = document.createElement('style');
     style.textContent = `
         .rigo-btn {
-            display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 6px;
-            background: rgba(255,255,255,0.15); border: none; border-radius: 6px;
-            color: white; cursor: pointer; font-size: 13px; font-weight: 500;
-            transition: background 0.2s;
+            border: none;
+            font-weight: 500;
         }
-        .rigo-btn:hover { background: rgba(255,255,255,0.25); }
 
         .rigo-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -244,7 +241,7 @@
 
         const container = manualBtn.parentElement;
         const btn = document.createElement('button');
-        btn.className = 'rigo-btn';
+        btn.className = 'nav-pill rigo-btn';
         btn.innerHTML = `${RIGOBERTO_SVG_WHITE} Rigoberto`;
         btn.addEventListener('click', abrirChat);
 
