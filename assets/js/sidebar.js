@@ -451,6 +451,9 @@ async function injectSidebar() {
     // Actualizar breadcrumbs con nombres de módulos correctos
     updateBreadcrumb(permData);
 
+    // Mostrar popup de novedades (solo la primera vez)
+    showChangelogPopup();
+
     console.log('✅ Sidebar inyectado correctamente');
 }
 
@@ -633,5 +636,86 @@ function updateBreadcrumb(permData) {
         moduleItem.textContent = currentModule.name;
     }
 }
+
+// ==========================================
+// 9. POPUP DE NOVEDADES (temporal)
+// ==========================================
+
+function showChangelogPopup() {
+    const CHANGELOG_VERSION = '2026-04-14';
+    const CHANGELOG_KEY = 'schoolnet_changelog_seen';
+
+    const seen = localStorage.getItem(CHANGELOG_KEY);
+    if (seen === CHANGELOG_VERSION) return;
+
+    const session = getStoredSession();
+    if (!session || !session.user) return;
+    if (window.location.pathname.includes('login.html')) return;
+
+    setTimeout(() => {
+        const overlay = document.createElement('div');
+        overlay.id = 'sn-changelog-overlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+        overlay.innerHTML = `
+            <div style="background:white;border-radius:12px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+                <div style="background:var(--system-primary-color,#1B365D);color:white;padding:1.25rem 1.5rem;border-radius:12px 12px 0 0;">
+                    <h5 style="margin:0;font-size:1.1rem;">
+                        <i class="bi bi-stars me-2"></i>Novedades en SchoolNet
+                    </h5>
+                </div>
+                <div style="padding:1.5rem;">
+                    <p style="color:#495057;font-size:0.9rem;margin-bottom:1rem;">Hemos reorganizado la navegación para que sea más fácil encontrar lo que necesitas.</p>
+
+                    <div style="margin-bottom:1rem;">
+                        <div style="display:flex;align-items:start;gap:0.75rem;margin-bottom:0.75rem;">
+                            <span style="background:#E6F1FB;color:#185FA5;border-radius:8px;padding:6px 8px;font-size:1rem;flex-shrink:0;"><i class="bi bi-layout-sidebar"></i></span>
+                            <div>
+                                <strong style="font-size:0.85rem;">Menú lateral</strong>
+                                <p style="font-size:0.8rem;color:#6c757d;margin:2px 0 0;">Ahora tienes un menú en el costado izquierdo con acceso directo a todas las funciones. Usa el botón <strong>☰</strong> para abrirlo o cerrarlo.</p>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;align-items:start;gap:0.75rem;margin-bottom:0.75rem;">
+                            <span style="background:#EAF3DE;color:#3B6D11;border-radius:8px;padding:6px 8px;font-size:1rem;flex-shrink:0;"><i class="bi bi-house-heart"></i></span>
+                            <div>
+                                <strong style="font-size:0.85rem;">Mi Espacio</strong>
+                                <p style="font-size:0.8rem;color:#6c757d;margin:2px 0 0;">Tu página de inicio ahora muestra tus tareas, procedimientos y accesos rápidos personalizados.</p>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;align-items:start;gap:0.75rem;">
+                            <span style="background:#FAEEDA;color:#854F0B;border-radius:8px;padding:6px 8px;font-size:1rem;flex-shrink:0;"><i class="bi bi-unlock"></i></span>
+                            <div>
+                                <strong style="font-size:0.85rem;">Acceso simplificado</strong>
+                                <p style="font-size:0.8rem;color:#6c757d;margin:2px 0 0;">Funciones como tareas, ausencias, formación y tickets ahora están disponibles para todos sin necesidad de permisos especiales.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="sn-changelog-close" style="width:100%;padding:0.6rem;border:none;background:var(--system-primary-color,#1B365D);color:white;border-radius:8px;font-size:0.9rem;cursor:pointer;font-weight:500;">
+                        Entendido
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        document.getElementById('sn-changelog-close').addEventListener('click', () => {
+            overlay.remove();
+            localStorage.setItem(CHANGELOG_KEY, CHANGELOG_VERSION);
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                localStorage.setItem(CHANGELOG_KEY, CHANGELOG_VERSION);
+            }
+        });
+
+    }, 1000);
+}
+
 
 console.log('✅ Módulo sidebar.js cargado');
