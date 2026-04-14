@@ -110,31 +110,11 @@ function renderPageVersion() {
 
     const badge = document.createElement('span');
     badge.id = 'page-version-badge';
-    badge.style.cssText = `
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        color: rgba(255, 255, 255, 0.7);
-        padding: 0.35rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-family: 'Courier New', monospace;
-        cursor: help;
-        transition: all 0.2s;
-        white-space: nowrap;
-    `;
+    badge.className = 'nav-pill';
+    badge.style.cssText = 'font-family: "Courier New", monospace; font-size: 0.75rem; cursor: help;';
 
     badge.textContent = `v${version}${envLabel}`;
     badge.title = `Última modificación: ${version}\nAmbiente: ${CURRENT_ENVIRONMENT}`;
-
-    badge.addEventListener('mouseenter', () => {
-        badge.style.background = 'rgba(255, 255, 255, 0.2)';
-        badge.style.color = 'rgba(255, 255, 255, 0.95)';
-    });
-
-    badge.addEventListener('mouseleave', () => {
-        badge.style.background = 'rgba(255, 255, 255, 0.1)';
-        badge.style.color = 'rgba(255, 255, 255, 0.7)';
-    });
 
     manualButton.parentNode.insertBefore(badge, manualButton);
     console.log(`📌 Versión de página: v${version}`);
@@ -1645,49 +1625,33 @@ const navbarStyles = `
         color: #f8f9fa;
     }
     
-    #schoolnet-user-navbar .manual-button {
+   #schoolnet-user-navbar .nav-pill {
         background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        color: white;
-        padding: 0.5rem 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: rgba(255, 255, 255, 0.85);
+        padding: 0.4rem 0.9rem;
         border-radius: 20px;
         cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.4rem;
         transition: all 0.2s;
-        font-size: 0.9rem;
+        font-size: 0.8rem;
         text-decoration: none;
     }
     
-    #schoolnet-user-navbar .manual-button:hover {
-        background: rgba(255, 255, 255, 0.25);
+    #schoolnet-user-navbar .nav-pill:hover {
+        background: rgba(255, 255, 255, 0.22);
         color: white;
-        transform: translateY(-1px);
     }
+    
+    #schoolnet-user-navbar .manual-button { }
     
     #schoolnet-user-navbar .user-menu {
         position: relative;
     }
     
-    #schoolnet-user-navbar .user-button {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 25px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        transition: all 0.2s;
-        font-size: 0.9rem;
-    }
-    
-    #schoolnet-user-navbar .user-button:hover {
-        background: rgba(255, 255, 255, 0.25);
-        transform: translateY(-1px);
-    }
+    #schoolnet-user-navbar .user-button { }
     
     #schoolnet-user-navbar .dropdown-menu {
         position: absolute;
@@ -1875,13 +1839,13 @@ function createNavbarHTML() {
                     
                     <div class="d-flex align-items-center gap-3">
                         <!-- Botón de Manual -->
-                            <a href="${manualUrl}" class="manual-button" id="manual-button">
+                            <a href="${manualUrl}" class="nav-pill manual-button" id="manual-button">
                             <i class="bi bi-book"></i>
                             <span class="d-none d-md-inline">Manual</span>
                         </a>
                         
                         <div class="user-menu">
-                            <button class="user-button" id="user-menu-button" type="button">
+                            <button class="nav-pill user-button" id="user-menu-button" type="button">
                                 <i class="bi bi-person-circle"></i>
                                 <span>${userName}</span>
                                 <i class="bi bi-chevron-down" style="font-size: 0.75rem;"></i>
