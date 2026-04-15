@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.12.07.45">
+    <meta name="page-version" content="26.04.15.13.00">
     <title>Mi Ticket - SchoolNet</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -49,6 +49,57 @@
 
         .detail-row { padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
         .detail-row:last-child { border-bottom: none; }
+        /* Vista listado */
+        .ticket-list-header {
+            background: linear-gradient(135deg, #1B365D 0%, #2a5298 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 1.5rem;
+        }
+        .ticket-list-header h2 { margin: 0; font-size: 1.5rem; font-weight: 700; }
+        .ticket-list-header p { margin: 0.25rem 0 0; opacity: 0.8; font-size: 0.9rem; }
+
+        .ticket-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 0.75rem;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .ticket-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            color: inherit;
+        }
+        .ticket-card .ticket-card-number {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #1B365D;
+        }
+        .ticket-card .ticket-card-desc {
+            font-size: 0.85rem;
+            color: #495057;
+            margin-top: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ticket-card .ticket-card-meta {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+        }
+        .ticket-empty {
+            text-align: center;
+            padding: 3rem;
+            color: #adb5bd;
+        }
+        .ticket-empty i { font-size: 3rem; display: block; margin-bottom: 0.75rem; }
         .detail-label { font-weight: 600; color: #495057; font-size: 0.85rem; }
         .detail-value { font-size: 0.85rem; }
     </style>
@@ -62,6 +113,20 @@
     <div class="container py-4" style="max-width: 900px;">
         
         <div id="alertContainer"></div>
+
+        <!-- VISTA LISTADO (sin ?id) -->
+        <div id="list-view" class="d-none">
+            <div class="ticket-list-header">
+                <h2><i class="bi bi-ticket-perforated me-2"></i>Mis Tickets</h2>
+                <p>Historial de solicitudes de soporte</p>
+            </div>
+            <div id="ticket-list-container">
+                <div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Cargando tickets...</div>
+            </div>
+        </div>
+
+        <!-- VISTA DETALLE (con ?id) -->
+        <div id="detail-view">
 
         <!-- ENCABEZADO DEL TICKET -->
         <div class="ticket-header" id="ticket-header">
@@ -135,6 +200,7 @@
         <div class="mt-4 text-center">
             <button class="btn btn-outline-secondary" onclick="history.back()"><i class="bi bi-arrow-left me-1"></i>Volver</button>
         </div>
+        </div><!-- /detail-view -->
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -164,7 +230,10 @@
                 ticketId = params.get('id');
 
                 if (!ticketId) {
-                    showMessage('No se especificó un ticket', 'danger');
+                    // Modo listado
+                    document.getElementById('detail-view').classList.add('d-none');
+                    document.getElementById('list-view').classList.remove('d-none');
+                    await loadMyTickets();
                     return;
                 }
 
@@ -466,6 +535,61 @@
 
         function showLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
         function hideLoading() { document.getElementById('loading-overlay').classList.add('hidden'); }
+
+        // ==========================================
+        // LISTADO DE MIS TICKETS
+        // ==========================================
+        async function loadMyTickets() {
+            const container = document.getElementById('ticket-list-container');
+            try {
+                const tickets = await supabaseRequest(
+                    '/support_tickets?select=ticket_id,ticket_number,description,ticket_status,created_at,updated_at,' +
+                    'ticket_categories(category_name,category_icon,category_color),' +
+                    'ticket_priority_options(priority_label,priority_color)' +
+                    '&user_id=eq.' + currentUser.user_id +
+                    '&order=created_at.desc'
+                );
+
+                if (!tickets || tickets.length === 0) {
+                    container.innerHTML = '<div class="ticket-empty"><i class="bi bi-ticket-perforated"></i>No has creado tickets aún</div>';
+                    return;
+                }
+
+                container.innerHTML = tickets.map(t => {
+                    const num = t.ticket_number ? `#${t.ticket_number}` : '';
+                    const desc = (t.description || '').substring(0, 120) + ((t.description || '').length > 120 ? '...' : '');
+                    const date = new Date(t.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+                    const cat = t.ticket_categories;
+                    const pri = t.ticket_priority_options;
+
+                    const statusMap = {
+                        pendiente: { label: 'Pendiente', bg: '#ffc107', color: '#000' },
+                        en_revision: { label: 'En Revisión', bg: '#0dcaf0', color: '#000' },
+                        en_desarrollo: { label: 'En Desarrollo', bg: '#6f42c1', color: '#fff' },
+                        resuelto: { label: 'Resuelto', bg: '#198754', color: '#fff' },
+                        cerrado: { label: 'Cerrado', bg: '#6c757d', color: '#fff' }
+                    };
+                    const st = statusMap[t.ticket_status] || { label: t.ticket_status, bg: '#6c757d', color: '#fff' };
+
+                    let badges = `<span class="status-badge" style="background:${st.bg};color:${st.color};font-size:0.75rem;padding:2px 8px;">${st.label}</span>`;
+                    if (cat) badges += ` <span style="font-size:0.75rem;color:${cat.category_color};"><i class="bi ${cat.category_icon} me-1"></i>${cat.category_name}</span>`;
+                    if (pri) badges += ` <span style="font-size:0.75rem;color:${pri.priority_color};">${pri.priority_label}</span>`;
+
+                    return `<a href="?id=${t.ticket_id}" class="ticket-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="ticket-card-number">Ticket ${num}</span>
+                            <div>${badges}</div>
+                        </div>
+                        <div class="ticket-card-desc">${escapeHtml(desc)}</div>
+                        <div class="ticket-card-meta">${date}</div>
+                    </a>`;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error cargando tickets:', error);
+                container.innerHTML = '<div class="text-center text-danger py-3">Error cargando tickets</div>';
+            }
+        }
 
         // checkUserIsSuperAdmin ya viene de config.js
     </script>
