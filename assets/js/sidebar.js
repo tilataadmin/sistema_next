@@ -51,6 +51,225 @@ const MY_SPACE_SUBSECTIONS = [
     { label: 'Soporte', items: ['Mis Tickets'] }
 ];
 
+const MODULE_ITEM_ORDER = {
+    'new-students': [
+        'Actividades',
+        'Actores',
+        'Reporte de estudiantes nuevos',
+        'Registrar actividades',
+        'Consulta de registro',
+        'Tablero de control'
+    ],
+    'follow-ups': [
+        'Gestionar categorías',
+        'Asignar usuarios a cursos',
+        'Registrar asuntos individuales',
+        'Registrar asuntos grupales',
+        'Registrar asuntos EAE',
+        'Gestionar asuntos EAE',
+        'Revisar asuntos individuales',
+        'Gestionar asuntos grupales',
+        'Gestionar asuntos no escalados',
+        'Seguimientos por cursos',
+        'Consultar notas confidenciales',
+        'Consultas a seguimientos por cursos',
+        'Consultas'
+    ],
+    'early-alerts': [
+        'Causas de alertas tempranas',
+        'Registro de alertas',
+        'Gestión de alertas tempranas',
+       'Tablero de control de alertas tempranas'
+    ],
+    'hr': [
+        'Configurar ausencias',
+        'Configurar calendario laboral',
+        'Divisiones',
+        'Centros de costos',
+        'Secciones / Áreas',
+        'Subáreas',
+        'Roles y cargos',
+        'Gestionar trabajadores',
+        'Gestionar categorías de ausencias',
+        'Autorizar ausencias',
+        'Gestionar todas las ausencias',
+        'Ajustar saldos de ausencias',
+        'Revisión de nómina',
+        'Ver reportes de ausencias',
+        'Ver dashboard de talento humano'
+    ],
+    'training': [
+        'Gestionar ejes formativos',
+        'Gestionar habilidades',
+        'Gestionar modalidades',
+        'Gestionar fuentes de requisición',
+        'Gestionar facilitadores',
+        'Gestionar unidades formativas',
+        'Gestionar referencias de unidades',
+        'Asociar habilidades a unidades',
+        'Asociar facilitadores a unidades',
+        'Asociar unidades a roles',
+        'Generar rutas de formación',
+        'Solicitar unidades por interés',
+        'Eximir cumplimiento de unidades',
+        'Gestionar fechas tentativas',
+        'Registrar cumplimiento de unidades',
+        'Reportes de formación',
+        'Consultas de rutas',
+        'Dashboard global de formación'
+    ],
+    'indicators': [
+        'Segmentaciones',
+        'Categorías de indicadores',
+        'Variables',
+        'Captura de datos',
+        'Indicadores',
+        'Configurar mi dashboard',
+        'Ver mi dashboard',
+        'Análisis global de correlaciones',
+        'Gestión de mejora',
+        'Tablero de mejora'
+    ],
+    'tte': [
+        'Gestionar categorías TTE',
+        'Gestionar prioridades TTE',
+        'Gestionar solicitudes TTE',
+        'Dashboard TTE'
+    ],
+    'surveys': [
+        'Gestionar escalas',
+        'Crear encuestas',
+        'Gestionar secciones de encuestas',
+        'Gestionar preguntas',
+        'Asociar segmentaciones',
+        'Gestionar aplicaciones',
+        'Ver resultados',
+        'Comparar aplicaciones',
+        'Gestionar microencuestas',
+        'Dashboard de encuestas'
+    ],
+    'procedures': [
+        'Gestionar formularios',
+        'Gestionar procedimientos',
+        'Ver reportes de procedimientos',
+        'Consultar todos los registros'
+    ],
+    'project-management': [
+        'Ver todas las tareas',
+        'Dashboard de tareas',
+        'Proyectos',
+        'Ver todos los proyectos',
+        'Dashboard proyectos'
+    ],
+    'events': [
+        'Configurar módulo de eventos',
+        'Gestionar catálogo de instituciones',
+        'Gestionar eventos',
+        'Ver eventos',
+        'Dashboard de eventos'
+    ],
+    'services': [
+        'Configuración de servicios',
+        'Accesos y servicios estudiantiles',
+        'Equipos deportivos',
+        'Grupos de representación',
+        'Salidas pedagógicas',
+        'Salidas deportivas',
+        'Salidas de representación',
+        'Eventos internos',
+        'Registro de costos de eventos',
+        'Atención a familias por admisiones',
+        'Extracurriculares',
+        'Transporte de personal',
+        'Aprobaciones de servicios',
+        'Gestión de mantenimiento',
+      'Reportes de servicios'
+    ],
+    'environmental': [
+        'Gestionar especies de árboles',
+        'Documentación de especies',
+        'Gestionar inventario de árboles',
+        'Registrar cuidados de árboles',
+        'Mapa de árboles',
+        'Historial de cuidados',
+        'Reportes de arbolización',
+        'Gestionar medidores de agua',
+        'Registrar lecturas diarias de agua',
+        'Registrar lecturas mensuales de agua',
+        'Registrar mediciones extraordinarias',
+        'Editar lecturas históricas de agua',
+        'Gestionar alertas hídricas',
+        'Reportes de agua',
+        'Dashboard de balance hídrico'
+    ],
+    'suppliers': [
+        'Configurar módulo de proveedores',
+        'Gestionar documentos legales de proveedores',
+        'Gestionar catálogos de proveedores',
+        'Administrar proveedores',
+        'Dashboard de proveedores'
+    ],
+    'budget': [
+        'Gestionar tarifas anuales',
+        'Gestionar PUC',
+        'Subir el combo',
+        'Gestionar IVA asociado',
+        'Gestionar rubros',
+        'Gestionar subítems',
+        'Inicializar año presupuestal',
+        'Inicializar año presupuestal - Generales',
+        'Petición de presupuesto',
+        'Autorización de presupuesto',
+        'Designar solicitantes',
+        'Solicitud de ejecución',
+        'Resolución de solicitudes',
+        'Cerrar requerimientos sobrejeecutados',
+        'Iniciar traslado presupuestal',
+        'Cerrar traslado presupuestal',
+        'Consultas de presupuesto',
+        'Vista particular del presupuesto',
+        'Vista detallada por rubro',
+        'Vista de informes',
+        'Informe de asignaciones',
+        'Asociar facturas',
+        'Cruce contable',
+       'Diseño de informes'
+    ],
+    'contracts': [
+        'Gestionar categorías de contratos',
+        'Gestionar plantillas de contratos',
+        'Ver dashboard de contratos'
+    ],
+    'config': [
+        'Años académicos',
+        'Gestionar programas',
+        'Gestionar secciones',
+        'Gestionar grados',
+        'Gestionar cursos',
+        'Gestionar áreas académicas',
+        'Gestionar áreas y asignaturas',
+        'Asignación académica',
+        'Gestionar familias',
+        'Gestionar estudiantes',
+        'Gestionar EPS',
+        'Gestionar tipos de documento',
+       'Generar días Tilatá'
+    ],
+    'security': [
+        'Configuración general',
+        'Gestión de roles',
+        'Gestión de permisos',
+        'Configurar permisos',
+        'Gestión de usuarios',
+        'Asignar roles',
+        'Categorías de Tickets',
+        'Administrar tickets de soporte',
+        'Gestión de carnets',
+        'Logs de auditoría'
+    ]
+};
+
+        
 const SIDEBAR_CACHE_KEY = 'schoolnet_sidebar_permissions';
 const SIDEBAR_STATE_KEY = 'schoolnet_sidebar_state';
 
@@ -384,7 +603,19 @@ function buildSidebarHTML(permData) {
                 });
             });
         } else {
-            modPerms.forEach(p => {
+            let sortedPerms = modPerms;
+            if (MODULE_ITEM_ORDER[mod.id]) {
+                const order = MODULE_ITEM_ORDER[mod.id];
+                sortedPerms = [...modPerms].sort((a, b) => {
+                    const ia = order.indexOf(a.name);
+                    const ib = order.indexOf(b.name);
+                    if (ia === -1 && ib === -1) return 0;
+                    if (ia === -1) return 1;
+                    if (ib === -1) return 1;
+                    return ia - ib;
+                });
+            }
+            sortedPerms.forEach(p => {
                 if (!p.url) return;
                 const isCurrent = currentPath.endsWith(p.url);
                 const href = p.url;
