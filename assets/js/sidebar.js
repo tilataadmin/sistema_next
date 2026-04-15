@@ -51,6 +51,32 @@ const MY_SPACE_SUBSECTIONS = [
     { label: 'Soporte', items: ['Mis Tickets'] }
 ];
 
+const MODULE_ITEM_ORDER = {
+    'new-students': [
+        'Actividades',
+        'Actores',
+        'Reporte de estudiantes nuevos',
+        'Registrar actividades',
+        'Consulta de registro',
+        'Tablero de control'
+    ],
+    'follow-ups': [
+        'Gestionar categorías',
+        'Asignar usuarios a cursos',
+        'Registrar asuntos individuales',
+        'Registrar asuntos grupales',
+        'Registrar asuntos EAE',
+        'Gestionar asuntos EAE',
+        'Revisar asuntos individuales',
+        'Gestionar asuntos grupales',
+        'Gestionar asuntos no escalados',
+        'Seguimientos por cursos',
+        'Consultar notas confidenciales',
+        'Consultas a seguimientos por cursos',
+        'Consultas'
+    ]
+};
+
 const SIDEBAR_CACHE_KEY = 'schoolnet_sidebar_permissions';
 const SIDEBAR_STATE_KEY = 'schoolnet_sidebar_state';
 
@@ -384,7 +410,19 @@ function buildSidebarHTML(permData) {
                 });
             });
         } else {
-            modPerms.forEach(p => {
+            let sortedPerms = modPerms;
+            if (MODULE_ITEM_ORDER[mod.id]) {
+                const order = MODULE_ITEM_ORDER[mod.id];
+                sortedPerms = [...modPerms].sort((a, b) => {
+                    const ia = order.indexOf(a.name);
+                    const ib = order.indexOf(b.name);
+                    if (ia === -1 && ib === -1) return 0;
+                    if (ia === -1) return 1;
+                    if (ib === -1) return 1;
+                    return ia - ib;
+                });
+            }
+            sortedPerms.forEach(p => {
                 if (!p.url) return;
                 const isCurrent = currentPath.endsWith(p.url);
                 const href = p.url;
