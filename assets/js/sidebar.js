@@ -48,7 +48,7 @@ const MY_SPACE_SUBSECTIONS = [
     { label: 'Mis pendientes', items: ['Gestionar tareas', 'Ver mis solicitudes', 'Ejecutar procedimientos', 'Ejecutar formularios'] },
     { label: 'Mis ausencias y TTE', items: ['Solicitar ausencias', 'Responder solicitudes TTE'] },
     { label: 'Mi formación y evaluación', items: ['Ver mi ruta de formación', 'Ver mi dashboard de formación', 'Mis resultados de evaluación', 'Mis resultados de liderazgo', 'Responder evaluación de liderazgo', 'Plan de mejora de liderazgo'] },
-    { label: 'Soporte', items: ['Gestión de Tickets de Soporte'] }
+    { label: 'Soporte', items: ['Mis Tickets'] }
 ];
 
 const SIDEBAR_CACHE_KEY = 'schoolnet_sidebar_permissions';
