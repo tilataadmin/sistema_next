@@ -256,7 +256,6 @@ const MODULE_ITEM_ORDER = {
         'Secciones',
         'Grados',
         'Cursos',
-        'Áreas académicas',
         'Áreas y asignaturas',
         'Asignación académica',
         'Familias',
