@@ -123,6 +123,7 @@ const MODULE_ITEM_ORDER = {
     'indicators': [
         'Segmentaciones',
         'Categorías de indicadores',
+        'Gestión de benchmarks',
         'Variables',
         'Captura de datos',
         'Indicadores',
