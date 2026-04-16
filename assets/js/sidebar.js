@@ -254,7 +254,8 @@ const MODULE_ITEM_ORDER = {
         'Gestionar estudiantes',
         'Gestionar EPS',
         'Gestionar tipos de documento',
-       'Generar días Tilatá'
+        'Gestionar jornadas pedagógicas',
+        'Generar días Tilatá'
     ],
     'security': [
         'Configuración general',
