@@ -152,9 +152,10 @@ const MODULE_ITEM_ORDER = {
    'procedures': [
         'Gestionar formularios',
         'Gestionar procedimientos',
-        'Ver reportes de procedimientos',
         'Consultar todos los registros',
-        'Consultar respuestas de formularios'
+        'Consultar respuestas de formularios',
+        'Ver reportes de procedimientos',
+        'Ver dashboard de procedimientos'
     ],
     'project-management': [
         'Ver todas las tareas',
