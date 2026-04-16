@@ -70,6 +70,7 @@ const MODULE_ITEM_ORDER = {
         'Revisar asuntos individuales',
         'Gestionar asuntos grupales',
         'Gestionar asuntos no escalados',
+        'Notas confidenciales',
         'Seguimientos por cursos',
         'Consultar notas confidenciales',
         'Consultas a seguimientos por cursos',
