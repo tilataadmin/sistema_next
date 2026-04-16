@@ -184,6 +184,7 @@ const MODULE_ITEM_ORDER = {
         'Eventos internos',
         'Registro de costos de eventos',
         'Atención a familias por admisiones',
+        'Tiqueteras',
         'Extracurriculares',
         'Transporte de personal',
         'Aprobaciones de servicios',
