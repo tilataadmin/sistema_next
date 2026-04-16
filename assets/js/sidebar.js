@@ -243,6 +243,10 @@ const MODULE_ITEM_ORDER = {
         'Gestionar plantillas de contratos',
         'Ver dashboard de contratos'
     ],
+    'knowledge': [
+        'Administrar asistente IA',
+        'Gestionar biblioteca'
+    ],
     'config': [
         'Años académicos',
         'Gestionar programas',
