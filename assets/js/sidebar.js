@@ -97,7 +97,8 @@ const MODULE_ITEM_ORDER = {
         'Ajustar saldos de ausencias',
         'Revisión de nómina',
         'Ver reportes de ausencias',
-        'Ver dashboard de talento humano'
+        'Ver dashboard de talento humano',
+        'Paz y salvos'
     ],
     'training': [
         'Gestionar ejes formativos',
