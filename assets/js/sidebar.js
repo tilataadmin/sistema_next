@@ -149,11 +149,12 @@ const MODULE_ITEM_ORDER = {
         'Gestionar microencuestas',
         'Dashboard de encuestas'
     ],
-    'procedures': [
+   'procedures': [
         'Gestionar formularios',
         'Gestionar procedimientos',
         'Ver reportes de procedimientos',
-        'Consultar todos los registros'
+        'Consultar todos los registros',
+        'Consultar respuestas de formularios'
     ],
     'project-management': [
         'Ver todas las tareas',
