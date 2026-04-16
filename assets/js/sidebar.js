@@ -149,11 +149,13 @@ const MODULE_ITEM_ORDER = {
         'Gestionar microencuestas',
         'Dashboard de encuestas'
     ],
-    'procedures': [
+   'procedures': [
         'Gestionar formularios',
         'Gestionar procedimientos',
+        'Consultar todos los registros',
+        'Consultar respuestas de formularios',
         'Ver reportes de procedimientos',
-        'Consultar todos los registros'
+        'Ver dashboard de procedimientos'
     ],
     'project-management': [
         'Ver todas las tareas',
@@ -254,7 +256,8 @@ const MODULE_ITEM_ORDER = {
         'Gestionar estudiantes',
         'Gestionar EPS',
         'Gestionar tipos de documento',
-       'Generar días Tilatá'
+        'Gestionar jornadas pedagógicas',
+        'Generar días Tilatá'
     ],
     'security': [
         'Configuración general',
