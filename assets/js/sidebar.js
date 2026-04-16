@@ -265,6 +265,7 @@ const MODULE_ITEM_ORDER = {
         'Categorías de Tickets',
         'Administrar tickets de soporte',
         'Gestión de carnets',
+        'Consulta de seguridad',
         'Logs de auditoría'
     ]
 };
