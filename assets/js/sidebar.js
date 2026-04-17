@@ -16,7 +16,7 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'new-students', name: 'Estudiantes Nuevos', icon: 'bi-person-plus', color: '#1D9E75' },
     { id: 'follow-ups', name: 'Seguimientos', icon: 'bi-clipboard-check', color: '#BA7517' },
     { id: 'early-alerts', name: 'Alertas Tempranas', icon: 'bi-exclamation-triangle', color: '#E24B4A' },
-    { id: 'community', name: 'Comunidad', icon: 'bi-people', color: '#1D9E75' },
+    { id: 'community', name: 'Personas', icon: 'bi-people', color: '#1D9E75' },
     // Personas y desarrollo
     { id: 'hr', name: 'Talento Humano', icon: 'bi-person-badge', color: '#D85A30' },
     { id: 'training', name: 'Formación', icon: 'bi-mortarboard', color: '#BA7517' },
