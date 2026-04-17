@@ -61,7 +61,7 @@ const MODULE_ITEM_ORDER = {
         'Tablero de control'
     ],
     'follow-ups': [
-        'Gestionar categorías',
+        'Categorías',
         'Asignar usuarios a cursos',
         'Registrar asuntos individuales',
         'Registrar asuntos grupales',
