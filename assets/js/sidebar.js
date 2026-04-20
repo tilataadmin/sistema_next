@@ -140,16 +140,16 @@ const MODULE_ITEM_ORDER = {
         'Dashboard TTE'
     ],
     'surveys': [
-        'Gestionar escalas',
+        'Escalas',
         'Crear encuestas',
-        'Gestionar secciones de encuestas',
-        'Gestionar preguntas',
+        'Secciones de encuestas',
+        'Preguntas',
         'Asociar segmentaciones',
-        'Gestionar aplicaciones',
+        'Aplicaciones',
         'Ver resultados',
         'Comparar aplicaciones',
-        'Gestionar microencuestas',
-        'Dashboard de encuestas'
+        'Microencuestas',
+        'Dashboard'
     ],
    'procedures': [
         'Gestionar formularios',
