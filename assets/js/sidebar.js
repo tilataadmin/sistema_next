@@ -45,7 +45,7 @@ const SIDEBAR_MODULE_ORDER = [
 
 const MY_SPACE_SUBSECTIONS = [
     { label: 'Personal', items: ['Ver mi perfil', 'Agendar recurrencias en días Tilatá'] },
-    { label: 'Mis pendientes', items: ['Gestionar tareas', 'Ver mis solicitudes', 'Ejecutar procedimientos', 'Ejecutar formularios'] },
+    { label: 'Mis pendientes', items: ['Gestionar tareas', 'Ver mis solicitudes', 'Ejecutar procedimientos', 'Ejecutar formularios', 'Mis proveedores'] },
     { label: 'Mis ausencias y TTE', items: ['Solicitar ausencias', 'Responder solicitudes TTE'] },
     { label: 'Mi formación y evaluación', items: ['Ver mi ruta de formación', 'Ver mi dashboard de formación', 'Mis resultados de evaluación', 'Mis resultados de liderazgo', 'Responder evaluación de liderazgo', 'Plan de mejora de liderazgo'] },
     { label: 'Soporte', items: ['Mis Tickets'] }
