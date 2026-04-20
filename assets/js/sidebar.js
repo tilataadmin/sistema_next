@@ -134,8 +134,8 @@ const MODULE_ITEM_ORDER = {
         'Tablero de mejora'
     ],
     'tte': [
-        'Gestionar categorías TTE',
-        'Gestionar prioridades TTE',
+        'Categorías TTE',
+        'Prioridades TTE',
         'Gestionar solicitudes TTE',
         'Dashboard TTE'
     ],
