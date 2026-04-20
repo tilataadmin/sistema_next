@@ -151,6 +151,13 @@ const MODULE_ITEM_ORDER = {
         'Microencuestas',
         'Dashboard'
     ],
+    'institutional-eval': [
+        'Configurar estructura de autoevaluación',
+        'Evaluaciones',
+        'Evaluar componentes',
+        'Ver resultados de autoevaluación',
+        'Plan de mejoramiento'
+    ],
   'procedures': [
         'Formularios',
         'Diseñar procedimientos',
