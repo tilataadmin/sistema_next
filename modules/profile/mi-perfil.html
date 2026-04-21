@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.05.18.46">
+    <meta name="page-version" content="26.04.21.09.40">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -235,15 +235,21 @@
                     Seguridad
                 </button>
             </li>
-            <li class="nav-item" role="presentation">
+           <li class="nav-item" role="presentation">
                 <button class="nav-link" id="calendar-tab" data-bs-toggle="tab" 
                         data-bs-target="#tab-calendar" type="button" role="tab">
                     <i class="bi bi-calendar-event me-2"></i>
                     Calendario
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="shortcuts-tab" data-bs-toggle="tab" 
+                        data-bs-target="#tab-shortcuts" type="button" role="tab">
+                    <i class="bi bi-lightning me-2"></i>
+                    Accesos rápidos
+                </button>
+            </li>
         </ul>
-
         <!-- TABS CONTENT -->
         <div class="tab-content" id="profileTabsContent">
             
@@ -457,11 +463,53 @@
                                     </div>
                                 </div>
 
-                                <!-- Botón Guardar -->
+                               <!-- Botón Guardar -->
                                 <button type="button" class="btn btn-primary w-100" id="btn-save-calendar">
                                     <i class="bi bi-save me-2"></i>
                                     Guardar Configuración
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================ -->
+            <!-- TAB 4: ACCESOS RÁPIDOS -->
+            <!-- ============================================ -->
+            <div class="tab-pane fade" id="tab-shortcuts" role="tabpanel">
+                <div class="row">
+                    <div class="col-lg-10 mx-auto">
+                        <div class="card profile-card">
+                            <div class="card-body">
+                                <h5 class="card-title mb-3">
+                                    <i class="bi bi-lightning me-2"></i>
+                                    Mis accesos rápidos en el dashboard
+                                </h5>
+
+                                <div class="alert alert-info mb-4">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Selecciona hasta <strong>10 accesos</strong> que verás en tu dashboard. 
+                                    Si no seleccionas ninguno, se mostrarán los 4 accesos predeterminados.
+                                </div>
+
+                                <!-- Contador -->
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <div>
+                                        <span class="badge bg-primary" id="shortcuts-counter">0 de 10 seleccionados</span>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-clear-shortcuts">
+                                        <i class="bi bi-x-circle me-1"></i>Limpiar selección
+                                    </button>
+                                </div>
+
+                                <!-- Lista de permisos agrupados por módulo -->
+                                <div id="shortcuts-container">
+                                    <div class="text-center text-muted py-4">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>
+                                        Cargando permisos...
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -890,6 +938,272 @@
                 <i class="bi ${iconClass} me-2"></i>
                 ${texto}
             `;
+        }
+
+       // ==========================================
+        // ACCESOS RÁPIDOS
+        // ==========================================
+
+        const MAX_SHORTCUTS = 10;
+
+        // Mapeo de íconos por módulo (mismos del sidebar)
+        const MODULE_ICONS_MAP = {
+            'security': 'bi-shield-lock',
+            'config': 'bi-gear',
+            'hr': 'bi-people',
+            'indicators': 'bi-graph-up',
+            'budget': 'bi-calculator',
+            'new-students': 'bi-person-plus',
+            'follow-ups': 'bi-clipboard-check',
+            'early-alerts': 'bi-exclamation-triangle',
+            'procedures': 'bi-diagram-3',
+            'library': 'bi-book',
+            'training': 'bi-mortarboard',
+            'teacher-eval': 'bi-star',
+            'services': 'bi-bus-front',
+            'tte': 'bi-chat-heart',
+            'suppliers': 'bi-truck',
+            'general-tools': 'bi-tools',
+            'attendance': 'bi-check2-square',
+            'my-space': 'bi-house',
+            'profile': 'bi-person-circle'
+        };
+
+        let allUserPermissions = [];
+        let selectedShortcuts = new Set();
+        let shortcutsTabInitialized = false;
+
+        // Inicializar pestaña cuando se muestra por primera vez
+        document.addEventListener('DOMContentLoaded', function() {
+            const shortcutsTab = document.getElementById('shortcuts-tab');
+            if (shortcutsTab) {
+                shortcutsTab.addEventListener('shown.bs.tab', async function() {
+                    if (!shortcutsTabInitialized) {
+                        await inicializarPestañaAccesos();
+                        shortcutsTabInitialized = true;
+                    }
+                });
+            }
+
+            // Botón limpiar
+            const btnClear = document.getElementById('btn-clear-shortcuts');
+            if (btnClear) {
+                btnClear.addEventListener('click', limpiarTodosLosAccesos);
+            }
+        });
+
+        /**
+         * Inicializar pestaña: cargar permisos del usuario y sus accesos ya guardados
+         */
+        async function inicializarPestañaAccesos() {
+            try {
+                // 1. Leer permisos del cache del sidebar
+                const cached = sessionStorage.getItem('schoolnet_sidebar_permissions');
+                if (!cached) {
+                    document.getElementById('shortcuts-container').innerHTML = 
+                        '<div class="alert alert-warning">No se pudieron cargar los permisos. Recarga la página.</div>';
+                    return;
+                }
+
+                const parsed = JSON.parse(cached);
+                if (!parsed.data || !parsed.data.modules) {
+                    document.getElementById('shortcuts-container').innerHTML = 
+                        '<div class="alert alert-warning">No se encontraron permisos asignados.</div>';
+                    return;
+                }
+
+                // 2. Aplanar permisos en una lista, filtrando los que tienen url_path
+                allUserPermissions = [];
+                Object.entries(parsed.data.modules).forEach(([moduleId, perms]) => {
+                    perms.forEach(p => {
+                        if (p.url_path) {
+                            allUserPermissions.push({
+                                permission_id: p.permission_id,
+                                name: p.name,
+                                url_path: p.url_path,
+                                module_id: moduleId,
+                                is_universal: p.is_universal || false
+                            });
+                        }
+                    });
+                });
+
+                if (allUserPermissions.length === 0) {
+                    document.getElementById('shortcuts-container').innerHTML = 
+                        '<div class="alert alert-info">No tienes permisos con páginas accesibles.</div>';
+                    return;
+                }
+
+                // 3. Cargar accesos ya guardados del usuario
+                const saved = await supabaseRequest(
+                    `/user_dashboard_shortcuts?select=permission_id&user_id=eq.${currentUser.user_id}`
+                );
+                selectedShortcuts = new Set((saved || []).map(s => s.permission_id));
+
+                // 4. Renderizar
+                renderizarPermisos();
+                actualizarContador();
+
+            } catch (error) {
+                console.error('❌ Error inicializando accesos rápidos:', error);
+                document.getElementById('shortcuts-container').innerHTML = 
+                    '<div class="alert alert-danger">Error al cargar accesos rápidos.</div>';
+            }
+        }
+
+        /**
+         * Renderizar lista de permisos agrupada por módulo
+         */
+        function renderizarPermisos() {
+            const container = document.getElementById('shortcuts-container');
+
+            // Agrupar por módulo
+            const grupos = {};
+            allUserPermissions.forEach(p => {
+                if (!grupos[p.module_id]) grupos[p.module_id] = [];
+                grupos[p.module_id].push(p);
+            });
+
+            // Ordenar módulos alfabéticamente por nombre visible
+            const modulosOrdenados = Object.keys(grupos).sort();
+
+            let html = '';
+            modulosOrdenados.forEach(moduleId => {
+                const icon = MODULE_ICONS_MAP[moduleId] || 'bi-folder';
+                const moduleLabel = moduleId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                html += `
+                    <div class="mb-3 border rounded p-3">
+                        <h6 class="mb-3 text-muted">
+                            <i class="bi ${icon} me-2"></i>${moduleLabel}
+                        </h6>
+                        <div class="row g-2">
+                `;
+
+                grupos[moduleId].forEach(p => {
+                    const checked = selectedShortcuts.has(p.permission_id) ? 'checked' : '';
+                    html += `
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input shortcut-checkbox" 
+                                       type="checkbox" 
+                                       value="${p.permission_id}"
+                                       id="shortcut-${p.permission_id}"
+                                       ${checked}>
+                                <label class="form-check-label" for="shortcut-${p.permission_id}">
+                                    ${p.name}
+                                </label>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div></div>';
+            });
+
+            container.innerHTML = html;
+
+            // Attach listeners
+            container.querySelectorAll('.shortcut-checkbox').forEach(cb => {
+                cb.addEventListener('change', manejarCambioAcceso);
+            });
+        }
+
+        /**
+         * Manejar check/uncheck de un acceso
+         */
+        async function manejarCambioAcceso(e) {
+            const permissionId = e.target.value;
+            const checkbox = e.target;
+
+            if (checkbox.checked) {
+                // Validar límite
+                if (selectedShortcuts.size >= MAX_SHORTCUTS) {
+                    checkbox.checked = false;
+                    showMessage(`Solo puedes seleccionar hasta ${MAX_SHORTCUTS} accesos`, 'warning');
+                    return;
+                }
+
+                // Guardar en BD
+                try {
+                    checkbox.disabled = true;
+                    await supabaseRequest('/user_dashboard_shortcuts', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            user_id: currentUser.user_id,
+                            permission_id: permissionId,
+                            shortcut_order: selectedShortcuts.size
+                        })
+                    });
+                    selectedShortcuts.add(permissionId);
+                    actualizarContador();
+                } catch (error) {
+                    console.error('❌ Error guardando acceso:', error);
+                    checkbox.checked = false;
+                    showMessage('Error al guardar el acceso', 'danger');
+                } finally {
+                    checkbox.disabled = false;
+                }
+
+            } else {
+                // Eliminar de BD
+                try {
+                    checkbox.disabled = true;
+                    await supabaseRequest(
+                        `/user_dashboard_shortcuts?user_id=eq.${currentUser.user_id}&permission_id=eq.${permissionId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedShortcuts.delete(permissionId);
+                    actualizarContador();
+                } catch (error) {
+                    console.error('❌ Error eliminando acceso:', error);
+                    checkbox.checked = true;
+                    showMessage('Error al eliminar el acceso', 'danger');
+                } finally {
+                    checkbox.disabled = false;
+                }
+            }
+        }
+
+        /**
+         * Actualizar contador visual
+         */
+        function actualizarContador() {
+            const counter = document.getElementById('shortcuts-counter');
+            const count = selectedShortcuts.size;
+            counter.textContent = `${count} de ${MAX_SHORTCUTS} seleccionados`;
+
+            if (count === 0) {
+                counter.className = 'badge bg-secondary';
+            } else if (count >= MAX_SHORTCUTS) {
+                counter.className = 'badge bg-warning text-dark';
+            } else {
+                counter.className = 'badge bg-primary';
+            }
+        }
+
+        /**
+         * Limpiar todos los accesos
+         */
+        async function limpiarTodosLosAccesos() {
+            if (selectedShortcuts.size === 0) return;
+            if (!confirm('¿Eliminar todos tus accesos rápidos? Se mostrarán los 4 predeterminados.')) return;
+
+            try {
+                await supabaseRequest(
+                    `/user_dashboard_shortcuts?user_id=eq.${currentUser.user_id}`,
+                    { method: 'DELETE' }
+                );
+                selectedShortcuts.clear();
+                document.querySelectorAll('.shortcut-checkbox').forEach(cb => {
+                    cb.checked = false;
+                });
+                actualizarContador();
+                showMessage('Accesos rápidos eliminados', 'success');
+            } catch (error) {
+                console.error('❌ Error limpiando accesos:', error);
+                showMessage('Error al eliminar los accesos', 'danger');
+            }
         }
 
         // ==========================================
