@@ -124,6 +124,39 @@ function renderPageVersion() {
 
 
 // ==========================================
+// LIMPIEZA DE BREADCRUMBS LEGACY
+// ==========================================
+// Los index.html de cada módulo fueron eliminados tras la migración al
+// menú lateral. El segundo nivel del breadcrumb (p.ej. "Talento Humano")
+// apuntaba a index.html y ahora cae al dashboard. Como todas las páginas
+// del sistema son de máximo 2 niveles (Dashboard → Módulo → Función),
+// eliminamos el item intermedio globalmente sin tocar las 200+ páginas.
+
+// Inyectar CSS inmediatamente para evitar flash visual
+(function injectBreadcrumbCleanupStyle() {
+    if (document.getElementById('schoolnet-breadcrumb-cleanup-style')) return;
+    const style = document.createElement('style');
+    style.id = 'schoolnet-breadcrumb-cleanup-style';
+    style.textContent = `
+        .breadcrumb > .breadcrumb-item:nth-child(2):not(.active) {
+            display: none !important;
+        }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+})();
+
+// Remover el nodo del DOM después del render
+function cleanupLegacyBreadcrumbs() {
+    document.querySelectorAll('.breadcrumb').forEach(bc => {
+        const items = bc.querySelectorAll('.breadcrumb-item');
+        if (items.length >= 3 && !items[1].classList.contains('active')) {
+            items[1].remove();
+        }
+    });
+}
+
+
+// ==========================================
 // CONFIGURACIÓN DE SUPABASE UNIFICADA
 // ==========================================
 
@@ -2004,6 +2037,9 @@ function injectUserNavbar() {
     
     // Inyectar badge de versión de página (debe ir DESPUÉS de crear el navbar)
     renderPageVersion();
+    
+    // Eliminar el segundo nivel de breadcrumbs (módulo) que apuntaba a index.html obsoletos
+    cleanupLegacyBreadcrumbs();
     
     // --- BOTÓN FLOTANTE DE TICKETS (auto-inyectado) ---
     // Remover botón flotante viejo de bugs si existe en la página
