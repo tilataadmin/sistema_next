@@ -846,6 +846,7 @@ if (document.readyState === 'loading') {
 // Exponer funciones globalmente
 window.clearSidebarCache = clearSidebarCache;
 window.injectSidebar = injectSidebar;
+window.MODULE_ITEM_ORDER = MODULE_ITEM_ORDER;
 
 // ==========================================
 // 8. ACTUALIZACIÓN AUTOMÁTICA DE BREADCRUMBS
