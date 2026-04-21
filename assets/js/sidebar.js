@@ -316,7 +316,7 @@ async function loadSidebarPermissions() {
 
         // Traer todos los permisos activos con su módulo y URL
         const allPermissions = await supabaseRequest(
-            '/permissions?select=permission_name,permission_module,url_path,is_universal&permission_status=eq.active'
+            '/permissions?select=permission_id,permission_name,permission_module,url_path,is_universal&permission_status=eq.active'
         );
 
         let userPermissionNames = [];
@@ -353,6 +353,7 @@ async function loadSidebarPermissions() {
             const mod = p.permission_module;
             if (!moduleMap[mod]) moduleMap[mod] = [];
             moduleMap[mod].push({
+                permission_id: p.permission_id,
                 name: p.permission_name,
                 url: p.url_path || null,
                 universal: p.is_universal || false
