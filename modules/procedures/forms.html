@@ -183,6 +183,26 @@
             font-family: monospace;
         }
 
+        .option-editor {
+            background: #f3effa;
+            border: 1px solid var(--secondary-color);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .option-editor-title {
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .option-value-locked {
+            background: #e2e8f0 !important;
+            cursor: not-allowed;
+        }
+
         .empty-state {
             text-align: center;
             padding: 3rem 2rem;
@@ -633,6 +653,7 @@
         let currentFields = [];
         let editingFieldIndex = -1;
         let tempOptions = [];
+        let editingOptionIndex = -1; // -1 = editor cerrado; -2 = creando nueva; >=0 = editando esa posición
         let allWorkers = [];
         let selectedAccessWorkers = [];
         let formDescriptionQuill = null;
@@ -1260,6 +1281,7 @@
         function openFieldModal(index = -1) {
             editingFieldIndex = index;
             tempOptions = [];
+            editingOptionIndex = -1;
             
             if (index >= 0) {
                 const field = currentFields[index];
@@ -1471,12 +1493,17 @@
                 fieldData.min_value = document.getElementById('minValue')?.value || null;
                 fieldData.max_value = document.getElementById('maxValue')?.value || null;
             } else if (fieldType === 'select' || fieldType === 'radio') {
+                if (editingOptionIndex !== -1) {
+                    alert('Tienes una opción sin guardar. Guarda o cancela antes de continuar.');
+                    return;
+                }
                 if (tempOptions.length === 0) {
                     alert('Debes agregar al menos una opción');
                     return;
                 }
                 fieldData.options = [...tempOptions];
-            } else if (fieldType === 'checkbox') {
+            }
+            else if (fieldType === 'checkbox') {
                 const checkboxText = document.getElementById('checkboxText')?.value.trim();
                 if (!checkboxText) {
                     alert('Debes ingresar el texto de la casilla');
@@ -1602,45 +1629,156 @@
         // ==========================================
         
         function addOption() {
-            const label = prompt('Nombre de la opción:');
-            if (!label) return;
-            
-            const value = generateFieldName(label);
-            tempOptions.push({ label, value });
+            editingOptionIndex = -2; // modo creación
+            renderOptionsList();
+        }
+
+        function editOption(index) {
+            editingOptionIndex = index;
+            renderOptionsList();
+        }
+
+        function cancelOptionEdit() {
+            editingOptionIndex = -1;
+            renderOptionsList();
+        }
+
+        function regenerateOptionValue() {
+            const labelInput = document.getElementById('optionEditorLabel');
+            const valueInput = document.getElementById('optionEditorValue');
+            if (labelInput && valueInput && !valueInput.disabled) {
+                valueInput.value = generateFieldName(labelInput.value);
+            }
+        }
+
+        function saveOptionEdit() {
+            const label = document.getElementById('optionEditorLabel').value.trim();
+            const value = document.getElementById('optionEditorValue').value.trim();
+
+            if (!label) {
+                alert('El nombre de la opción es obligatorio');
+                return;
+            }
+            if (!value) {
+                alert('El valor interno de la opción es obligatorio');
+                return;
+            }
+
+            // Validar que el value no esté duplicado (ignorando la opción que se está editando)
+            const duplicate = tempOptions.some((opt, idx) => {
+                if (editingOptionIndex >= 0 && idx === editingOptionIndex) return false;
+                return opt.value === value;
+            });
+            if (duplicate) {
+                alert('Ya existe otra opción con ese valor interno. Usa uno distinto.');
+                return;
+            }
+
+            if (editingOptionIndex === -2) {
+                // Nueva
+                tempOptions.push({ label, value });
+            } else if (editingOptionIndex >= 0) {
+                // Editando existente: preservar option_id si lo tenía
+                const existing = tempOptions[editingOptionIndex];
+                tempOptions[editingOptionIndex] = {
+                    ...existing,
+                    label,
+                    value // si la opción ya estaba guardada, el input estaba disabled y value === existing.value, así que no cambia
+                };
+            }
+
+            editingOptionIndex = -1;
             renderOptionsList();
         }
         
         function renderOptionsList() {
             const container = document.getElementById('optionsList');
-            
-            if (tempOptions.length === 0) {
-                container.innerHTML = `
+            let html = '';
+
+            // Editor inline (si está activo)
+            if (editingOptionIndex !== -1) {
+                const isNew = editingOptionIndex === -2;
+                const opt = isNew ? { label: '', value: '' } : tempOptions[editingOptionIndex];
+                const isExistingSaved = !isNew && opt.option_id; // ya guardada en BD
+                const valueLockedAttr = isExistingSaved ? 'disabled' : '';
+                const valueLockedClass = isExistingSaved ? 'option-value-locked' : '';
+                const lockIcon = isExistingSaved
+                    ? '<i class="bi bi-lock-fill me-1" title="El valor interno no se puede modificar en opciones existentes"></i>'
+                    : '';
+                const lockHelp = isExistingSaved
+                    ? '<small class="text-muted d-block mt-1"><i class="bi bi-info-circle me-1"></i>El valor interno está bloqueado para proteger la lógica condicional y las respuestas ya guardadas. Puedes cambiar el nombre libremente.</small>'
+                    : '<small class="text-muted d-block mt-1">Se genera automático desde el nombre. Puedes editarlo si necesitas un valor específico.</small>';
+
+                html += `
+                    <div class="option-editor">
+                        <div class="option-editor-title">
+                            <i class="bi bi-${isNew ? 'plus-circle' : 'pencil'} me-1"></i>
+                            ${isNew ? 'Nueva opción' : 'Editar opción'}
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label mb-1 small">Nombre (lo que ve el usuario) <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control form-control-sm" id="optionEditorLabel"
+                                   value="${escapeHtml(opt.label)}"
+                                   oninput="if(!document.getElementById('optionEditorValue').disabled && !document.getElementById('optionEditorValue').dataset.manualEdit) document.getElementById('optionEditorValue').value = generateFieldName(this.value)">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label mb-1 small">${lockIcon}Valor interno <span class="text-danger">*</span></label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control ${valueLockedClass}" id="optionEditorValue"
+                                       value="${escapeHtml(opt.value)}" ${valueLockedAttr}
+                                       oninput="this.dataset.manualEdit='true'">
+                                ${isExistingSaved ? '' : '<button type="button" class="btn btn-outline-secondary" onclick="regenerateOptionValue()" title="Regenerar desde el nombre"><i class="bi bi-arrow-repeat"></i></button>'}
+                            </div>
+                            ${lockHelp}
+                        </div>
+                        <div class="d-flex gap-2 justify-content-end mt-3">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="cancelOptionEdit()">Cancelar</button>
+                            <button type="button" class="btn btn-sm btn-primary" onclick="saveOptionEdit()">
+                                <i class="bi bi-check-lg me-1"></i>${isNew ? 'Agregar' : 'Guardar'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Lista de opciones
+            if (tempOptions.length === 0 && editingOptionIndex === -1) {
+                html += `
                     <div class="text-center text-muted py-3">
                         <p class="mb-0">No hay opciones agregadas</p>
                     </div>
                 `;
-                return;
+            } else {
+                html += tempOptions.map((option, index) => {
+                    const isBeingEdited = editingOptionIndex === index;
+                    if (isBeingEdited) return ''; // la opción en edición no se muestra en la lista
+                    const disabledActions = editingOptionIndex !== -1; // si el editor está abierto, deshabilitar acciones
+                    return `
+                        <div class="option-list-item">
+                            <div>
+                                <div class="option-label">${escapeHtml(option.label)}</div>
+                                <div class="option-value">${escapeHtml(option.value)}${option.option_id ? ' <i class="bi bi-lock-fill ms-1" title="Valor protegido"></i>' : ''}</div>
+                            </div>
+                            <div class="d-flex gap-1">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveOption(${index}, 'up')" ${index === 0 || disabledActions ? 'disabled' : ''}>
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveOption(${index}, 'down')" ${index === tempOptions.length - 1 || disabledActions ? 'disabled' : ''}>
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="editOption(${index})" ${disabledActions ? 'disabled' : ''} title="Editar">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOption(${index})" ${disabledActions ? 'disabled' : ''}>
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
             }
-            
-            container.innerHTML = tempOptions.map((option, index) => `
-                <div class="option-list-item">
-                    <div>
-                        <div class="option-label">${escapeHtml(option.label)}</div>
-                        <div class="option-value">${escapeHtml(option.value)}</div>
-                    </div>
-                    <div class="d-flex gap-1">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveOption(${index}, 'up')" ${index === 0 ? 'disabled' : ''}>
-                            <i class="bi bi-arrow-up"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveOption(${index}, 'down')" ${index === tempOptions.length - 1 ? 'disabled' : ''}>
-                            <i class="bi bi-arrow-down"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOption(${index})">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+
+            container.innerHTML = html;
         }
         
         function moveOption(index, direction) {
