@@ -1787,6 +1787,38 @@
             return formatDate(dateString);
         }
 
+        /**
+         * Calcula los días hábiles (sin sábados ni domingos) entre hoy y una fecha dada.
+         * Retorna número negativo si la fecha ya pasó, 0 si es hoy, positivo si es futura.
+         * NO considera festivos colombianos (consistente con calcularFechaLimiteProcedimiento).
+         */
+        function diasHabilesHastaFecha(dueDateString) {
+            if (!dueDateString) return Infinity;
+            
+            const hoyStr = getCurrentDateColombia();
+            const [hy, hm, hd] = hoyStr.split('-').map(Number);
+            const hoy = new Date(hy, hm - 1, hd);
+            
+            const [fy, fm, fd] = dueDateString.split('T')[0].split('-').map(Number);
+            const fechaObjetivo = new Date(fy, fm - 1, fd);
+            
+            if (fechaObjetivo.getTime() === hoy.getTime()) return 0;
+            
+            const esFuturo = fechaObjetivo > hoy;
+            const inicio = esFuturo ? hoy : fechaObjetivo;
+            const fin = esFuturo ? fechaObjetivo : hoy;
+            
+            let dias = 0;
+            const cursor = new Date(inicio);
+            while (cursor < fin) {
+                cursor.setDate(cursor.getDate() + 1);
+                const diaSemana = cursor.getDay();
+                if (diaSemana !== 0 && diaSemana !== 6) dias++;
+            }
+            
+            return esFuturo ? dias : -dias;
+        }
+
         // ==========================================
         // SOPORTE PARA INTEGRACIÓN CON PROYECTOS
         // ==========================================
@@ -2430,6 +2462,12 @@
         // FILTROS
         // ==========================================
         function aplicarFiltros() {
+            // Si estamos en vista matriz, solo re-renderizar la matriz
+            if (vistaActual === 'matriz') {
+                renderizarMatriz();
+                return;
+            }
+            
             const statusFilter = document.getElementById('filter-status').value;
             const priorityFilter = document.getElementById('filter-priority').value;
             const moduleFilter = document.getElementById('filter-module').value;
@@ -4975,6 +5013,127 @@
         window.cambiarVista = cambiarVista;
 
         // ==========================================
+        // MATRIZ DE COVEY - CLASIFICACIÓN Y RENDER
+        // ==========================================
+        
+        /**
+         * Determina el cuadrante de una tarea.
+         * Importante = task_priority === 'Alta'
+         * Urgente = vencida, vence hoy, o en ≤ 2 días hábiles
+         * Retorna 'q1', 'q2', 'q3' o 'q4'
+         */
+        function clasificarCuadrante(tarea) {
+            const importante = tarea.task_priority === 'Alta';
+            const diasHabiles = diasHabilesHastaFecha(tarea.due_date);
+            const urgente = diasHabiles <= 2;
+            
+            if (importante && urgente) return 'q1';
+            if (importante && !urgente) return 'q2';
+            if (!importante && urgente) return 'q3';
+            return 'q4';
+        }
+        
+        /**
+         * Genera el HTML de una tarjeta compacta para la matriz.
+         * Clic en la tarjeta abre el modal de detalle.
+         */
+        function renderTarjetaMatriz(tarea) {
+            const descripcion = escapeHtml(stripHtml(tarea.task_description) || 'Sin descripción');
+            const diasHabiles = diasHabilesHastaFecha(tarea.due_date);
+            
+            let fechaTexto = '';
+            let fechaClase = '';
+            if (!tarea.due_date) {
+                fechaTexto = 'Sin fecha';
+            } else if (diasHabiles < 0) {
+                fechaTexto = `Vencida hace ${Math.abs(diasHabiles)} día${Math.abs(diasHabiles) !== 1 ? 's' : ''} hábil${Math.abs(diasHabiles) !== 1 ? 'es' : ''}`;
+                fechaClase = 'overdue-text';
+            } else if (diasHabiles === 0) {
+                fechaTexto = 'Vence hoy';
+                fechaClase = 'overdue-text';
+            } else if (diasHabiles === 1) {
+                fechaTexto = 'Vence mañana';
+                fechaClase = 'overdue-text';
+            } else {
+                fechaTexto = `En ${diasHabiles} días hábiles`;
+            }
+            
+            const iconoEstado = tarea.task_state === 'En Progreso' 
+                ? '<i class="bi bi-play-circle-fill text-warning me-1" title="En Progreso"></i>' 
+                : '<i class="bi bi-circle text-secondary me-1" title="Asignada"></i>';
+            
+            return `
+                <div class="matrix-task-card" onclick="verDetalle(${tarea.task_id})" title="Clic para ver detalle">
+                    <div class="matrix-task-description">
+                        ${iconoEstado}${descripcion}
+                    </div>
+                    <div class="matrix-task-meta">
+                        <span><i class="bi bi-calendar-event me-1"></i>${formatDateSafe(tarea.due_date)}</span>
+                        <span class="${fechaClase}">${fechaTexto}</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        /**
+         * Filtra, clasifica y renderiza las tareas en los 4 cuadrantes.
+         * Solo incluye tareas donde el usuario es responsable principal y están pendientes.
+         * Respeta filtros compatibles: prioridad, módulo, categoría, búsqueda.
+         */
+        function renderizarMatriz() {
+            // 1. Filtrar: solo mías como responsable principal + pendientes
+            let tareasMatriz = tareasCache.filter(t => 
+                t.assigned_to_mail === currentUser.user_mail &&
+                (t.task_state === 'Asignada' || t.task_state === 'En Progreso')
+            );
+            
+            // 2. Aplicar filtros compatibles con la matriz
+            const priorityFilter = document.getElementById('filter-priority').value;
+            const moduleFilter = document.getElementById('filter-module').value;
+            const categoryFilter = document.getElementById('filter-category').value;
+            const searchFilter = document.getElementById('filter-search').value.toLowerCase();
+            
+            tareasMatriz = tareasMatriz.filter(t => {
+                const matchPriority = !priorityFilter || t.task_priority === priorityFilter;
+                const matchModule = !moduleFilter || t.module_type === moduleFilter;
+                const matchCategory = !categoryFilter || t.category_id === categoryFilter;
+                const matchSearch = !searchFilter || t.task_description?.toLowerCase().includes(searchFilter);
+                return matchPriority && matchModule && matchCategory && matchSearch;
+            });
+            
+            // 3. Clasificar
+            const cuadrantes = { q1: [], q2: [], q3: [], q4: [] };
+            tareasMatriz.forEach(tarea => {
+                const q = clasificarCuadrante(tarea);
+                cuadrantes[q].push(tarea);
+            });
+            
+            // 4. Ordenar cada cuadrante por fecha límite (más próxima primero)
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                cuadrantes[q].sort((a, b) => {
+                    if (!a.due_date) return 1;
+                    if (!b.due_date) return -1;
+                    return a.due_date.localeCompare(b.due_date);
+                });
+            });
+            
+            // 5. Renderizar cada celda
+            ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+                const tareasCuadrante = cuadrantes[q];
+                document.getElementById(`count-${q}`).textContent = tareasCuadrante.length;
+                
+                const cellBody = document.getElementById(`cell-${q}`);
+                if (tareasCuadrante.length === 0) {
+                    cellBody.innerHTML = '<div class="matrix-cell-empty">Sin tareas en este cuadrante</div>';
+                } else {
+                    cellBody.innerHTML = tareasCuadrante.map(renderTarjetaMatriz).join('');
+                }
+            });
+            
+            console.log(`📊 Matriz renderizada: Q1=${cuadrantes.q1.length}, Q2=${cuadrantes.q2.length}, Q3=${cuadrantes.q3.length}, Q4=${cuadrantes.q4.length}`);
+        }
+
+        // ==========================================
         // TOGGLE DE VISTA LISTA / MATRIZ
         // ==========================================
         function cambiarVista(nuevaVista) {
@@ -4993,13 +5152,13 @@
                 contenedorLista.style.display = 'none';
                 contenedorPaginacion.style.display = 'none';
                 contenedorMatriz.style.display = 'block';
-                // La lógica de render se agregará en el Paso 3
+                renderizarMatriz();
             } else {
                 btnMatriz.classList.remove('active');
                 btnLista.classList.add('active');
                 contenedorMatriz.style.display = 'none';
                 contenedorLista.style.display = '';
-                aplicarFiltros(); // re-renderiza la vista lista con paginación
+                aplicarFiltros();
             }
         }
         
