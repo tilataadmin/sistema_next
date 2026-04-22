@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.22.07.55">
+    <meta name="page-version" content="26.04.22.12.35">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1915,7 +1915,8 @@
                 module: params.get('module'),
                 ref: params.get('ref'),
                 action: params.get('action'),
-                projectName: params.get('name')
+                projectName: params.get('name'),
+                taskId: params.get('taskId')
             };
         }
 
@@ -2003,6 +2004,11 @@
                 // Vista predeterminada: Matriz de Covey (si no hay navegación contextual)
                 if (!hayNavegacionContextual) {
                     cambiarVista('matriz');
+                }
+                
+                // Si viene taskId en URL, abrir directamente el modal de esa tarea
+                if (urlParams.taskId) {
+                    await abrirTareaDesdeURL(urlParams.taskId);
                 }
                 
                 ocultarLoading();
@@ -2158,6 +2164,52 @@
             const esResponsable = tarea.assigned_to_mail === currentUser.user_mail;
             const esColaborador = misColaboraciones.includes(tarea.task_id);
             return esCreador || esResponsable || esColaborador;
+        }
+
+        async function abrirTareaDesdeURL(taskId) {
+            try {
+                // 1. Buscar en cache primero
+                let tarea = tareasCache.find(t => t.task_id == taskId);
+                
+                // 2. Si no está en cache (p.ej. alcance filtra, o el usuario no es implicado pero tiene "Ver todas"), fetch directo
+                if (!tarea) {
+                    console.log(`🔍 Tarea ${taskId} no está en cache, haciendo fetch directo...`);
+                    const studentRelation = SUPABASE_CONFIG.environment === 'development' 
+                        ? 'students!fk_tasks_student' 
+                        : 'students';
+                    const data = await supabaseRequest(
+                        `/tasks?select=*,${studentRelation}(student_first_name,student_last_name_1,student_last_name_2,courses(course_name)),indicator_categories(category_id,category_name,category_icon,category_color)&task_id=eq.${taskId}`
+                    );
+                    
+                    if (!data || data.length === 0) {
+                        showMessage('La tarea no existe o no tienes acceso a ella', 'warning');
+                        return;
+                    }
+                    
+                    tarea = data[0];
+                    // Agregarla a cache para que editarProgreso/verDetalle la encuentren
+                    tareasCache.push(tarea);
+                }
+                
+                // 3. Decidir modal según rol del usuario en la tarea
+                //    (mismo criterio que usan los botones en renderizarTareas)
+                const esCreador = tarea.created_by === currentUser.user_id;
+                const esResponsable = tarea.assigned_to_mail === currentUser.user_mail;
+                const esColaborador = misColaboraciones.includes(tarea.task_id);
+                const esObservador = esColaborador && misRolesColaboracion[tarea.task_id] === 'Observador';
+                const puedeEditar = esCreador || esResponsable || (esColaborador && !esObservador);
+                const tareaActiva = tarea.task_state !== 'Terminada' && tarea.task_state !== 'Cancelada';
+                
+                if (puedeEditar && tareaActiva) {
+                    editarProgreso(parseInt(taskId));
+                } else {
+                    verDetalle(parseInt(taskId));
+                }
+                
+            } catch (error) {
+                console.error('❌ Error abriendo tarea desde URL:', error);
+                showMessage('Error al abrir la tarea: ' + error.message, 'danger');
+            }
         }
 
         async function cargarMisColaboraciones() {
