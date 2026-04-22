@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.22.13.50">
+    <meta name="page-version" content="26.04.22.14.35">
     
     <title>Formularios</title>
     
@@ -227,6 +227,25 @@
         .alert-danger { background: rgba(220,38,38,0.1); color: #dc2626; border-left: 4px solid #dc2626; }
         .alert-warning { background: rgba(245,158,11,0.1); color: #d97706; border-left: 4px solid #d97706; }
         .alert-info { background: rgba(2,132,199,0.1); color: #0284c7; border-left: 4px solid #0284c7; }
+        
+        /* Banner del formulario */
+        .banner-upload-area {
+            border: 2px dashed #cbd5e1; border-radius: 8px; padding: 1.5rem;
+            text-align: center; cursor: pointer; transition: all 0.2s;
+        }
+        .banner-upload-area:hover { border-color: var(--secondary-color); background: rgba(111, 66, 193, 0.05); }
+        .banner-preview-wrapper {
+            position: relative; width: 100%; border-radius: 8px; overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+        .banner-preview-wrapper img {
+            width: 100%; max-height: 200px; object-fit: cover; display: block;
+        }
+        .banner-remove-btn {
+            position: absolute; top: 8px; right: 8px; border-radius: 50%;
+            width: 32px; height: 32px; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
 
         @media (max-width: 768px) {
             .main-content { padding: 1rem; }
@@ -322,9 +341,31 @@
                             </div>
                         </div>
                         
+                        <div class="mb-4">
+                            <label class="form-label">Banner del formulario <small class="text-muted">(opcional)</small></label>
+                            
+                            <div id="bannerPreviewContainer" style="display: none;" class="mb-2">
+                                <div class="banner-preview-wrapper">
+                                    <img id="bannerPreviewImage" src="" alt="Banner">
+                                    <button type="button" class="btn btn-sm btn-danger banner-remove-btn" onclick="removeBanner()" title="Eliminar banner">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="banner-upload-area" id="bannerUploadArea" onclick="document.getElementById('bannerFileInput').click()">
+                                <i class="bi bi-cloud-upload fs-2 text-muted"></i>
+                                <p class="mb-1">Haz clic para seleccionar una imagen</p>
+                                <small class="text-muted">Recomendado: 1200 × 300 px · Máx 2 MB · JPG, PNG o WebP</small>
+                            </div>
+                            
+                            <input type="file" id="bannerFileInput" class="d-none" accept="image/jpeg,image/jpg,image/png,image/webp" onchange="handleBannerSelect(event)">
+                        </div>
+                        
                         <hr>
                         
                         <!-- Modo de Uso -->
+                        
                         <h6 class="mb-3"><i class="bi bi-diagram-3 me-2"></i>Modo de Uso</h6>
                         
                         <div class="mb-3">
@@ -577,6 +618,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../assets/js/config.js"></script>
     
     <script>
@@ -594,6 +636,11 @@
         let allWorkers = [];
         let selectedAccessWorkers = [];
         let formDescriptionQuill = null;
+        let storageClient = null;
+        let bannerFile = null;
+        let bannerMarkedForDeletion = false;
+        let currentBannerUrl = null;
+        let currentBannerPath = null;
         
         const formModalInstance = new bootstrap.Modal(document.getElementById('formModal'));
         const fieldModalInstance = new bootstrap.Modal(document.getElementById('fieldModal'));
@@ -611,8 +658,11 @@
                 return;
             }
             
-            currentUser = session.user;
+           currentUser = session.user;
             console.log('👤 Usuario:', currentUser.user_display_name || currentUser.user_name);
+            
+            // Cliente Supabase para Storage (banner)
+            storageClient = supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
             
             // Verificar super admin
             isSuperAdmin = await checkUserIsSuperAdmin(currentUser.user_id);
@@ -792,6 +842,7 @@
                 document.getElementById('formModalTitle').textContent = 'Nuevo Formulario';
                 document.getElementById('formEditorForm').reset();
                 if (formDescriptionQuill) formDescriptionQuill.setContents([]);
+                resetBannerState();
                 document.getElementById('statusActive').checked = true;
                 document.getElementById('modeProcedure').checked = true;
                 document.getElementById('standaloneOptionsSection').style.display = 'none';
@@ -820,6 +871,18 @@
                 document.getElementById('formName').value = form.form_name;
                 if (formDescriptionQuill) {
                     formDescriptionQuill.root.innerHTML = form.form_description || '';
+                }
+                
+                // Cargar banner existente
+                currentBannerUrl = form.form_banner_url || null;
+                currentBannerPath = form.form_banner_path || null;
+                bannerFile = null;
+                bannerMarkedForDeletion = false;
+                document.getElementById('bannerFileInput').value = '';
+                if (currentBannerUrl) {
+                    showBannerPreview(currentBannerUrl);
+                } else {
+                    hideBannerPreview();
                 }
                 
                 // Estado (form_status varchar)
@@ -975,6 +1038,40 @@
                     await supabaseRequest('/form_access_workers', {
                         method: 'POST',
                         body: JSON.stringify(accessPayload)
+                    });
+                }
+                
+                // ===== BANNER =====
+                let bannerChanges = null;
+                
+                if (bannerFile) {
+                    // Subir banner nuevo
+                    const uploadResult = await uploadBanner(bannerFile, formId);
+                    if (uploadResult.success) {
+                        // Si había uno previo, eliminarlo
+                        if (currentBannerPath) {
+                            await deleteBanner(currentBannerPath);
+                        }
+                        bannerChanges = {
+                            form_banner_url: uploadResult.publicUrl,
+                            form_banner_path: uploadResult.filePath
+                        };
+                    } else {
+                        showAlert('Formulario guardado, pero hubo un error subiendo el banner: ' + uploadResult.error, 'warning');
+                    }
+                } else if (bannerMarkedForDeletion && currentBannerPath) {
+                    // Eliminar banner existente
+                    await deleteBanner(currentBannerPath);
+                    bannerChanges = {
+                        form_banner_url: null,
+                        form_banner_path: null
+                    };
+                }
+                
+                if (bannerChanges) {
+                    await supabaseRequest(`/forms?form_id=eq.${formId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(bannerChanges)
                     });
                 }
                 
@@ -1761,8 +1858,17 @@
                 // Eliminar acceso de workers
                 await supabaseRequest(`/form_access_workers?form_id=eq.${formId}`, { method: 'DELETE' });
                 
+                // Recuperar path del banner antes de borrar el registro
+                const formToDelete = allForms.find(f => f.form_id == formId);
+                const bannerPathToDelete = formToDelete?.form_banner_path || null;
+                
                 // Eliminar formulario
                 await supabaseRequest(`/forms?form_id=eq.${formId}`, { method: 'DELETE' });
+                
+                // Eliminar banner del Storage (si existía)
+                if (bannerPathToDelete) {
+                    await deleteBanner(bannerPathToDelete);
+                }
                 
                 showAlert('Formulario eliminado exitosamente', 'success');
                 await loadForms();
@@ -1823,6 +1929,110 @@
             const div = document.createElement('div');
             div.innerHTML = html;
             return (div.textContent || div.innerText || '').trim();
+        }
+        
+        // ==========================================
+        // BANNER DEL FORMULARIO
+        // ==========================================
+        
+        function resetBannerState() {
+            bannerFile = null;
+            bannerMarkedForDeletion = false;
+            currentBannerUrl = null;
+            currentBannerPath = null;
+            hideBannerPreview();
+            const input = document.getElementById('bannerFileInput');
+            if (input) input.value = '';
+        }
+        
+        function handleBannerSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+            if (!allowedTypes.includes(file.type)) {
+                showAlert('Tipo de archivo no permitido. Usa JPG, PNG o WebP.', 'warning');
+                event.target.value = '';
+                return;
+            }
+            
+            const maxSize = 2 * 1024 * 1024; // 2 MB
+            if (file.size > maxSize) {
+                showAlert('La imagen excede los 2 MB permitidos.', 'warning');
+                event.target.value = '';
+                return;
+            }
+            
+            bannerFile = file;
+            bannerMarkedForDeletion = false;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => showBannerPreview(e.target.result);
+            reader.readAsDataURL(file);
+        }
+        
+        function removeBanner() {
+            bannerFile = null;
+            bannerMarkedForDeletion = true;
+            hideBannerPreview();
+            const input = document.getElementById('bannerFileInput');
+            if (input) input.value = '';
+        }
+        
+        function showBannerPreview(url) {
+            document.getElementById('bannerPreviewImage').src = url;
+            document.getElementById('bannerPreviewContainer').style.display = 'block';
+            document.getElementById('bannerUploadArea').style.display = 'none';
+        }
+        
+        function hideBannerPreview() {
+            document.getElementById('bannerPreviewContainer').style.display = 'none';
+            document.getElementById('bannerUploadArea').style.display = 'block';
+        }
+        
+        async function uploadBanner(file, formId) {
+            try {
+                const timestamp = Date.now();
+                const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                const fileName = `${timestamp}_${cleanName}`;
+                const filePath = `${formId}/${fileName}`;
+                
+                const { data, error } = await storageClient
+                    .storage
+                    .from('form-banners')
+                    .upload(filePath, file, { cacheControl: '3600', upsert: false });
+                
+                if (error) throw error;
+                
+                const { data: urlData } = storageClient
+                    .storage
+                    .from('form-banners')
+                    .getPublicUrl(filePath);
+                
+                return {
+                    success: true,
+                    filePath: filePath,
+                    publicUrl: urlData.publicUrl
+                };
+            } catch (error) {
+                console.error('❌ Error subiendo banner:', error);
+                return { success: false, error: error.message };
+            }
+        }
+        
+        async function deleteBanner(path) {
+            try {
+                const { error } = await storageClient
+                    .storage
+                    .from('form-banners')
+                    .remove([path]);
+                if (error) throw error;
+                console.log('🗑️ Banner eliminado del Storage:', path);
+                return true;
+            } catch (error) {
+                console.error('⚠️ Error eliminando banner (se continúa):', error);
+                return false;
+            }
         }
 
         // ==========================================
