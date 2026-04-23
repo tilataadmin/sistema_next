@@ -16,6 +16,7 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'new-students', name: 'Estudiantes Nuevos', icon: 'bi-person-plus', color: '#1D9E75' },
     { id: 'follow-ups', name: 'Seguimientos', icon: 'bi-clipboard-check', color: '#BA7517' },
     { id: 'early-alerts', name: 'Alertas Tempranas', icon: 'bi-exclamation-triangle', color: '#E24B4A' },
+    { id: 'alumni', name: 'Egresados', icon: 'bi-mortarboard-fill', color: '#5E4B8B' },
     { id: 'community', name: 'Personas', icon: 'bi-people', color: '#1D9E75' },
     // Personas y desarrollo
     { id: 'hr', name: 'Talento Humano', icon: 'bi-person-badge', color: '#D85A30' },
@@ -53,6 +54,15 @@ const MY_SPACE_SUBSECTIONS = [
 ];
 
 const MODULE_ITEM_ORDER = {
+    'alumni': [
+        'Ver directorio de egresados',
+        'Revisar cambios de egresados',
+        'Importar egresados desde Phidias',
+        'Importar egresados desde archivo',
+        'Configurar campos de egresados',
+        'Consultar reportes de egresados',
+        'Auditoría de consentimientos'
+    ],
     'new-students': [
         'Actividades',
         'Actores',
