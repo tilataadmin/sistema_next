@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.25.13.10">
+    <meta name="page-version" content="26.04.23.1.15">
     <title>Solicitud de Ejecución - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -147,6 +147,12 @@
         .badge-closed, .badge-pre-closed {
             background-color: #6c757d;
             color: white;
+        }
+        
+        .badge-cancelled {
+            background-color: #adb5bd;
+            color: white;
+            text-decoration: line-through;
         }
         
         .badge-scheduled {
@@ -1103,13 +1109,18 @@
                     <td class="text-center">${estadoBadge}</td>
                     <td class="text-center">
                         ${puedeEditar ? `
-                            <button class="btn btn-outline-warning btn-sm btn-editar-solicitud" 
+                            <button class="btn btn-outline-warning btn-sm btn-editar-solicitud me-1" 
                                     data-request-id="${solicitud.request_id}"
                                     title="Editar solicitud">
                                 <i class="bi bi-pencil"></i>
                             </button>
+                            <button class="btn btn-outline-danger btn-sm btn-cancelar-solicitud" 
+                                    data-request-id="${solicitud.request_id}"
+                                    title="Cancelar solicitud">
+                                <i class="bi bi-trash"></i>
+                            </button>
                         ` : `
-                            <span class="text-muted" title="Solo puede editar solicitudes pendientes">
+                            <span class="text-muted" title="Solo puede cancelar solicitudes pendientes">
                                 <i class="bi bi-lock"></i>
                             </span>
                         `}
@@ -1124,6 +1135,13 @@
                     });
                 }
                 
+                const botonCancelar = tr.querySelector('.btn-cancelar-solicitud');
+                if (botonCancelar) {
+                    botonCancelar.addEventListener('click', function() {
+                        const requestId = this.dataset.requestId;
+                        cancelarSolicitud(requestId);
+                    });
+                }                
                 fragment.appendChild(tr);
             });
             
@@ -1139,6 +1157,7 @@
                 'pending': { clase: 'badge-pending', texto: 'Pendiente' },
                 'approved': { clase: 'badge-approved', texto: 'Aprobada' },
                 'rejected': { clase: 'badge-rejected', texto: 'Rechazada' },
+                'cancelled': { clase: 'badge-cancelled', texto: 'Cancelada' },
                 'executed': { clase: 'badge-executed', texto: 'Ejecutada' },
                 'closed': { clase: 'badge-closed', texto: 'Cerrada' },
                 'pre-closed': { clase: 'badge-pre-closed', texto: 'Pre-cerrada' },
@@ -1490,13 +1509,13 @@
                 return;
             }
             
-            try {
-                // Actualizar solicitudes pendientes a rechazadas
+           try {
+                // Actualizar solicitudes pendientes a canceladas
                 const updateQuery = `execution_requests?recurrence_group_id=eq.${recurrenceGroupId}&request_status=eq.pending`;
                 await supabaseRequest('/' + updateQuery, {
                     method: 'PATCH',
                     body: JSON.stringify({
-                        request_status: 'rejected',
+                        request_status: 'cancelled',
                         updated_at: new Date().toISOString()
                     })
                 });
@@ -1879,6 +1898,133 @@
             }
         }
 
+        // ===== CANCELAR SOLICITUD =====
+        async function cancelarSolicitud(requestId) {
+            const solicitud = misSolicitudesData.find(s => s.request_id === requestId);
+
+            if (!solicitud) {
+                showMessage('No se encontró la solicitud', 'danger');
+                return;
+            }
+
+            if (solicitud.request_status !== 'pending') {
+                showMessage('Solo puede cancelar solicitudes en estado pendiente', 'warning');
+                return;
+            }
+
+            const valorFormateado = new Intl.NumberFormat('es-CO').format(solicitud.requested_value);
+            const mensajeConfirm = solicitud.is_recurring
+                ? `¿Cancelar esta solicitud recurrente del mes correspondiente por $${valorFormateado}?\n\nNota: esto cancela solo esta ocurrencia. Para cancelar todo el grupo de recurrencia, use el botón "Cancelar Solicitudes Pendientes" del modal de recurrencia.`
+                : `¿Cancelar la solicitud de ${escapeHtml(solicitud.item_name)} por $${valorFormateado}?\n\nEsta acción no se puede deshacer.`;
+
+            if (!confirm(mensajeConfirm)) {
+                return;
+            }
+
+            try {
+                const ahora = new Date();
+                const fechaBogota = new Date(ahora.toLocaleString("en-US", {timeZone: "America/Bogota"}));
+
+                // Actualizar estado a 'cancelled'
+                const updateQuery = `execution_requests?request_id=eq.${requestId}`;
+                await supabaseRequest('/' + updateQuery, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        request_status: 'cancelled',
+                        responded_at: fechaBogota.toISOString(),
+                        updated_at: fechaBogota.toISOString()
+                    })
+                });
+
+                // Notificar al autorizador
+                try {
+                    // Obtener email del autorizador desde la asignación
+                    const asignacionQuery = `budget_assignments?select=worker_email_legacy,budget_items(item_name)&assignment_id=eq.${solicitud.assignment_id}`;
+                    const asignacionData = await supabaseRequest('/' + asignacionQuery);
+
+                    if (asignacionData.length > 0 && asignacionData[0].worker_email_legacy) {
+                        const autorizadorEmail = asignacionData[0].worker_email_legacy;
+
+                        // Obtener datos del solicitante
+                        const workerQuery = `workers?select=worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_id=eq.${currentWorkerId}`;
+                        const workerData = await supabaseRequest('/' + workerQuery);
+                        const currentWorker = workerData[0] || {};
+
+                        await enviarNotificacionCancelacion({
+                            autorizador_email: autorizadorEmail,
+                            sub_item_name: solicitud.item_name,
+                            request_value: solicitud.requested_value,
+                            request_details: solicitud.request_details,
+                            is_recurring: solicitud.is_recurring
+                        }, currentWorker);
+                    }
+                } catch (e) {
+                    console.warn('Error notificando cancelación:', e);
+                }
+
+                showMessage('Solicitud cancelada correctamente', 'success');
+                await cargarMisSolicitudes(false);
+                renderizarMisSolicitudes();
+
+            } catch (error) {
+                console.error('Error cancelando solicitud:', error);
+                showMessage('Error al cancelar la solicitud: ' + error.message, 'danger');
+            }
+        }
+
+        async function enviarNotificacionCancelacion(datos, solicitante) {
+            try {
+                const valorFormateado = new Intl.NumberFormat('es-CO').format(datos.request_value);
+                const nombreSolicitante = construirNombreCompleto(solicitante);
+                const tipoSolicitud = datos.is_recurring ? 'recurrente (una ocurrencia)' : '';
+
+                const asunto = 'SchoolNet - Solicitud de ejecución cancelada por el solicitante';
+
+                const cuerpoHtml = `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                        <div style="background-color: #e2e3e5; border-left: 4px solid #6c757d; padding: 15px; margin-bottom: 20px;">
+                            <h2 style="color: #41464b; margin-top: 0; margin-bottom: 10px;">🚫 Solicitud Cancelada</h2>
+                            <p style="margin: 0; color: #41464b; font-weight: 500;">SchoolNet - Sistema de Gestión Educativa</p>
+                        </div>
+
+                        <div style="background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <p style="margin-top: 0;"><strong>${escapeHtml(nombreSolicitante)}</strong> ha cancelado una solicitud de ejecución presupuestal ${tipoSolicitud} que estaba pendiente de su autorización.</p>
+
+                            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #dee2e6;">
+                                <tr style="background-color: #f8f9fa;">
+                                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">Sub-ítem:</td>
+                                    <td style="padding: 12px; border: 1px solid #dee2e6;">${escapeHtml(datos.sub_item_name)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">Valor que estaba solicitado:</td>
+                                    <td style="padding: 12px; border: 1px solid #dee2e6; font-family: monospace;">$${valorFormateado}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">Solicitante:</td>
+                                    <td style="padding: 12px; border: 1px solid #dee2e6;">${escapeHtml(nombreSolicitante)} (${escapeHtml(solicitante.email || '')})</td>
+                                </tr>
+                            </table>
+
+                            <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; padding: 15px; margin: 20px 0;">
+                                <p style="margin: 0; color: #0c5460;">No se requiere ninguna acción de su parte. Este mensaje es solo informativo.</p>
+                            </div>
+                        </div>
+
+                        <hr style="margin: 30px 0; border: none; border-top: 1px solid #dee2e6;">
+                        <p style="color: #6c757d; font-size: 12px; margin: 0; text-align: center;">
+                            Este correo es generado automáticamente por SchoolNet. Por favor, no responder a este mensaje.<br>
+                            Colegio Tilata - Sistema de Gestión Educativa
+                        </p>
+                    </div>
+                `;
+
+                await sendNotification(datos.autorizador_email, asunto, cuerpoHtml, true);
+
+            } catch (error) {
+                console.error('Error enviando notificación de cancelación:', error);
+            }
+        }
+
         // ===== ACTUALIZAR SOLICITUD =====
         async function actualizarSolicitud() {
             try {
@@ -2006,6 +2152,8 @@
         window.formatText = formatText;
         window.formatTextEdit = formatTextEdit;
         window.verGrupoRecurrencia = verGrupoRecurrencia;
+        window.cancelarSolicitud = cancelarSolicitud;
+        
     </script>
 </body>
 </html>
