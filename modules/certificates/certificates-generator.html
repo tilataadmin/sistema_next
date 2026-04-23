@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.23.07.50">
+    <meta name="page-version" content="26.04.23.07.55">
     <title>Generador de Certificados - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -287,16 +287,58 @@
             </div>
         </div>
         
-        <!-- PASO 3: Cargar plantilla -->
+       <!-- PASO 3: Cargar plantilla -->
         <div class="card step-card disabled" id="stepCard3">
             <div class="step-card-header">
                 <i class="bi bi-file-earmark-pdf me-2"></i>
                 Paso 3: Cargar plantilla PDF
             </div>
             <div class="step-card-body">
-                <div class="empty-placeholder">
-                    [Bloqueado hasta completar el paso 2]
+                
+                <div class="alert alert-info">
+                    <h6 class="alert-heading">
+                        <i class="bi bi-info-circle me-2"></i>Recomendaciones
+                    </h6>
+                    <ul class="mb-0">
+                        <li>Usa un PDF de <strong>una sola página</strong> (si tiene más, solo se usará la primera).</li>
+                        <li>El tamaño y orientación del PDF se respetarán en los certificados finales.</li>
+                        <li>Asegúrate que la plantilla tenga espacio suficiente para el nombre y demás campos.</li>
+                    </ul>
                 </div>
+                
+                <!-- Selector de archivo -->
+                <div id="pdfUploadArea">
+                    <div class="mb-3">
+                        <label for="pdfFileInput" class="form-label">
+                            <strong>Seleccionar plantilla PDF</strong>
+                        </label>
+                        <input type="file" class="form-control" id="pdfFileInput" accept=".pdf">
+                    </div>
+                </div>
+                
+                <!-- Vista previa del PDF -->
+                <div id="pdfPreviewArea" style="display: none;">
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <strong>Plantilla cargada:</strong>
+                        <span id="pdfFileName"></span>
+                        — <span id="pdfDimensions"></span>
+                    </div>
+                    
+                    <div class="text-center mb-3" style="overflow-x: auto; border: 2px dashed #dee2e6; border-radius: 8px; padding: 10px; background: #fff;">
+                        <canvas id="pdfPreviewCanvas"></canvas>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" onclick="resetPDF()">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Cargar otra plantilla
+                        </button>
+                        <button class="btn btn-module" onclick="confirmPDF()" id="btnConfirmPDF">
+                            <i class="bi bi-arrow-right-circle me-1"></i>Confirmar y continuar
+                        </button>
+                    </div>
+                </div>
+                
             </div>
         </div>
         
@@ -757,6 +799,109 @@
         }
         
         console.log('✅ certificates-generator.html v26.04.23 - paso 2 cargado');
+        
+        // ==========================================
+        // PASO 3: CARGA Y RENDERIZADO DE LA PLANTILLA PDF
+        // ==========================================
+        
+        document.getElementById('pdfFileInput').addEventListener('change', handlePDFFile);
+        
+        async function handlePDFFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showMessage('Por favor selecciona un archivo PDF', 'warning');
+                event.target.value = '';
+                return;
+            }
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdfBytes = new Uint8Array(arrayBuffer);
+                
+                // Configurar worker de pdf.js
+                pdfjsLib.GlobalWorkerOptions.workerSrc =
+                    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                
+                // Cargar con copia de los bytes (pdf.js "consume" el buffer original)
+                const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice() });
+                const pdf = await loadingTask.promise;
+                
+                if (pdf.numPages < 1) {
+                    showMessage('El PDF no contiene páginas', 'warning');
+                    return;
+                }
+                
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 1 });
+                
+                // Guardar en estado
+                wizardState.pdfBytes = pdfBytes;
+                wizardState.pdfWidth = viewport.width;
+                wizardState.pdfHeight = viewport.height;
+                
+                // Renderizar vista previa (escalado para caber)
+                await renderPDFPreview(page, viewport);
+                
+                // Actualizar UI
+                document.getElementById('pdfFileName').textContent = file.name;
+                document.getElementById('pdfDimensions').textContent =
+                    `${Math.round(viewport.width)} × ${Math.round(viewport.height)} pt`;
+                
+                document.getElementById('pdfUploadArea').style.display = 'none';
+                document.getElementById('pdfPreviewArea').style.display = 'block';
+                
+                console.log(`✅ PDF cargado: ${viewport.width} × ${viewport.height} pt, ${pdf.numPages} página(s)`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando PDF:', error);
+                showMessage('Error al cargar la plantilla PDF: ' + error.message, 'danger');
+            }
+        }
+        
+        /**
+         * Renderiza la primera página del PDF en el canvas de vista previa,
+         * con un escalado que lo ajuste al ancho del contenedor (~700px máx).
+         */
+        async function renderPDFPreview(page, baseViewport) {
+            const maxWidth = 700;
+            const scale = Math.min(maxWidth / baseViewport.width, 1.5);
+            const scaledViewport = page.getViewport({ scale });
+            
+            const canvas = document.getElementById('pdfPreviewCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+        }
+        
+        function resetPDF() {
+            wizardState.pdfBytes = null;
+            wizardState.pdfWidth = 0;
+            wizardState.pdfHeight = 0;
+            document.getElementById('pdfFileInput').value = '';
+            document.getElementById('pdfUploadArea').style.display = 'block';
+            document.getElementById('pdfPreviewArea').style.display = 'none';
+        }
+        
+        function confirmPDF() {
+            if (!wizardState.pdfBytes) {
+                showMessage('No hay plantilla cargada', 'warning');
+                return;
+            }
+            
+            showMessage('Plantilla confirmada', 'success');
+            markStepCompleted(3);
+            goToStep(4);
+            
+            setTimeout(() => {
+                document.getElementById('stepCard4').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 200);
+        }
+        
+        console.log('✅ certificates-generator.html v26.04.23 - paso 3 cargado');
     </script>
 </body>
 </html>
