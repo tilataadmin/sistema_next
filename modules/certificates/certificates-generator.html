@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.23.07.55">
+    <meta name="page-version" content="26.04.23.08.00">
     <title>Generador de Certificados - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -135,7 +135,59 @@
             color: #6c757d;
             font-style: italic;
         }
+        
+        /* Lista de campos a posicionar */
+        .field-item {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .field-item.active {
+            background: var(--module-primary);
+            color: white;
+            border-color: var(--module-secondary);
+        }
+        .field-item.active .field-status {
+            color: white !important;
+        }
+        .field-item.positioned .field-status {
+            color: #28a745;
+        }
+        .field-status {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        
+        /* Marcadores sobre el canvas */
+        .field-marker {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            background: rgba(192, 155, 45, 0.95);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            pointer-events: none;
+            border: 2px solid white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .field-marker.is-name {
+            background: rgba(27, 54, 93, 0.95);
+        }
+        .field-marker-dot {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            width: 10px;
+            height: 10px;
+            background: #dc3545;
+            border: 2px solid white;
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 0 0 1px #dc3545;
+        }
     </style>
+    
 </head>
 <body>
     <!-- Header -->
@@ -349,9 +401,51 @@
                 Paso 4: Posicionar campos en la plantilla
             </div>
             <div class="step-card-body">
-                <div class="empty-placeholder">
-                    [Bloqueado hasta completar el paso 3]
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>Cómo posicionar:</strong>
+                    Selecciona un campo de la lista, luego haz clic sobre la plantilla
+                    en el punto donde quieres que aparezca. El texto quedará centrado
+                    sobre ese punto. Puedes reposicionar cualquier campo cuantas veces quieras.
                 </div>
+                
+                <div class="row">
+                    
+                    <!-- Lista de campos a posicionar -->
+                    <div class="col-md-4">
+                        <h6 class="mb-2">
+                            <i class="bi bi-list-check me-1"></i>Campos a posicionar
+                        </h6>
+                        <div id="fieldsList" class="list-group mb-3"></div>
+                        
+                        <div class="alert alert-light border small mb-0" id="fieldsHelp">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Progreso: <strong><span id="positionedCount">0</span></strong> de <strong><span id="totalFieldsCount">0</span></strong> campos posicionados.
+                        </div>
+                    </div>
+                    
+                    <!-- Canvas interactivo -->
+                    <div class="col-md-8">
+                        <div class="text-center" style="overflow-x: auto; border: 2px dashed #dee2e6; border-radius: 8px; padding: 10px; background: #fff;">
+                            <div id="canvasWrapper" style="position: relative; display: inline-block; cursor: crosshair;">
+                                <canvas id="positionCanvas"></canvas>
+                                <!-- Marcadores de los campos posicionados se insertan aquí dinámicamente -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+                
+                <div class="mt-3">
+                    <button class="btn btn-outline-secondary me-2" onclick="backToStep3()">
+                        <i class="bi bi-arrow-left-circle me-1"></i>Volver a la plantilla
+                    </button>
+                    <button class="btn btn-module" onclick="confirmPositions()" id="btnConfirmPositions" disabled>
+                        <i class="bi bi-arrow-right-circle me-1"></i>Confirmar y continuar
+                    </button>
+                </div>
+                
             </div>
         </div>
         
@@ -886,7 +980,7 @@
             document.getElementById('pdfPreviewArea').style.display = 'none';
         }
         
-        function confirmPDF() {
+        async function confirmPDF() {
             if (!wizardState.pdfBytes) {
                 showMessage('No hay plantilla cargada', 'warning');
                 return;
@@ -896,12 +990,232 @@
             markStepCompleted(3);
             goToStep(4);
             
+            // Inicializar el canvas interactivo y la lista de campos
+            await initFieldPositioning();
+            
             setTimeout(() => {
                 document.getElementById('stepCard4').scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 200);
         }
         
         console.log('✅ certificates-generator.html v26.04.23 - paso 3 cargado');
+        
+        // ==========================================
+        // PASO 4: POSICIONAR CAMPOS EN LA PLANTILLA
+        // ==========================================
+        
+        let activeFieldIndex = null; // Índice del campo activo en wizardState.selectedColumns
+        let positionCanvasScale = 1; // Escala de render del canvas respecto al PDF real
+        
+        /**
+         * Inicializa el paso 4: renderiza la plantilla en un canvas interactivo
+         * y construye la lista lateral de campos a posicionar.
+         */
+        async function initFieldPositioning() {
+            // Resetear posiciones previas (por si el usuario retrocede y vuelve)
+            wizardState.fieldPositions = {};
+            activeFieldIndex = null;
+            
+            await renderPositionCanvas();
+            renderFieldsList();
+            updatePositioningProgress();
+        }
+        
+        async function renderPositionCanvas() {
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            
+            const pdf = await pdfjsLib.getDocument({ data: wizardState.pdfBytes.slice() }).promise;
+            const page = await pdf.getPage(1);
+            
+            const baseViewport = page.getViewport({ scale: 1 });
+            const maxWidth = 720;
+            positionCanvasScale = Math.min(maxWidth / baseViewport.width, 1.5);
+            const scaledViewport = page.getViewport({ scale: positionCanvasScale });
+            
+            const canvas = document.getElementById('positionCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+            
+            // Listener de clic sobre el canvas
+            canvas.onclick = handleCanvasClick;
+            
+            // Limpiar marcadores previos
+            clearAllMarkers();
+        }
+        
+        function renderFieldsList() {
+            const container = document.getElementById('fieldsList');
+            const columns = wizardState.selectedColumns;
+            
+            let html = '';
+            columns.forEach(colIdx => {
+                const header = wizardState.csvHeaders[colIdx];
+                const colLabel = String.fromCharCode(65 + colIdx);
+                const isName = (colIdx === 0);
+                const positioned = !!wizardState.fieldPositions[colIdx];
+                const isActive = (activeFieldIndex === colIdx);
+                
+                html += `
+                    <div class="list-group-item field-item ${isActive ? 'active' : ''} ${positioned ? 'positioned' : ''}"
+                         onclick="selectField(${colIdx})">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>${isName ? '⭐ ' : ''}Col ${colLabel}:</strong> ${escapeHtml(header)}
+                                ${isName ? '<small class="d-block" style="opacity:0.8;">Nombre del participante</small>' : ''}
+                            </div>
+                            <span class="field-status">
+                                ${positioned ? '<i class="bi bi-check-circle-fill"></i> Posicionado' : '<i class="bi bi-geo-alt"></i> Sin ubicar'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            document.getElementById('totalFieldsCount').textContent = columns.length;
+        }
+        
+        function selectField(colIdx) {
+            activeFieldIndex = colIdx;
+            renderFieldsList(); // Re-renderiza para actualizar estilo activo
+        }
+        
+        function handleCanvasClick(event) {
+            if (activeFieldIndex === null) {
+                showMessage('Primero selecciona un campo de la lista de la izquierda', 'warning');
+                return;
+            }
+            
+            const canvas = document.getElementById('positionCanvas');
+            const rect = canvas.getBoundingClientRect();
+            
+            // Posición del clic relativa al canvas (pixeles de pantalla)
+            const clickX = event.clientX - rect.left;
+            const clickY = event.clientY - rect.top;
+            
+            // Escalar el clic al tamaño real del canvas (cuando hay zoom del navegador o CSS scaling)
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const canvasX = clickX * scaleX;
+            const canvasY = clickY * scaleY;
+            
+            // Convertir coordenadas canvas → coordenadas PDF
+            // Canvas: origen arriba-izquierda, Y crece hacia abajo
+            // PDF: origen abajo-izquierda, Y crece hacia arriba
+            const pdfX = canvasX / positionCanvasScale;
+            const pdfY = wizardState.pdfHeight - (canvasY / positionCanvasScale);
+            
+            // Guardar posición en estado (coordenadas PDF reales)
+            wizardState.fieldPositions[activeFieldIndex] = {
+                x: pdfX,
+                y: pdfY,
+                // Guardamos también la posición en pantalla para pintar el marcador
+                screenX: clickX,
+                screenY: clickY
+            };
+            
+            renderFieldsList();
+            renderAllMarkers();
+            updatePositioningProgress();
+            
+            // Autoavanzar al siguiente campo sin posicionar, si hay alguno
+            autoSelectNextUnpositioned();
+        }
+        
+        function autoSelectNextUnpositioned() {
+            const columns = wizardState.selectedColumns;
+            const currentIdx = columns.indexOf(activeFieldIndex);
+            
+            // Buscar siguiente campo sin posicionar a partir del actual
+            for (let i = 1; i <= columns.length; i++) {
+                const nextIdx = columns[(currentIdx + i) % columns.length];
+                if (!wizardState.fieldPositions[nextIdx]) {
+                    selectField(nextIdx);
+                    return;
+                }
+            }
+            // Todos posicionados: desactivar selección
+            activeFieldIndex = null;
+            renderFieldsList();
+        }
+        
+        function renderAllMarkers() {
+            clearAllMarkers();
+            
+            const wrapper = document.getElementById('canvasWrapper');
+            
+            Object.keys(wizardState.fieldPositions).forEach(colIdxStr => {
+                const colIdx = parseInt(colIdxStr);
+                const pos = wizardState.fieldPositions[colIdx];
+                const header = wizardState.csvHeaders[colIdx];
+                const isName = (colIdx === 0);
+                
+                // Punto rojo
+                const dot = document.createElement('div');
+                dot.className = 'field-marker-dot field-marker-dynamic';
+                dot.style.left = pos.screenX + 'px';
+                dot.style.top = pos.screenY + 'px';
+                wrapper.appendChild(dot);
+                
+                // Etiqueta
+                const label = document.createElement('div');
+                label.className = `field-marker field-marker-dynamic ${isName ? 'is-name' : ''}`;
+                label.style.left = pos.screenX + 'px';
+                label.style.top = (pos.screenY - 18) + 'px';
+                label.textContent = header;
+                wrapper.appendChild(label);
+            });
+        }
+        
+        function clearAllMarkers() {
+            document.querySelectorAll('.field-marker-dynamic').forEach(el => el.remove());
+        }
+        
+        function updatePositioningProgress() {
+            const positioned = Object.keys(wizardState.fieldPositions).length;
+            const total = wizardState.selectedColumns.length;
+            document.getElementById('positionedCount').textContent = positioned;
+            
+            const btn = document.getElementById('btnConfirmPositions');
+            btn.disabled = (positioned < total);
+        }
+        
+        function backToStep3() {
+            clearAllMarkers();
+            wizardState.fieldPositions = {};
+            activeFieldIndex = null;
+            goToStep(3);
+            
+            setTimeout(() => {
+                document.getElementById('stepCard3').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 200);
+        }
+        
+        function confirmPositions() {
+            const positioned = Object.keys(wizardState.fieldPositions).length;
+            const total = wizardState.selectedColumns.length;
+            
+            if (positioned < total) {
+                showMessage(`Faltan ${total - positioned} campos por posicionar`, 'warning');
+                return;
+            }
+            
+            console.log('✅ Posiciones confirmadas:', wizardState.fieldPositions);
+            showMessage('Posiciones confirmadas', 'success');
+            
+            markStepCompleted(4);
+            goToStep(5);
+            
+            setTimeout(() => {
+                document.getElementById('stepCard5').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 200);
+        }
+        
+        console.log('✅ certificates-generator.html v26.04.23 - paso 4 cargado');
     </script>
 </body>
 </html>
