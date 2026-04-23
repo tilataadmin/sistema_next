@@ -630,10 +630,969 @@
 
     <script>
         // ==========================================
-        // LÓGICA DE LA PÁGINA
-        // (Pendiente - se construye en el siguiente turno)
+        // VARIABLES GLOBALES
         // ==========================================
-        console.log('🎓 Directorio de egresados - HTML cargado, lógica pendiente');
+        let alumniList = [];
+        let currentPage = 1;
+        let totalPages = 1;
+        let totalAlumni = 0;
+        const PAGE_SIZE = 30;
+
+        let gendersCache = [];
+        let fieldGroupsCache = [];
+        let fieldDefinitionsCache = [];
+
+        let currentAlumni = null;
+        let isEditMode = false;
+        let detailModalInstance = null;
+        let createModalInstance = null;
+        let deleteModalInstance = null;
+
+        let searchDebounceTimer = null;
+
+        // Permisos secundarios (calculados tras validar el principal)
+        let canEdit = false;
+        let canExport = false;
+
+        // Filtros actuales
+        const filterState = {
+            search: '',
+            yearFrom: '',
+            yearTo: '',
+            verified: '',
+            source: '',
+            showDeleted: false
+        };
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Ver directorio de egresados');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showAlert('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                // Verificar permisos secundarios
+                canEdit = await checkUserPermission(session.user.user_id, 'Editar egresados');
+                canExport = await checkUserPermission(session.user.user_id, 'Exportar datos de egresados');
+
+                // Ajustar UI según permisos
+                if (canEdit) document.getElementById('btnNewAlumni').classList.remove('d-none');
+                if (canExport) document.getElementById('btnExport').classList.remove('d-none');
+
+                // Instanciar modales
+                detailModalInstance = new bootstrap.Modal(document.getElementById('alumniDetailModal'));
+                createModalInstance = new bootstrap.Modal(document.getElementById('alumniCreateModal'));
+                deleteModalInstance = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+
+                await inicializarPagina();
+
+            } catch (error) {
+                console.error('❌ Error en validación de acceso:', error);
+                showAlert('Error de validación: ' + error.message, 'danger');
+            }
+        });
+
+        async function inicializarPagina() {
+            try {
+                showLoading('Cargando datos...');
+
+                // Cargar catálogos en paralelo
+                const [genders, groups, fields] = await Promise.all([
+                    supabaseRequest('/genders?select=gender_id,gender_name&order=gender_name.asc'),
+                    supabaseRequest('/alumni_field_groups?select=*&is_active=eq.true&order=group_order.asc'),
+                    supabaseRequest('/alumni_field_definitions?select=*&is_active=eq.true&order=field_order.asc')
+                ]);
+
+                gendersCache = genders || [];
+                fieldGroupsCache = groups || [];
+                fieldDefinitionsCache = fields || [];
+
+                populateGenderDropdown();
+                setupEventListeners();
+
+                await loadAlumni();
+                await loadStats();
+
+                hideLoading();
+                console.log('✅ Directorio inicializado');
+
+            } catch (error) {
+                console.error('❌ Error inicializando página:', error);
+                showAlert('Error al cargar la página: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // CATÁLOGOS AUXILIARES
+        // ==========================================
+        function populateGenderDropdown() {
+            const select = document.getElementById('createGender');
+            select.innerHTML = '<option value="">Seleccione...</option>';
+            gendersCache.forEach(g => {
+                select.innerHTML += '<option value="' + g.gender_id + '">' + escapeHtml(g.gender_name) + '</option>';
+            });
+        }
+
+        function getGenderName(genderId) {
+            if (!genderId) return null;
+            const g = gendersCache.find(x => x.gender_id === genderId);
+            return g ? g.gender_name : null;
+        }
+
+        // ==========================================
+        // CARGA DE EGRESADOS
+        // ==========================================
+        function buildAlumniQuery(forCount = false) {
+            let q = '/alumni?select=';
+            q += forCount
+                ? 'alumni_id'
+                : 'alumni_id,alumni_id_document,alumni_first_name,alumni_last_name_1,alumni_last_name_2,alumni_email,graduation_year,is_verified,pre_loaded,data_source,consent_data_treatment,deleted_at';
+
+            // Filtros
+            const conditions = [];
+
+            if (!filterState.showDeleted) {
+                q += '&deleted_at=is.null';
+            }
+
+            if (filterState.search && filterState.search.trim()) {
+                const term = filterState.search.trim();
+                const encoded = encodeURIComponent('*' + term + '*');
+                const docEncoded = encodeURIComponent('*' + term + '*');
+                q += '&or=(alumni_first_name.ilike.' + encoded
+                   + ',alumni_last_name_1.ilike.' + encoded
+                   + ',alumni_last_name_2.ilike.' + encoded
+                   + ',alumni_id_document.ilike.' + docEncoded + ')';
+            }
+
+            if (filterState.yearFrom) q += '&graduation_year=gte.' + encodeURIComponent(filterState.yearFrom);
+            if (filterState.yearTo) q += '&graduation_year=lte.' + encodeURIComponent(filterState.yearTo);
+
+            if (filterState.verified === 'verified') q += '&is_verified=eq.true';
+            if (filterState.verified === 'unverified') q += '&is_verified=eq.false&pre_loaded=eq.false';
+            if (filterState.verified === 'preloaded') q += '&pre_loaded=eq.true';
+
+            if (filterState.source) q += '&data_source=eq.' + encodeURIComponent(filterState.source);
+
+            return q;
+        }
+
+        async function loadAlumni(page = 1) {
+            try {
+                showLoading('Cargando egresados...');
+
+                // Query con paginación
+                const offset = (page - 1) * PAGE_SIZE;
+                const query = buildAlumniQuery(false)
+                    + '&order=alumni_last_name_1.asc,alumni_first_name.asc'
+                    + '&limit=' + PAGE_SIZE
+                    + '&offset=' + offset;
+
+                const data = await supabaseRequest(query);
+                alumniList = data || [];
+
+                // Conteo total
+                const countData = await supabaseRequest(buildAlumniQuery(true));
+                totalAlumni = countData ? countData.length : 0;
+                totalPages = Math.max(1, Math.ceil(totalAlumni / PAGE_SIZE));
+                currentPage = page;
+
+                renderAlumni();
+                updatePagination();
+
+                hideLoading();
+
+            } catch (error) {
+                console.error('❌ Error cargando egresados:', error);
+                showAlert('Error al cargar egresados: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        async function loadStats() {
+            try {
+                // 4 conteos en paralelo (solo no eliminados)
+                const [total, verified, pending, withEmail] = await Promise.all([
+                    supabaseRequest('/alumni?select=alumni_id&deleted_at=is.null'),
+                    supabaseRequest('/alumni?select=alumni_id&deleted_at=is.null&is_verified=eq.true'),
+                    supabaseRequest('/alumni?select=alumni_id&deleted_at=is.null&is_verified=eq.false'),
+                    supabaseRequest('/alumni?select=alumni_id&deleted_at=is.null&alumni_email=not.is.null')
+                ]);
+
+                document.getElementById('statTotal').textContent = (total || []).length;
+                document.getElementById('statVerified').textContent = (verified || []).length;
+                document.getElementById('statPending').textContent = (pending || []).length;
+                document.getElementById('statEmail').textContent = (withEmail || []).length;
+
+            } catch (error) {
+                console.error('❌ Error cargando estadísticas:', error);
+            }
+        }
+
+        // ==========================================
+        // RENDERIZADO TABLA
+        // ==========================================
+        function renderAlumni() {
+            const tbody = document.getElementById('alumniTableBody');
+
+            if (alumniList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">' +
+                    '<div class="text-muted">' +
+                    '<i class="bi bi-mortarboard" style="font-size: 3rem; opacity: 0.3;"></i>' +
+                    '<h5 class="mt-3">No se encontraron egresados</h5>' +
+                    '<p>No hay egresados que coincidan con los filtros actuales.</p>' +
+                    '</div></td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = alumniList.map(a => {
+                const fullName = [
+                    a.alumni_last_name_1,
+                    a.alumni_last_name_2 || '',
+                    a.alumni_first_name
+                ].filter(Boolean).join(' ');
+
+                const stateBadge = buildStateBadge(a);
+                const sourceBadge = buildSourceBadge(a.data_source);
+                const isDeleted = !!a.deleted_at;
+                const rowClass = isDeleted ? 'alumni-row deleted' : 'alumni-row';
+                const email = a.alumni_email ? escapeHtml(a.alumni_email) : '<span class="text-muted small">—</span>';
+
+                return '<tr class="' + rowClass + '">' +
+                    '<td><code>' + escapeHtml(a.alumni_id_document) + '</code></td>' +
+                    '<td class="alumni-name">' + escapeHtml(fullName) + '</td>' +
+                    '<td>' + a.graduation_year + '</td>' +
+                    '<td>' + email + '</td>' +
+                    '<td>' + stateBadge + '</td>' +
+                    '<td>' + sourceBadge + '</td>' +
+                    '<td class="table-actions text-end">' +
+                        '<button class="btn btn-sm btn-outline-secondary" ' +
+                        'onclick="openAlumniDetail(\'' + a.alumni_id + '\')" title="Ver detalle">' +
+                        '<i class="bi bi-eye"></i></button>' +
+                    '</td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function buildStateBadge(a) {
+            if (a.deleted_at) {
+                return '<span class="badge badge-deleted">Eliminado</span>';
+            }
+            if (a.pre_loaded && !a.consent_data_treatment) {
+                return '<span class="badge badge-preloaded">Pre-cargado</span>';
+            }
+            if (a.is_verified) {
+                return '<span class="badge badge-verified">Verificado</span>';
+            }
+            return '<span class="badge badge-unverified">Sin verificar</span>';
+        }
+
+        function buildSourceBadge(source) {
+            const map = {
+                'phidias': ['badge-source-phidias', 'Phidias'],
+                'archivo': ['badge-source-archivo', 'Archivo'],
+                'graduacion': ['badge-source-graduacion', 'Graduación']
+            };
+            const entry = map[source] || ['bg-secondary', source || '—'];
+            return '<span class="badge ' + entry[0] + '">' + entry[1] + '</span>';
+        }
+
+        function updatePagination() {
+            document.getElementById('pageInfo').textContent =
+                'Página ' + currentPage + ' de ' + totalPages + ' (' + totalAlumni + ' registros)';
+
+            document.getElementById('prevPageItem').classList.toggle('disabled', currentPage <= 1);
+            document.getElementById('nextPageItem').classList.toggle('disabled', currentPage >= totalPages);
+            document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+            document.getElementById('btnNextPage').disabled = currentPage >= totalPages;
+        }
+
+        // ==========================================
+        // EVENTOS
+        // ==========================================
+        function setupEventListeners() {
+            // Búsqueda con debounce
+            document.getElementById('searchInput').addEventListener('input', function (e) {
+                clearTimeout(searchDebounceTimer);
+                searchDebounceTimer = setTimeout(() => {
+                    filterState.search = e.target.value;
+                    loadAlumni(1);
+                }, 400);
+            });
+
+            // Filtros
+            document.getElementById('yearFromFilter').addEventListener('change', function (e) {
+                filterState.yearFrom = e.target.value;
+                loadAlumni(1);
+            });
+            document.getElementById('yearToFilter').addEventListener('change', function (e) {
+                filterState.yearTo = e.target.value;
+                loadAlumni(1);
+            });
+            document.getElementById('verifiedFilter').addEventListener('change', function (e) {
+                filterState.verified = e.target.value;
+                loadAlumni(1);
+            });
+            document.getElementById('sourceFilter').addEventListener('change', function (e) {
+                filterState.source = e.target.value;
+                loadAlumni(1);
+            });
+            document.getElementById('showDeletedCheck').addEventListener('change', function (e) {
+                filterState.showDeleted = e.target.checked;
+                loadAlumni(1);
+            });
+
+            // Botones
+            document.getElementById('btnClearFilters').addEventListener('click', clearFilters);
+            document.getElementById('btnRefresh').addEventListener('click', () => {
+                loadAlumni(currentPage);
+                loadStats();
+            });
+            document.getElementById('btnPrevPage').addEventListener('click', () => {
+                if (currentPage > 1) loadAlumni(currentPage - 1);
+            });
+            document.getElementById('btnNextPage').addEventListener('click', () => {
+                if (currentPage < totalPages) loadAlumni(currentPage + 1);
+            });
+
+            if (canEdit) {
+                document.getElementById('btnNewAlumni').addEventListener('click', openCreateModal);
+                document.getElementById('alumniCreateForm').addEventListener('submit', handleCreateSubmit);
+            }
+
+            if (canExport) {
+                document.getElementById('btnExport').addEventListener('click', handleExport);
+            }
+
+            // Modal de detalle: acciones
+            document.getElementById('btnEnterEditMode').addEventListener('click', enterEditMode);
+            document.getElementById('btnSaveAlumni').addEventListener('click', handleSaveEdit);
+            document.getElementById('btnDeleteAlumni').addEventListener('click', () => {
+                document.getElementById('deleteAlumniName').textContent = fullAlumniName(currentAlumni);
+                document.getElementById('deleteReason').value = '';
+                deleteModalInstance.show();
+            });
+            document.getElementById('btnConfirmDelete').addEventListener('click', handleDelete);
+
+            console.log('✅ Event listeners configurados');
+        }
+
+        function clearFilters() {
+            filterState.search = '';
+            filterState.yearFrom = '';
+            filterState.yearTo = '';
+            filterState.verified = '';
+            filterState.source = '';
+            filterState.showDeleted = false;
+
+            document.getElementById('searchInput').value = '';
+            document.getElementById('yearFromFilter').value = '';
+            document.getElementById('yearToFilter').value = '';
+            document.getElementById('verifiedFilter').value = '';
+            document.getElementById('sourceFilter').value = '';
+            document.getElementById('showDeletedCheck').checked = false;
+
+            loadAlumni(1);
+        }
+
+        // ==========================================
+        // MODAL DE DETALLE
+        // ==========================================
+        async function openAlumniDetail(alumniId) {
+            try {
+                showLoading('Cargando egresado...');
+
+                const data = await supabaseRequest(
+                    '/alumni?select=*&alumni_id=eq.' + alumniId
+                );
+
+                if (!data || data.length === 0) {
+                    throw new Error('Egresado no encontrado');
+                }
+
+                currentAlumni = data[0];
+                isEditMode = false;
+
+                renderDetailModal();
+                hideLoading();
+                detailModalInstance.show();
+
+            } catch (error) {
+                console.error('❌ Error abriendo detalle:', error);
+                showAlert('Error al cargar el egresado: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        function renderDetailModal() {
+            const a = currentAlumni;
+
+            // Header
+            document.getElementById('alumniDetailModalLabel').textContent = fullAlumniName(a);
+            document.getElementById('alumniDetailSubtitle').textContent =
+                'Promoción ' + a.graduation_year + ' · Documento ' + a.alumni_id_document;
+
+            // Aviso de pre-cargado
+            const preWarn = document.getElementById('preloadedWarning');
+            if (a.pre_loaded && !a.consent_data_treatment) {
+                preWarn.classList.remove('d-none');
+            } else {
+                preWarn.classList.add('d-none');
+            }
+
+            // Control de botones
+            const btnEdit = document.getElementById('btnEnterEditMode');
+            const btnDelete = document.getElementById('btnDeleteAlumni');
+            const btnSave = document.getElementById('btnSaveAlumni');
+
+            if (a.deleted_at) {
+                // Egresado eliminado: no se edita, posible restaurar (lo implementamos si confirmas)
+                btnEdit.classList.add('d-none');
+                btnDelete.classList.add('d-none');
+                btnSave.classList.add('d-none');
+            } else if (canEdit && !isEditMode) {
+                btnEdit.classList.remove('d-none');
+                btnDelete.classList.remove('d-none');
+                btnSave.classList.add('d-none');
+            } else if (canEdit && isEditMode) {
+                btnEdit.classList.add('d-none');
+                btnDelete.classList.add('d-none');
+                btnSave.classList.remove('d-none');
+            } else {
+                btnEdit.classList.add('d-none');
+                btnDelete.classList.add('d-none');
+                btnSave.classList.add('d-none');
+            }
+
+            // Render de tabs
+            renderBasicPane(a);
+            renderProfilePane(a);
+            renderConsentsPane(a);
+            renderAuditPane(a);
+        }
+
+        // ---- Tab: Información básica ----
+        function renderBasicPane(a) {
+            const container = document.getElementById('paneBasicContent');
+
+            if (!isEditMode) {
+                container.innerHTML =
+                    '<div class="row">' +
+                        fieldBlock('Documento', a.alumni_id_document, 'col-md-4') +
+                        fieldBlock('Año de promoción', a.graduation_year, 'col-md-4') +
+                        fieldBlock('Género', getGenderName(a.gender_id), 'col-md-4') +
+                        fieldBlock('Nombres', a.alumni_first_name, 'col-md-6') +
+                        fieldBlock('Primer apellido', a.alumni_last_name_1, 'col-md-3') +
+                        fieldBlock('Segundo apellido', a.alumni_last_name_2, 'col-md-3') +
+                        fieldBlock('Fecha de nacimiento', a.alumni_birthday, 'col-md-4') +
+                        fieldBlock('Email', a.alumni_email, 'col-md-8') +
+                        fieldBlock('Estado de verificación',
+                            a.is_verified ? 'Verificado' + (a.verified_at ? ' (' + formatDate(a.verified_at) + ')' : '') : 'Sin verificar',
+                            'col-md-6') +
+                        fieldBlock('Última actualización', a.last_data_update ? formatDate(a.last_data_update) : null, 'col-md-6') +
+                    '</div>';
+            } else {
+                // Modo edición: documento/nombres/apellidos/promoción/género/birthday NO editables (identidad)
+                // Email y last_name_2 SÍ editables según acuerdo
+                const genderOptions = gendersCache.map(g =>
+                    '<option value="' + g.gender_id + '"' + (g.gender_id === a.gender_id ? ' selected' : '') + '>' +
+                    escapeHtml(g.gender_name) + '</option>'
+                ).join('');
+
+                container.innerHTML =
+                    '<div class="alert alert-info small mb-3">' +
+                        '<i class="bi bi-info-circle me-1"></i>' +
+                        'Los campos de identidad (documento, nombres, año de promoción, género, fecha de nacimiento) son de solo lectura. ' +
+                        'Para correcciones administrativas excepcionales, edita directamente en la base de datos y deja constancia.' +
+                    '</div>' +
+                    '<div class="row g-3">' +
+                        readOnlyInput('Documento', a.alumni_id_document, 'col-md-4') +
+                        readOnlyInput('Año de promoción', a.graduation_year, 'col-md-4') +
+                        readOnlyInput('Género', getGenderName(a.gender_id) || '—', 'col-md-4') +
+                        readOnlyInput('Nombres', a.alumni_first_name, 'col-md-6') +
+                        readOnlyInput('Primer apellido', a.alumni_last_name_1, 'col-md-3') +
+                        '<div class="col-md-3">' +
+                            '<label class="form-label">Segundo apellido</label>' +
+                            '<input type="text" class="form-control" id="editLastName2" value="' + escapeAttr(a.alumni_last_name_2 || '') + '">' +
+                        '</div>' +
+                        readOnlyInput('Fecha de nacimiento', a.alumni_birthday || '—', 'col-md-4') +
+                        '<div class="col-md-8">' +
+                            '<label class="form-label">Email</label>' +
+                            '<input type="email" class="form-control" id="editEmail" value="' + escapeAttr(a.alumni_email || '') + '">' +
+                            '<div class="form-text">El cambio de email NO dispara re-verificación desde backoffice. Si el egresado cambia su email, debe hacerlo desde su perfil público.</div>' +
+                        '</div>' +
+                    '</div>';
+            }
+        }
+
+        // ---- Tab: Perfil (campos dinámicos) ----
+        function renderProfilePane(a) {
+            const container = document.getElementById('paneProfileContent');
+            const profile = a.profile_data || {};
+
+            if (fieldGroupsCache.length === 0 || fieldDefinitionsCache.length === 0) {
+                container.innerHTML = '<p class="text-muted">No hay campos dinámicos configurados.</p>';
+                return;
+            }
+
+            let html = '';
+            // Filtrar grupos con al menos un campo (excluir 'privacy' que no tiene campos dinámicos)
+            fieldGroupsCache.forEach(group => {
+                const fields = fieldDefinitionsCache.filter(f => f.field_group === group.group_key);
+                if (fields.length === 0) return;
+
+                html += '<h6 class="mt-3 mb-2 text-primary">' + escapeHtml(group.group_label) + '</h6>';
+
+                if (!isEditMode) {
+                    html += '<div class="row">';
+                    fields.forEach(f => {
+                        const val = profile[f.field_key];
+                        html += fieldBlock(f.field_label, formatFieldValue(f, val), 'col-md-6');
+                    });
+                    html += '</div>';
+                } else {
+                    html += '<div class="row g-3">';
+                    fields.forEach(f => {
+                        html += renderEditableField(f, profile[f.field_key]);
+                    });
+                    html += '</div>';
+                }
+            });
+
+            container.innerHTML = html || '<p class="text-muted">Sin datos en el perfil.</p>';
+        }
+
+        function renderEditableField(f, value) {
+            const id = 'pf_' + f.field_key;
+            const required = f.is_required ? ' required' : '';
+            const label = escapeHtml(f.field_label);
+            const desc = f.field_description ? '<div class="form-text">' + escapeHtml(f.field_description) + '</div>' : '';
+            const v = (value === null || value === undefined) ? '' : value;
+            const col = (f.field_type === 'textarea' || f.field_type === 'multiselect') ? 'col-md-12' : 'col-md-6';
+
+            let input = '';
+
+            if (f.field_type === 'textarea') {
+                input = '<textarea class="form-control" id="' + id + '" data-field-key="' + f.field_key + '" rows="3"' + required + '>' + escapeHtml(String(v)) + '</textarea>';
+            } else if (f.field_type === 'number') {
+                input = '<input type="number" class="form-control" id="' + id + '" data-field-key="' + f.field_key + '" value="' + escapeAttr(String(v)) + '"' + required + '>';
+            } else if (f.field_type === 'date') {
+                input = '<input type="date" class="form-control" id="' + id + '" data-field-key="' + f.field_key + '" value="' + escapeAttr(String(v)) + '"' + required + '>';
+            } else if (f.field_type === 'boolean') {
+                const checked = (v === true || v === 'true') ? 'checked' : '';
+                input = '<div class="form-check mt-2"><input type="checkbox" class="form-check-input" id="' + id + '" data-field-key="' + f.field_key + '" ' + checked + '><label class="form-check-label" for="' + id + '">' + escapeHtml(f.field_description || 'Sí') + '</label></div>';
+            } else if (f.field_type === 'select') {
+                const opts = (f.field_options || []).map(o =>
+                    '<option value="' + escapeAttr(o) + '"' + (o === v ? ' selected' : '') + '>' + escapeHtml(o) + '</option>'
+                ).join('');
+                input = '<select class="form-select" id="' + id + '" data-field-key="' + f.field_key + '"' + required + '>' +
+                    '<option value="">Seleccione...</option>' + opts + '</select>';
+            } else if (f.field_type === 'multiselect') {
+                const selected = Array.isArray(v) ? v : [];
+                const opts = (f.field_options || []).map(o => {
+                    const chk = selected.includes(o) ? 'checked' : '';
+                    return '<div class="form-check form-check-inline">' +
+                        '<input class="form-check-input" type="checkbox" ' + chk + ' value="' + escapeAttr(o) + '" data-ms-key="' + f.field_key + '">' +
+                        '<label class="form-check-label">' + escapeHtml(o) + '</label>' +
+                        '</div>';
+                }).join('');
+                input = '<div id="' + id + '" data-field-key="' + f.field_key + '" data-field-type="multiselect">' + opts + '</div>';
+            } else {
+                const inputType = f.field_type === 'email' ? 'email'
+                                : f.field_type === 'phone' ? 'tel'
+                                : f.field_type === 'url' ? 'url'
+                                : 'text';
+                input = '<input type="' + inputType + '" class="form-control" id="' + id + '" data-field-key="' + f.field_key + '" value="' + escapeAttr(String(v)) + '"' + required + '>';
+            }
+
+            return '<div class="' + col + '">' +
+                '<label class="form-label" for="' + id + '">' + label + (f.is_required ? ' <span class="required">*</span>' : '') + '</label>' +
+                input + desc +
+                '</div>';
+        }
+
+        function formatFieldValue(f, v) {
+            if (v === null || v === undefined || v === '') return null;
+            if (f.field_type === 'boolean') return v === true || v === 'true' ? 'Sí' : 'No';
+            if (f.field_type === 'multiselect' && Array.isArray(v)) return v.join(', ');
+            if (f.field_type === 'url' && typeof v === 'string') {
+                return '<a href="' + escapeAttr(v) + '" target="_blank" rel="noopener">' + escapeHtml(v) + '</a>';
+            }
+            return v;
+        }
+
+        // ---- Tab: Consentimientos (siempre solo lectura) ----
+        function renderConsentsPane(a) {
+            const container = document.getElementById('paneConsentsContent');
+
+            const consents = [
+                {
+                    key: 'consent_data_treatment',
+                    label: 'Tratamiento de datos personales',
+                    desc: 'Autoriza al colegio a procesar sus datos en el sistema de egresados.',
+                    value: a.consent_data_treatment,
+                    at: a.consent_data_treatment_at
+                },
+                {
+                    key: 'consent_directory_basic',
+                    label: 'Aparecer en directorio básico',
+                    desc: 'Autoriza que otros egresados vean su nombre y año de promoción.',
+                    value: a.consent_directory_basic,
+                    at: a.consent_directory_basic_at
+                },
+                {
+                    key: 'consent_directory_extended',
+                    label: 'Perfil extendido en directorio',
+                    desc: 'Autoriza que otros egresados vean el resto de información marcada como pública.',
+                    value: a.consent_directory_extended,
+                    at: a.consent_directory_extended_at
+                }
+            ];
+
+            let html = '<div class="alert alert-secondary small mb-3">' +
+                '<i class="bi bi-shield-lock me-1"></i>' +
+                'Los consentimientos Habeas Data solo pueden ser modificados por el propio egresado desde su perfil público. Este panel es de consulta.' +
+                '</div>';
+
+            html += '<div class="list-group">';
+            consents.forEach(c => {
+                const badge = c.value
+                    ? '<span class="badge bg-success">Autorizado</span>'
+                    : '<span class="badge bg-secondary">No autorizado</span>';
+                const when = c.at ? '<div class="small text-muted">Última actualización: ' + formatDate(c.at) + '</div>' : '';
+                html += '<div class="list-group-item">' +
+                    '<div class="d-flex justify-content-between align-items-start">' +
+                        '<div>' +
+                            '<strong>' + escapeHtml(c.label) + '</strong>' +
+                            '<div class="small text-muted">' + escapeHtml(c.desc) + '</div>' +
+                            when +
+                        '</div>' +
+                        '<div>' + badge + '</div>' +
+                    '</div>' +
+                    '</div>';
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // ---- Tab: Origen y auditoría ----
+        function renderAuditPane(a) {
+            const container = document.getElementById('paneAuditContent');
+
+            const deletedBlock = a.deleted_at
+                ? '<div class="alert alert-danger mt-3">' +
+                    '<strong>Registro eliminado (soft-delete)</strong><br>' +
+                    'Fecha: ' + formatDate(a.deleted_at) + '<br>' +
+                    'Motivo: ' + escapeHtml(a.deletion_reason || '—') +
+                  '</div>'
+                : '';
+
+            container.innerHTML =
+                '<div class="row">' +
+                    fieldBlock('Origen de los datos', buildSourceBadge(a.data_source), 'col-md-4') +
+                    fieldBlock('ID en Phidias', a.phidias_id, 'col-md-4') +
+                    fieldBlock('Pre-cargado', a.pre_loaded ? 'Sí' : 'No', 'col-md-4') +
+                    fieldBlock('Creado', formatDate(a.created_at), 'col-md-6') +
+                    fieldBlock('Última modificación', formatDate(a.updated_at), 'col-md-6') +
+                    fieldBlock('Vinculado a student_id', a.original_student_id, 'col-md-6') +
+                    fieldBlock('Vinculado a student_code', a.original_student_code, 'col-md-6') +
+                '</div>' + deletedBlock;
+        }
+
+        // ==========================================
+        // MODO EDICIÓN
+        // ==========================================
+        function enterEditMode() {
+            isEditMode = true;
+            renderDetailModal();
+        }
+
+        async function handleSaveEdit() {
+            try {
+                showLoading('Guardando cambios...');
+
+                // Recolectar datos editables del tab básico
+                const emailEl = document.getElementById('editEmail');
+                const lastName2El = document.getElementById('editLastName2');
+
+                const emailVal = emailEl ? emailEl.value.trim() : '';
+                const lastName2Val = lastName2El ? lastName2El.value.trim() : '';
+
+                if (emailVal && !isValidEmail(emailVal)) {
+                    throw new Error('El email no tiene un formato válido.');
+                }
+
+                // Recolectar datos del tab perfil
+                const newProfileData = {};
+                fieldDefinitionsCache.forEach(f => {
+                    const el = document.getElementById('pf_' + f.field_key);
+                    if (!el) return;
+
+                    if (f.field_type === 'boolean') {
+                        newProfileData[f.field_key] = el.checked;
+                    } else if (f.field_type === 'multiselect') {
+                        const checked = el.querySelectorAll('input[data-ms-key="' + f.field_key + '"]:checked');
+                        newProfileData[f.field_key] = Array.from(checked).map(c => c.value);
+                    } else if (f.field_type === 'number') {
+                        newProfileData[f.field_key] = el.value === '' ? null : Number(el.value);
+                    } else {
+                        const v = el.value.trim();
+                        newProfileData[f.field_key] = v === '' ? null : v;
+                    }
+                });
+
+                // Limpiar campos null para no ensuciar el JSONB
+                Object.keys(newProfileData).forEach(k => {
+                    if (newProfileData[k] === null || newProfileData[k] === '' ||
+                        (Array.isArray(newProfileData[k]) && newProfileData[k].length === 0)) {
+                        delete newProfileData[k];
+                    }
+                });
+
+                const payload = {
+                    alumni_last_name_2: lastName2Val || null,
+                    alumni_email: emailVal || null,
+                    profile_data: newProfileData,
+                    last_data_update: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+
+                await supabaseRequest('/alumni?alumni_id=eq.' + currentAlumni.alumni_id, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload)
+                });
+
+                // Refrescar el registro en memoria
+                const refreshed = await supabaseRequest('/alumni?select=*&alumni_id=eq.' + currentAlumni.alumni_id);
+                currentAlumni = refreshed[0];
+                isEditMode = false;
+
+                renderDetailModal();
+                await loadAlumni(currentPage);
+                await loadStats();
+
+                hideLoading();
+                showAlert('Cambios guardados correctamente.', 'success');
+
+            } catch (error) {
+                console.error('❌ Error guardando:', error);
+                showAlert('Error al guardar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // CREACIÓN
+        // ==========================================
+        function openCreateModal() {
+            document.getElementById('alumniCreateForm').reset();
+            createModalInstance.show();
+        }
+
+        async function handleCreateSubmit(e) {
+            e.preventDefault();
+
+            try {
+                showLoading('Creando egresado...');
+
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+
+                // Normalizar vacíos a null
+                ['alumni_last_name_2', 'alumni_birthday', 'gender_id', 'alumni_email'].forEach(k => {
+                    if (!data[k] || data[k].trim() === '') data[k] = null;
+                });
+
+                // Year a number
+                data.graduation_year = parseInt(data.graduation_year, 10);
+
+                // Email validación
+                if (data.alumni_email && !isValidEmail(data.alumni_email)) {
+                    throw new Error('El email no tiene un formato válido.');
+                }
+
+                // Checar duplicado por documento
+                const existing = await supabaseRequest(
+                    '/alumni?select=alumni_id&alumni_id_document=eq.' + encodeURIComponent(data.alumni_id_document)
+                );
+                if (existing && existing.length > 0) {
+                    throw new Error('Ya existe un egresado con ese documento de identidad.');
+                }
+
+                // Metadatos del sistema
+                data.data_source = 'archivo';
+                data.pre_loaded = false;
+                data.is_verified = false;
+                data.profile_data = {};
+
+                await supabaseRequest('/alumni', {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+
+                createModalInstance.hide();
+                await loadAlumni(currentPage);
+                await loadStats();
+
+                hideLoading();
+                showAlert('Egresado creado correctamente.', 'success');
+
+            } catch (error) {
+                console.error('❌ Error creando egresado:', error);
+                showAlert('Error al crear egresado: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // ELIMINACIÓN (SOFT-DELETE)
+        // ==========================================
+        async function handleDelete() {
+            const reason = document.getElementById('deleteReason').value.trim();
+
+            if (!reason) {
+                showAlert('Debes indicar un motivo de eliminación.', 'warning');
+                return;
+            }
+
+            try {
+                showLoading('Eliminando egresado...');
+
+                await supabaseRequest('/alumni?alumni_id=eq.' + currentAlumni.alumni_id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        deleted_at: new Date().toISOString(),
+                        deletion_reason: reason,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                deleteModalInstance.hide();
+                detailModalInstance.hide();
+
+                await loadAlumni(currentPage);
+                await loadStats();
+
+                hideLoading();
+                showAlert('Egresado eliminado (soft-delete).', 'success');
+
+            } catch (error) {
+                console.error('❌ Error eliminando:', error);
+                showAlert('Error al eliminar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // EXPORTACIÓN (placeholder)
+        // ==========================================
+        function handleExport() {
+            showAlert('La exportación robusta con selector de columnas se construirá en el módulo de Reportes. Este botón redirigirá ahí cuando esa pantalla esté lista.', 'info');
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function fullAlumniName(a) {
+            return [
+                a.alumni_last_name_1,
+                a.alumni_last_name_2 || '',
+                a.alumni_first_name
+            ].filter(Boolean).join(' ');
+        }
+
+        function fieldBlock(label, value, colClass) {
+            colClass = colClass || 'col-md-6';
+            let displayVal;
+            if (value === null || value === undefined || value === '') {
+                displayVal = '<span class="detail-field-value empty">—</span>';
+            } else if (typeof value === 'string' && value.indexOf('<') === 0) {
+                // Ya viene como HTML (badges, links)
+                displayVal = '<span class="detail-field-value">' + value + '</span>';
+            } else {
+                displayVal = '<span class="detail-field-value">' + escapeHtml(String(value)) + '</span>';
+            }
+            return '<div class="' + colClass + ' detail-field">' +
+                '<div class="detail-field-label">' + escapeHtml(label) + '</div>' +
+                displayVal +
+            '</div>';
+        }
+
+        function readOnlyInput(label, value, colClass) {
+            return '<div class="' + colClass + '">' +
+                '<label class="form-label">' + escapeHtml(label) + '</label>' +
+                '<input type="text" class="form-control" value="' + escapeAttr(String(value || '')) + '" readonly>' +
+            '</div>';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function escapeAttr(str) {
+            return escapeHtml(str);
+        }
+
+        function isValidEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        function showLoading(msg) {
+            document.getElementById('loadingMessage').textContent = msg || 'Cargando...';
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        function showAlert(message, type) {
+            type = type || 'info';
+            const container = document.getElementById('alertContainer');
+            const id = 'alert_' + Date.now();
+            const icons = {
+                success: 'check-circle',
+                danger: 'exclamation-triangle',
+                warning: 'exclamation-triangle',
+                info: 'info-circle'
+            };
+            container.innerHTML =
+                '<div id="' + id + '" class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+                    '<i class="bi bi-' + (icons[type] || 'info-circle') + ' me-2"></i>' +
+                    message +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+                '</div>';
+
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    const el = document.getElementById(id);
+                    if (el) bootstrap.Alert.getOrCreateInstance(el).close();
+                }, 5000);
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Exponer funciones globalmente para onclick inline
+        window.openAlumniDetail = openAlumniDetail;
+
+        console.log('🎓 Directorio de egresados - Lógica cargada');
     </script>
 </body>
 </html>
