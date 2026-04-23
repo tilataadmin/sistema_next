@@ -37,6 +37,7 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'suppliers', name: 'Proveedores', icon: 'bi-building', color: '#888780' },
     { id: 'budget', name: 'Presupuesto', icon: 'bi-calculator', color: '#378ADD' },
     { id: 'contracts', name: 'Contratos', icon: 'bi-file-earmark-text', color: '#854F0B' },
+    { id: 'certificates', name: 'Generador de Certificados', icon: 'bi-award', color: '#C09B2D' },
     { id: 'knowledge', name: 'Conocimiento', icon: 'bi-lightbulb', color: '#534AB7' },
     // Administración del sistema
     { id: 'config', name: 'Configuración', icon: 'bi-gear', color: '#7F77DD' },
@@ -252,6 +253,9 @@ const MODULE_ITEM_ORDER = {
         'Gestionar categorías de contratos',
         'Gestionar plantillas de contratos',
         'Ver dashboard de contratos'
+    ],
+    'certificates': [
+        'Generar certificados'
     ],
     'knowledge': [
         'Administrar asistente IA',
