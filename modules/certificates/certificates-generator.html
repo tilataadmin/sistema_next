@@ -203,9 +203,59 @@
                 Paso 1: Cargar archivo CSV
             </div>
             <div class="step-card-body">
-                <div class="empty-placeholder">
-                    [Paso 1 — se implementará en el siguiente fragmento]
+                
+                <div class="alert alert-info">
+                    <h6 class="alert-heading">
+                        <i class="bi bi-info-circle me-2"></i>Formato requerido
+                    </h6>
+                    <ul class="mb-0">
+                        <li>La <strong>primera fila</strong> debe contener los encabezados de las columnas.</li>
+                        <li>La <strong>primera columna (A)</strong> debe ser siempre el nombre del participante.</li>
+                        <li>Máximo <strong>4 columnas</strong> en total pueden mapearse en la plantilla.</li>
+                        <li>El separador debe ser <strong>coma (,)</strong>.</li>
+                    </ul>
                 </div>
+                
+                <!-- Paso 1.a: selector de archivo -->
+                <div id="csvUploadArea">
+                    <div class="mb-3">
+                        <label for="csvFileInput" class="form-label">
+                            <strong>Seleccionar archivo CSV</strong>
+                        </label>
+                        <input type="file" class="form-control" id="csvFileInput" accept=".csv">
+                    </div>
+                </div>
+                
+                <!-- Paso 1.b: vista previa después de cargar -->
+                <div id="csvPreviewArea" style="display: none;">
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <strong>Archivo cargado:</strong>
+                        <span id="csvFileName"></span>
+                        — <span id="csvRowCount"></span> filas detectadas,
+                        <span id="csvColCount"></span> columnas.
+                    </div>
+                    
+                    <h6 class="mb-2">Vista previa (primeras 5 filas):</h6>
+                    <div class="table-responsive mb-3" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light sticky-top" id="csvPreviewHead"></thead>
+                            <tbody id="csvPreviewBody"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="csvWarnings"></div>
+                    
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" onclick="resetCSV()">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Cargar otro archivo
+                        </button>
+                        <button class="btn btn-module" onclick="confirmCSV()" id="btnConfirmCSV">
+                            <i class="bi bi-arrow-right-circle me-1"></i>Confirmar y continuar
+                        </button>
+                    </div>
+                </div>
+                
             </div>
         </div>
         
@@ -351,7 +401,215 @@
             }
         }
         
-        console.log('✅ certificates-generator.html v26.04.23 - shell cargado');
+        // ==========================================
+        // PASO 1: CARGA Y PARSEO DEL CSV
+        // ==========================================
+        
+        document.getElementById('csvFileInput').addEventListener('change', handleCSVFile);
+        
+        async function handleCSVFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showMessage('Por favor selecciona un archivo CSV', 'warning');
+                event.target.value = '';
+                return;
+            }
+            
+            try {
+                const text = await file.text();
+                const parsed = parseCSV(text);
+                
+                if (parsed.headers.length === 0 || parsed.rows.length === 0) {
+                    showMessage('El archivo CSV está vacío o mal formateado', 'warning');
+                    return;
+                }
+                
+                if (parsed.headers.length > 10) {
+                    showMessage('El archivo tiene demasiadas columnas. Revisa el separador.', 'warning');
+                    return;
+                }
+                
+                wizardState.csvHeaders = parsed.headers;
+                wizardState.csvData = parsed.rows;
+                
+                document.getElementById('csvFileName').textContent = file.name;
+                document.getElementById('csvRowCount').textContent = parsed.rows.length;
+                document.getElementById('csvColCount').textContent = parsed.headers.length;
+                
+                renderCSVPreview(parsed.headers, parsed.rows);
+                renderCSVWarnings(parsed.headers, parsed.rows);
+                
+                document.getElementById('csvUploadArea').style.display = 'none';
+                document.getElementById('csvPreviewArea').style.display = 'block';
+                
+                console.log(`✅ CSV parseado: ${parsed.rows.length} filas, ${parsed.headers.length} columnas`);
+                
+            } catch (error) {
+                console.error('❌ Error parseando CSV:', error);
+                showMessage('Error al leer el archivo: ' + error.message, 'danger');
+            }
+        }
+        
+        /**
+         * Parser de CSV que respeta comillas dobles y comas dentro de campos entrecomillados.
+         * Retorna { headers: [...], rows: [[...], [...]] }
+         */
+        function parseCSV(text) {
+            // Normalizar saltos de línea
+            const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            const lines = normalized.split('\n').filter(line => line.trim().length > 0);
+            
+            if (lines.length === 0) return { headers: [], rows: [] };
+            
+            const headers = parseCSVLine(lines[0]);
+            const rows = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const values = parseCSVLine(lines[i]);
+                // Rellenar con strings vacíos si la fila tiene menos columnas
+                while (values.length < headers.length) values.push('');
+                // Truncar si tiene más
+                if (values.length > headers.length) values.length = headers.length;
+                rows.push(values);
+            }
+            
+            return { headers, rows };
+        }
+        
+        /**
+         * Parsea una línea CSV respetando comillas dobles.
+         * Ejemplo: 'Juan,"García, Andrés",Bogotá' → ['Juan', 'García, Andrés', 'Bogotá']
+         */
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    // Comilla escapada: ""
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            result.push(current.trim());
+            return result;
+        }
+        
+        function renderCSVPreview(headers, rows) {
+            // Encabezados
+            let headHtml = '<tr><th style="width:40px;">#</th>';
+            headers.forEach((h, idx) => {
+                const colLabel = String.fromCharCode(65 + idx); // A, B, C, D...
+                headHtml += `<th><small class="text-muted">Col ${colLabel}</small><br>${escapeHtml(h)}</th>`;
+            });
+            headHtml += '</tr>';
+            document.getElementById('csvPreviewHead').innerHTML = headHtml;
+            
+            // Filas (máximo 5)
+            let bodyHtml = '';
+            const previewRows = rows.slice(0, 5);
+            previewRows.forEach((row, idx) => {
+                bodyHtml += `<tr><td class="text-muted">${idx + 1}</td>`;
+                row.forEach(val => {
+                    bodyHtml += `<td>${escapeHtml(val)}</td>`;
+                });
+                bodyHtml += '</tr>';
+            });
+            if (rows.length > 5) {
+                bodyHtml += `<tr><td colspan="${headers.length + 1}" class="text-center text-muted small">... y ${rows.length - 5} filas más</td></tr>`;
+            }
+            document.getElementById('csvPreviewBody').innerHTML = bodyHtml;
+        }
+        
+        function renderCSVWarnings(headers, rows) {
+            const warnings = [];
+            
+            // Primera columna vacía en alguna fila
+            const emptyNamesCount = rows.filter(r => !r[0] || r[0].trim() === '').length;
+            if (emptyNamesCount > 0) {
+                warnings.push(`${emptyNamesCount} fila(s) tienen la columna A (nombre) vacía. Estas filas se omitirán.`);
+            }
+            
+            // Más de 4 columnas
+            if (headers.length > 4) {
+                warnings.push(`El CSV tiene ${headers.length} columnas. Solo podrás mapear hasta 4 en la plantilla.`);
+            }
+            
+            // Duplicados en columna A
+            const names = rows.map(r => (r[0] || '').trim()).filter(n => n);
+            const duplicates = names.filter((n, i) => names.indexOf(n) !== i);
+            if (duplicates.length > 0) {
+                const uniqueDupes = [...new Set(duplicates)];
+                warnings.push(`Hay ${uniqueDupes.length} nombre(s) duplicado(s) en la columna A. Se generará un certificado por cada fila.`);
+            }
+            
+            const container = document.getElementById('csvWarnings');
+            if (warnings.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            let html = '<div class="alert alert-warning"><h6 class="alert-heading"><i class="bi bi-exclamation-triangle me-2"></i>Advertencias</h6><ul class="mb-0">';
+            warnings.forEach(w => { html += `<li>${w}</li>`; });
+            html += '</ul></div>';
+            container.innerHTML = html;
+        }
+        
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+        
+        function resetCSV() {
+            wizardState.csvHeaders = [];
+            wizardState.csvData = [];
+            document.getElementById('csvFileInput').value = '';
+            document.getElementById('csvUploadArea').style.display = 'block';
+            document.getElementById('csvPreviewArea').style.display = 'none';
+        }
+        
+        function confirmCSV() {
+            // Filtrar filas con nombre vacío
+            const validRows = wizardState.csvData.filter(r => r[0] && r[0].trim() !== '');
+            
+            if (validRows.length === 0) {
+                showMessage('No hay filas válidas (con nombre) para procesar', 'warning');
+                return;
+            }
+            
+            wizardState.csvData = validRows;
+            
+            showMessage(`CSV confirmado: ${validRows.length} certificados se generarán`, 'success');
+            markStepCompleted(1);
+            goToStep(2);
+            
+            // Scroll suave hacia el paso 2
+            setTimeout(() => {
+                document.getElementById('stepCard2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 200);
+        }
+        
+        console.log('✅ certificates-generator.html v26.04.23 - paso 1 cargado');
     </script>
 </body>
 </html>
