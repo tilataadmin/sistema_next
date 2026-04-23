@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.23.08.05">
+    <meta name="page-version" content="26.04.23.08.15">
     <title>Generador de Certificados - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -555,9 +555,80 @@
                 Paso 6: Vista previa y generación del PDF
             </div>
             <div class="step-card-body">
-                <div class="empty-placeholder">
-                    [Bloqueado hasta completar el paso 5]
+                
+                <!-- Área de vista previa -->
+                <div id="previewArea">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Vista previa con el primer registro del CSV.</strong>
+                        Revisa que la posición, el tamaño y el color del texto sean correctos.
+                        Si algo no se ve bien, vuelve al paso anterior para ajustar.
+                    </div>
+                    
+                    <h6 class="mb-2">
+                        Vista previa con el primer participante:
+                        <span class="badge bg-secondary" id="previewParticipantName">-</span>
+                    </h6>
+                    
+                    <div class="text-center mb-3" style="overflow-x: auto; border: 2px solid #dee2e6; border-radius: 8px; padding: 10px; background: #fff;">
+                        <canvas id="finalPreviewCanvas"></canvas>
+                    </div>
+                    
+                    <div class="alert alert-light border">
+                        <i class="bi bi-collection me-2"></i>
+                        Se generarán <strong><span id="totalToGenerate">0</span></strong> certificados en un único archivo PDF.
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" onclick="backToStep5()">
+                            <i class="bi bi-arrow-left-circle me-1"></i>Ajustar formato
+                        </button>
+                        <button class="btn btn-module" onclick="generateAllCertificates()" id="btnGenerateAll">
+                            <i class="bi bi-file-earmark-pdf me-1"></i>Generar todos los certificados
+                        </button>
+                    </div>
                 </div>
+                
+                <!-- Área de progreso -->
+                <div id="generatingArea" style="display: none;">
+                    <h6 class="mb-3">
+                        <i class="bi bi-hourglass-split me-2"></i>Generando certificados...
+                    </h6>
+                    <div class="progress mb-2" style="height: 25px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             id="generationProgressBar" role="progressbar" style="width: 0%">
+                            0%
+                        </div>
+                    </div>
+                    <p class="small text-muted" id="generationProgressText">
+                        Preparando...
+                    </p>
+                </div>
+                
+                <!-- Área de resultado -->
+                <div id="resultArea" style="display: none;">
+                    <div class="alert alert-success">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-check-circle me-2"></i>PDF generado correctamente
+                        </h6>
+                        <p class="mb-0">
+                            Se generó un PDF con <strong><span id="resultCount">0</span></strong> certificados.
+                            La descarga debería haber iniciado automáticamente.
+                        </p>
+                    </div>
+                    
+                    <div id="generationWarnings"></div>
+                    
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-module" onclick="downloadGeneratedPDF()">
+                            <i class="bi bi-download me-1"></i>Descargar de nuevo
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="restartWizard()">
+                            <i class="bi bi-arrow-repeat me-1"></i>Generar otro lote
+                        </button>
+                    </div>
+                </div>
+                
             </div>
         </div>
         
@@ -1425,12 +1496,343 @@
             markStepCompleted(5);
             goToStep(6);
             
+            // Generar vista previa automáticamente
+            initFinalStep();
+            
             setTimeout(() => {
                 document.getElementById('stepCard6').scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 200);
         }
         
         console.log('✅ certificates-generator.html v26.04.23 - paso 5 cargado');
+        
+        // ==========================================
+        // PASO 6: VISTA PREVIA Y GENERACIÓN DEL PDF FINAL
+        // ==========================================
+        
+        let lastGeneratedPdfBytes = null;
+        let lastGeneratedFilename = null;
+        
+        /**
+         * Inicializa el paso 6: muestra la vista previa con la primera fila
+         * y prepara los contadores.
+         */
+        async function initFinalStep() {
+            // Mostrar área de vista previa, ocultar las demás
+            document.getElementById('previewArea').style.display = 'block';
+            document.getElementById('generatingArea').style.display = 'none';
+            document.getElementById('resultArea').style.display = 'none';
+            
+            const firstRow = wizardState.csvData[0];
+            const firstName = firstRow[0] || '(sin nombre)';
+            
+            document.getElementById('previewParticipantName').textContent = firstName;
+            document.getElementById('totalToGenerate').textContent = wizardState.csvData.length;
+            
+            // Generar la vista previa
+            try {
+                await renderCertificatePreview(firstRow);
+            } catch (error) {
+                console.error('❌ Error generando vista previa:', error);
+                showMessage('Error al generar la vista previa: ' + error.message, 'danger');
+            }
+        }
+        
+        /**
+         * Genera un PDF de UNA sola página con los datos de `rowData` y lo renderiza
+         * en el canvas de vista previa.
+         */
+        async function renderCertificatePreview(rowData) {
+            const { PDFDocument, rgb, StandardFonts } = PDFLib;
+            
+            const pdfDoc = await PDFDocument.load(wizardState.pdfBytes);
+            const page = pdfDoc.getPages()[0];
+            const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+            const color = hexToRgb(wizardState.styleConfig.textColor);
+            
+            drawFieldsOnPage(page, rowData, font, color);
+            
+            const previewBytes = await pdfDoc.save();
+            
+            // Renderizar en canvas
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            
+            const pdf = await pdfjsLib.getDocument({ data: previewBytes }).promise;
+            const previewPage = await pdf.getPage(1);
+            const baseViewport = previewPage.getViewport({ scale: 1 });
+            
+            const maxWidth = 720;
+            const scale = Math.min(maxWidth / baseViewport.width, 1.5);
+            const scaledViewport = previewPage.getViewport({ scale });
+            
+            const canvas = document.getElementById('finalPreviewCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await previewPage.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+        }
+        
+        /**
+         * Dibuja los campos configurados sobre una página de pdf-lib.
+         * Cada valor se centra horizontalmente sobre el punto guardado.
+         * Retorna un array con advertencias (campos que no pudieron dibujarse).
+         */
+        function drawFieldsOnPage(page, rowData, font, color) {
+            const { rgb } = PDFLib;
+            const warnings = [];
+            
+            wizardState.selectedColumns.forEach(colIdx => {
+                const rawText = rowData[colIdx];
+                const text = (rawText || '').trim();
+                if (!text) return;
+                
+                const pos = wizardState.fieldPositions[colIdx];
+                if (!pos) return;
+                
+                const fontSize = (colIdx === 0)
+                    ? wizardState.styleConfig.nameSize
+                    : wizardState.styleConfig.otherSize;
+                
+                try {
+                    const textWidth = font.widthOfTextAtSize(text, fontSize);
+                    page.drawText(text, {
+                        x: pos.x - (textWidth / 2),
+                        y: pos.y - (fontSize / 2),
+                        size: fontSize,
+                        font: font,
+                        color: rgb(color.r, color.g, color.b)
+                    });
+                } catch (e) {
+                    warnings.push({
+                        column: wizardState.csvHeaders[colIdx],
+                        text: text,
+                        error: e.message
+                    });
+                }
+            });
+            
+            return warnings;
+        }
+        
+        /**
+         * Genera el PDF completo con N páginas, una por cada fila del CSV.
+         * Actualiza la barra de progreso y dispara la descarga.
+         */
+        async function generateAllCertificates() {
+            const total = wizardState.csvData.length;
+            if (total === 0) {
+                showMessage('No hay filas para procesar', 'warning');
+                return;
+            }
+            
+            // Cambiar a vista de progreso
+            document.getElementById('previewArea').style.display = 'none';
+            document.getElementById('generatingArea').style.display = 'block';
+            document.getElementById('resultArea').style.display = 'none';
+            
+            updateGenerationProgress(0, total, 'Preparando...');
+            
+            try {
+                const { PDFDocument, StandardFonts } = PDFLib;
+                
+                const finalDoc = await PDFDocument.create();
+                const font = await finalDoc.embedFont(StandardFonts.HelveticaBold);
+                const color = hexToRgb(wizardState.styleConfig.textColor);
+                
+                // Cargar la plantilla una sola vez
+                const templateDoc = await PDFDocument.load(wizardState.pdfBytes);
+                
+                const allWarnings = [];
+                
+                for (let i = 0; i < total; i++) {
+                    const row = wizardState.csvData[i];
+                    const participantName = row[0] || `Fila ${i + 1}`;
+                    
+                    // Copiar primera página de la plantilla al documento final
+                    const [copiedPage] = await finalDoc.copyPages(templateDoc, [0]);
+                    finalDoc.addPage(copiedPage);
+                    
+                    // Dibujar campos
+                    const warnings = drawFieldsOnPage(copiedPage, row, font, color);
+                    warnings.forEach(w => {
+                        allWarnings.push({ row: i + 1, ...w });
+                    });
+                    
+                    updateGenerationProgress(i + 1, total, `Procesando: ${participantName}`);
+                    
+                    // Liberar el hilo cada 5 páginas para que el DOM se actualice
+                    if ((i + 1) % 5 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                    }
+                }
+                
+                updateGenerationProgress(total, total, 'Guardando archivo...');
+                
+                const finalBytes = await finalDoc.save();
+                
+                // Guardar para posible re-descarga
+                lastGeneratedPdfBytes = finalBytes;
+                lastGeneratedFilename = buildOutputFilename(total);
+                
+                // Descarga automática
+                downloadPDFBytes(finalBytes, lastGeneratedFilename);
+                
+                // Mostrar resultado
+                document.getElementById('generatingArea').style.display = 'none';
+                document.getElementById('resultArea').style.display = 'block';
+                document.getElementById('resultCount').textContent = total;
+                renderGenerationWarnings(allWarnings);
+                
+                showMessage(`PDF generado con ${total} certificados`, 'success');
+                console.log(`✅ PDF final generado: ${total} páginas`);
+                
+            } catch (error) {
+                console.error('❌ Error generando PDF:', error);
+                showMessage('Error al generar el PDF: ' + error.message, 'danger');
+                
+                // Volver a la vista previa
+                document.getElementById('previewArea').style.display = 'block';
+                document.getElementById('generatingArea').style.display = 'none';
+            }
+        }
+        
+        function updateGenerationProgress(current, total, statusText) {
+            const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+            const bar = document.getElementById('generationProgressBar');
+            bar.style.width = percentage + '%';
+            bar.textContent = percentage + '%';
+            
+            document.getElementById('generationProgressText').textContent =
+                `${statusText} (${current} de ${total})`;
+        }
+        
+        function renderGenerationWarnings(warnings) {
+            const container = document.getElementById('generationWarnings');
+            if (!warnings || warnings.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            let html = `
+                <div class="alert alert-warning">
+                    <h6 class="alert-heading">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        ${warnings.length} campo(s) no pudieron dibujarse
+                    </h6>
+                    <p class="small mb-2">
+                        Algunos valores contenían caracteres no soportados y se omitieron.
+                        Las páginas correspondientes están en el PDF, pero con esos campos vacíos.
+                    </p>
+                    <ul class="small mb-0" style="max-height: 150px; overflow-y: auto;">
+            `;
+            warnings.slice(0, 20).forEach(w => {
+                html += `<li>Fila ${w.row} — <strong>${escapeHtml(w.column)}</strong>: "${escapeHtml(w.text)}"</li>`;
+            });
+            if (warnings.length > 20) {
+                html += `<li><em>... y ${warnings.length - 20} advertencias más</em></li>`;
+            }
+            html += '</ul></div>';
+            container.innerHTML = html;
+        }
+        
+        function downloadPDFBytes(bytes, filename) {
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
+        }
+        
+        function downloadGeneratedPDF() {
+            if (!lastGeneratedPdfBytes) {
+                showMessage('No hay PDF generado', 'warning');
+                return;
+            }
+            downloadPDFBytes(lastGeneratedPdfBytes, lastGeneratedFilename);
+        }
+        
+        function buildOutputFilename(count) {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mi = String(now.getMinutes()).padStart(2, '0');
+            return `Certificados_${count}_${yyyy}-${mm}-${dd}_${hh}${mi}.pdf`;
+        }
+        
+        function hexToRgb(hex) {
+            const h = hex.replace('#', '');
+            return {
+                r: parseInt(h.substring(0, 2), 16) / 255,
+                g: parseInt(h.substring(2, 4), 16) / 255,
+                b: parseInt(h.substring(4, 6), 16) / 255
+            };
+        }
+        
+        function backToStep5() {
+            goToStep(5);
+            setTimeout(() => {
+                document.getElementById('stepCard5').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 200);
+        }
+        
+        /**
+         * Reinicia completamente el wizard para generar un nuevo lote.
+         */
+        function restartWizard() {
+            if (!confirm('¿Reiniciar el generador? Se perderán los datos cargados.')) return;
+            
+            wizardState = {
+                currentStep: 1,
+                csvData: [],
+                csvHeaders: [],
+                selectedColumns: [],
+                pdfBytes: null,
+                pdfWidth: 0,
+                pdfHeight: 0,
+                fieldPositions: {},
+                styleConfig: {
+                    nameSize: 28,
+                    otherSize: 16,
+                    textColor: '#1B365D'
+                }
+            };
+            lastGeneratedPdfBytes = null;
+            lastGeneratedFilename = null;
+            activeFieldIndex = null;
+            
+            // Reset inputs
+            document.getElementById('csvFileInput').value = '';
+            document.getElementById('pdfFileInput').value = '';
+            
+            // Reset visual de cada paso
+            resetCSV();
+            resetPDF();
+            document.getElementById('step2Actions').style.display = 'none';
+            document.getElementById('columnsSelector').innerHTML = '';
+            document.getElementById('previewArea').style.display = 'block';
+            document.getElementById('generatingArea').style.display = 'none';
+            document.getElementById('resultArea').style.display = 'none';
+            
+            // Reset stepper y cards
+            document.querySelectorAll('.wizard-step').forEach(el => {
+                el.classList.remove('completed', 'active');
+            });
+            document.querySelector('.wizard-step[data-step="1"]').classList.add('active');
+            
+            goToStep(1);
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        console.log('✅ certificates-generator.html v26.04.23 - paso 6 cargado');
     </script>
 </body>
 </html>
