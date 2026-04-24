@@ -56,7 +56,6 @@ const MY_SPACE_SUBSECTIONS = [
 const MODULE_ITEM_ORDER = {
     'alumni': [
         'Ver directorio de egresados',
-        'Revisar cambios de egresados',
         'Importar egresados desde Phidias',
         'Importar egresados desde archivo',
         'Configurar campos de egresados',

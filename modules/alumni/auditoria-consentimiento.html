@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.04.24.00.08">
+
+    <title>Auditoría de consentimientos - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content {
+            background: white; padding: 2rem;
+            border-radius: 8px; text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #5E4B8B;
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Panel de filtros */
+        .filters-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Resumen */
+        .summary-row {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .summary-card {
+            flex: 1;
+            min-width: 150px;
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            color: white;
+            text-align: center;
+        }
+
+        .summary-card.authorized { background-color: #1D9E75; }
+        .summary-card.revoked { background-color: #E24B4A; }
+        .summary-card.total { background-color: #5E4B8B; }
+
+        .summary-number {
+            font-size: 1.6rem;
+            font-weight: 700;
+            line-height: 1.1;
+            display: block;
+        }
+
+        .summary-label {
+            font-size: 0.8rem;
+            opacity: 0.95;
+        }
+
+        /* Tabla */
+        .audit-table {
+            font-size: 0.875rem;
+        }
+
+        .audit-table th {
+            white-space: nowrap;
+        }
+
+        .audit-table td {
+            vertical-align: middle;
+        }
+
+        .consent-type-badge {
+            font-size: 0.75rem;
+            padding: 0.25em 0.55em;
+        }
+
+        .consent-type-data_treatment { background-color: #5E4B8B; }
+        .consent-type-directory_basic { background-color: #378ADD; }
+        .consent-type-directory_extended { background-color: #BA7517; }
+
+        .value-authorized {
+            color: #1D9E75;
+            font-weight: 600;
+        }
+
+        .value-revoked {
+            color: #E24B4A;
+            font-weight: 600;
+        }
+
+        .user-agent-cell {
+            font-size: 0.75rem;
+            color: #6c757d;
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #6c757d;
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            opacity: 0.3;
+            display: block;
+            margin-bottom: 1rem;
+        }
+
+        .alumni-link {
+            color: #5E4B8B;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .alumni-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Modal detalle */
+        .detail-row {
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #f1f3f5;
+        }
+
+        .detail-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-value {
+            font-size: 0.95rem;
+            color: #343a40;
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0" id="loadingMessage">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Auditoría de consentimientos
+                </li>
+            </ol>
+        </nav>
+
+        <!-- ENCABEZADO -->
+        <div class="row mb-3">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-clipboard-check me-2"></i>
+                    Auditoría de consentimientos
+                </h1>
+                <p class="text-muted">
+                    Registro cronológico de autorizaciones y revocaciones de tratamiento de datos Habeas Data.
+                </p>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DE ALERTAS -->
+        <div id="alertContainer"></div>
+
+        <!-- AVISO -->
+        <div class="alert alert-info small">
+            <i class="bi bi-info-circle me-2"></i>
+            Este registro se mantiene <strong>por obligación legal</strong> (Ley 1581 de 2012). Cada fila
+            documenta cuándo y cómo un egresado autorizó o revocó cada consentimiento, y permite demostrar
+            trazabilidad ante una auditoría de la Superintendencia de Industria y Comercio.
+        </div>
+
+        <!-- FILTROS -->
+        <div class="filters-panel">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="text-muted">Filtros</strong>
+                <button id="btnClearFilters" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Limpiar filtros
+                </button>
+            </div>
+
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Búsqueda de egresado</label>
+                    <input type="text" id="filterSearch" class="form-control form-control-sm"
+                           placeholder="Nombre, apellido, documento...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Tipo de consentimiento</label>
+                    <select id="filterType" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="data_treatment">Tratamiento de datos</option>
+                        <option value="directory_basic">Directorio básico</option>
+                        <option value="directory_extended">Directorio extendido</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Acción</label>
+                    <select id="filterValue" class="form-select form-select-sm">
+                        <option value="">Todas</option>
+                        <option value="true">Autorización</option>
+                        <option value="false">Revocación</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Desde</label>
+                    <input type="date" id="filterDateFrom" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Hasta</label>
+                    <input type="date" id="filterDateTo" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-0">&nbsp;</label>
+                    <button id="btnExport" class="btn btn-sm btn-outline-primary w-100 d-none">
+                        <i class="bi bi-download"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESUMEN -->
+        <div class="summary-row">
+            <div class="summary-card total">
+                <span class="summary-number" id="sumTotal">0</span>
+                <span class="summary-label">Eventos en el filtro</span>
+            </div>
+            <div class="summary-card authorized">
+                <span class="summary-number" id="sumAuthorized">0</span>
+                <span class="summary-label">Autorizaciones</span>
+            </div>
+            <div class="summary-card revoked">
+                <span class="summary-number" id="sumRevoked">0</span>
+                <span class="summary-label">Revocaciones</span>
+            </div>
+        </div>
+
+        <!-- TABLA -->
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                    <table class="table table-hover audit-table mb-0">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th>Fecha y hora</th>
+                                <th>Egresado</th>
+                                <th>Documento</th>
+                                <th>Tipo</th>
+                                <th>Acción</th>
+                                <th>Dispositivo</th>
+                                <th style="width: 60px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditTableBody">
+                            <!-- Dinámico -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Paginación -->
+        <div class="d-flex justify-content-center align-items-center mb-4">
+            <nav aria-label="Paginación">
+                <ul class="pagination">
+                    <li class="page-item" id="prevPageItem">
+                        <button class="page-link" id="btnPrevPage">
+                            <i class="bi bi-chevron-left"></i> Anterior
+                        </button>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link" id="pageInfo">Página 1 de 1</span>
+                    </li>
+                    <li class="page-item" id="nextPageItem">
+                        <button class="page-link" id="btnNextPage">
+                            Siguiente <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+    </div>
+
+    <!-- ========================================= -->
+    <!-- MODAL: DETALLE DE EVENTO -->
+    <!-- ========================================= -->
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard-data me-2"></i>Detalle del evento
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailModalBody">
+                    <!-- Dinámico -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        const PAGE_SIZE = 100;
+        let allEvents = [];
+        let currentPage = 1;
+        let canExport = false;
+        let detailModalInstance = null;
+
+        const filters = {
+            search: '',
+            type: '',
+            value: '',
+            dateFrom: '',
+            dateTo: ''
+        };
+
+        let filtersDebounceTimer = null;
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Auditoría de consentimientos');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showAlert('Sesión no válida.', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                // Permiso de exportar (reutiliza el mismo de reportes)
+                canExport = await checkUserPermission(session.user.user_id, 'Exportar datos de egresados');
+                if (canExport) {
+                    document.getElementById('btnExport').classList.remove('d-none');
+                    document.getElementById('btnExport').title = 'Exportar eventos filtrados a XLSX';
+                }
+
+                detailModalInstance = new bootstrap.Modal(document.getElementById('detailModal'));
+
+                setupEventListeners();
+                await loadEvents();
+
+                console.log('✅ Auditoría de consentimientos inicializada');
+
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                showAlert('Error al cargar: ' + error.message, 'danger');
+            }
+        });
+
+        // ==========================================
+        // EVENTOS
+        // ==========================================
+        function setupEventListeners() {
+            const inputs = ['filterSearch', 'filterType', 'filterValue', 'filterDateFrom', 'filterDateTo'];
+            inputs.forEach(id => {
+                const el = document.getElementById(id);
+                el.addEventListener('input', onFilterChange);
+                el.addEventListener('change', onFilterChange);
+            });
+
+            document.getElementById('btnClearFilters').addEventListener('click', clearAllFilters);
+
+            document.getElementById('btnPrevPage').addEventListener('click', () => {
+                if (currentPage > 1) { currentPage--; renderTable(); }
+            });
+            document.getElementById('btnNextPage').addEventListener('click', () => {
+                const totalPages = Math.max(1, Math.ceil(allEvents.length / PAGE_SIZE));
+                if (currentPage < totalPages) { currentPage++; renderTable(); }
+            });
+
+            if (canExport) {
+                document.getElementById('btnExport').addEventListener('click', exportToXLSX);
+            }
+        }
+
+        function onFilterChange() {
+            clearTimeout(filtersDebounceTimer);
+            filtersDebounceTimer = setTimeout(() => {
+                readFilters();
+                currentPage = 1;
+                loadEvents();
+            }, 350);
+        }
+
+        function readFilters() {
+            filters.search = document.getElementById('filterSearch').value.trim();
+            filters.type = document.getElementById('filterType').value;
+            filters.value = document.getElementById('filterValue').value;
+            filters.dateFrom = document.getElementById('filterDateFrom').value;
+            filters.dateTo = document.getElementById('filterDateTo').value;
+        }
+
+        function clearAllFilters() {
+            document.getElementById('filterSearch').value = '';
+            document.getElementById('filterType').value = '';
+            document.getElementById('filterValue').value = '';
+            document.getElementById('filterDateFrom').value = '';
+            document.getElementById('filterDateTo').value = '';
+            readFilters();
+            currentPage = 1;
+            loadEvents();
+        }
+
+        // ==========================================
+        // CARGA
+        // ==========================================
+        async function loadEvents() {
+            try {
+                showLoading('Consultando eventos...');
+
+                // Traer log con join a alumni (JOIN embed de PostgREST)
+                let q = '/alumni_consent_log?select=consent_log_id,consent_type,consent_value,consent_at,' +
+                        'consent_user_agent,alumni_id,' +
+                        'alumni(alumni_id_document,alumni_first_name,alumni_last_name_1,alumni_last_name_2,graduation_year)';
+
+                if (filters.type) q += '&consent_type=eq.' + encodeURIComponent(filters.type);
+                if (filters.value === 'true') q += '&consent_value=eq.true';
+                if (filters.value === 'false') q += '&consent_value=eq.false';
+                if (filters.dateFrom) q += '&consent_at=gte.' + encodeURIComponent(filters.dateFrom);
+                if (filters.dateTo) {
+                    // Incluir todo el día "hasta"
+                    q += '&consent_at=lt.' + encodeURIComponent(addOneDay(filters.dateTo));
+                }
+
+                q += '&order=consent_at.desc&limit=5000';
+
+                const data = await supabaseRequest(q);
+                let rows = data || [];
+
+                // Filtro de búsqueda libre (cliente, sobre datos del join)
+                if (filters.search) {
+                    const term = filters.search.toLowerCase();
+                    rows = rows.filter(r => {
+                        const a = r.alumni;
+                        if (!a) return false;
+                        const haystack = [
+                            a.alumni_first_name,
+                            a.alumni_last_name_1,
+                            a.alumni_last_name_2,
+                            a.alumni_id_document,
+                            String(a.graduation_year || '')
+                        ].filter(Boolean).join(' ').toLowerCase();
+                        return haystack.includes(term);
+                    });
+                }
+
+                allEvents = rows;
+                renderSummary();
+                renderTable();
+                hideLoading();
+
+            } catch (error) {
+                console.error('❌ Error cargando:', error);
+                showAlert('Error al cargar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // RENDERIZADO
+        // ==========================================
+        function renderSummary() {
+            const total = allEvents.length;
+            const authorized = allEvents.filter(e => e.consent_value === true).length;
+            const revoked = allEvents.filter(e => e.consent_value === false).length;
+
+            document.getElementById('sumTotal').textContent = total;
+            document.getElementById('sumAuthorized').textContent = authorized;
+            document.getElementById('sumRevoked').textContent = revoked;
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('auditTableBody');
+
+            if (allEvents.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7">' + emptyStateHTML(
+                    'bi-clipboard-x',
+                    'Sin eventos que mostrar',
+                    'Ajusta los filtros o espera a que haya actividad de egresados.'
+                ) + '</td></tr>';
+                updatePagination();
+                return;
+            }
+
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const pageRows = allEvents.slice(start, start + PAGE_SIZE);
+
+            tbody.innerHTML = pageRows.map(e => {
+                const a = e.alumni || {};
+                const fullName = [a.alumni_last_name_1, a.alumni_last_name_2 || '', a.alumni_first_name]
+                    .filter(Boolean).join(' ');
+
+                const typeBadge = '<span class="badge consent-type-badge consent-type-' + e.consent_type + '">' +
+                    formatConsentType(e.consent_type) + '</span>';
+
+                const actionCell = e.consent_value
+                    ? '<span class="value-authorized"><i class="bi bi-check-circle-fill me-1"></i>Autorizó</span>'
+                    : '<span class="value-revoked"><i class="bi bi-x-circle-fill me-1"></i>Revocó</span>';
+
+                const ua = formatUserAgent(e.consent_user_agent);
+
+                return '<tr>' +
+                    '<td>' + formatTimestamp(e.consent_at) + '</td>' +
+                    '<td>' + escapeHtml(fullName || '—') +
+                        (a.graduation_year ? '<br><small class="text-muted">Promoción ' + a.graduation_year + '</small>' : '') +
+                    '</td>' +
+                    '<td><code>' + escapeHtml(a.alumni_id_document || '—') + '</code></td>' +
+                    '<td>' + typeBadge + '</td>' +
+                    '<td>' + actionCell + '</td>' +
+                    '<td class="user-agent-cell" title="' + escapeAttr(e.consent_user_agent || '') + '">' + ua + '</td>' +
+                    '<td>' +
+                        '<button class="btn btn-sm btn-outline-secondary" onclick="showDetail(\'' + e.consent_log_id + '\')" title="Ver detalle">' +
+                            '<i class="bi bi-eye"></i>' +
+                        '</button>' +
+                    '</td>' +
+                '</tr>';
+            }).join('');
+
+            updatePagination();
+        }
+
+        function updatePagination() {
+            const totalPages = Math.max(1, Math.ceil(allEvents.length / PAGE_SIZE));
+            document.getElementById('pageInfo').textContent = 'Página ' + currentPage + ' de ' + totalPages;
+            document.getElementById('prevPageItem').classList.toggle('disabled', currentPage <= 1);
+            document.getElementById('nextPageItem').classList.toggle('disabled', currentPage >= totalPages);
+            document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+            document.getElementById('btnNextPage').disabled = currentPage >= totalPages;
+        }
+
+        // ==========================================
+        // DETALLE
+        // ==========================================
+        function showDetail(logId) {
+            const e = allEvents.find(x => x.consent_log_id === logId);
+            if (!e) return;
+
+            const a = e.alumni || {};
+            const fullName = [a.alumni_first_name, a.alumni_last_name_1, a.alumni_last_name_2 || '']
+                .filter(Boolean).join(' ');
+
+            const html =
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Fecha y hora</div>' +
+                    '<div class="detail-value">' + formatTimestampFull(e.consent_at) + '</div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Egresado</div>' +
+                    '<div class="detail-value">' + escapeHtml(fullName || '—') + '</div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Documento</div>' +
+                    '<div class="detail-value"><code>' + escapeHtml(a.alumni_id_document || '—') + '</code></div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Año de promoción</div>' +
+                    '<div class="detail-value">' + (a.graduation_year || '—') + '</div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Tipo de consentimiento</div>' +
+                    '<div class="detail-value">' + formatConsentType(e.consent_type) + '</div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Acción</div>' +
+                    '<div class="detail-value">' +
+                        (e.consent_value
+                            ? '<span class="value-authorized">Autorizó el tratamiento</span>'
+                            : '<span class="value-revoked">Revocó la autorización</span>') +
+                    '</div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">Dispositivo (user agent completo)</div>' +
+                    '<div class="detail-value" style="font-size: 0.8rem; font-family: monospace;">' +
+                        escapeHtml(e.consent_user_agent || '(no registrado)') +
+                    '</div>' +
+                '</div>' +
+                '<div class="detail-row">' +
+                    '<div class="detail-label">ID del evento</div>' +
+                    '<div class="detail-value" style="font-size: 0.8rem; font-family: monospace;">' +
+                        escapeHtml(e.consent_log_id) +
+                    '</div>' +
+                '</div>';
+
+            document.getElementById('detailModalBody').innerHTML = html;
+            detailModalInstance.show();
+        }
+
+        // ==========================================
+        // EXPORTACIÓN
+        // ==========================================
+        async function exportToXLSX() {
+            if (allEvents.length === 0) {
+                showAlert('No hay eventos que exportar con los filtros actuales.', 'warning');
+                return;
+            }
+
+            try {
+                showLoading('Generando XLSX...');
+
+                const headers = [
+                    'Fecha y hora', 'Primer nombre', 'Apellidos', 'Documento',
+                    'Año de promoción', 'Tipo de consentimiento', 'Acción',
+                    'Dispositivo', 'ID del evento'
+                ];
+
+                const rows = allEvents.map(e => {
+                    const a = e.alumni || {};
+                    const apellidos = [a.alumni_last_name_1, a.alumni_last_name_2 || ''].filter(Boolean).join(' ');
+                    return [
+                        formatTimestampFull(e.consent_at),
+                        a.alumni_first_name || '',
+                        apellidos,
+                        a.alumni_id_document || '',
+                        a.graduation_year || '',
+                        formatConsentType(e.consent_type),
+                        e.consent_value ? 'Autorización' : 'Revocación',
+                        e.consent_user_agent || '',
+                        e.consent_log_id
+                    ];
+                });
+
+                const sheetData = [headers, ...rows];
+                const sheet = XLSX.utils.aoa_to_sheet(sheetData);
+                sheet['!cols'] = [
+                    { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 },
+                    { wch: 10 }, { wch: 25 }, { wch: 14 }, { wch: 40 }, { wch: 40 }
+                ];
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, sheet, 'Auditoría consentimientos');
+
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                XLSX.writeFile(wb, 'auditoria_consentimientos_' + timestamp + '.xlsx');
+
+                // Registrar en export_log
+                const session = getStoredSession();
+                await supabaseRequest('/alumni_export_log', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        user_id: session.user.user_id,
+                        filters_applied: {
+                            source: 'audit_consent_log',
+                            filters: filters
+                        },
+                        record_count: allEvents.length,
+                        export_format: 'xlsx'
+                    })
+                });
+
+                hideLoading();
+                showAlert('Exportación completada. ' + allEvents.length + ' eventos descargados.', 'success');
+
+            } catch (error) {
+                console.error('❌ Error exportando:', error);
+                showAlert('Error al exportar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function formatConsentType(type) {
+            const map = {
+                'data_treatment': 'Tratamiento de datos',
+                'directory_basic': 'Directorio básico',
+                'directory_extended': 'Directorio extendido'
+            };
+            return map[type] || type;
+        }
+
+        function formatTimestamp(isoString) {
+            if (!isoString) return '—';
+            const d = new Date(isoString);
+            const date = d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const time = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+            return date + '<br><small class="text-muted">' + time + '</small>';
+        }
+
+        function formatTimestampFull(isoString) {
+            if (!isoString) return '—';
+            const d = new Date(isoString);
+            return d.toLocaleString('es-CO', {
+                day: '2-digit', month: 'long', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+
+        function formatUserAgent(ua) {
+            if (!ua) return '<em class="text-muted">(no registrado)</em>';
+
+            let browser = 'Otro';
+            let os = 'Otro';
+
+            if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) browser = 'Chrome';
+            else if (/Edg\//.test(ua)) browser = 'Edge';
+            else if (/Firefox\//.test(ua)) browser = 'Firefox';
+            else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = 'Safari';
+
+            if (/Windows/.test(ua)) os = 'Windows';
+            else if (/Mac OS/.test(ua)) os = 'macOS';
+            else if (/Android/.test(ua)) os = 'Android';
+            else if (/iPhone|iPad|iOS/.test(ua)) os = 'iOS';
+            else if (/Linux/.test(ua)) os = 'Linux';
+
+            return browser + ' · ' + os;
+        }
+
+        function addOneDay(dateStr) {
+            const d = new Date(dateStr);
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().slice(0, 10);
+        }
+
+        function emptyStateHTML(icon, title, message) {
+            return '<div class="empty-state">' +
+                '<i class="bi ' + icon + '"></i>' +
+                '<h5>' + escapeHtml(title) + '</h5>' +
+                '<p class="small">' + escapeHtml(message) + '</p>' +
+                '</div>';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function escapeAttr(str) { return escapeHtml(str); }
+
+        function showLoading(msg) {
+            document.getElementById('loadingMessage').textContent = msg || 'Cargando...';
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        function showAlert(message, type) {
+            type = type || 'info';
+            const container = document.getElementById('alertContainer');
+            const id = 'alert_' + Date.now();
+            const icons = {
+                success: 'check-circle', danger: 'exclamation-triangle',
+                warning: 'exclamation-triangle', info: 'info-circle'
+            };
+            container.innerHTML =
+                '<div id="' + id + '" class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+                    '<i class="bi bi-' + (icons[type] || 'info-circle') + ' me-2"></i>' +
+                    message +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                '</div>';
+
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    const el = document.getElementById(id);
+                    if (el) bootstrap.Alert.getOrCreateInstance(el).close();
+                }, 5000);
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.showDetail = showDetail;
+
+        console.log('🎓 Auditoría de consentimientos cargada');
+    </script>
+</body>
+</html>
