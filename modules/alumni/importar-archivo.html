@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.04.24.07.30">
+
+    <title>Importar egresados desde archivo - SchoolNet</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <!-- SheetJS -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content {
+            background: white; padding: 2rem;
+            border-radius: 8px; text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #5E4B8B;
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Zona de carga */
+        .upload-zone {
+            border: 2px dashed #ced4da;
+            border-radius: 8px;
+            padding: 2.5rem 1rem;
+            text-align: center;
+            background-color: #f8f9fa;
+            transition: all 0.2s;
+        }
+        .upload-zone:hover {
+            border-color: #5E4B8B;
+            background-color: #f3f0f8;
+        }
+        .upload-zone.dragover {
+            border-color: #5E4B8B;
+            background-color: #ede8f4;
+        }
+        .upload-zone i {
+            font-size: 3rem;
+            color: #5E4B8B;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Resumen */
+        .summary-card {
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            color: white;
+            text-align: center;
+        }
+        .summary-green { background-color: #1D9E75; }
+        .summary-yellow { background-color: #BA7517; }
+        .summary-red { background-color: #E24B4A; }
+        .summary-total { background-color: #5E4B8B; }
+        .summary-number {
+            font-size: 2rem;
+            font-weight: bold;
+            display: block;
+            line-height: 1.1;
+        }
+        .summary-label {
+            font-size: 0.85rem;
+            opacity: 0.95;
+        }
+
+        /* Tabla de previsualización */
+        .preview-table {
+            font-size: 0.875rem;
+        }
+        .preview-table tr.row-green {
+            background-color: #d1e7dd;
+        }
+        .preview-table tr.row-yellow {
+            background-color: #fff3cd;
+        }
+        .preview-table tr.row-red {
+            background-color: #f8d7da;
+            color: #842029;
+        }
+        .preview-table td {
+            vertical-align: middle;
+            padding: 0.4rem 0.5rem;
+        }
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.25em 0.5em;
+        }
+        .observations-cell {
+            font-size: 0.8rem;
+            line-height: 1.3;
+        }
+        .observations-cell .obs-error {
+            color: #842029;
+            font-weight: 600;
+        }
+        .observations-cell .obs-warning {
+            color: #664d03;
+        }
+        .observations-cell .obs-list {
+            margin: 0;
+            padding-left: 1.2rem;
+        }
+
+        /* Panel de filtros */
+        .filter-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .required {
+            color: #dc3545;
+        }
+
+        /* Reporte final */
+        .final-report {
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+        }
+        .final-report i.icon-success {
+            font-size: 4rem;
+            color: #1D9E75;
+        }
+        .final-report i.icon-partial {
+            font-size: 4rem;
+            color: #BA7517;
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            line-height: 28px;
+            text-align: center;
+            border-radius: 50%;
+            background-color: #5E4B8B;
+            color: white;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0" id="loadingMessage">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Importar egresados desde archivo
+                </li>
+            </ol>
+        </nav>
+
+        <!-- ENCABEZADO -->
+        <div class="row mb-3">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-file-earmark-arrow-up me-2"></i>
+                    Importar egresados desde archivo
+                </h1>
+                <p class="text-muted">
+                    Carga masiva de egresados de promociones antiguas desde CSV o XLSX.
+                </p>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DE ALERTAS -->
+        <div id="alertContainer"></div>
+
+        <!-- ========================================= -->
+        <!-- PASO 1: INSTRUCCIONES Y PLANTILLA -->
+        <!-- ========================================= -->
+        <div id="step1" class="card mb-4">
+            <div class="card-body">
+                <h5><span class="step-number">1</span>Descarga la plantilla y completa los datos</h5>
+                <p class="text-muted mt-3">
+                    Usa la plantilla XLSX oficial para evitar errores de formato. Incluye una hoja con
+                    instrucciones detalladas y valores aceptados.
+                </p>
+                <button id="btnDownloadTemplate" class="btn btn-outline-primary">
+                    <i class="bi bi-download me-1"></i>Descargar plantilla XLSX
+                </button>
+
+                <div class="mt-4">
+                    <h6>Columnas del archivo</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Columna</th>
+                                    <th>Obligatoria</th>
+                                    <th>Validación</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>documento</code></td>
+                                    <td><span class="badge bg-danger">Sí</span></td>
+                                    <td>Alfanumérico, 5-20 caracteres. Sin espacios ni símbolos.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>primer_nombre</code></td>
+                                    <td><span class="badge bg-danger">Sí</span></td>
+                                    <td>Texto.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>segundo_nombre</code></td>
+                                    <td><span class="badge bg-secondary">No</span></td>
+                                    <td>Texto. Se agrega al primer nombre si está presente.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>primer_apellido</code></td>
+                                    <td><span class="badge bg-danger">Sí</span></td>
+                                    <td>Texto.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>segundo_apellido</code></td>
+                                    <td><span class="badge bg-secondary">No</span></td>
+                                    <td>Texto.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>anio_promocion</code></td>
+                                    <td><span class="badge bg-danger">Sí</span></td>
+                                    <td>Entre 1996 y el año actual. Fuera de rango = error.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>fecha_nacimiento</code></td>
+                                    <td><span class="badge bg-secondary">No</span></td>
+                                    <td>Formatos <code>YYYY-MM-DD</code> o <code>DD/MM/YYYY</code>. Otros formatos → advertencia.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>email</code></td>
+                                    <td><span class="badge bg-secondary">No</span></td>
+                                    <td>Email válido. Si está mal formado, se importa sin email (advertencia).</td>
+                                </tr>
+                                <tr>
+                                    <td><code>telefono</code></td>
+                                    <td><span class="badge bg-secondary">No</span></td>
+                                    <td>Texto libre. Se guarda en el perfil dinámico.</td>
+                                </tr>
+                                <tr>
+                                    <td><code>genero</code></td>
+                                    <td><span class="badge bg-secondary">No</span></td>
+                                    <td>M, F, Masculino, Femenino, Hombre, Mujer (no distingue mayúsculas). Otros → advertencia.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================= -->
+        <!-- PASO 2: CARGA DE ARCHIVO -->
+        <!-- ========================================= -->
+        <div id="step2" class="card mb-4">
+            <div class="card-body">
+                <h5><span class="step-number">2</span>Sube el archivo</h5>
+                <p class="text-muted mt-3">Acepta CSV (UTF-8) y XLSX.</p>
+
+                <div class="upload-zone" id="uploadZone">
+                    <i class="bi bi-cloud-arrow-up-fill"></i>
+                    <p class="mb-2"><strong>Arrastra tu archivo aquí</strong> o haz clic para seleccionar</p>
+                    <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx">
+                    <button class="btn btn-primary" id="btnChooseFile">
+                        <i class="bi bi-folder2-open me-1"></i>Seleccionar archivo
+                    </button>
+                </div>
+
+                <div id="fileInfo" class="mt-3 d-none">
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-file-earmark-text me-1"></i>
+                        <strong id="fileName">—</strong>
+                        (<span id="fileSize">—</span>)
+                        <button class="btn btn-sm btn-outline-secondary float-end" id="btnClearFile">
+                            <i class="bi bi-x"></i> Cambiar archivo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================= -->
+        <!-- PASO 3: PREVISUALIZACIÓN -->
+        <!-- ========================================= -->
+        <div id="step3" class="card mb-4 d-none">
+            <div class="card-body">
+                <h5><span class="step-number">3</span>Previsualización y validación</h5>
+
+                <!-- Resumen -->
+                <div class="row g-2 mt-3">
+                    <div class="col-md-3">
+                        <div class="summary-card summary-total">
+                            <span class="summary-number" id="sumTotal">0</span>
+                            <span class="summary-label">Filas leídas</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="summary-card summary-green">
+                            <span class="summary-number" id="sumGreen">0</span>
+                            <span class="summary-label">Listas para importar</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="summary-card summary-yellow">
+                            <span class="summary-number" id="sumYellow">0</span>
+                            <span class="summary-label">Con advertencias</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="summary-card summary-red">
+                            <span class="summary-number" id="sumRed">0</span>
+                            <span class="summary-label">No importables</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filtro -->
+                <div class="filter-bar mt-3">
+                    <div>
+                        <label class="form-label small mb-1">Mostrar:</label>
+                        <select id="previewFilter" class="form-select form-select-sm" style="width: auto;">
+                            <option value="all">Todas las filas</option>
+                            <option value="red">Solo no importables</option>
+                            <option value="yellow">Solo con advertencias</option>
+                            <option value="green">Solo listas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary" id="btnCancelImport">
+                            <i class="bi bi-x-circle me-1"></i>Cancelar
+                        </button>
+                        <button class="btn btn-primary" id="btnConfirmImport">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Importar <span id="importableCount">0</span> registros
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabla -->
+                <div class="table-responsive mt-3" style="max-height: 600px; overflow-y: auto;">
+                    <table class="table table-sm preview-table">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th style="width: 50px;">Fila</th>
+                                <th style="width: 90px;">Estado</th>
+                                <th>Documento</th>
+                                <th>Nombre completo</th>
+                                <th>Promoción</th>
+                                <th>Email</th>
+                                <th>Observaciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewTableBody">
+                            <!-- Dinámico -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================= -->
+        <!-- PASO 4: REPORTE FINAL -->
+        <!-- ========================================= -->
+        <div id="step4" class="card mb-4 d-none">
+            <div class="card-body">
+                <div class="final-report">
+                    <i id="finalIcon" class="bi bi-check-circle-fill icon-success"></i>
+                    <h4 class="mt-3" id="finalTitle">Importación completada</h4>
+                    <p class="text-muted" id="finalSubtitle">—</p>
+
+                    <div class="row g-2 mt-3">
+                        <div class="col-md-4">
+                            <div class="summary-card summary-green">
+                                <span class="summary-number" id="finalImported">0</span>
+                                <span class="summary-label">Egresados importados</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="summary-card summary-yellow">
+                                <span class="summary-number" id="finalWithWarnings">0</span>
+                                <span class="summary-label">Con advertencias aplicadas</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="summary-card summary-red">
+                                <span class="summary-number" id="finalSkipped">0</span>
+                                <span class="summary-label">Omitidos (filas rojas)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <button class="btn btn-primary" id="btnNewImport">
+                            <i class="bi bi-arrow-repeat me-1"></i>Nueva importación
+                        </button>
+                        <a href="directorio.html" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-list me-1"></i>Ir al directorio
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let parsedRows = [];       // filas validadas con estado
+        let existingDocs = new Set(); // documentos ya en BD
+        let genderMap = {};        // { 'M': uuid, 'F': uuid, ... }
+
+        const CURRENT_YEAR = new Date().getFullYear();
+        const MIN_YEAR = 1996;
+        const EXPECTED_COLUMNS = [
+            'documento', 'primer_nombre', 'segundo_nombre',
+            'primer_apellido', 'segundo_apellido', 'anio_promocion',
+            'fecha_nacimiento', 'email', 'telefono', 'genero'
+        ];
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Importar egresados desde archivo');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showAlert('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                await inicializarPagina();
+
+            } catch (error) {
+                console.error('❌ Error en validación de acceso:', error);
+                showAlert('Error de validación: ' + error.message, 'danger');
+            }
+        });
+
+        async function inicializarPagina() {
+            try {
+                showLoading('Cargando catálogos...');
+
+                // Cargar géneros
+                const genders = await supabaseRequest('/genders?select=gender_id,gender_name');
+                buildGenderMap(genders || []);
+
+                setupEventListeners();
+
+                hideLoading();
+                console.log('✅ Importar egresados desde archivo - inicializado');
+
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                showAlert('Error al cargar la página: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        function buildGenderMap(genders) {
+            // Buscar Masculino y Femenino por nombre
+            genderMap = {};
+            genders.forEach(g => {
+                const nameLower = (g.gender_name || '').toLowerCase().trim();
+                if (nameLower.startsWith('mascul') || nameLower === 'hombre' || nameLower === 'm') {
+                    genderMap.masculino = g.gender_id;
+                }
+                if (nameLower.startsWith('femen') || nameLower === 'mujer' || nameLower === 'f') {
+                    genderMap.femenino = g.gender_id;
+                }
+            });
+
+            if (!genderMap.masculino || !genderMap.femenino) {
+                console.warn('⚠️ No se encontraron géneros Masculino/Femenino en la tabla genders. El mapeo quedará parcial.');
+            }
+        }
+
+        function mapGender(rawValue) {
+            if (!rawValue) return { uuid: null, warning: null };
+            const v = String(rawValue).trim().toLowerCase();
+
+            const masculineValues = ['m', 'masculino', 'hombre'];
+            const feminineValues = ['f', 'femenino', 'mujer'];
+
+            if (masculineValues.includes(v)) return { uuid: genderMap.masculino || null, warning: null };
+            if (feminineValues.includes(v)) return { uuid: genderMap.femenino || null, warning: null };
+
+            return { uuid: null, warning: 'Valor de género no reconocido: "' + rawValue + '". Se guardó vacío.' };
+        }
+
+        // ==========================================
+        // EVENTOS
+        // ==========================================
+        function setupEventListeners() {
+            document.getElementById('btnDownloadTemplate').addEventListener('click', downloadTemplate);
+
+            document.getElementById('btnChooseFile').addEventListener('click', () =>
+                document.getElementById('fileInput').click());
+
+            document.getElementById('fileInput').addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+            });
+
+            // Drag & drop
+            const zone = document.getElementById('uploadZone');
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('dragover');
+            });
+            zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+            });
+
+            document.getElementById('btnClearFile').addEventListener('click', resetAll);
+            document.getElementById('btnCancelImport').addEventListener('click', resetAll);
+            document.getElementById('btnConfirmImport').addEventListener('click', executeImport);
+            document.getElementById('btnNewImport').addEventListener('click', resetAll);
+            document.getElementById('previewFilter').addEventListener('change', renderPreview);
+        }
+
+        // ==========================================
+        // PLANTILLA XLSX
+        // ==========================================
+        function downloadTemplate() {
+            try {
+                // Hoja 1: datos (solo encabezados)
+                const headers = EXPECTED_COLUMNS;
+                const exampleRow = [
+                    '1234567890', 'Juan', 'Carlos', 'Pérez', 'Gómez',
+                    '2005', '1987-05-14', 'juan.perez@correo.com',
+                    '+57 300 123 4567', 'M'
+                ];
+                const dataSheet = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+
+                // Anchos de columna
+                dataSheet['!cols'] = headers.map(() => ({ wch: 18 }));
+
+                // Hoja 2: instrucciones
+                const instructions = [
+                    ['Instrucciones para el archivo de importación de egresados'],
+                    [''],
+                    ['1. Usa la hoja "Datos" para agregar egresados. Borra la fila de ejemplo.'],
+                    ['2. No cambies el nombre de las columnas ni el orden.'],
+                    ['3. Los campos marcados como obligatorios no pueden quedar vacíos.'],
+                    [''],
+                    ['Columna', 'Obligatoria', 'Validación'],
+                    ['documento', 'Sí', 'Alfanumérico 5-20 caracteres. Único.'],
+                    ['primer_nombre', 'Sí', 'Texto.'],
+                    ['segundo_nombre', 'No', 'Texto.'],
+                    ['primer_apellido', 'Sí', 'Texto.'],
+                    ['segundo_apellido', 'No', 'Texto.'],
+                    ['anio_promocion', 'Sí', 'Entre 1996 y ' + CURRENT_YEAR],
+                    ['fecha_nacimiento', 'No', 'YYYY-MM-DD o DD/MM/YYYY'],
+                    ['email', 'No', 'Email válido. Si no, se guarda vacío con advertencia.'],
+                    ['telefono', 'No', 'Texto libre.'],
+                    ['genero', 'No', 'M, F, Masculino, Femenino, Hombre, Mujer'],
+                    [''],
+                    ['Semáforo de validación:'],
+                    ['Verde: Fila lista para importar.'],
+                    ['Amarillo: Fila importable con advertencias (campos problemáticos quedan vacíos).'],
+                    ['Rojo: Fila no importable.']
+                ];
+                const instrSheet = XLSX.utils.aoa_to_sheet(instructions);
+                instrSheet['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 60 }];
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, dataSheet, 'Datos');
+                XLSX.utils.book_append_sheet(wb, instrSheet, 'Instrucciones');
+
+                XLSX.writeFile(wb, 'plantilla_egresados.xlsx');
+
+            } catch (error) {
+                console.error('❌ Error generando plantilla:', error);
+                showAlert('Error al generar la plantilla: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // LECTURA DE ARCHIVO
+        // ==========================================
+        async function handleFile(file) {
+            try {
+                // Info visible
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = formatFileSize(file.size);
+                document.getElementById('fileInfo').classList.remove('d-none');
+
+                const ext = (file.name.split('.').pop() || '').toLowerCase();
+                if (ext !== 'csv' && ext !== 'xlsx') {
+                    throw new Error('Formato no soportado. Sube un archivo CSV o XLSX.');
+                }
+
+                showLoading('Leyendo archivo...');
+
+                const rawRows = await readFile(file, ext);
+                if (!rawRows || rawRows.length === 0) {
+                    throw new Error('El archivo está vacío o no contiene datos.');
+                }
+
+                showLoading('Verificando documentos existentes...');
+                await loadExistingDocuments();
+
+                showLoading('Validando ' + rawRows.length + ' filas...');
+                parsedRows = validateRows(rawRows);
+
+                renderSummary();
+                renderPreview();
+
+                document.getElementById('step3').classList.remove('d-none');
+                hideLoading();
+
+                // Scroll al paso 3
+                document.getElementById('step3').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            } catch (error) {
+                console.error('❌ Error procesando archivo:', error);
+                showAlert('Error al procesar el archivo: ' + error.message, 'danger');
+                hideLoading();
+                resetAll();
+            }
+        }
+
+        async function readFile(file, ext) {
+            const buffer = await file.arrayBuffer();
+
+            if (ext === 'csv') {
+                // Parseo manual del CSV para evitar que SheetJS reformate fechas.
+                // El BOM (\ufeff) se retira si existe.
+                let text = new TextDecoder('utf-8').decode(buffer);
+                if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+                return parseCSV(text);
+            } else {
+                // XLSX: cellDates:true convierte fechas a objetos Date nativos (seguro)
+                const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+                let sheetName = wb.SheetNames[0];
+                if (wb.SheetNames.includes('Datos')) sheetName = 'Datos';
+                const sheet = wb.Sheets[sheetName];
+                return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+            }
+        }
+
+        // Parser CSV minimalista: respeta comillas dobles y comas internas entre comillas.
+        function parseCSV(text) {
+            const lines = [];
+            let currentLine = [];
+            let currentField = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const ch = text[i];
+                const next = text[i + 1];
+
+                if (inQuotes) {
+                    if (ch === '"' && next === '"') {
+                        // Comilla escapada
+                        currentField += '"';
+                        i++;
+                    } else if (ch === '"') {
+                        inQuotes = false;
+                    } else {
+                        currentField += ch;
+                    }
+                } else {
+                    if (ch === '"') {
+                        inQuotes = true;
+                    } else if (ch === ',') {
+                        currentLine.push(currentField);
+                        currentField = '';
+                    } else if (ch === '\n' || ch === '\r') {
+                        if (ch === '\r' && next === '\n') i++; // saltar \r\n
+                        currentLine.push(currentField);
+                        if (currentLine.some(v => v !== '')) lines.push(currentLine);
+                        currentLine = [];
+                        currentField = '';
+                    } else {
+                        currentField += ch;
+                    }
+                }
+            }
+            // Última línea
+            if (currentField !== '' || currentLine.length > 0) {
+                currentLine.push(currentField);
+                if (currentLine.some(v => v !== '')) lines.push(currentLine);
+            }
+
+            if (lines.length === 0) return [];
+
+            // Primera línea = encabezados
+            const headers = lines[0].map(h => h.trim());
+            return lines.slice(1).map(row => {
+                const obj = {};
+                headers.forEach((h, idx) => {
+                    obj[h] = row[idx] !== undefined ? row[idx] : '';
+                });
+                return obj;
+            });
+        }
+        
+        async function loadExistingDocuments() {
+            // Traemos todos los documentos. Eficiente: solo una columna.
+            const data = await supabaseRequest(
+                '/alumni?select=alumni_id_document&deleted_at=is.null'
+            );
+            existingDocs = new Set((data || []).map(d => String(d.alumni_id_document).trim()));
+        }
+
+        // ==========================================
+        // VALIDACIÓN DE FILAS
+        // ==========================================
+        function validateRows(rawRows) {
+            // Normalizar nombres de columnas (lowercase, trim)
+            const normalized = rawRows.map(row => {
+                const n = {};
+                Object.keys(row).forEach(k => {
+                    n[String(k).toLowerCase().trim()] = row[k];
+                });
+                return n;
+            });
+
+            // Detectar duplicados dentro del archivo
+            const docCounts = {};
+            normalized.forEach(row => {
+                const doc = String(row.documento || '').trim();
+                if (doc) docCounts[doc] = (docCounts[doc] || 0) + 1;
+            });
+
+            return normalized.map((row, idx) => {
+                const errors = [];
+                const warnings = [];
+
+                // documento
+                const doc = String(row.documento || '').trim();
+                if (!doc) {
+                    errors.push('Falta el documento (obligatorio).');
+                } else {
+                    if (!/^[a-zA-Z0-9]{5,20}$/.test(doc)) {
+                        errors.push('Documento inválido. Debe ser alfanumérico de 5 a 20 caracteres sin espacios.');
+                    }
+                    if (docCounts[doc] > 1) {
+                        errors.push('Documento duplicado en el archivo.');
+                    }
+                    if (existingDocs.has(doc)) {
+                        errors.push('Ya existe un egresado con ese documento.');
+                    }
+                }
+
+                // primer_nombre
+                const firstName = String(row.primer_nombre || '').trim();
+                if (!firstName) errors.push('Falta el primer nombre (obligatorio).');
+
+                // primer_apellido
+                const lastName1 = String(row.primer_apellido || '').trim();
+                if (!lastName1) errors.push('Falta el primer apellido (obligatorio).');
+
+                // anio_promocion
+                const yearRaw = String(row.anio_promocion || '').trim();
+                let year = null;
+                if (!yearRaw) {
+                    errors.push('Falta el año de promoción (obligatorio).');
+                } else {
+                    year = parseInt(yearRaw, 10);
+                    if (isNaN(year)) {
+                        errors.push('Año de promoción no es un número: "' + yearRaw + '".');
+                    } else if (year < MIN_YEAR || year > CURRENT_YEAR) {
+                        errors.push('Año de promoción fuera de rango (' + MIN_YEAR + '-' + CURRENT_YEAR + '): ' + year + '.');
+                    }
+                }
+
+                // fecha_nacimiento (opcional) - puede llegar como Date (XLSX) o string (CSV)
+                const birthdayRaw = row.fecha_nacimiento;
+                let birthday = null;
+                if (birthdayRaw !== null && birthdayRaw !== undefined && birthdayRaw !== '') {
+                    const parsed = parseBirthday(birthdayRaw);
+                    if (parsed) {
+                        birthday = parsed;
+                    } else {
+                        const rawStr = birthdayRaw instanceof Date ? birthdayRaw.toISOString() : String(birthdayRaw);
+                        warnings.push('Fecha de nacimiento no reconocida ("' + rawStr + '"). Se guardó vacía.');
+                    }
+                }
+
+                // email (opcional)
+                const emailRaw = String(row.email || '').trim();
+                let email = null;
+                if (emailRaw) {
+                    if (isValidEmail(emailRaw)) {
+                        email = emailRaw.toLowerCase();
+                    } else {
+                        warnings.push('Email mal formado ("' + emailRaw + '"). Se guardó vacío.');
+                    }
+                }
+
+                // genero (opcional)
+                const genderRaw = String(row.genero || '').trim();
+                const genderResult = mapGender(genderRaw);
+                if (genderResult.warning) warnings.push(genderResult.warning);
+
+                // Resto opcional
+                const secondName = String(row.segundo_nombre || '').trim();
+                const lastName2 = String(row.segundo_apellido || '').trim();
+                const phone = String(row.telefono || '').trim();
+
+                // Primer nombre + segundo nombre
+                const combinedFirstName = secondName ? (firstName + ' ' + secondName) : firstName;
+
+                // Estado
+                let status = 'green';
+                if (errors.length > 0) status = 'red';
+                else if (warnings.length > 0) status = 'yellow';
+
+                return {
+                    rowNumber: idx + 2, // +2 porque fila 1 son encabezados, y los índices empiezan en 0
+                    status,
+                    errors,
+                    warnings,
+                    payload: {
+                        alumni_id_document: doc,
+                        alumni_first_name: combinedFirstName,
+                        alumni_last_name_1: lastName1,
+                        alumni_last_name_2: lastName2 || null,
+                        graduation_year: year,
+                        alumni_birthday: birthday,
+                        alumni_email: email,
+                        gender_id: genderResult.uuid,
+                        phone: phone || null // va a profile_data
+                    }
+                };
+            });
+        }
+
+        function parseBirthday(raw) {
+            if (!raw) return null;
+
+            // Si SheetJS entregó un Date nativo (XLSX con celda tipo fecha)
+            if (raw instanceof Date && !isNaN(raw.getTime())) {
+                const y = raw.getFullYear();
+                const m = String(raw.getMonth() + 1).padStart(2, '0');
+                const d = String(raw.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + d;
+            }
+
+            const str = String(raw).trim();
+
+            // YYYY-MM-DD
+            let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (m) {
+                const iso = m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+                if (isValidDate(iso)) return iso;
+            }
+            // DD/MM/YYYY
+            m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (m) {
+                const iso = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+                if (isValidDate(iso)) return iso;
+            }
+            return null;
+        }
+        function isValidDate(isoString) {
+            const d = new Date(isoString);
+            return d instanceof Date && !isNaN(d.getTime()) &&
+                   d.toISOString().slice(0, 10) === isoString;
+        }
+
+        function isValidEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        // ==========================================
+        // RENDERIZADO
+        // ==========================================
+        function renderSummary() {
+            const total = parsedRows.length;
+            const green = parsedRows.filter(r => r.status === 'green').length;
+            const yellow = parsedRows.filter(r => r.status === 'yellow').length;
+            const red = parsedRows.filter(r => r.status === 'red').length;
+
+            document.getElementById('sumTotal').textContent = total;
+            document.getElementById('sumGreen').textContent = green;
+            document.getElementById('sumYellow').textContent = yellow;
+            document.getElementById('sumRed').textContent = red;
+            document.getElementById('importableCount').textContent = green + yellow;
+
+            // Deshabilitar import si no hay importables
+            document.getElementById('btnConfirmImport').disabled = (green + yellow) === 0;
+        }
+
+        function renderPreview() {
+            const filter = document.getElementById('previewFilter').value;
+            let rows = parsedRows;
+            if (filter !== 'all') rows = parsedRows.filter(r => r.status === filter);
+
+            const tbody = document.getElementById('previewTableBody');
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Sin filas que coincidan con el filtro.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = rows.map(r => {
+                const statusBadge = {
+                    green: '<span class="badge bg-success status-badge">🟢 Lista</span>',
+                    yellow: '<span class="badge bg-warning status-badge text-dark">🟡 Aviso</span>',
+                    red: '<span class="badge bg-danger status-badge">🔴 Error</span>'
+                }[r.status];
+
+                const fullName = [r.payload.alumni_last_name_1, r.payload.alumni_last_name_2 || '', r.payload.alumni_first_name]
+                    .filter(Boolean).join(' ');
+
+                const obsHtml = buildObservationsCell(r);
+
+                return '<tr class="row-' + r.status + '">' +
+                    '<td>' + r.rowNumber + '</td>' +
+                    '<td>' + statusBadge + '</td>' +
+                    '<td>' + escapeHtml(r.payload.alumni_id_document || '—') + '</td>' +
+                    '<td>' + escapeHtml(fullName || '—') + '</td>' +
+                    '<td>' + (r.payload.graduation_year || '—') + '</td>' +
+                    '<td>' + escapeHtml(r.payload.alumni_email || '—') + '</td>' +
+                    '<td class="observations-cell">' + obsHtml + '</td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function buildObservationsCell(r) {
+            if (r.errors.length === 0 && r.warnings.length === 0) {
+                return '<span class="text-success">Sin observaciones.</span>';
+            }
+            let html = '<ul class="obs-list">';
+            r.errors.forEach(e => {
+                html += '<li class="obs-error">' + escapeHtml(e) + '</li>';
+            });
+            r.warnings.forEach(w => {
+                html += '<li class="obs-warning">' + escapeHtml(w) + '</li>';
+            });
+            html += '</ul>';
+            return html;
+        }
+
+        // ==========================================
+        // IMPORTACIÓN
+        // ==========================================
+        async function executeImport() {
+            const importableRows = parsedRows.filter(r => r.status !== 'red');
+            if (importableRows.length === 0) {
+                showAlert('No hay filas para importar.', 'warning');
+                return;
+            }
+
+            if (!confirm('Vas a importar ' + importableRows.length + ' egresado' +
+                         (importableRows.length === 1 ? '' : 's') + '. ¿Continuar?')) {
+                return;
+            }
+
+            try {
+                showLoading('Importando registros...');
+
+                // Construir payloads con metadatos del módulo
+                const payloads = importableRows.map(r => {
+                    const profile = {};
+                    if (r.payload.phone) profile.phone = r.payload.phone;
+
+                    return {
+                        alumni_id_document: r.payload.alumni_id_document,
+                        alumni_first_name: r.payload.alumni_first_name,
+                        alumni_last_name_1: r.payload.alumni_last_name_1,
+                        alumni_last_name_2: r.payload.alumni_last_name_2,
+                        alumni_birthday: r.payload.alumni_birthday,
+                        gender_id: r.payload.gender_id,
+                        graduation_year: r.payload.graduation_year,
+                        alumni_email: r.payload.alumni_email,
+                        profile_data: profile,
+                        data_source: 'archivo',
+                        pre_loaded: true,
+                        is_verified: false,
+                        consent_data_treatment: false,
+                        consent_directory_basic: false,
+                        consent_directory_extended: false
+                    };
+                });
+
+                // Insertar en batches de 50
+                let imported = 0;
+                for (let i = 0; i < payloads.length; i += 50) {
+                    const batch = payloads.slice(i, i + 50);
+                    showLoading('Importando ' + (i + batch.length) + ' de ' + payloads.length + '...');
+                    await supabaseRequest('/alumni', {
+                        method: 'POST',
+                        body: JSON.stringify(batch)
+                    });
+                    imported += batch.length;
+                }
+
+                // Mostrar reporte
+                const withWarnings = importableRows.filter(r => r.status === 'yellow').length;
+                const skipped = parsedRows.filter(r => r.status === 'red').length;
+
+                showFinalReport(imported, withWarnings, skipped);
+                hideLoading();
+
+            } catch (error) {
+                console.error('❌ Error importando:', error);
+                showAlert('Error al importar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        function showFinalReport(imported, withWarnings, skipped) {
+            document.getElementById('finalImported').textContent = imported;
+            document.getElementById('finalWithWarnings').textContent = withWarnings;
+            document.getElementById('finalSkipped').textContent = skipped;
+
+            const icon = document.getElementById('finalIcon');
+            const title = document.getElementById('finalTitle');
+            const subtitle = document.getElementById('finalSubtitle');
+
+            if (skipped === 0) {
+                icon.className = 'bi bi-check-circle-fill icon-success';
+                title.textContent = 'Importación completada';
+                subtitle.textContent = imported + ' egresado' + (imported === 1 ? '' : 's') + ' agregado' + (imported === 1 ? '' : 's') + ' al directorio.';
+            } else {
+                icon.className = 'bi bi-exclamation-circle-fill icon-partial';
+                title.textContent = 'Importación parcial';
+                subtitle.textContent = imported + ' egresados importados, ' + skipped + ' omitidos por errores. Revisa las filas rojas y corrígelas en un nuevo archivo.';
+            }
+
+            document.getElementById('step1').classList.add('d-none');
+            document.getElementById('step2').classList.add('d-none');
+            document.getElementById('step3').classList.add('d-none');
+            document.getElementById('step4').classList.remove('d-none');
+            document.getElementById('step4').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // ==========================================
+        // RESET
+        // ==========================================
+        function resetAll() {
+            parsedRows = [];
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileInfo').classList.add('d-none');
+            document.getElementById('step1').classList.remove('d-none');
+            document.getElementById('step2').classList.remove('d-none');
+            document.getElementById('step3').classList.add('d-none');
+            document.getElementById('step4').classList.add('d-none');
+            document.getElementById('previewFilter').value = 'all';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function showLoading(msg) {
+            document.getElementById('loadingMessage').textContent = msg || 'Cargando...';
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        function showAlert(message, type) {
+            type = type || 'info';
+            const container = document.getElementById('alertContainer');
+            const id = 'alert_' + Date.now();
+            const icons = {
+                success: 'check-circle',
+                danger: 'exclamation-triangle',
+                warning: 'exclamation-triangle',
+                info: 'info-circle'
+            };
+            container.innerHTML =
+                '<div id="' + id + '" class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+                    '<i class="bi bi-' + (icons[type] || 'info-circle') + ' me-2"></i>' +
+                    message +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+                '</div>';
+
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    const el = document.getElementById(id);
+                    if (el) bootstrap.Alert.getOrCreateInstance(el).close();
+                }, 5000);
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        console.log('🎓 Importar egresados desde archivo - Cargado');
+    </script>
+</body>
+</html>
