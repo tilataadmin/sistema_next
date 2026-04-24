@@ -682,12 +682,13 @@
             if (ext === 'csv') {
                 // Decodificar como UTF-8
                 const text = new TextDecoder('utf-8').decode(buffer);
-                const wb = XLSX.read(text, { type: 'string' });
+                // raw:true evita que SheetJS convierta fechas automáticamente al leer CSV
+                const wb = XLSX.read(text, { type: 'string', raw: true });
                 const sheet = wb.Sheets[wb.SheetNames[0]];
-                return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+                return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
             } else {
+                // Para XLSX: cellDates:true convierte fechas a objetos Date nativos
                 const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
-                // Tomar la primera hoja (o la llamada "Datos" si existe)
                 let sheetName = wb.SheetNames[0];
                 if (wb.SheetNames.includes('Datos')) sheetName = 'Datos';
                 const sheet = wb.Sheets[sheetName];
@@ -765,15 +766,16 @@
                     }
                 }
 
-                // fecha_nacimiento (opcional)
-                const birthdayRaw = String(row.fecha_nacimiento || '').trim();
+                // fecha_nacimiento (opcional) - puede llegar como Date (XLSX) o string (CSV)
+                const birthdayRaw = row.fecha_nacimiento;
                 let birthday = null;
-                if (birthdayRaw) {
+                if (birthdayRaw !== null && birthdayRaw !== undefined && birthdayRaw !== '') {
                     const parsed = parseBirthday(birthdayRaw);
                     if (parsed) {
                         birthday = parsed;
                     } else {
-                        warnings.push('Fecha de nacimiento no reconocida ("' + birthdayRaw + '"). Se guardó vacía.');
+                        const rawStr = birthdayRaw instanceof Date ? birthdayRaw.toISOString() : String(birthdayRaw);
+                        warnings.push('Fecha de nacimiento no reconocida ("' + rawStr + '"). Se guardó vacía.');
                     }
                 }
 
@@ -827,23 +829,32 @@
         }
 
         function parseBirthday(raw) {
+            if (!raw) return null;
+
+            // Si SheetJS entregó un Date nativo (XLSX con celda tipo fecha)
+            if (raw instanceof Date && !isNaN(raw.getTime())) {
+                const y = raw.getFullYear();
+                const m = String(raw.getMonth() + 1).padStart(2, '0');
+                const d = String(raw.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + d;
+            }
+
+            const str = String(raw).trim();
+
             // YYYY-MM-DD
-            let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
             if (m) {
-                const iso = m[1] + '-' + m[2] + '-' + m[3];
+                const iso = m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
                 if (isValidDate(iso)) return iso;
             }
             // DD/MM/YYYY
-            m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
             if (m) {
-                const day = m[1].padStart(2, '0');
-                const month = m[2].padStart(2, '0');
-                const iso = m[3] + '-' + month + '-' + day;
+                const iso = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
                 if (isValidDate(iso)) return iso;
             }
             return null;
         }
-
         function isValidDate(isoString) {
             const d = new Date(isoString);
             return d instanceof Date && !isNaN(d.getTime()) &&
