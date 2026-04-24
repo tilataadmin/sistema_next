@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.24.00.01">
+    <meta name="page-version" content="26.04.24.07.30">
 
     <title>Importar egresados desde archivo - SchoolNet</title>
 
@@ -680,14 +680,13 @@
             const buffer = await file.arrayBuffer();
 
             if (ext === 'csv') {
-                // Decodificar como UTF-8
-                const text = new TextDecoder('utf-8').decode(buffer);
-                // raw:true evita que SheetJS convierta fechas automáticamente al leer CSV
-                const wb = XLSX.read(text, { type: 'string', raw: true });
-                const sheet = wb.Sheets[wb.SheetNames[0]];
-                return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+                // Parseo manual del CSV para evitar que SheetJS reformate fechas.
+                // El BOM (\ufeff) se retira si existe.
+                let text = new TextDecoder('utf-8').decode(buffer);
+                if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+                return parseCSV(text);
             } else {
-                // Para XLSX: cellDates:true convierte fechas a objetos Date nativos
+                // XLSX: cellDates:true convierte fechas a objetos Date nativos (seguro)
                 const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
                 let sheetName = wb.SheetNames[0];
                 if (wb.SheetNames.includes('Datos')) sheetName = 'Datos';
@@ -696,6 +695,63 @@
             }
         }
 
+        // Parser CSV minimalista: respeta comillas dobles y comas internas entre comillas.
+        function parseCSV(text) {
+            const lines = [];
+            let currentLine = [];
+            let currentField = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const ch = text[i];
+                const next = text[i + 1];
+
+                if (inQuotes) {
+                    if (ch === '"' && next === '"') {
+                        // Comilla escapada
+                        currentField += '"';
+                        i++;
+                    } else if (ch === '"') {
+                        inQuotes = false;
+                    } else {
+                        currentField += ch;
+                    }
+                } else {
+                    if (ch === '"') {
+                        inQuotes = true;
+                    } else if (ch === ',') {
+                        currentLine.push(currentField);
+                        currentField = '';
+                    } else if (ch === '\n' || ch === '\r') {
+                        if (ch === '\r' && next === '\n') i++; // saltar \r\n
+                        currentLine.push(currentField);
+                        if (currentLine.some(v => v !== '')) lines.push(currentLine);
+                        currentLine = [];
+                        currentField = '';
+                    } else {
+                        currentField += ch;
+                    }
+                }
+            }
+            // Última línea
+            if (currentField !== '' || currentLine.length > 0) {
+                currentLine.push(currentField);
+                if (currentLine.some(v => v !== '')) lines.push(currentLine);
+            }
+
+            if (lines.length === 0) return [];
+
+            // Primera línea = encabezados
+            const headers = lines[0].map(h => h.trim());
+            return lines.slice(1).map(row => {
+                const obj = {};
+                headers.forEach((h, idx) => {
+                    obj[h] = row[idx] !== undefined ? row[idx] : '';
+                });
+                return obj;
+            });
+        }
+        
         async function loadExistingDocuments() {
             // Traemos todos los documentos. Eficiente: solo una columna.
             const data = await supabaseRequest(
