@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.04.24.00.02">
+
+    <title>Reportes de egresados - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content {
+            background: white; padding: 2rem;
+            border-radius: 8px; text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #5E4B8B;
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Panel de filtros */
+        .filters-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .filter-group-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6c757d;
+            margin-bottom: 0.5rem;
+            margin-top: 0.75rem;
+            font-weight: 600;
+        }
+
+        .filter-group-title:first-child {
+            margin-top: 0;
+        }
+
+        /* Resumen */
+        .results-summary {
+            background-color: #5E4B8B;
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .results-count {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* Tabla */
+        .results-table {
+            font-size: 0.875rem;
+        }
+
+        .results-table th {
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .results-table th:hover {
+            background-color: #343a40;
+        }
+
+        .sort-icon {
+            opacity: 0.4;
+            margin-left: 0.25rem;
+        }
+
+        .sort-icon.active {
+            opacity: 1;
+        }
+
+        .table-responsive {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        /* Columnas sticky en thead */
+        .results-table thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        /* Modal selector de columnas */
+        .column-selector-modal .modal-body {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .column-group {
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .column-group:last-child {
+            border-bottom: none;
+        }
+
+        .column-group-title {
+            font-weight: 600;
+            color: #5E4B8B;
+            margin-bottom: 0.5rem;
+        }
+
+        .column-checkbox-item {
+            padding: 0.25rem 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #6c757d;
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            opacity: 0.3;
+            display: block;
+            margin-bottom: 1rem;
+        }
+
+        .required {
+            color: #dc3545;
+        }
+
+        /* Badge de columnas seleccionadas */
+        .columns-badge {
+            font-size: 0.75rem;
+            background-color: #5E4B8B;
+            color: white;
+            padding: 0.2rem 0.5rem;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0" id="loadingMessage">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Reportes de egresados
+                </li>
+            </ol>
+        </nav>
+
+        <!-- ENCABEZADO -->
+        <div class="row mb-3">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-graph-up me-2"></i>
+                    Reportes de egresados
+                </h1>
+                <p class="text-muted">
+                    Explorador libre de egresados. Combina filtros, elige las columnas a mostrar y exporta.
+                </p>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DE ALERTAS -->
+        <div id="alertContainer"></div>
+
+        <!-- ========================================= -->
+        <!-- PANEL DE FILTROS -->
+        <!-- ========================================= -->
+        <div class="filters-panel">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="text-muted">Filtros</strong>
+                <button id="btnClearFilters" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Limpiar filtros
+                </button>
+            </div>
+
+            <!-- FILTROS FIJOS -->
+            <div class="filter-group-title">Identidad y estado</div>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Búsqueda libre</label>
+                    <input type="text" id="filterSearch" class="form-control form-control-sm"
+                           placeholder="Nombre, apellido, documento, email...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Promoción desde</label>
+                    <input type="number" id="filterYearFrom" class="form-control form-control-sm"
+                           min="1996" max="2100">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Promoción hasta</label>
+                    <input type="number" id="filterYearTo" class="form-control form-control-sm"
+                           min="1996" max="2100">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Verificación</label>
+                    <select id="filterVerified" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="verified">Verificados</option>
+                        <option value="unverified">Sin verificar</option>
+                        <option value="preloaded">Pre-cargados</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Origen</label>
+                    <select id="filterSource" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="phidias">Phidias</option>
+                        <option value="archivo">Archivo</option>
+                        <option value="graduacion">Graduación</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row g-2 mt-1">
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Género</label>
+                    <select id="filterGender" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Email registrado</label>
+                    <select id="filterHasEmail" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="yes">Con email</option>
+                        <option value="no">Sin email</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-group-title">Consentimientos Habeas Data</div>
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <label class="form-label small mb-0">Tratamiento de datos</label>
+                    <select id="filterConsentTreatment" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="yes">Autorizado</option>
+                        <option value="no">No autorizado</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-0">Directorio básico</label>
+                    <select id="filterConsentBasic" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="yes">Autorizado</option>
+                        <option value="no">No autorizado</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-0">Directorio extendido</label>
+                    <select id="filterConsentExtended" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="yes">Autorizado</option>
+                        <option value="no">No autorizado</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- FILTROS DINÁMICOS (profile_data) -->
+            <div id="dynamicFiltersContainer"></div>
+        </div>
+
+        <!-- ========================================= -->
+        <!-- RESUMEN DE RESULTADOS -->
+        <!-- ========================================= -->
+        <div class="results-summary">
+            <div>
+                <span class="results-count" id="resultsCount">0</span>
+                <span class="ms-2">egresados coinciden con los filtros actuales</span>
+            </div>
+            <div>
+                <button id="btnChooseColumns" class="btn btn-sm btn-light me-2">
+                    <i class="bi bi-columns-gap me-1"></i>
+                    Columnas <span class="columns-badge ms-1" id="columnsCount">0</span>
+                </button>
+                <button id="btnExport" class="btn btn-sm btn-light d-none">
+                    <i class="bi bi-download me-1"></i>Exportar XLSX
+                </button>
+            </div>
+        </div>
+
+        <!-- ========================================= -->
+        <!-- TABLA DE RESULTADOS -->
+        <!-- ========================================= -->
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover results-table mb-0">
+                        <thead class="table-dark" id="resultsTableHead">
+                            <!-- Dinámico -->
+                        </thead>
+                        <tbody id="resultsTableBody">
+                            <!-- Dinámico -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Paginación -->
+        <div class="d-flex justify-content-center align-items-center mb-4">
+            <nav aria-label="Paginación">
+                <ul class="pagination">
+                    <li class="page-item" id="prevPageItem">
+                        <button class="page-link" id="btnPrevPage">
+                            <i class="bi bi-chevron-left"></i> Anterior
+                        </button>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link" id="pageInfo">Página 1 de 1</span>
+                    </li>
+                    <li class="page-item" id="nextPageItem">
+                        <button class="page-link" id="btnNextPage">
+                            Siguiente <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+    </div>
+
+    <!-- ========================================= -->
+    <!-- MODAL: SELECTOR DE COLUMNAS -->
+    <!-- ========================================= -->
+    <div class="modal fade column-selector-modal" id="columnsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-columns-gap me-2"></i>Elegir columnas a mostrar
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted small">
+                            Las columnas elegidas se guardan en este navegador. La exportación siempre incluye todas las columnas.
+                        </span>
+                        <div>
+                            <button id="btnSelectAll" class="btn btn-sm btn-outline-secondary me-1">
+                                Seleccionar todas
+                            </button>
+                            <button id="btnSelectNone" class="btn btn-sm btn-outline-secondary">
+                                Deseleccionar todas
+                            </button>
+                        </div>
+                    </div>
+                    <div id="columnsSelectorContent">
+                        <!-- Dinámico -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnApplyColumns">
+                        <i class="bi bi-check-circle me-1"></i>Aplicar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================= -->
+    <!-- MODAL: EXPORTAR -->
+    <!-- ========================================= -->
+    <div class="modal fade" id="exportModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-download me-2"></i>Exportar datos de egresados
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        Vas a exportar <strong id="exportRecordCount">0</strong> egresado(s)
+                        con <strong id="exportColumnCount">0</strong> columnas disponibles.
+                    </p>
+                    <div class="alert alert-warning small">
+                        <i class="bi bi-shield-lock me-1"></i>
+                        <strong>Información sensible:</strong> este archivo contiene datos personales protegidos
+                        por Habeas Data. Manéjalo con responsabilidad y no lo compartas por canales no seguros.
+                    </div>
+                    <div class="mb-3">
+                        <label for="exportReason" class="form-label">
+                            Motivo de la exportación <span class="required">*</span>
+                        </label>
+                        <textarea id="exportReason" class="form-control" rows="2" required
+                                  placeholder="Ej: Reporte mensual para dirección, invitación a evento de egresados 2026..."></textarea>
+                        <div class="form-text">
+                            Se registra en el log de auditoría junto con los filtros aplicados y la fecha.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnConfirmExport">
+                        <i class="bi bi-download me-1"></i>Descargar XLSX
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        const PAGE_SIZE = 50;
+        const STORAGE_KEY = 'alumni_reports_columns';
+
+        let allAlumni = [];          // Dataset completo filtrado (sin paginar)
+        let fieldGroups = [];
+        let fieldDefinitions = [];
+        let filterableFields = [];   // solo los que tienen is_filterable = true
+        let genders = [];
+
+        let currentPage = 1;
+        let sortColumn = 'alumni_last_name_1';
+        let sortDirection = 'asc';
+
+        let canExport = false;
+
+        let columnsModalInstance = null;
+        let exportModalInstance = null;
+
+        // Filtros actuales
+        const filters = {
+            search: '',
+            yearFrom: '',
+            yearTo: '',
+            verified: '',
+            source: '',
+            gender: '',
+            hasEmail: '',
+            consentTreatment: '',
+            consentBasic: '',
+            consentExtended: '',
+            dynamic: {}  // { field_key: value }
+        };
+
+        // Columnas disponibles (se construyen después de cargar catálogos)
+        let allColumns = [];
+        let selectedColumns = new Set();
+
+        // Default si no hay nada en localStorage
+        const DEFAULT_COLUMNS = [
+            'alumni_id_document',
+            'full_name',
+            'graduation_year',
+            'alumni_email',
+            'profile_city',
+            'profile_profession',
+            'profile_company'
+        ];
+
+        let filtersDebounceTimer = null;
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Consultar reportes de egresados');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showAlert('Sesión no válida.', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                canExport = await checkUserPermission(session.user.user_id, 'Exportar datos de egresados');
+                if (canExport) document.getElementById('btnExport').classList.remove('d-none');
+
+                columnsModalInstance = new bootstrap.Modal(document.getElementById('columnsModal'));
+                exportModalInstance = new bootstrap.Modal(document.getElementById('exportModal'));
+
+                await inicializarPagina();
+
+            } catch (error) {
+                console.error('❌ Error de acceso:', error);
+                showAlert('Error de validación: ' + error.message, 'danger');
+            }
+        });
+
+        async function inicializarPagina() {
+            try {
+                showLoading('Cargando catálogos...');
+
+                const [groupsData, fieldsData, gendersData] = await Promise.all([
+                    supabaseRequest('/alumni_field_groups?select=*&is_active=eq.true&order=group_order.asc'),
+                    supabaseRequest('/alumni_field_definitions?select=*&is_active=eq.true&order=field_order.asc'),
+                    supabaseRequest('/genders?select=gender_id,gender_name&order=gender_name.asc')
+                ]);
+
+                fieldGroups = groupsData || [];
+                fieldDefinitions = fieldsData || [];
+                filterableFields = fieldDefinitions.filter(f => f.is_filterable);
+                genders = gendersData || [];
+
+                populateGenderFilter();
+                buildAllColumns();
+                loadSelectedColumns();
+                buildDynamicFilters();
+                setupEventListeners();
+
+                await loadAlumni();
+
+                hideLoading();
+                console.log('✅ Reportes de egresados inicializado');
+
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                showAlert('Error al cargar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        // ==========================================
+        // DEFINICIÓN DE COLUMNAS DISPONIBLES
+        // ==========================================
+        function buildAllColumns() {
+            allColumns = [
+                // Identidad
+                { key: 'alumni_id_document', label: 'Documento', group: 'Identidad', type: 'text' },
+                { key: 'alumni_first_name', label: 'Nombres', group: 'Identidad', type: 'text' },
+                { key: 'alumni_last_name_1', label: 'Primer apellido', group: 'Identidad', type: 'text' },
+                { key: 'alumni_last_name_2', label: 'Segundo apellido', group: 'Identidad', type: 'text' },
+                { key: 'full_name', label: 'Nombre completo', group: 'Identidad', type: 'computed' },
+                { key: 'alumni_birthday', label: 'Fecha de nacimiento', group: 'Identidad', type: 'date' },
+                { key: 'gender_name', label: 'Género', group: 'Identidad', type: 'lookup' },
+                { key: 'graduation_year', label: 'Año de promoción', group: 'Identidad', type: 'number' },
+
+                // Contacto directo
+                { key: 'alumni_email', label: 'Email', group: 'Contacto', type: 'text' },
+
+                // Estado
+                { key: 'is_verified', label: 'Verificado', group: 'Estado', type: 'boolean' },
+                { key: 'pre_loaded', label: 'Pre-cargado', group: 'Estado', type: 'boolean' },
+                { key: 'data_source', label: 'Origen', group: 'Estado', type: 'text' },
+                { key: 'verified_at', label: 'Fecha de verificación', group: 'Estado', type: 'date' },
+                { key: 'last_data_update', label: 'Última actualización', group: 'Estado', type: 'date' },
+                { key: 'created_at', label: 'Fecha de creación', group: 'Estado', type: 'date' },
+
+                // Consentimientos
+                { key: 'consent_data_treatment', label: 'Autoriza tratamiento', group: 'Consentimientos', type: 'boolean' },
+                { key: 'consent_directory_basic', label: 'Autoriza directorio básico', group: 'Consentimientos', type: 'boolean' },
+                { key: 'consent_directory_extended', label: 'Autoriza directorio extendido', group: 'Consentimientos', type: 'boolean' }
+            ];
+
+            // Agregar columnas de profile_data (campos dinámicos)
+            fieldDefinitions.forEach(f => {
+                const group = fieldGroups.find(g => g.group_key === f.field_group);
+                allColumns.push({
+                    key: 'profile_' + f.field_key,
+                    profileKey: f.field_key,
+                    label: f.field_label,
+                    group: group ? group.group_label : 'Perfil',
+                    type: f.field_type,
+                    isDynamic: true
+                });
+            });
+        }
+
+        function loadSelectedColumns() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const arr = JSON.parse(saved);
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        selectedColumns = new Set(arr);
+                        updateColumnsCount();
+                        return;
+                    }
+                }
+            } catch (e) { /* ignore */ }
+
+            // Default
+            selectedColumns = new Set(DEFAULT_COLUMNS.filter(k => allColumns.some(c => c.key === k)));
+            updateColumnsCount();
+        }
+
+        function saveSelectedColumns() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify([...selectedColumns]));
+            } catch (e) { /* ignore */ }
+        }
+
+        function updateColumnsCount() {
+            document.getElementById('columnsCount').textContent = selectedColumns.size;
+        }
+
+        // ==========================================
+        // FILTROS: CONSTRUCCIÓN UI
+        // ==========================================
+        function populateGenderFilter() {
+            const sel = document.getElementById('filterGender');
+            sel.innerHTML = '<option value="">Todos</option>';
+            genders.forEach(g => {
+                sel.innerHTML += '<option value="' + g.gender_id + '">' + escapeHtml(g.gender_name) + '</option>';
+            });
+        }
+
+        function buildDynamicFilters() {
+            const container = document.getElementById('dynamicFiltersContainer');
+
+            if (filterableFields.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            // Agrupar por sección
+            const byGroup = {};
+            filterableFields.forEach(f => {
+                if (!byGroup[f.field_group]) byGroup[f.field_group] = [];
+                byGroup[f.field_group].push(f);
+            });
+
+            let html = '';
+            fieldGroups.forEach(group => {
+                const groupFields = byGroup[group.group_key];
+                if (!groupFields || groupFields.length === 0) return;
+
+                html += '<div class="filter-group-title">' + escapeHtml(group.group_label) + '</div>';
+                html += '<div class="row g-2">';
+                groupFields.forEach(f => {
+                    html += '<div class="col-md-3">';
+                    html += '<label class="form-label small mb-0">' + escapeHtml(f.field_label) + '</label>';
+                    html += buildDynamicFilterInput(f);
+                    html += '</div>';
+                });
+                html += '</div>';
+            });
+
+            container.innerHTML = html;
+        }
+
+        function buildDynamicFilterInput(f) {
+            const id = 'dfilter_' + f.field_key;
+
+            if (f.field_type === 'select' && f.field_options) {
+                const opts = f.field_options.map(o =>
+                    '<option value="' + escapeAttr(o) + '">' + escapeHtml(o) + '</option>'
+                ).join('');
+                return '<select class="form-select form-select-sm df-input" id="' + id +
+                    '" data-field-key="' + f.field_key + '" data-field-type="select">' +
+                    '<option value="">Todos</option>' + opts + '</select>';
+            }
+
+            if (f.field_type === 'multiselect' && f.field_options) {
+                const opts = f.field_options.map(o =>
+                    '<option value="' + escapeAttr(o) + '">' + escapeHtml(o) + '</option>'
+                ).join('');
+                return '<select class="form-select form-select-sm df-input" id="' + id +
+                    '" data-field-key="' + f.field_key + '" data-field-type="multiselect">' +
+                    '<option value="">Todos</option>' + opts + '</select>';
+            }
+
+            if (f.field_type === 'boolean') {
+                return '<select class="form-select form-select-sm df-input" id="' + id +
+                    '" data-field-key="' + f.field_key + '" data-field-type="boolean">' +
+                    '<option value="">Todos</option>' +
+                    '<option value="true">Sí</option>' +
+                    '<option value="false">No</option>' +
+                    '</select>';
+            }
+
+            if (f.field_type === 'number') {
+                return '<input type="number" class="form-control form-control-sm df-input" id="' + id +
+                    '" data-field-key="' + f.field_key + '" data-field-type="number" placeholder="Contiene...">';
+            }
+
+            // text, email, phone, url, textarea, date → texto libre
+            return '<input type="text" class="form-control form-control-sm df-input" id="' + id +
+                '" data-field-key="' + f.field_key + '" data-field-type="text" placeholder="Contiene...">';
+        }
+
+        // ==========================================
+        // EVENTOS
+        // ==========================================
+        function setupEventListeners() {
+            // Filtros fijos
+            const fixedFilters = [
+                'filterSearch', 'filterYearFrom', 'filterYearTo', 'filterVerified',
+                'filterSource', 'filterGender', 'filterHasEmail',
+                'filterConsentTreatment', 'filterConsentBasic', 'filterConsentExtended'
+            ];
+            fixedFilters.forEach(id => {
+                const el = document.getElementById(id);
+                el.addEventListener('input', onFilterChange);
+                el.addEventListener('change', onFilterChange);
+            });
+
+            // Filtros dinámicos
+            document.querySelectorAll('.df-input').forEach(el => {
+                el.addEventListener('input', onFilterChange);
+                el.addEventListener('change', onFilterChange);
+            });
+
+            document.getElementById('btnClearFilters').addEventListener('click', clearAllFilters);
+
+            // Selector de columnas
+            document.getElementById('btnChooseColumns').addEventListener('click', openColumnsModal);
+            document.getElementById('btnSelectAll').addEventListener('click', () => {
+                document.querySelectorAll('.column-checkbox-input').forEach(cb => cb.checked = true);
+            });
+            document.getElementById('btnSelectNone').addEventListener('click', () => {
+                document.querySelectorAll('.column-checkbox-input').forEach(cb => cb.checked = false);
+            });
+            document.getElementById('btnApplyColumns').addEventListener('click', applyColumnSelection);
+
+            // Paginación
+            document.getElementById('btnPrevPage').addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderTable();
+                }
+            });
+            document.getElementById('btnNextPage').addEventListener('click', () => {
+                const totalPages = Math.max(1, Math.ceil(allAlumni.length / PAGE_SIZE));
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderTable();
+                }
+            });
+
+            // Export
+            if (canExport) {
+                document.getElementById('btnExport').addEventListener('click', openExportModal);
+                document.getElementById('btnConfirmExport').addEventListener('click', executeExport);
+            }
+        }
+
+        function onFilterChange() {
+            // Debounce para inputs de texto
+            clearTimeout(filtersDebounceTimer);
+            filtersDebounceTimer = setTimeout(() => {
+                readFilters();
+                currentPage = 1;
+                loadAlumni();
+            }, 350);
+        }
+
+        function readFilters() {
+            filters.search = document.getElementById('filterSearch').value.trim();
+            filters.yearFrom = document.getElementById('filterYearFrom').value;
+            filters.yearTo = document.getElementById('filterYearTo').value;
+            filters.verified = document.getElementById('filterVerified').value;
+            filters.source = document.getElementById('filterSource').value;
+            filters.gender = document.getElementById('filterGender').value;
+            filters.hasEmail = document.getElementById('filterHasEmail').value;
+            filters.consentTreatment = document.getElementById('filterConsentTreatment').value;
+            filters.consentBasic = document.getElementById('filterConsentBasic').value;
+            filters.consentExtended = document.getElementById('filterConsentExtended').value;
+
+            // Filtros dinámicos
+            filters.dynamic = {};
+            document.querySelectorAll('.df-input').forEach(el => {
+                const key = el.getAttribute('data-field-key');
+                const val = el.value;
+                if (val !== null && val !== undefined && val !== '') {
+                    filters.dynamic[key] = {
+                        value: val,
+                        type: el.getAttribute('data-field-type')
+                    };
+                }
+            });
+        }
+
+        function clearAllFilters() {
+            document.getElementById('filterSearch').value = '';
+            document.getElementById('filterYearFrom').value = '';
+            document.getElementById('filterYearTo').value = '';
+            document.getElementById('filterVerified').value = '';
+            document.getElementById('filterSource').value = '';
+            document.getElementById('filterGender').value = '';
+            document.getElementById('filterHasEmail').value = '';
+            document.getElementById('filterConsentTreatment').value = '';
+            document.getElementById('filterConsentBasic').value = '';
+            document.getElementById('filterConsentExtended').value = '';
+            document.querySelectorAll('.df-input').forEach(el => el.value = '');
+
+            readFilters();
+            currentPage = 1;
+            loadAlumni();
+        }
+
+        // ==========================================
+        // CARGA DE DATOS
+        // ==========================================
+        async function loadAlumni() {
+            try {
+                showLoading('Aplicando filtros...');
+
+                // Construir query con filtros a nivel BD (campos fijos)
+                let q = '/alumni?select=*&deleted_at=is.null';
+
+                if (filters.search) {
+                    const term = encodeURIComponent('*' + filters.search + '*');
+                    q += '&or=(alumni_first_name.ilike.' + term +
+                         ',alumni_last_name_1.ilike.' + term +
+                         ',alumni_last_name_2.ilike.' + term +
+                         ',alumni_id_document.ilike.' + term +
+                         ',alumni_email.ilike.' + term + ')';
+                }
+
+                if (filters.yearFrom) q += '&graduation_year=gte.' + encodeURIComponent(filters.yearFrom);
+                if (filters.yearTo) q += '&graduation_year=lte.' + encodeURIComponent(filters.yearTo);
+
+                if (filters.verified === 'verified') q += '&is_verified=eq.true';
+                if (filters.verified === 'unverified') q += '&is_verified=eq.false&pre_loaded=eq.false';
+                if (filters.verified === 'preloaded') q += '&pre_loaded=eq.true';
+
+                if (filters.source) q += '&data_source=eq.' + encodeURIComponent(filters.source);
+                if (filters.gender) q += '&gender_id=eq.' + encodeURIComponent(filters.gender);
+
+                if (filters.hasEmail === 'yes') q += '&alumni_email=not.is.null';
+                if (filters.hasEmail === 'no') q += '&alumni_email=is.null';
+
+                if (filters.consentTreatment === 'yes') q += '&consent_data_treatment=eq.true';
+                if (filters.consentTreatment === 'no') q += '&consent_data_treatment=eq.false';
+                if (filters.consentBasic === 'yes') q += '&consent_directory_basic=eq.true';
+                if (filters.consentBasic === 'no') q += '&consent_directory_basic=eq.false';
+                if (filters.consentExtended === 'yes') q += '&consent_directory_extended=eq.true';
+                if (filters.consentExtended === 'no') q += '&consent_directory_extended=eq.false';
+
+                // Orden
+                q += '&order=' + encodeURIComponent(sortColumn) + '.' + sortDirection;
+
+                const data = await supabaseRequest(q);
+                let rows = data || [];
+
+                // Filtros dinámicos (profile_data) - se aplican en JS
+                if (Object.keys(filters.dynamic).length > 0) {
+                    rows = rows.filter(row => matchesDynamicFilters(row, filters.dynamic));
+                }
+
+                allAlumni = rows;
+
+                renderTable();
+                document.getElementById('resultsCount').textContent = rows.length;
+
+                hideLoading();
+
+            } catch (error) {
+                console.error('❌ Error cargando datos:', error);
+                showAlert('Error al cargar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        function matchesDynamicFilters(row, dynFilters) {
+            const profile = row.profile_data || {};
+            for (const key in dynFilters) {
+                const { value, type } = dynFilters[key];
+                const v = profile[key];
+
+                if (v === null || v === undefined) return false;
+
+                if (type === 'select' || type === 'boolean') {
+                    if (type === 'boolean') {
+                        const boolVal = v === true || v === 'true';
+                        if (value === 'true' && !boolVal) return false;
+                        if (value === 'false' && boolVal) return false;
+                    } else {
+                        if (String(v) !== value) return false;
+                    }
+                } else if (type === 'multiselect') {
+                    // v debería ser array; match si value está dentro
+                    if (!Array.isArray(v) || !v.includes(value)) return false;
+                } else if (type === 'number') {
+                    if (String(v).indexOf(value) === -1) return false;
+                } else {
+                    // text: contiene case-insensitive
+                    if (String(v).toLowerCase().indexOf(value.toLowerCase()) === -1) return false;
+                }
+            }
+            return true;
+        }
+
+        // ==========================================
+        // RENDERIZADO
+        // ==========================================
+        function renderTable() {
+            const thead = document.getElementById('resultsTableHead');
+            const tbody = document.getElementById('resultsTableBody');
+
+            const activeCols = allColumns.filter(c => selectedColumns.has(c.key));
+
+            if (activeCols.length === 0) {
+                thead.innerHTML = '<tr><th></th></tr>';
+                tbody.innerHTML = '<tr><td>' + emptyStateHTML('bi-columns-gap', 'Sin columnas seleccionadas',
+                    'Usa el botón "Columnas" para elegir qué mostrar.') + '</td></tr>';
+                updatePagination();
+                return;
+            }
+
+            // Encabezados
+            thead.innerHTML = '<tr>' + activeCols.map(c => {
+                const sortable = !c.isDynamic && ['alumni_id_document', 'alumni_first_name', 'alumni_last_name_1',
+                    'graduation_year', 'alumni_email', 'alumni_birthday', 'created_at', 'verified_at'].includes(c.key);
+                let sortIcon = '';
+                if (sortable) {
+                    const isActive = sortColumn === c.key;
+                    const icon = isActive ? (sortDirection === 'asc' ? 'bi-sort-up' : 'bi-sort-down') : 'bi-chevron-expand';
+                    sortIcon = ' <i class="bi ' + icon + ' sort-icon' + (isActive ? ' active' : '') + '"></i>';
+                }
+                return '<th ' + (sortable ? 'onclick="toggleSort(\'' + c.key + '\')"' : '') + '>' +
+                    escapeHtml(c.label) + sortIcon + '</th>';
+            }).join('') + '</tr>';
+
+            // Paginación
+            const totalPages = Math.max(1, Math.ceil(allAlumni.length / PAGE_SIZE));
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const pageRows = allAlumni.slice(start, start + PAGE_SIZE);
+
+            if (pageRows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="' + activeCols.length + '">' +
+                    emptyStateHTML('bi-search', 'Sin resultados', 'Ajusta los filtros para ver egresados.') +
+                    '</td></tr>';
+                updatePagination();
+                return;
+            }
+
+            // Filas
+            tbody.innerHTML = pageRows.map(row => {
+                return '<tr>' + activeCols.map(c => {
+                    const val = getRowValue(row, c);
+                    return '<td>' + formatCellValue(val, c.type) + '</td>';
+                }).join('') + '</tr>';
+            }).join('');
+
+            updatePagination();
+        }
+
+        function getRowValue(row, col) {
+            if (col.isDynamic) {
+                const profile = row.profile_data || {};
+                return profile[col.profileKey];
+            }
+
+            if (col.key === 'full_name') {
+                return [row.alumni_last_name_1, row.alumni_last_name_2 || '', row.alumni_first_name]
+                    .filter(Boolean).join(' ');
+            }
+
+            if (col.key === 'gender_name') {
+                const g = genders.find(x => x.gender_id === row.gender_id);
+                return g ? g.gender_name : null;
+            }
+
+            return row[col.key];
+        }
+
+        function formatCellValue(val, type) {
+            if (val === null || val === undefined || val === '') {
+                return '<span class="text-muted">—</span>';
+            }
+
+            if (type === 'boolean') {
+                return val === true || val === 'true' ? '✓ Sí' : 'No';
+            }
+
+            if (type === 'multiselect' && Array.isArray(val)) {
+                return val.map(v => escapeHtml(v)).join(', ');
+            }
+
+            if (type === 'date' && typeof val === 'string') {
+                // Recortar a solo fecha si viene con hora
+                const m = val.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (m) return m[1];
+            }
+
+            if (type === 'url' && typeof val === 'string' && val.startsWith('http')) {
+                return '<a href="' + escapeAttr(val) + '" target="_blank" rel="noopener">' + escapeHtml(val) + '</a>';
+            }
+
+            return escapeHtml(String(val));
+        }
+
+        function updatePagination() {
+            const totalPages = Math.max(1, Math.ceil(allAlumni.length / PAGE_SIZE));
+            document.getElementById('pageInfo').textContent =
+                'Página ' + currentPage + ' de ' + totalPages;
+
+            document.getElementById('prevPageItem').classList.toggle('disabled', currentPage <= 1);
+            document.getElementById('nextPageItem').classList.toggle('disabled', currentPage >= totalPages);
+            document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+            document.getElementById('btnNextPage').disabled = currentPage >= totalPages;
+        }
+
+        // ==========================================
+        // ORDENAMIENTO
+        // ==========================================
+        function toggleSort(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            loadAlumni();
+        }
+
+        // ==========================================
+        // SELECTOR DE COLUMNAS
+        // ==========================================
+        function openColumnsModal() {
+            const container = document.getElementById('columnsSelectorContent');
+
+            // Agrupar
+            const byGroup = {};
+            allColumns.forEach(c => {
+                if (!byGroup[c.group]) byGroup[c.group] = [];
+                byGroup[c.group].push(c);
+            });
+
+            let html = '';
+            for (const group in byGroup) {
+                html += '<div class="column-group">';
+                html += '<div class="column-group-title">' + escapeHtml(group) + '</div>';
+                html += '<div class="row">';
+                byGroup[group].forEach(c => {
+                    const checked = selectedColumns.has(c.key) ? 'checked' : '';
+                    html += '<div class="col-md-6 column-checkbox-item">';
+                    html += '<div class="form-check">';
+                    html += '<input class="form-check-input column-checkbox-input" type="checkbox" ' +
+                        'value="' + escapeAttr(c.key) + '" id="col_' + c.key + '" ' + checked + '>';
+                    html += '<label class="form-check-label" for="col_' + c.key + '">' +
+                        escapeHtml(c.label) + '</label>';
+                    html += '</div></div>';
+                });
+                html += '</div></div>';
+            }
+
+            container.innerHTML = html;
+            columnsModalInstance.show();
+        }
+
+        function applyColumnSelection() {
+            const checked = document.querySelectorAll('.column-checkbox-input:checked');
+            selectedColumns = new Set([...checked].map(cb => cb.value));
+            saveSelectedColumns();
+            updateColumnsCount();
+            columnsModalInstance.hide();
+            renderTable();
+        }
+
+        // ==========================================
+        // EXPORTACIÓN
+        // ==========================================
+        function openExportModal() {
+            if (allAlumni.length === 0) {
+                showAlert('No hay registros para exportar con los filtros actuales.', 'warning');
+                return;
+            }
+
+            document.getElementById('exportRecordCount').textContent = allAlumni.length;
+            document.getElementById('exportColumnCount').textContent = allColumns.length;
+            document.getElementById('exportReason').value = '';
+            exportModalInstance.show();
+        }
+
+        async function executeExport() {
+            const reason = document.getElementById('exportReason').value.trim();
+            if (!reason) {
+                showAlert('Debes indicar un motivo de la exportación.', 'warning');
+                return;
+            }
+
+            try {
+                showLoading('Generando XLSX...');
+
+                // Construir datos con TODAS las columnas
+                const headers = allColumns.map(c => c.label);
+                const rows = allAlumni.map(row => {
+                    return allColumns.map(c => {
+                        const val = getRowValue(row, c);
+                        return formatExportValue(val, c.type);
+                    });
+                });
+
+                const sheetData = [headers, ...rows];
+                const sheet = XLSX.utils.aoa_to_sheet(sheetData);
+                sheet['!cols'] = allColumns.map(() => ({ wch: 20 }));
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, sheet, 'Egresados');
+
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                XLSX.writeFile(wb, 'egresados_' + timestamp + '.xlsx');
+
+                // Registrar en log de auditoría
+                const session = getStoredSession();
+                await supabaseRequest('/alumni_export_log', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        user_id: session.user.user_id,
+                        filters_applied: {
+                            fixed: {
+                                search: filters.search || null,
+                                yearFrom: filters.yearFrom || null,
+                                yearTo: filters.yearTo || null,
+                                verified: filters.verified || null,
+                                source: filters.source || null,
+                                gender: filters.gender || null,
+                                hasEmail: filters.hasEmail || null,
+                                consentTreatment: filters.consentTreatment || null,
+                                consentBasic: filters.consentBasic || null,
+                                consentExtended: filters.consentExtended || null
+                            },
+                            dynamic: filters.dynamic || {},
+                            reason: reason
+                        },
+                        record_count: allAlumni.length,
+                        export_format: 'xlsx'
+                    })
+                });
+
+                exportModalInstance.hide();
+                hideLoading();
+                showAlert('Exportación completada. ' + allAlumni.length + ' registros descargados.', 'success');
+
+            } catch (error) {
+                console.error('❌ Error exportando:', error);
+                showAlert('Error al exportar: ' + error.message, 'danger');
+                hideLoading();
+            }
+        }
+
+        function formatExportValue(val, type) {
+            if (val === null || val === undefined) return '';
+            if (type === 'boolean') return val === true || val === 'true' ? 'Sí' : 'No';
+            if (type === 'multiselect' && Array.isArray(val)) return val.join('; ');
+            if (type === 'date' && typeof val === 'string') {
+                const m = val.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (m) return m[1];
+            }
+            return String(val);
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function emptyStateHTML(icon, title, message) {
+            return '<div class="empty-state">' +
+                '<i class="bi ' + icon + '"></i>' +
+                '<h5>' + escapeHtml(title) + '</h5>' +
+                '<p class="small">' + escapeHtml(message) + '</p>' +
+                '</div>';
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function escapeAttr(str) { return escapeHtml(str); }
+
+        function showLoading(msg) {
+            document.getElementById('loadingMessage').textContent = msg || 'Cargando...';
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        function showAlert(message, type) {
+            type = type || 'info';
+            const container = document.getElementById('alertContainer');
+            const id = 'alert_' + Date.now();
+            const icons = {
+                success: 'check-circle', danger: 'exclamation-triangle',
+                warning: 'exclamation-triangle', info: 'info-circle'
+            };
+            container.innerHTML =
+                '<div id="' + id + '" class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+                    '<i class="bi bi-' + (icons[type] || 'info-circle') + ' me-2"></i>' +
+                    message +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                '</div>';
+
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    const el = document.getElementById(id);
+                    if (el) bootstrap.Alert.getOrCreateInstance(el).close();
+                }, 5000);
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Exponer para onclick inline
+        window.toggleSort = toggleSort;
+
+        console.log('🎓 Reportes de egresados - cargado');
+    </script>
+</body>
+</html>
