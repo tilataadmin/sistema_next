@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.01.11.55">
+    <meta name="page-version" content="26.04.27.14.05">
     <title>Evaluar Componentes - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -565,12 +565,38 @@
         
         async function cargarDatosEvaluacion() {
             try {
-                // 1. Mis asignaciones en esta evaluación
+                // 1. Mis asignaciones en esta evaluación (área y/o proceso)
                 misAsignaciones = await supabaseRequest(
-                    `/ie_process_workers?select=assignment_id,process_id&evaluation_id=eq.${selectedEvalId}&worker_email=eq.${currentWorkerEmail}&assignment_status=eq.active`
+                    `/ie_process_workers?select=assignment_id,area_id,process_id,assignment_scope&evaluation_id=eq.${selectedEvalId}&worker_email=eq.${currentWorkerEmail}&assignment_status=eq.active`
                 );
                 
-                const processIds = misAsignaciones.map(a => a.process_id);
+                // 2. Separar asignaciones por scope
+                const areaIdsAsignadas = misAsignaciones
+                    .filter(a => a.assignment_scope === 'area' && a.area_id)
+                    .map(a => a.area_id);
+                
+                const processIdsDirectos = misAsignaciones
+                    .filter(a => a.assignment_scope === 'process' && a.process_id)
+                    .map(a => a.process_id);
+                
+                // 3. Si hay áreas asignadas, obtener TODOS los procesos de esas áreas
+                let processIdsDeAreas = [];
+                if (areaIdsAsignadas.length > 0) {
+                    const aFilter = areaIdsAsignadas.map(id => `area_id.eq.${id}`).join(',');
+                    const procesosDeAreas = await supabaseRequest(
+                        `/ie_processes?select=process_id&or=(${aFilter})&process_status=eq.active`
+                    );
+                    processIdsDeAreas = procesosDeAreas.map(p => p.process_id);
+                }
+                
+                // 4. Combinar sin duplicados
+                const processIds = [...new Set([...processIdsDirectos, ...processIdsDeAreas])];
+                
+                console.log('📋 Asignaciones:', misAsignaciones.length, 
+                    '| Áreas:', areaIdsAsignadas.length, 
+                    '| Procesos directos:', processIdsDirectos.length,
+                    '| Procesos por área:', processIdsDeAreas.length,
+                    '| Total procesos a evaluar:', processIds.length);
                 
                 if (processIds.length === 0) {
                     document.getElementById('processes-section').style.display = 'block';
