@@ -34,7 +34,7 @@ const ENVIRONMENT_CONFIGS = {
         name: 'Desarrollo',
         supabase: {
             url: 'https://spjzvpcsgbewxupjvmfm.supabase.co',
-            anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwanp2cGNzZ2Jld3h1cGp2bWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMDk4MDEsImV4cCI6MjA3MjU4NTgwMX0.6n_rvGalz_IT2vQ1Q4fPGS0D-ijYBUmdkL3PmbyNRck'
+            anonKey: 'sb_publishable_7gybKhnMzTaLWuzmiQjWcg_HNBZt2yQ'
         },
         features: {
             debugMode: true,
