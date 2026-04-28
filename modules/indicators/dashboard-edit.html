@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.08.00">
+    <meta name="page-version" content="26.04.28.09.20">
     <title>Editar Dashboard - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -154,6 +154,13 @@
                                     <span class="badge bg-secondary ms-1" id="variableTabCount">0</span>
                                 </button>
                             </li>
+                            <li class="nav-item" role="presentation" id="invitationsTabItem" style="display:none">
+                                <button class="nav-link" id="invitations-tab" data-bs-toggle="tab"
+                                        data-bs-target="#invitations-pane" type="button" role="tab">
+                                    <i class="bi bi-people me-2"></i>Invitados
+                                    <span class="badge bg-info ms-1" id="invitationsTabCount">0</span>
+                                </button>
+                            </li>
                         </ul>
                     </div>
                     <div class="card-body">
@@ -257,6 +264,36 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- TAB INVITADOS (solo compartidos) -->
+                            <div class="tab-pane fade" id="invitations-pane" role="tabpanel">
+                                <div class="alert alert-info small mb-3">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Los trabajadores invitados podrán ver este dashboard, pero no editarlo.
+                                    Solo los trabajadores con acceso al sistema verán el dashboard al iniciar sesión.
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-12">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                            <input type="text" class="form-control" id="searchWorkers"
+                                                   placeholder="Buscar trabajador por nombre o email..."
+                                                   onkeyup="filterWorkersToInvite()">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <h6 class="mb-2"><i class="bi bi-check-circle me-1 text-success"></i>Invitados actuales (<span id="currentInvitedCount">0</span>)</h6>
+                                <div id="currentInvitedContainer" class="mb-4">
+                                    <div class="text-muted small fst-italic">Cargando...</div>
+                                </div>
+
+                                <h6 class="mb-2"><i class="bi bi-person-plus me-1"></i>Trabajadores disponibles</h6>
+                                <div id="availableWorkersContainer">
+                                    <div class="text-muted small fst-italic">Cargando...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -333,6 +370,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     <script>
+        
         // ==========================================
         // VARIABLES GLOBALES
         // ==========================================
@@ -347,6 +385,11 @@
         let selectedVariables = new Set();
         let availableCategories = [];
         let selectedCategoryFilters = [];
+
+        // Invitados
+        let allWorkers = [];           // Workers activos (excluyendo al dueño)
+        let invitedWorkerIds = new Set(); // worker_id de los actualmente invitados
+        let workerSearchTerm = '';
 
         // ==========================================
         // INICIALIZACIÓN
@@ -427,6 +470,7 @@
             const title = document.getElementById('dashboardTitle');
             const subtitle = document.getElementById('dashboardSubtitle');
             const editBtn = document.getElementById('editMetadataBtn');
+            const invitationsTabItem = document.getElementById('invitationsTabItem');
 
             title.textContent = dashboard.dashboard_name;
 
@@ -434,9 +478,11 @@
             const desc = dashboard.dashboard_description || '<em>Sin descripción</em>';
             subtitle.innerHTML = `<i class="bi bi-tag me-1"></i>${typeLabel} · ${desc}`;
 
-            // Solo se puede editar nombre/descripción si es compartido
+            // Solo se puede editar nombre/descripción y gestionar invitados si es compartido
             if (!dashboard.is_personal) {
                 editBtn.style.display = '';
+                invitationsTabItem.style.display = '';
+                loadInvitationsData(); // Carga workers e invitaciones en background
             }
 
             header.style.display = '';
@@ -918,8 +964,174 @@
         }
 
         // ==========================================
+        // INVITADOS
+        // ==========================================
+        async function loadInvitationsData() {
+            try {
+                // Cargar en paralelo: invitaciones actuales y workers activos
+                const [invitations, workers] = await Promise.all([
+                    supabaseRequest(
+                        `/dashboard_invitations?select=worker_id&dashboard_id=eq.${dashboardId}`
+                    ),
+                    supabaseRequest(
+                        '/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active'
+                    )
+                ]);
+
+                invitedWorkerIds = new Set((invitations || []).map(i => i.worker_id));
+
+                // Excluir al dueño del dashboard de la lista de workers (si es worker)
+                // Resolvemos: el dueño es un user; buscamos su worker por email
+                let ownerWorkerId = null;
+                if (currentUser && currentUser.user_mail) {
+                    const ownerWorker = (workers || []).find(w => w.email === currentUser.user_mail);
+                    if (ownerWorker) ownerWorkerId = ownerWorker.worker_id;
+                }
+                const filtered = (workers || []).filter(w => w.worker_id !== ownerWorkerId);
+                allWorkers = sortWorkersByName(filtered);
+
+                renderInvitedSection();
+                renderAvailableWorkersSection();
+                updateInvitationsCount();
+                
+            } catch (error) {
+                console.error('Error cargando invitaciones:', error);
+                document.getElementById('currentInvitedContainer').innerHTML =
+                    `<div class="alert alert-danger small">Error: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderInvitedSection() {
+            const container = document.getElementById('currentInvitedContainer');
+            const invitedWorkers = allWorkers.filter(w => invitedWorkerIds.has(w.worker_id));
+
+            if (invitedWorkers.length === 0) {
+                container.innerHTML = '<div class="text-muted small fst-italic">Aún no has invitado a nadie.</div>';
+                return;
+            }
+
+            container.innerHTML = invitedWorkers.map(w => {
+                const fullName = formatWorkerName(w);
+                return `
+                    <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2">
+                        <div>
+                            <i class="bi bi-person-check text-success me-2"></i>
+                            <strong>${escapeHtml(fullName)}</strong>
+                            <small class="text-muted ms-2">${escapeHtml(w.email || '')}</small>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeInvitation('${w.worker_id}')">
+                            <i class="bi bi-x-circle me-1"></i>Quitar
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderAvailableWorkersSection() {
+            const container = document.getElementById('availableWorkersContainer');
+            const term = workerSearchTerm.toLowerCase();
+
+            // Mostrar solo no invitados, y filtrar por término de búsqueda
+            const available = allWorkers.filter(w => {
+                if (invitedWorkerIds.has(w.worker_id)) return false;
+                if (!term) return true;
+                const fullName = formatWorkerName(w).toLowerCase();
+                const email = (w.email || '').toLowerCase();
+                return fullName.includes(term) || email.includes(term);
+            });
+
+            if (available.length === 0) {
+                if (term) {
+                    container.innerHTML = '<div class="text-muted small fst-italic">No se encontraron trabajadores con ese criterio.</div>';
+                } else {
+                    container.innerHTML = '<div class="text-muted small fst-italic">No hay más trabajadores para invitar.</div>';
+                }
+                return;
+            }
+
+            // Limitar render a primeros 50 para no sobrecargar el DOM
+            const toRender = available.slice(0, 50);
+            const extra = available.length - toRender.length;
+
+            container.innerHTML = toRender.map(w => {
+                const fullName = formatWorkerName(w);
+                return `
+                    <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2">
+                        <div>
+                            <i class="bi bi-person me-2 text-muted"></i>
+                            <strong>${escapeHtml(fullName)}</strong>
+                            <small class="text-muted ms-2">${escapeHtml(w.email || '')}</small>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="addInvitation('${w.worker_id}')">
+                            <i class="bi bi-plus-circle me-1"></i>Invitar
+                        </button>
+                    </div>
+                `;
+            }).join('') + (extra > 0
+                ? `<div class="text-muted small text-center mt-2"><i class="bi bi-info-circle me-1"></i>Mostrando los primeros 50 resultados. Usa el buscador para refinar (${extra} más disponibles).</div>`
+                : '');
+        }
+
+        function filterWorkersToInvite() {
+            workerSearchTerm = document.getElementById('searchWorkers').value.trim();
+            renderAvailableWorkersSection();
+        }
+
+        async function addInvitation(workerId) {
+            try {
+                await supabaseRequest('/dashboard_invitations', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        dashboard_id: dashboardId,
+                        worker_id: workerId,
+                        invited_by_user_id: currentUser.user_id
+                    })
+                });
+
+                invitedWorkerIds.add(workerId);
+                renderInvitedSection();
+                renderAvailableWorkersSection();
+                updateInvitationsCount();
+                showMessage('Trabajador invitado', 'success');
+            } catch (error) {
+                console.error('Error invitando:', error);
+                showMessage('Error invitando: ' + error.message, 'danger');
+            }
+        }
+
+        async function removeInvitation(workerId) {
+            const worker = allWorkers.find(w => w.worker_id === workerId);
+            const name = worker ? formatWorkerName(worker) : 'este trabajador';
+
+            if (!confirm(`¿Quitar la invitación de ${name}? Dejará de ver este dashboard.`)) return;
+
+            try {
+                await supabaseRequest(
+                    `/dashboard_invitations?dashboard_id=eq.${dashboardId}&worker_id=eq.${workerId}`,
+                    { method: 'DELETE' }
+                );
+
+                invitedWorkerIds.delete(workerId);
+                renderInvitedSection();
+                renderAvailableWorkersSection();
+                updateInvitationsCount();
+                showMessage('Invitación removida', 'success');
+            } catch (error) {
+                console.error('Error removiendo invitación:', error);
+                showMessage('Error: ' + error.message, 'danger');
+            }
+        }
+
+        function updateInvitationsCount() {
+            const count = invitedWorkerIds.size;
+            document.getElementById('invitationsTabCount').textContent = count;
+            document.getElementById('currentInvitedCount').textContent = count;
+        }
+
+        // ==========================================
         // UTILIDADES
         // ==========================================
+        
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -946,6 +1158,9 @@
         window.saveConfiguration = saveConfiguration;
         window.openMetadataModal = openMetadataModal;
         window.saveMetadata = saveMetadata;
+        window.filterWorkersToInvite = filterWorkersToInvite;
+        window.addInvitation = addInvitation;
+        window.removeInvitation = removeInvitation;
     </script>
 </body>
 </html>
