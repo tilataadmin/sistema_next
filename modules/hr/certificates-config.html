@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.04.28.13.50">
+    <meta name="page-version" content="26.04.28.14.00">
     
     <title>Configurar certificados laborales - SchoolNet</title>
     
@@ -872,10 +872,514 @@
         }
 
         // ==========================================================================
-        // EL JS DE LAS PESTAÑAS 2 Y 3 VIENE EN EL FRAGMENTO 3
+        // PESTAÑA 2: PLANTILLA DEL CERTIFICADO
         // ==========================================================================
 
-        console.log('✅ Fragmento 2 cargado: pestaña Tipos de contrato lista');
+        // Variables de la pestaña Plantilla
+        let quillEditor = null;
+        let plantillaActiva = null;
+        let plantillaInicializada = false;
+
+        // Variables disponibles para la plantilla
+        const VARIABLES_PLANTILLA = [
+            { code: '$$logo_url$$', desc: 'URL del logo del colegio' },
+            { code: '$$nit$$', desc: 'NIT institucional' },
+            { code: '$$direccion$$', desc: 'Dirección del colegio' },
+            { code: '$$telefono$$', desc: 'Teléfono del colegio' },
+            { code: '$$ciudad$$', desc: 'Ciudad de expedición' },
+            { code: '$$fecha_expedicion$$', desc: 'Fecha actual (texto)' },
+            { code: '$$nombre_completo$$', desc: 'Nombre completo del trabajador' },
+            { code: '$$tipo_documento$$', desc: 'Tipo de documento (CC, CE, etc.)' },
+            { code: '$$documento$$', desc: 'Número de documento' },
+            { code: '$$cargo$$', desc: 'Cargo principal del trabajador' },
+            { code: '$$fecha_ingreso$$', desc: 'Fecha de ingreso (texto)' },
+            { code: '$$tipo_contrato$$', desc: 'Tipo de contrato vigente' },
+            { code: '$$salario_numero$$', desc: 'Salario en formato $X.XXX.XXX' },
+            { code: '$$salario_letras$$', desc: 'Salario en letras' },
+            { code: '$$firmante_nombre$$', desc: 'Nombre del firmante' },
+            { code: '$$firmante_cargo$$', desc: 'Cargo del firmante' },
+            { code: '$$firma_url$$', desc: 'URL de la firma escaneada' },
+            { code: '$$radicado$$', desc: 'Número único del certificado' },
+            { code: '$$qr_url$$', desc: 'URL para verificación con QR' }
+        ];
+
+        // ==========================================
+        // INICIALIZAR PESTAÑA PLANTILLA (lazy load)
+        // ==========================================
+        async function inicializarPestanaPlantilla() {
+            if (plantillaInicializada) return;
+            plantillaInicializada = true;
+
+            try {
+                // 1. Inicializar Quill
+                quillEditor = new Quill('#editor-plantilla', {
+                    theme: 'snow',
+                    placeholder: 'Escribe aquí el contenido del certificado. Usa las variables del panel derecho.',
+                    modules: {
+                        toolbar: [
+                            [{ 'header': [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline'],
+                            [{ 'align': [] }],
+                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                            [{ 'indent': '-1'}, { 'indent': '+1' }],
+                            ['link'],
+                            [{ 'color': [] }, { 'background': [] }],
+                            ['clean']
+                        ]
+                    }
+                });
+
+                // 2. Renderizar panel de variables
+                renderizarVariablesPlantilla();
+
+                // 3. Cargar plantilla activa si existe
+                await cargarPlantillaActiva();
+
+                console.log('✅ Pestaña Plantilla inicializada');
+
+            } catch (error) {
+                console.error('❌ Error inicializando pestaña Plantilla:', error);
+                showMessage('Error al inicializar editor: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // RENDERIZAR PANEL DE VARIABLES
+        // ==========================================
+        function renderizarVariablesPlantilla() {
+            const lista = document.getElementById('lista-variables');
+            if (!lista) return;
+
+            lista.innerHTML = VARIABLES_PLANTILLA.map(v => `
+                <div class="variable-item">
+                    <div>
+                        <span class="variable-code">${v.code}</span>
+                        <span class="variable-desc">${v.desc}</span>
+                    </div>
+                    <button class="btn-copy-variable"
+                            onclick="copiarVariable('${v.code}')"
+                            title="Copiar al portapapeles">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // ==========================================
+        // COPIAR VARIABLE AL PORTAPAPELES
+        // ==========================================
+        async function copiarVariable(codigo) {
+            try {
+                await navigator.clipboard.writeText(codigo);
+                showMessage(`Variable ${codigo} copiada. Pégala donde la necesites en el editor.`, 'success');
+            } catch (error) {
+                console.error('❌ Error copiando:', error);
+                showMessage('No se pudo copiar al portapapeles', 'warning');
+            }
+        }
+
+        // ==========================================
+        // CARGAR PLANTILLA ACTIVA
+        // ==========================================
+        async function cargarPlantillaActiva() {
+            try {
+                const data = await supabaseRequest(
+                    '/certificate_template?select=*&is_active=eq.true&order=updated_at.desc&limit=1'
+                );
+
+                const badge = document.getElementById('estado-plantilla');
+
+                if (data && data.length > 0) {
+                    plantillaActiva = data[0];
+                    document.getElementById('nombre-plantilla').value = plantillaActiva.template_name;
+                    quillEditor.root.innerHTML = plantillaActiva.template_html || '';
+                    badge.textContent = 'Plantilla activa';
+                    badge.className = 'badge bg-success';
+                } else {
+                    plantillaActiva = null;
+                    badge.textContent = 'Sin plantilla';
+                    badge.className = 'badge bg-secondary';
+                }
+
+            } catch (error) {
+                console.error('❌ Error cargando plantilla:', error);
+                showMessage('Error al cargar plantilla: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // CARGAR TEXTO BASE SUGERIDO
+        // ==========================================
+        function cargarTextoBaseSugerido() {
+            if (!confirm('Esto reemplazará el contenido actual del editor con un texto base. ¿Continuar?')) {
+                return;
+            }
+
+            const nombreActual = document.getElementById('nombre-plantilla').value.trim();
+            if (!nombreActual) {
+                document.getElementById('nombre-plantilla').value = 'Certificado laboral estándar';
+            }
+
+            const textoBase = `
+                <p style="text-align: center;"><strong>EL SUSCRITO $$firmante_cargo$$</strong></p>
+                <p style="text-align: center;"><strong>HACE CONSTAR:</strong></p>
+                <p>&nbsp;</p>
+                <p>Que <strong>$$nombre_completo$$</strong>, identificado(a) con $$tipo_documento$$ No. <strong>$$documento$$</strong>, se encuentra vinculado(a) a la institución desde el <strong>$$fecha_ingreso$$</strong>, desempeñando el cargo de <strong>$$cargo$$</strong>, mediante un contrato a <strong>$$tipo_contrato$$</strong>, devengando un salario mensual de <strong>$$salario_numero$$</strong> ($$salario_letras$$).</p>
+                <p>&nbsp;</p>
+                <p>La presente certificación se expide a solicitud del interesado(a) en $$ciudad$$, a los $$fecha_expedicion$$.</p>
+                <p>&nbsp;</p>
+                <p>Cordialmente,</p>
+                <p>&nbsp;</p>
+                <p>&nbsp;</p>
+                <p><strong>$$firmante_nombre$$</strong><br>$$firmante_cargo$$</p>
+                <p style="font-size: 10px; color: #666;">Radicado: $$radicado$$ | Verificación: $$qr_url$$</p>
+            `.trim();
+
+            quillEditor.root.innerHTML = textoBase;
+            showMessage('Texto base cargado. Ajústalo según necesites antes de guardar.', 'info');
+        }
+
+        // ==========================================
+        // GUARDAR PLANTILLA
+        // ==========================================
+        async function guardarPlantilla() {
+            const nombre = document.getElementById('nombre-plantilla').value.trim();
+            const html = quillEditor.root.innerHTML.trim();
+
+            if (!nombre) {
+                showMessage('El nombre de la plantilla es obligatorio', 'warning');
+                document.getElementById('nombre-plantilla').focus();
+                return;
+            }
+
+            if (!html || html === '<p><br></p>') {
+                showMessage('La plantilla no puede estar vacía', 'warning');
+                return;
+            }
+
+            if (!confirm('Esto creará una nueva plantilla activa. La anterior quedará desactivada (preservada para historial). ¿Continuar?')) {
+                return;
+            }
+
+            mostrarLoading('Guardando plantilla...');
+
+            try {
+                // 1. Desactivar todas las plantillas activas
+                await supabaseRequest(
+                    '/certificate_template?is_active=eq.true',
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            is_active: false,
+                            updated_at: new Date().toISOString()
+                        })
+                    }
+                );
+
+                // 2. Insertar la nueva plantilla activa
+                const payload = {
+                    template_name: nombre,
+                    template_html: html,
+                    is_active: true,
+                    created_by: currentUser.user_id,
+                    updated_by: currentUser.user_id
+                };
+
+                await supabaseRequest(
+                    '/certificate_template',
+                    {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    }
+                );
+
+                ocultarLoading();
+                showMessage('Plantilla guardada y activada correctamente', 'success');
+                await cargarPlantillaActiva();
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('❌ Error guardando plantilla:', error);
+                showMessage('Error al guardar plantilla: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // VISTA PREVIA DE LA PLANTILLA
+        // ==========================================
+        function vistaPreviaPlantilla() {
+            const html = quillEditor.root.innerHTML.trim();
+
+            if (!html || html === '<p><br></p>') {
+                showMessage('No hay contenido en el editor para previsualizar', 'warning');
+                return;
+            }
+
+            // Datos ficticios para mostrar cómo se vería el certificado
+            const fechaHoy = new Date().toLocaleDateString('es-CO', {
+                year: 'numeric', month: 'long', day: 'numeric'
+            });
+
+            const datosEjemplo = {
+                '\\$\\$logo_url\\$\\$': '[URL del logo]',
+                '\\$\\$nit\\$\\$': '900.123.456-7',
+                '\\$\\$direccion\\$\\$': 'Vereda Yerbabuena, Chía, Cundinamarca',
+                '\\$\\$telefono\\$\\$': '(601) 123-4567',
+                '\\$\\$ciudad\\$\\$': 'Chía',
+                '\\$\\$fecha_expedicion\\$\\$': fechaHoy,
+                '\\$\\$nombre_completo\\$\\$': 'JUAN CARLOS PÉREZ GÓMEZ',
+                '\\$\\$tipo_documento\\$\\$': 'Cédula de Ciudadanía',
+                '\\$\\$documento\\$\\$': '1.234.567.890',
+                '\\$\\$cargo\\$\\$': 'Docente de Matemáticas',
+                '\\$\\$fecha_ingreso\\$\\$': '15 de enero de 2020',
+                '\\$\\$tipo_contrato\\$\\$': 'Término indefinido',
+                '\\$\\$salario_numero\\$\\$': '$ 3.500.000',
+                '\\$\\$salario_letras\\$\\$': 'TRES MILLONES QUINIENTOS MIL PESOS M/CTE',
+                '\\$\\$firmante_nombre\\$\\$': 'María Fernanda Gómez Pérez',
+                '\\$\\$firmante_cargo\\$\\$': 'Directora de Talento Humano',
+                '\\$\\$firma_url\\$\\$': '[URL de la firma]',
+                '\\$\\$radicado\\$\\$': 'CERT-2026-00123',
+                '\\$\\$qr_url\\$\\$': 'https://schoolnet.colegiotilata.edu.co/verify-certificate?id=CERT-2026-00123'
+            };
+
+            let htmlPreview = html;
+            for (const [varRegex, valor] of Object.entries(datosEjemplo)) {
+                htmlPreview = htmlPreview.replace(new RegExp(varRegex, 'g'), valor);
+            }
+
+            document.getElementById('preview-content').innerHTML = htmlPreview;
+
+            const modalPreview = new bootstrap.Modal(document.getElementById('modal-preview-plantilla'));
+            modalPreview.show();
+        }
+
+        // ==========================================================================
+        // PESTAÑA 3: FIRMANTE
+        // ==========================================================================
+
+        let firmanteActivo = null;
+        let firmanteInicializado = false;
+
+        // ==========================================
+        // INICIALIZAR PESTAÑA FIRMANTE (lazy load)
+        // ==========================================
+        async function inicializarPestanaFirmante() {
+            if (firmanteInicializado) return;
+            firmanteInicializado = true;
+
+            try {
+                // Configurar event listeners de la pestaña
+                const formFirmante = document.getElementById('form-firmante');
+                if (formFirmante) {
+                    formFirmante.addEventListener('submit', guardarFirmante);
+                }
+
+                // Cargar firmante activo si existe
+                await cargarFirmanteActivo();
+
+                console.log('✅ Pestaña Firmante inicializada');
+
+            } catch (error) {
+                console.error('❌ Error inicializando pestaña Firmante:', error);
+                showMessage('Error al cargar firmante: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // CARGAR FIRMANTE ACTIVO
+        // ==========================================
+        async function cargarFirmanteActivo() {
+            try {
+                const data = await supabaseRequest(
+                    '/certificate_signer?select=*&is_active=eq.true&order=updated_at.desc&limit=1'
+                );
+
+                if (data && data.length > 0) {
+                    firmanteActivo = data[0];
+                    document.getElementById('signer-name').value = firmanteActivo.signer_name || '';
+                    document.getElementById('signer-role').value = firmanteActivo.signer_role_text || '';
+                    document.getElementById('expedition-city').value = firmanteActivo.expedition_city || 'Chía';
+
+                    actualizarPreviewFirma(firmanteActivo.signature_url);
+                } else {
+                    firmanteActivo = null;
+                    actualizarPreviewFirma(null);
+                }
+
+            } catch (error) {
+                console.error('❌ Error cargando firmante:', error);
+            }
+        }
+
+        // ==========================================
+        // ACTUALIZAR PREVIEW DE FIRMA
+        // ==========================================
+        function actualizarPreviewFirma(url) {
+            const preview = document.getElementById('signature-preview');
+            const btnEliminar = document.getElementById('btn-eliminar-firma');
+
+            if (url) {
+                preview.innerHTML = `<img src="${url}" alt="Firma actual" onerror="this.parentElement.innerHTML='<span class=\\'signature-preview-empty\\'>Error al cargar firma</span>';">`;
+                btnEliminar.classList.remove('d-none');
+            } else {
+                preview.innerHTML = `
+                    <span class="signature-preview-empty">
+                        <i class="bi bi-image" style="font-size: 2rem;"></i>
+                        <div class="mt-2">Sin firma cargada</div>
+                    </span>
+                `;
+                btnEliminar.classList.add('d-none');
+            }
+        }
+
+        // ==========================================
+        // GUARDAR FIRMANTE
+        // ==========================================
+        async function guardarFirmante(e) {
+            e.preventDefault();
+
+            const nombre = document.getElementById('signer-name').value.trim();
+            const cargo = document.getElementById('signer-role').value.trim();
+            const ciudad = document.getElementById('expedition-city').value.trim();
+            const fileInput = document.getElementById('signature-file');
+            const file = fileInput.files[0];
+
+            if (!nombre || !cargo || !ciudad) {
+                showMessage('Nombre, cargo y ciudad son obligatorios', 'warning');
+                return;
+            }
+
+            const submitBtn = e.submitter;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+
+            try {
+                let signatureUrl = firmanteActivo ? firmanteActivo.signature_url : null;
+
+                // 1. Si hay un archivo nuevo, subirlo
+                if (file) {
+                    // Validaciones del archivo
+                    if (file.size > 2 * 1024 * 1024) {
+                        throw new Error('La firma no puede pesar más de 2 MB');
+                    }
+                    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+                        throw new Error('Solo se admiten imágenes PNG o JPG');
+                    }
+
+                    mostrarLoading('Subiendo firma...');
+
+                    const timestamp = Date.now();
+                    const ext = file.name.split('.').pop();
+                    const fileName = `${timestamp}_signature.${ext}`;
+                    const filePath = `signatures/${fileName}`;
+
+                    const { data: uploadData, error: uploadError } = await supabaseStorageClient
+                        .storage
+                        .from('certificates')
+                        .upload(filePath, file, {
+                            cacheControl: '3600',
+                            upsert: false
+                        });
+
+                    if (uploadError) {
+                        throw new Error('Error subiendo firma: ' + uploadError.message);
+                    }
+
+                    const { data: urlData } = supabaseStorageClient
+                        .storage
+                        .from('certificates')
+                        .getPublicUrl(filePath);
+
+                    signatureUrl = urlData.publicUrl;
+                }
+
+                // 2. Desactivar todos los firmantes activos
+                mostrarLoading('Guardando datos del firmante...');
+                await supabaseRequest(
+                    '/certificate_signer?is_active=eq.true',
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            is_active: false,
+                            updated_at: new Date().toISOString()
+                        })
+                    }
+                );
+
+                // 3. Insertar el nuevo firmante activo
+                const payload = {
+                    signer_name: nombre,
+                    signer_role_text: cargo,
+                    signature_url: signatureUrl,
+                    expedition_city: ciudad,
+                    is_active: true,
+                    created_by: currentUser.user_id,
+                    updated_by: currentUser.user_id
+                };
+
+                await supabaseRequest(
+                    '/certificate_signer',
+                    {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    }
+                );
+
+                ocultarLoading();
+                showMessage('Firmante guardado correctamente', 'success');
+
+                // Limpiar input de archivo y recargar
+                fileInput.value = '';
+                await cargarFirmanteActivo();
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('❌ Error guardando firmante:', error);
+                showMessage('Error al guardar firmante: ' + error.message, 'danger');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        }
+
+        // ==========================================
+        // ELIMINAR FIRMA ACTUAL (mantiene los datos del firmante)
+        // ==========================================
+        async function eliminarFirma() {
+            if (!firmanteActivo || !firmanteActivo.signature_url) return;
+
+            if (!confirm('¿Eliminar la firma actual? Los demás datos del firmante se conservarán. Tendrás que cargar una nueva firma para poder generar certificados.')) {
+                return;
+            }
+
+            try {
+                mostrarLoading('Eliminando firma...');
+
+                // Actualizar BD: poner signature_url en null
+                await supabaseRequest(
+                    `/certificate_signer?signer_id=eq.${firmanteActivo.signer_id}`,
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            signature_url: null,
+                            updated_at: new Date().toISOString()
+                        })
+                    }
+                );
+
+                ocultarLoading();
+                showMessage('Firma eliminada. Carga una nueva cuando estés listo.', 'success');
+                await cargarFirmanteActivo();
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('❌ Error eliminando firma:', error);
+                showMessage('Error al eliminar firma: ' + error.message, 'danger');
+            }
+        }
+
+        console.log('✅ Fragmento 3 cargado: pestañas Plantilla y Firmante listas');
     </script>
 </body>
 </html>
