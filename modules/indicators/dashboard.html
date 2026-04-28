@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.11.20">
+    <meta name="page-version" content="26.04.28.11.22">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1885,34 +1885,38 @@
         });
         
         /**
-         * Cargar datos de tendencias
+         * Cargar datos de tendencias.
+         * Estrategia en dos pasadas:
+         *   1) Recolectar datos históricos y construir el HTML completo.
+         *   2) Insertar el HTML al DOM.
+         *   3) En una pasada separada, renderizar los charts con su data.
+         * Esto evita el race condition donde renderTrendChart se ejecutaba
+         * antes de que el canvas existiera en el DOM.
          */
         async function loadTrendsData() {
             const container = document.getElementById('trendsContainer');
             const emptyState = document.getElementById('emptyStateTrends');
-            
+
             if (calculatedIndicators.length === 0 && calculatedVariables.length === 0) {
                 container.innerHTML = '';
                 emptyState.style.display = 'block';
                 return;
             }
-            
+
             container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="mt-3 text-muted">Cargando tendencias...</p></div>';
             emptyState.style.display = 'none';
-            
-            let hasData = false;
+
+            // Pasada 1: recolectar datos y armar HTML
+            const chartsToRender = []; // { chartId, values, format, label }
             let html = '';
-            
-            // Generar gráficos de tendencias para indicadores
+
+            // Indicadores
             for (const result of calculatedIndicators) {
                 if (!result.calculated) continue;
-                
-                const historicalValues = await getIndicatorHistoricalValues(result.indicator.indicator_id);
-                if (historicalValues.length < 3) continue;
-                
-                hasData = true;
+                const values = await getIndicatorHistoricalValues(result.indicator.indicator_id);
+                if (values.length < 3) continue;
+
                 const chartId = 'trend_indicator_' + result.indicator.indicator_id;
-                
                 html += `
                     <div class="card mb-4">
                         <div class="card-body">
@@ -1923,23 +1927,21 @@
                         </div>
                     </div>
                 `;
-                
-                // Renderizar gráfico después de agregar al DOM
-                setTimeout(() => {
-                    renderTrendChart(chartId, historicalValues, result.indicator.result_format, result.indicator.indicator_name);
-                }, 100);
+                chartsToRender.push({
+                    chartId,
+                    values,
+                    format: result.indicator.result_format,
+                    label: result.indicator.indicator_name
+                });
             }
-            
-            // Generar gráficos de tendencias para variables
+
+            // Variables
             for (const result of calculatedVariables) {
                 if (!result.calculated) continue;
-                
-                const historicalValues = await getVariableHistoricalValues(result.variable.variable_id);
-                if (historicalValues.length < 3) continue;
-                
-                hasData = true;
+                const values = await getVariableHistoricalValues(result.variable.variable_id);
+                if (values.length < 3) continue;
+
                 const chartId = 'trend_variable_' + result.variable.variable_id;
-                
                 html += `
                     <div class="card mb-4">
                         <div class="card-body">
@@ -1950,19 +1952,28 @@
                         </div>
                     </div>
                 `;
-                
-                // Renderizar gráfico después de agregar al DOM
-                setTimeout(() => {
-                    renderTrendChart(chartId, historicalValues, result.variable.data_type, result.variable.variable_name);
-                }, 100);
+                chartsToRender.push({
+                    chartId,
+                    values,
+                    format: result.variable.data_type,
+                    label: result.variable.variable_name
+                });
             }
-            
-            if (hasData) {
-                container.innerHTML = html;
-            } else {
+
+            // Si no hay nada que graficar
+            if (chartsToRender.length === 0) {
                 container.innerHTML = '';
                 emptyState.style.display = 'block';
+                return;
             }
+
+            // Pasada 2: insertar HTML al DOM
+            container.innerHTML = html;
+
+            // Pasada 3: renderizar todos los charts (los canvas ya existen)
+            chartsToRender.forEach(c => {
+                renderTrendChart(c.chartId, c.values, c.format, c.label);
+            });
         }
         
         /**
