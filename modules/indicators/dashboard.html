@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.09.35">
+    <meta name="page-version" content="26.04.28.11.20">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -974,9 +974,39 @@
         }
         
         // ==========================================
+        // PERIODICIDAD EFECTIVA DEL INDICADOR
+        // ==========================================
+        // Un indicador es mensual si AL MENOS una de sus variables es mensual.
+        // Si todas son anuales, el indicador es anual.
+        async function getIndicatorPeriodicity(indicator) {
+            try {
+                const variablePattern = /VAR_[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_]+/gu;
+                const matches = indicator.formula_expression.match(variablePattern) || [];
+                const uniqueVarNames = [...new Set(matches)];
+
+                if (uniqueVarNames.length === 0) return 'annual';
+
+                // Buscar las periodicidades de las variables involucradas
+                for (const varName of uniqueVarNames) {
+                    const cleanName = varName.replace('VAR_', '').replace(/_/g, ' ');
+                    const result = await supabaseRequest(
+                        `/variables?select=periodicity&variable_name=eq.${encodeURIComponent(cleanName)}&variable_status=eq.active&limit=1`
+                    );
+                    if (result && result.length > 0 && result[0].periodicity === 'monthly') {
+                        return 'monthly';
+                    }
+                }
+                return 'annual';
+            } catch (error) {
+                console.error('Error determinando periodicidad del indicador:', error);
+                return 'annual'; // fallback seguro
+            }
+        }
+
+        // ==========================================
         // CALCULAR UN INDICADOR INDIVIDUAL
         // ==========================================
-        
+
         async function calculateSingleIndicator(indicator, yearId, monthNumber) {
             try {
                 const variablePattern = /VAR_[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_]+/gu;
@@ -1790,38 +1820,53 @@
         }
         
         /**
-         * Obtener valores históricos de una variable (últimos 12 períodos)
+         * Obtener valores históricos de una variable.
+         * - Anuales: un punto por año académico con dato (label: nombre del año).
+         * - Mensuales: un punto por mes capturado (label: "Mes Año", ordenado cronológicamente).
          */
         async function getVariableHistoricalValues(variableId) {
             try {
                 const variable = userVariables.find(v => v.variable_id === variableId);
                 if (!variable) return [];
-                
-                // Obtener TODOS los valores históricos de esta variable directamente
-                const query = `/variable_values?select=value_numeric,academic_year_id,academic_years!inner(year_name,year_order)&variable_id=eq.${variableId}&value_status=eq.active&order=academic_years(year_order).asc`;
-                
+
+                const isMonthly = variable.periodicity === 'monthly';
+
+                // Para mensuales necesitamos month_number; para anuales no
+                const selectFields = isMonthly
+                    ? 'value_numeric,month_number,academic_year_id,academic_years!inner(year_name,year_order)'
+                    : 'value_numeric,academic_year_id,academic_years!inner(year_name,year_order)';
+
+                const query = `/variable_values?select=${selectFields}&variable_id=eq.${variableId}&value_status=eq.active`;
                 const results = await supabaseRequest(query);
-                
-                console.log(`📊 Valores históricos para variable ${variableId}:`, results);
-                
-                if (!results || results.length === 0) {
-                    return [];
+
+                if (!results || results.length === 0) return [];
+
+                const filtered = results.filter(r => r.value_numeric !== null);
+
+                if (!isMonthly) {
+                    // Anual: un valor por año académico
+                    return filtered
+                        .map(r => ({
+                            period: r.academic_years.year_name,
+                            value: parseFloat(r.value_numeric),
+                            sortKey: r.academic_years.year_order * 100 // padding para ordenar
+                        }))
+                        .sort((a, b) => a.sortKey - b.sortKey);
                 }
-                
-                // Mapear resultados
-                const values = results
-                    .filter(r => r.value_numeric !== null)
+
+                // Mensual: un valor por mes capturado
+                const monthShort = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+                return filtered
+                    .filter(r => r.month_number != null)
                     .map(r => ({
-                        period: r.academic_years.year_name,
+                        period: `${monthShort[r.month_number - 1]} ${r.academic_years.year_name}`,
                         value: parseFloat(r.value_numeric),
-                        order: r.academic_years.year_order
+                        sortKey: r.academic_years.year_order * 100 + r.month_number
                     }))
-                    .sort((a, b) => a.order - b.order);
-                
-                console.log(`✅ Valores mapeados:`, values);
-                
-                return values;
-                
+                    .sort((a, b) => a.sortKey - b.sortKey);
+
             } catch (error) {
                 console.error('❌ Error obteniendo histórico de variable:', error);
                 return [];
