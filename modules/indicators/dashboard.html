@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.01.07.36">
+    <meta name="page-version" content="26.04.28.09.35">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -186,6 +186,64 @@
             width: 100% !important;
             height: 80px !important;
         }
+
+        /* Pills de dashboards */
+        .dashboard-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.9rem;
+            border-radius: 20px;
+            border: 2px solid #e9ecef;
+            background: white;
+            color: #495057;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+        .dashboard-pill:hover {
+            border-color: var(--system-primary-color, #1B365D);
+            color: var(--system-primary-color, #1B365D);
+        }
+        .dashboard-pill.active {
+            background: var(--system-primary-color, #1B365D);
+            border-color: var(--system-primary-color, #1B365D);
+            color: white;
+        }
+        .dashboard-pill .pill-icon {
+            font-size: 0.95rem;
+        }
+        .dashboard-pill .pill-badge {
+            font-size: 0.65rem;
+            padding: 1px 6px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.08);
+            color: inherit;
+        }
+        .dashboard-pill.active .pill-badge {
+            background: rgba(255,255,255,0.25);
+        }
+
+        .current-dashboard-banner {
+            background: white;
+            border-left: 4px solid var(--system-primary-color, #1B365D);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .current-dashboard-banner h5 {
+            margin: 0 0 0.15rem 0;
+            font-size: 1.05rem;
+        }
+        .current-dashboard-banner .text-muted {
+            font-size: 0.85rem;
+        }
+        
     </style>
 </head>
 <body>
@@ -234,16 +292,28 @@
         <!-- ALERTAS -->
         <div id="alertContainer"></div>
 
-        <!-- Tabs Navigation -->
+        <!-- BARRA DE DASHBOARDS ACCESIBLES (tabs por dashboard) -->
+        <div class="card mb-4" id="dashboardSelectorCard" style="display:none">
+            <div class="card-body py-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap" id="dashboardSelectorContainer">
+                    <!-- Pills de dashboards se inyectan dinámicamente -->
+                </div>
+            </div>
+        </div>
+
+        <!-- INFO DEL DASHBOARD ACTUAL -->
+        <div id="currentDashboardInfo" class="mb-3"></div>
+
+        <!-- Tabs Navigation (vista interna del dashboard activo) -->
         <ul class="nav nav-tabs mb-4" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="indicators-tab" data-bs-toggle="tab" 
+                <button class="nav-link active" id="indicators-tab" data-bs-toggle="tab"
                         data-bs-target="#indicators-pane" type="button" role="tab">
-                    <i class="bi bi-speedometer2 me-2"></i>Mis Indicadores y Variables
+                    <i class="bi bi-speedometer2 me-2"></i>Indicadores y Variables
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="trends-tab" data-bs-toggle="tab" 
+                <button class="nav-link" id="trends-tab" data-bs-toggle="tab"
                         data-bs-target="#trends-pane" type="button" role="tab">
                     <i class="bi bi-graph-up me-2"></i>Tendencias
                 </button>
@@ -432,16 +502,22 @@
         // ==========================================
         // VARIABLES GLOBALES
         // ==========================================
-        
+
         let currentUser = null;
-        let userIndicators = [];
-        let userVariables = [];
+        let currentWorkerId = null;       // worker_id resuelto del usuario actual
+        let accessibleDashboards = [];    // Dashboards a los que tiene acceso (personal + propios + invitado)
+        let activeDashboardId = null;     // Dashboard actualmente visualizado
+
+        let userIndicators = [];          // Indicadores del dashboard activo
+        let userVariables = [];           // Variables del dashboard activo
         let availableYears = [];
         let availableMonths = [];
         let variablesCache = {};
         let calculatedIndicators = [];
         let calculatedVariables = [];
         let chartsInstances = {}; // Instancias de Chart.js para gráficos
+
+        const ACTIVE_DASHBOARD_KEY = 'schoolnet_active_dashboard_id';
         
         // ==========================================
         // INICIALIZACIÓN
@@ -449,28 +525,240 @@
         
         async function initializePage() {
             console.log('🔧 Inicializando dashboard personalizado');
-            
+
             try {
                 getCurrentUser();
-                
-                await Promise.all([
-                    loadUserIndicators(),
-                    loadUserVariables(),
-                    loadAcademicYears()
-                ]);
-                
-                if ((userIndicators.length > 0 || userVariables.length > 0)) {
-                    const yearSelect = document.getElementById('filterYear');
-                    if (yearSelect.value) {
-                        setTimeout(() => calculateDashboard(), 300);
-                    }
+                await resolveCurrentWorkerId();
+                await loadAcademicYears();
+
+                // Cargar la lista de dashboards accesibles
+                await loadAccessibleDashboards();
+
+                if (accessibleDashboards.length === 0) {
+                    showEmptyDashboardsState();
+                    return;
                 }
-                
+
+                // Determinar qué dashboard mostrar inicialmente
+                const initialId = resolveInitialDashboardId();
+                renderDashboardSelector();
+                await switchToDashboard(initialId);
+
                 console.log('✅ Página inicializada');
-                
+
             } catch (error) {
                 console.error('❌ Error inicializando:', error);
                 showMessage('Error al inicializar la página: ' + error.message, 'danger');
+            }
+        }
+
+        async function resolveCurrentWorkerId() {
+            if (!currentUser || !currentUser.user_mail) return;
+            try {
+                const workers = await supabaseRequest(
+                    `/workers?select=worker_id&email=eq.${encodeURIComponent(currentUser.user_mail)}&limit=1`
+                );
+                if (workers && workers.length > 0) {
+                    currentWorkerId = workers[0].worker_id;
+                }
+            } catch (e) {
+                console.warn('No se pudo resolver worker_id del usuario actual');
+            }
+        }
+
+        // ==========================================
+        // CARGAR DASHBOARDS ACCESIBLES
+        // ==========================================
+        async function loadAccessibleDashboards() {
+            try {
+                // 1) Mis dashboards (personal + compartidos creados por mí)
+                const myDashboards = await supabaseRequest(
+                    `/dashboards?select=*&owner_user_id=eq.${currentUser.user_id}&dashboard_status=eq.active&order=is_personal.desc,created_at.asc`
+                );
+
+                const list = (myDashboards || []).map(d => ({
+                    ...d,
+                    role: d.is_personal ? 'personal' : 'owner'
+                }));
+
+                // 2) Dashboards a los que estoy invitado (solo si tengo worker_id)
+                if (currentWorkerId) {
+                    const invitations = await supabaseRequest(
+                        `/dashboard_invitations?select=dashboard_id,dashboards!inner(*,users!dashboards_owner_fkey(user_display_name,user_name))` +
+                        `&worker_id=eq.${currentWorkerId}&dashboards.dashboard_status=eq.active`
+                    );
+
+                    (invitations || []).forEach(inv => {
+                        if (!inv.dashboards) return;
+                        list.push({
+                            ...inv.dashboards,
+                            role: 'guest',
+                            owner_name: inv.dashboards.users
+                                ? (inv.dashboards.users.user_display_name || inv.dashboards.users.user_name)
+                                : null
+                        });
+                    });
+                }
+
+                accessibleDashboards = list;
+                console.log(`📊 ${accessibleDashboards.length} dashboards accesibles`);
+
+            } catch (error) {
+                console.error('❌ Error cargando dashboards accesibles:', error);
+                accessibleDashboards = [];
+            }
+        }
+
+        function resolveInitialDashboardId() {
+            // 1) ?id= en URL tiene prioridad
+            const params = new URLSearchParams(window.location.search);
+            const urlId = params.get('id');
+            if (urlId && accessibleDashboards.some(d => d.dashboard_id === urlId)) {
+                return urlId;
+            }
+
+            // 2) último dashboard visto en sesión
+            const stored = sessionStorage.getItem(ACTIVE_DASHBOARD_KEY);
+            if (stored && accessibleDashboards.some(d => d.dashboard_id === stored)) {
+                return stored;
+            }
+
+            // 3) por defecto, el personal
+            const personal = accessibleDashboards.find(d => d.is_personal);
+            if (personal) return personal.dashboard_id;
+
+            // 4) el primero de la lista
+            return accessibleDashboards[0].dashboard_id;
+        }
+
+        function showEmptyDashboardsState() {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-grid-3x3 text-muted"></i>
+                    <h5>No tienes dashboards disponibles</h5>
+                    <p class="text-muted">
+                        Configura tu dashboard personal o pide que te inviten a uno compartido.
+                    </p>
+                    <a href="dashboard-config.html" class="btn btn-primary">
+                        <i class="bi bi-gear me-1"></i>Mis Dashboards
+                    </a>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // SELECTOR DE DASHBOARD (PILLS)
+        // ==========================================
+        function renderDashboardSelector() {
+            const card = document.getElementById('dashboardSelectorCard');
+            const container = document.getElementById('dashboardSelectorContainer');
+
+            if (accessibleDashboards.length <= 1) {
+                // Si solo hay uno (el personal), no vale la pena mostrar el selector
+                card.style.display = 'none';
+                return;
+            }
+
+            const pills = accessibleDashboards.map(d => {
+                const isActive = d.dashboard_id === activeDashboardId;
+                let icon, badge;
+                if (d.role === 'personal') {
+                    icon = 'bi-person-circle';
+                    badge = 'Personal';
+                } else if (d.role === 'owner') {
+                    icon = 'bi-bar-chart-line';
+                    badge = 'Mío';
+                } else {
+                    icon = 'bi-people';
+                    badge = 'Invitado';
+                }
+                return `
+                    <button class="dashboard-pill ${isActive ? 'active' : ''}"
+                            onclick="switchToDashboard('${d.dashboard_id}')">
+                        <i class="bi ${icon} pill-icon"></i>
+                        <span>${escapeHtml(d.dashboard_name)}</span>
+                        <span class="pill-badge">${badge}</span>
+                    </button>
+                `;
+            }).join('');
+
+            container.innerHTML = pills;
+            card.style.display = '';
+        }
+
+        function renderCurrentDashboardBanner() {
+            const container = document.getElementById('currentDashboardInfo');
+            const dashboard = accessibleDashboards.find(d => d.dashboard_id === activeDashboardId);
+            if (!dashboard) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let metaText = '';
+            if (dashboard.role === 'guest') {
+                metaText = `<i class="bi bi-people me-1"></i>Compartido por ${escapeHtml(dashboard.owner_name || 'otro trabajador')}`;
+            } else if (dashboard.role === 'owner') {
+                metaText = '<i class="bi bi-bar-chart-line me-1"></i>Dashboard compartido (tú eres el creador)';
+            } else {
+                metaText = '<i class="bi bi-person-circle me-1"></i>Tu dashboard personal';
+            }
+
+            const editBtn = (dashboard.role !== 'guest')
+                ? `<a href="dashboard-edit.html?id=${dashboard.dashboard_id}" class="btn btn-sm btn-outline-primary">
+                       <i class="bi bi-pencil me-1"></i>Editar
+                   </a>`
+                : '';
+
+            container.innerHTML = `
+                <div class="current-dashboard-banner">
+                    <div>
+                        <h5>${escapeHtml(dashboard.dashboard_name)}</h5>
+                        <div class="text-muted">${metaText}${dashboard.dashboard_description ? ' · ' + escapeHtml(dashboard.dashboard_description) : ''}</div>
+                    </div>
+                    <div>${editBtn}</div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // CAMBIAR DE DASHBOARD
+        // ==========================================
+        async function switchToDashboard(dashboardId) {
+            if (!dashboardId) return;
+
+            activeDashboardId = dashboardId;
+            sessionStorage.setItem(ACTIVE_DASHBOARD_KEY, dashboardId);
+
+            // Limpiar caché de variables (los valores no cambian, pero las selecciones sí)
+            variablesCache = {};
+            calculatedIndicators = [];
+            calculatedVariables = [];
+
+            // Re-renderizar selector y banner
+            renderDashboardSelector();
+            renderCurrentDashboardBanner();
+
+            // Cargar selección de indicadores y variables del dashboard activo
+            await Promise.all([
+                loadUserIndicators(),
+                loadUserVariables()
+            ]);
+
+            // Si hay año seleccionado, recalcular automáticamente
+            const yearSelect = document.getElementById('filterYear');
+            if (yearSelect && yearSelect.value) {
+                await calculateDashboard();
+            } else {
+                // Mostrar empty state pidiendo año
+                document.getElementById('resultsContainer').innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-bar-chart-line text-muted"></i>
+                        <h5>Selecciona un año académico</h5>
+                        <p class="text-muted">Elige un año académico en los filtros superiores.</p>
+                    </div>
+                `;
+                document.getElementById('summarySection').style.display = 'none';
             }
         }
         
@@ -572,47 +860,45 @@
         
         async function loadUserIndicators() {
             try {
-                const userConfig = await supabaseRequest(
-                    `/user_dashboard_indicators?select=indicator_id,indicators!user_dashboard_indicators_indicator_id_fkey(*)&user_id=eq.${currentUser.user_id}&order=display_order`
-                );
-                
-                if (!userConfig || userConfig.length === 0) {
+                if (!activeDashboardId) {
                     userIndicators = [];
-                    console.log('ℹ️ No hay indicadores configurados');
                     return;
                 }
-                
-                userIndicators = userConfig.map(item => item.indicators);
-                
-                console.log(`✅ ${userIndicators.length} indicadores configurados`);
-                
+
+                const config = await supabaseRequest(
+                    `/dashboard_indicators?select=indicator_id,indicators!dashboard_indicators_indicator_fkey(*)&dashboard_id=eq.${activeDashboardId}&order=display_order`
+                );
+
+                userIndicators = (config || []).map(item => item.indicators).filter(Boolean);
+                console.log(`✅ ${userIndicators.length} indicadores en dashboard activo`);
+
                 loadAcademicMonths();
-                
+
             } catch (error) {
-                console.error('❌ Error cargando indicadores del usuario:', error);
-                showMessage('Error al cargar tus indicadores: ' + error.message, 'danger');
+                console.error('❌ Error cargando indicadores del dashboard:', error);
+                showMessage('Error al cargar indicadores: ' + error.message, 'danger');
+                userIndicators = [];
             }
         }
-        
+
         async function loadUserVariables() {
             try {
-                const userConfig = await supabaseRequest(
-                    `/user_dashboard_variables?select=variable_id,variables!user_dashboard_variables_variable_id_fkey(*)&user_id=eq.${currentUser.user_id}&order=display_order`
-                );
-                
-                if (!userConfig || userConfig.length === 0) {
+                if (!activeDashboardId) {
                     userVariables = [];
-                    console.log('ℹ️ No hay variables configuradas');
                     return;
                 }
-                
-                userVariables = userConfig.map(item => item.variables);
-                
-                console.log(`✅ ${userVariables.length} variables configuradas`);
-                
+
+                const config = await supabaseRequest(
+                    `/dashboard_variables?select=variable_id,variables!dashboard_variables_variable_fkey(*)&dashboard_id=eq.${activeDashboardId}&order=display_order`
+                );
+
+                userVariables = (config || []).map(item => item.variables).filter(Boolean);
+                console.log(`✅ ${userVariables.length} variables en dashboard activo`);
+
             } catch (error) {
-                console.error('❌ Error cargando variables del usuario:', error);
-                showMessage('Error al cargar tus variables: ' + error.message, 'danger');
+                console.error('❌ Error cargando variables del dashboard:', error);
+                showMessage('Error al cargar variables: ' + error.message, 'danger');
+                userVariables = [];
             }
         }
         
@@ -1733,7 +2019,8 @@
         // ==========================================
         
         window.calculateDashboard = calculateDashboard;
-        
+        window.switchToDashboard = switchToDashboard;
+
         console.log('🎉 Dashboard personalizado cargado correctamente');
     </script>
 </body>
