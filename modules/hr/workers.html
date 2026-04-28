@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.04.28.14.51">
+    <meta name="page-version" content="2026.04.28.14.55">
     <title>Trabajadores</title>
     
     <!-- Bootstrap CSS -->
@@ -1222,6 +1222,9 @@
                 // Cargar roles de cada trabajador
                 await loadWorkersRoles();
                 
+                // Cargar estado de salario y contrato del año vigente
+                await loadContractStatus();
+                
                 renderWorkersTable(allWorkers);
                 updateStatistics();
                 
@@ -1236,6 +1239,44 @@
                 renderWorkersTable([]);
             } finally {
                 showLoading(false);
+            }
+        }
+
+        // ==========================================
+        // CARGAR ESTADO DE SALARIO/CONTRATO POR TRABAJADOR
+        // ==========================================
+        async function loadContractStatus() {
+            try {
+                if (allWorkers.length === 0) return;
+
+                // 1) Obtener año vigente
+                const yearData = await supabaseRequest('/academic_years?select=year_id&is_current=eq.true&limit=1');
+                if (!yearData || yearData.length === 0) {
+                    console.warn('⚠️ No hay año académico vigente — se omite indicador de salario/contrato');
+                    return;
+                }
+                const currentYearId = yearData[0].year_id;
+
+                // 2) Traer salarios y contratos del año vigente para todos los trabajadores
+                const [salaries, contracts] = await Promise.all([
+                    supabaseRequest(`/worker_salaries?select=worker_id&academic_year_id=eq.${currentYearId}`),
+                    supabaseRequest(`/worker_contracts?select=worker_id&academic_year_id=eq.${currentYearId}`)
+                ]);
+
+                const salarySet = new Set((salaries || []).map(s => s.worker_id));
+                const contractSet = new Set((contracts || []).map(c => c.worker_id));
+
+                // 3) Marcar cada trabajador con su estado
+                allWorkers.forEach(w => {
+                    w._hasSalary = salarySet.has(w.worker_id);
+                    w._hasContract = contractSet.has(w.worker_id);
+                });
+
+                console.log(`✅ Estado de salario/contrato cargado para año vigente`);
+
+            } catch (error) {
+                console.error('❌ Error cargando estado de salario/contrato:', error);
+                // No bloqueamos la carga de la página por esto
             }
         }
 
@@ -1347,12 +1388,14 @@
                 const replacementBadge = worker.is_replacement ? 
                     '<span class="badge bg-warning text-dark ms-1" title="Trabajador de reemplazo"><i class="bi bi-arrow-repeat me-1"></i>Reemplazo</span>' : '';
                 
+                const contractStatusBadge = buildContractStatusBadge(worker);
                 return `
                     <tr>
                         <td>
                             <div>
                                 <strong>${escapeHtml(fullName)}</strong>
                                 ${replacementBadge}
+                                ${contractStatusBadge}
                             </div>
                             <small class="text-muted">${escapeHtml(worker.worker_id_doc)} • ${escapeHtml(worker.email)}</small>
                             <div id="userStatus_${worker.worker_id}"></div>
@@ -1417,6 +1460,26 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        function buildContractStatusBadge(worker) {
+            // Si no se cargó el estado (por ejemplo, no hay año vigente), no mostrar nada
+            if (worker._hasSalary === undefined || worker._hasContract === undefined) {
+                return '';
+            }
+
+            const hasSalary = worker._hasSalary;
+            const hasContract = worker._hasContract;
+
+            if (hasSalary && hasContract) {
+                return `<span class="ms-2" title="Salario y contrato registrados para el año vigente"><i class="bi bi-check-circle-fill text-success"></i></span>`;
+            }
+            if (!hasSalary && !hasContract) {
+                return `<span class="ms-2" title="Falta registrar salario y tipo de contrato del año vigente"><i class="bi bi-x-circle-fill text-danger"></i></span>`;
+            }
+            // Solo uno de los dos
+            const falta = !hasSalary ? 'salario' : 'tipo de contrato';
+            return `<span class="ms-2" title="Falta registrar ${falta} del año vigente"><i class="bi bi-exclamation-circle-fill text-warning"></i></span>`;
         }
 
         function buildOrganizationalPath(worker) {
