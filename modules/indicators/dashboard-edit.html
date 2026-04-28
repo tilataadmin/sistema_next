@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.09.50">
+    <meta name="page-version" content="26.04.28.10.05">
     <title>Editar Dashboard - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1179,9 +1179,284 @@
         }
 
         // ==========================================
+        // ACCIONES AVANZADAS
+        // ==========================================
+
+        function renderAdvancedActions() {
+            const block = document.getElementById('advancedActionsBlock');
+            const archiveBtn = document.getElementById('archiveBtn');
+            const unarchiveBtn = document.getElementById('unarchiveBtn');
+            const deleteBtn = document.getElementById('deleteBtn');
+            const transferBtn = document.getElementById('transferBtn');
+
+            block.style.display = '';
+
+            const isArchived = dashboard.dashboard_status === 'archived';
+
+            if (isArchived) {
+                transferBtn.style.display = 'none';
+                archiveBtn.style.display = 'none';
+                unarchiveBtn.style.display = '';
+                deleteBtn.style.display = '';
+
+                const subtitle = document.getElementById('dashboardSubtitle');
+                subtitle.innerHTML = '<span class="text-warning"><i class="bi bi-archive me-1"></i><strong>ARCHIVADO</strong></span> · ' + subtitle.innerHTML;
+            } else {
+                transferBtn.style.display = '';
+                archiveBtn.style.display = '';
+                unarchiveBtn.style.display = 'none';
+                deleteBtn.style.display = 'none';
+            }
+        }
+
+        // ---------- TRANSFERIR PROPIEDAD ----------
+        let transferWorkers = [];
+
+        async function openTransferModal() {
+            if (!allWorkers || allWorkers.length === 0) {
+                try {
+                    const workers = await supabaseRequest(
+                        '/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active'
+                    );
+                    let ownerWorkerId = null;
+                    if (currentUser && currentUser.user_mail) {
+                        const ownerWorker = (workers || []).find(w => w.email === currentUser.user_mail);
+                        if (ownerWorker) ownerWorkerId = ownerWorker.worker_id;
+                    }
+                    allWorkers = sortWorkersByName((workers || []).filter(w => w.worker_id !== ownerWorkerId));
+                } catch (error) {
+                    showMessage('Error cargando trabajadores: ' + error.message, 'danger');
+                    return;
+                }
+            }
+
+            transferWorkers = allWorkers;
+            document.getElementById('searchTransferWorker').value = '';
+            renderTransferWorkersList('');
+            new bootstrap.Modal(document.getElementById('transferModal')).show();
+        }
+
+        function filterTransferWorkers() {
+            const term = document.getElementById('searchTransferWorker').value.trim();
+            renderTransferWorkersList(term);
+        }
+
+        function renderTransferWorkersList(term) {
+            const container = document.getElementById('transferWorkersList');
+            const lower = term.toLowerCase();
+
+            const filtered = lower
+                ? transferWorkers.filter(w => {
+                    const name = formatWorkerName(w).toLowerCase();
+                    const email = (w.email || '').toLowerCase();
+                    return name.includes(lower) || email.includes(lower);
+                  })
+                : transferWorkers;
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-muted small fst-italic">No se encontraron trabajadores.</div>';
+                return;
+            }
+
+            const limited = filtered.slice(0, 50);
+            const extra = filtered.length - limited.length;
+
+            container.innerHTML = limited.map(w => {
+                const name = formatWorkerName(w);
+                return `
+                    <div class="d-flex align-items-center justify-content-between border rounded p-2 mb-2">
+                        <div>
+                            <i class="bi bi-person me-2 text-muted"></i>
+                            <strong>${escapeHtml(name)}</strong>
+                            <small class="text-muted ms-2">${escapeHtml(w.email || '')}</small>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="confirmTransfer('${w.worker_id}')">
+                            <i class="bi bi-arrow-left-right me-1"></i>Transferir
+                        </button>
+                    </div>
+                `;
+            }).join('') + (extra > 0
+                ? `<div class="text-muted small text-center mt-2">Mostrando los primeros 50. Refina con el buscador (${extra} más).</div>`
+                : '');
+        }
+
+        async function confirmTransfer(newOwnerWorkerId) {
+            const worker = transferWorkers.find(w => w.worker_id === newOwnerWorkerId);
+            if (!worker) return;
+
+            const name = formatWorkerName(worker);
+
+            if (!confirm(`¿Transferir la propiedad de "${dashboard.dashboard_name}" a ${name}?\n\nTú quedarás como invitado y perderás la capacidad de editar este dashboard.`)) {
+                return;
+            }
+
+            mostrarLoading('Transfiriendo propiedad...');
+
+            try {
+                const newOwnerEmail = worker.email;
+                if (!newOwnerEmail) throw new Error('El trabajador no tiene email registrado');
+
+                const newOwnerUsers = await supabaseRequest(
+                    `/users?select=user_id&user_mail=eq.${encodeURIComponent(newOwnerEmail)}&limit=1`
+                );
+
+                if (!newOwnerUsers || newOwnerUsers.length === 0) {
+                    throw new Error('El trabajador seleccionado no tiene cuenta de usuario en SchoolNet. Solo se puede transferir a usuarios del sistema.');
+                }
+
+                const newOwnerUserId = newOwnerUsers[0].user_id;
+
+                await supabaseRequest(`/dashboards?dashboard_id=eq.${dashboardId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        owner_user_id: newOwnerUserId,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                await supabaseRequest(
+                    `/dashboard_invitations?dashboard_id=eq.${dashboardId}&worker_id=eq.${newOwnerWorkerId}`,
+                    { method: 'DELETE' }
+                );
+
+                if (currentWorkerId) {
+                    const existing = await supabaseRequest(
+                        `/dashboard_invitations?select=invitation_id&dashboard_id=eq.${dashboardId}&worker_id=eq.${currentWorkerId}&limit=1`
+                    );
+
+                    if (!existing || existing.length === 0) {
+                        await supabaseRequest('/dashboard_invitations', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                dashboard_id: dashboardId,
+                                worker_id: currentWorkerId,
+                                invited_by_user_id: newOwnerUserId
+                            })
+                        });
+                    }
+                }
+
+                ocultarLoading();
+                showMessage(`Propiedad transferida a ${name}. Serás redirigido.`, 'success');
+
+                setTimeout(() => {
+                    window.location.href = 'dashboard-config.html';
+                }, 1500);
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('Error transfiriendo:', error);
+                showMessage('Error al transferir: ' + error.message, 'danger');
+            }
+        }
+
+        let currentWorkerId = null;
+        async function ensureCurrentWorkerId() {
+            if (currentWorkerId) return currentWorkerId;
+            if (!currentUser || !currentUser.user_mail) return null;
+            try {
+                const result = await supabaseRequest(
+                    `/workers?select=worker_id&email=eq.${encodeURIComponent(currentUser.user_mail)}&limit=1`
+                );
+                if (result && result.length > 0) {
+                    currentWorkerId = result[0].worker_id;
+                }
+            } catch (e) {
+                console.warn('No se pudo resolver worker_id');
+            }
+            return currentWorkerId;
+        }
+
+        // ---------- ARCHIVAR ----------
+        async function archiveDashboard() {
+            if (!confirm(`¿Archivar el dashboard "${dashboard.dashboard_name}"?\n\nDejará de aparecer para ti y para los invitados. Podrás restaurarlo después.`)) {
+                return;
+            }
+
+            mostrarLoading('Archivando...');
+
+            try {
+                await supabaseRequest(`/dashboards?dashboard_id=eq.${dashboardId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        dashboard_status: 'archived',
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                ocultarLoading();
+                showMessage('Dashboard archivado. Redirigiendo...', 'success');
+                setTimeout(() => window.location.href = 'dashboard-config.html', 1500);
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('Error archivando:', error);
+                showMessage('Error al archivar: ' + error.message, 'danger');
+            }
+        }
+
+        // ---------- RESTAURAR ----------
+        async function unarchiveDashboard() {
+            if (!confirm(`¿Restaurar el dashboard "${dashboard.dashboard_name}"?\n\nVolverá a aparecer para ti y para los invitados.`)) {
+                return;
+            }
+
+            mostrarLoading('Restaurando...');
+
+            try {
+                await supabaseRequest(`/dashboards?dashboard_id=eq.${dashboardId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        dashboard_status: 'active',
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                ocultarLoading();
+                showMessage('Dashboard restaurado.', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('Error restaurando:', error);
+                showMessage('Error al restaurar: ' + error.message, 'danger');
+            }
+        }
+
+        // ---------- ELIMINAR ----------
+        async function deleteDashboard() {
+            if (!confirm(`⚠️ ELIMINACIÓN PERMANENTE\n\nVas a eliminar definitivamente el dashboard "${dashboard.dashboard_name}".\nSe perderán todos los indicadores, variables e invitaciones asociados.\n\nEsta acción NO se puede deshacer.\n\n¿Continuar?`)) {
+                return;
+            }
+
+            const typedName = prompt(`Para confirmar, escribe el nombre exacto del dashboard:\n\n${dashboard.dashboard_name}`);
+            if (typedName === null) return;
+            if (typedName.trim() !== dashboard.dashboard_name) {
+                showMessage('El nombre no coincide. Eliminación cancelada.', 'warning');
+                return;
+            }
+
+            mostrarLoading('Eliminando...');
+
+            try {
+                await supabaseRequest(`/dashboards?dashboard_id=eq.${dashboardId}`, {
+                    method: 'DELETE'
+                });
+
+                ocultarLoading();
+                showMessage('Dashboard eliminado. Redirigiendo...', 'success');
+                setTimeout(() => window.location.href = 'dashboard-config.html', 1500);
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('Error eliminando:', error);
+                showMessage('Error al eliminar: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
         // UTILIDADES
         // ==========================================
-        
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
