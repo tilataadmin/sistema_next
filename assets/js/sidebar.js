@@ -381,6 +381,10 @@ async function loadSidebarPermissions() {
         }));
 
         console.log('✅ Sidebar: permisos cargados y cacheados');
+
+        // Notificar a páginas que esperan los permisos (ej. dashboard de Mi Espacio)
+        window.dispatchEvent(new CustomEvent('schoolnet:permissions-ready'));
+
         return result;
 
     } catch (error) {
