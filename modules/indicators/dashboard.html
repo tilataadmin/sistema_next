@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.11.22">
+    <meta name="page-version" content="26.04.28.11.25">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1775,44 +1775,63 @@
         }
         
         /**
-         * Obtener valores históricos de un indicador (últimos 12 períodos)
+         * Obtener valores históricos de un indicador.
+         * - Si todas sus variables son anuales: un punto por año académico (con datos completos).
+         * - Si al menos una variable es mensual: un punto por cada mes con datos completos.
+         *   Las variables anuales se reutilizan: su valor del año X aplica a todos los meses de ese año
+         *   (esto lo maneja calculateSingleIndicator vía getVariableValue).
+         * Si para un período falta dato de alguna variable, ese punto NO se grafica.
          */
         async function getIndicatorHistoricalValues(indicatorId) {
             try {
                 const indicator = userIndicators.find(i => i.indicator_id === indicatorId);
                 if (!indicator) return [];
-                
-                // Obtener años disponibles
-                const currentYear = parseInt(document.getElementById('filterYear').value) || new Date().getFullYear();
-                const years = [];
-                for (let i = 0; i < 3; i++) {
-                    years.push(currentYear - i);
-                }
-                
+
+                // 1) Determinar periodicidad efectiva del indicador
+                const periodicity = await getIndicatorPeriodicity(indicator);
+
+                // 2) Obtener años académicos reales de BD ordenados cronológicamente
+                const years = await supabaseRequest(
+                    '/academic_years?select=year_id,year_name,year_order&year_status=eq.active&order=year_order.asc'
+                );
+                if (!years || years.length === 0) return [];
+
+                const monthShort = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
                 const values = [];
-                
-                for (const year of years) {
-                    // Calcular para cada mes del año
-                    for (let month = 1; month <= 12; month++) {
-                        try {
-                            const result = await calculateIndicator(indicator, year, month);
-                            if (result.calculated && result.value !== null) {
+
+                if (periodicity === 'annual') {
+                    // Un cálculo por año académico (sin mes)
+                    for (const year of years) {
+                        const result = await calculateSingleIndicator(indicator, year.year_id, null);
+                        if (result.calculated && result.value !== null && !isNaN(result.value)) {
+                            values.push({
+                                period: year.year_name,
+                                value: result.value,
+                                sortKey: year.year_order * 100
+                            });
+                        }
+                    }
+                } else {
+                    // Mensual: un cálculo por cada (año, mes). Si falta dato, se omite el punto.
+                    for (const year of years) {
+                        for (let month = 1; month <= 12; month++) {
+                            const result = await calculateSingleIndicator(indicator, year.year_id, String(month));
+                            if (result.calculated && result.value !== null && !isNaN(result.value)) {
                                 values.push({
-                                    period: `${year}-${String(month).padStart(2, '0')}`,
-                                    value: result.value
+                                    period: `${monthShort[month - 1]} ${year.year_name}`,
+                                    value: result.value,
+                                    sortKey: year.year_order * 100 + month
                                 });
                             }
-                        } catch (error) {
-                            // Silenciosamente continuar si no hay datos
                         }
                     }
                 }
-                
-                // Ordenar por período y tomar últimos 12
-                return values
-                    .sort((a, b) => a.period.localeCompare(b.period))
-                    .slice(-12);
-                    
+
+                // Ordenar cronológicamente
+                return values.sort((a, b) => a.sortKey - b.sortKey);
+
             } catch (error) {
                 console.error('❌ Error obteniendo histórico de indicador:', error);
                 return [];
