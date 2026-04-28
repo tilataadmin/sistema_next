@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.11.25">
+    <meta name="page-version" content="26.04.28.11.35">
     <title>Mi Dashboard - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -983,23 +983,20 @@
                 const variablePattern = /VAR_[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_]+/gu;
                 const matches = indicator.formula_expression.match(variablePattern) || [];
                 const uniqueVarNames = [...new Set(matches)];
-
                 if (uniqueVarNames.length === 0) return 'annual';
 
-                // Buscar las periodicidades de las variables involucradas
-                for (const varName of uniqueVarNames) {
-                    const cleanName = varName.replace('VAR_', '').replace(/_/g, ' ');
-                    const result = await supabaseRequest(
-                        `/variables?select=periodicity&variable_name=eq.${encodeURIComponent(cleanName)}&variable_status=eq.active&limit=1`
-                    );
-                    if (result && result.length > 0 && result[0].periodicity === 'monthly') {
-                        return 'monthly';
-                    }
-                }
-                return 'annual';
+                const cleanNames = uniqueVarNames.map(v => v.replace('VAR_', '').replace(/_/g, ' '));
+                const inFilter = cleanNames.map(n => `"${n}"`).join(',');
+
+                const result = await supabaseRequest(
+                    `/variables?select=periodicity&variable_name=in.(${encodeURIComponent(inFilter)})&variable_status=eq.active`
+                );
+
+                if (!result || result.length === 0) return 'annual';
+                return result.some(v => v.periodicity === 'monthly') ? 'monthly' : 'annual';
             } catch (error) {
                 console.error('Error determinando periodicidad del indicador:', error);
-                return 'annual'; // fallback seguro
+                return 'annual';
             }
         }
 
@@ -1120,50 +1117,62 @@
         // ==========================================
         
         async function getVariableValue(variableName, yearId, monthNumber) {
+            const cleanName = variableName.replace('VAR_', '').replace(/_/g, ' ');
+            const cacheKey = `${cleanName}_${yearId}_${monthNumber || 'annual'}`;
+
             try {
-                const cleanName = variableName.replace('VAR_', '').replace(/_/g, ' ');
-                const cacheKey = `${cleanName}_${yearId}_${monthNumber || 'annual'}`;
-                
                 if (variablesCache[cacheKey] !== undefined) {
                     return variablesCache[cacheKey];
                 }
-                
-                const variables = await supabaseRequest(`/variables?select=variable_id,periodicity&variable_name=eq.${cleanName}&variable_status=eq.active&limit=1`);
-                        
-                if (!variables || variables.length === 0) {
-                    console.warn(`Variable no encontrada: ${variableName}`);
-                    return null;
+
+                // Cache de metadata de variable (id + periodicity)
+                const metaKey = `meta_${cleanName}`;
+                let variable;
+                if (variablesCache[metaKey] !== undefined) {
+                    variable = variablesCache[metaKey];
+                } else {
+                    const variables = await supabaseRequest(
+                        `/variables?select=variable_id,periodicity&variable_name=eq.${encodeURIComponent(cleanName)}&variable_status=eq.active&limit=1`
+                    );
+                    if (!variables || variables.length === 0) {
+                        console.warn(`Variable no encontrada: ${variableName}`);
+                        variablesCache[metaKey] = null;
+                        return null;
+                    }
+                    variable = variables[0];
+                    variablesCache[metaKey] = variable;
                 }
-                
-                const variable = variables[0];
-                
+
+                if (!variable) return null;
+
                 let query = `/variable_values?select=value_numeric&variable_id=eq.${variable.variable_id}&academic_year_id=eq.${yearId}&value_status=eq.active`;
-                
+
                 if (variable.periodicity === 'monthly') {
                     if (monthNumber) {
                         query += `&month_number=eq.${monthNumber}`;
                     } else {
                         const values = await supabaseRequest(query);
-                        if (!values || values.length === 0) return null;
-                        
+                        if (!values || values.length === 0) {
+                            variablesCache[cacheKey] = null;
+                            return null;
+                        }
                         const sum = values.reduce((acc, v) => acc + (v.value_numeric || 0), 0);
                         const average = sum / values.length;
                         variablesCache[cacheKey] = average;
                         return average;
                     }
                 }
-                
+
                 const values = await supabaseRequest(query + '&limit=1');
-                
                 if (!values || values.length === 0) {
                     variablesCache[cacheKey] = null;
                     return null;
                 }
-                
+
                 const value = values[0].value_numeric;
                 variablesCache[cacheKey] = value;
                 return value;
-                
+
             } catch (error) {
                 console.error(`Error obteniendo valor de ${variableName}:`, error);
                 variablesCache[cacheKey] = null;
@@ -1775,62 +1784,93 @@
         }
         
         /**
-         * Obtener valores históricos de un indicador.
-         * - Si todas sus variables son anuales: un punto por año académico (con datos completos).
-         * - Si al menos una variable es mensual: un punto por cada mes con datos completos.
-         *   Las variables anuales se reutilizan: su valor del año X aplica a todos los meses de ese año
-         *   (esto lo maneja calculateSingleIndicator vía getVariableValue).
-         * Si para un período falta dato de alguna variable, ese punto NO se grafica.
+         * Histórico de un indicador (optimizado).
+         * Estrategia:
+         *   1) Resolver metadata de variables del indicador (1 query).
+         *   2) Detectar qué academic_year_id tienen datos para AL MENOS una de las variables (1 query).
+         *   3) Para esos años, ejecutar cálculos en paralelo.
+         *   4) Las llamadas internas a getVariableValue golpean cache (poblada en paso 1+).
          */
         async function getIndicatorHistoricalValues(indicatorId) {
             try {
                 const indicator = userIndicators.find(i => i.indicator_id === indicatorId);
                 if (!indicator) return [];
 
-                // 1) Determinar periodicidad efectiva del indicador
-                const periodicity = await getIndicatorPeriodicity(indicator);
+                // Paso 1: extraer nombres de variables de la fórmula
+                const variablePattern = /VAR_[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_]+/gu;
+                const matches = indicator.formula_expression.match(variablePattern) || [];
+                const uniqueVarNames = [...new Set(matches)];
+                if (uniqueVarNames.length === 0) return [];
 
-                // 2) Obtener años académicos reales de BD ordenados cronológicamente
-                const years = await supabaseRequest(
-                    '/academic_years?select=year_id,year_name,year_order&year_status=eq.active&order=year_order.asc'
+                // Paso 2: resolver metadata (id + periodicity) de todas las variables EN UNA query
+                const cleanNames = uniqueVarNames.map(v => v.replace('VAR_', '').replace(/_/g, ' '));
+                const inFilter = cleanNames.map(n => `"${n}"`).join(',');
+                const variablesMeta = await supabaseRequest(
+                    `/variables?select=variable_id,variable_name,periodicity&variable_name=in.(${encodeURIComponent(inFilter)})&variable_status=eq.active`
                 );
-                if (!years || years.length === 0) return [];
+
+                if (!variablesMeta || variablesMeta.length === 0) return [];
+
+                const varIds = variablesMeta.map(v => v.variable_id);
+                const isMonthly = variablesMeta.some(v => v.periodicity === 'monthly');
+
+                // Paso 3: detectar qué años tienen datos en alguna de las variables
+                const valuesAnyYear = await supabaseRequest(
+                    `/variable_values?select=academic_year_id,academic_years!inner(year_id,year_name,year_order)` +
+                    `&variable_id=in.(${varIds.join(',')})&value_status=eq.active`
+                );
+
+                if (!valuesAnyYear || valuesAnyYear.length === 0) return [];
+
+                // Deduplicar años y ordenar
+                const yearsMap = new Map();
+                valuesAnyYear.forEach(v => {
+                    if (v.academic_years && !yearsMap.has(v.academic_year_id)) {
+                        yearsMap.set(v.academic_year_id, v.academic_years);
+                    }
+                });
+                const yearsToProcess = [...yearsMap.values()].sort((a, b) => a.year_order - b.year_order);
+
+                if (yearsToProcess.length === 0) return [];
 
                 const monthShort = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
                                     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-                const values = [];
+                // Paso 4: ejecutar cálculos en paralelo
+                const tasks = [];
 
-                if (periodicity === 'annual') {
-                    // Un cálculo por año académico (sin mes)
-                    for (const year of years) {
-                        const result = await calculateSingleIndicator(indicator, year.year_id, null);
-                        if (result.calculated && result.value !== null && !isNaN(result.value)) {
-                            values.push({
-                                period: year.year_name,
-                                value: result.value,
-                                sortKey: year.year_order * 100
-                            });
-                        }
+                if (!isMonthly) {
+                    // Un punto por año
+                    for (const y of yearsToProcess) {
+                        tasks.push((async () => {
+                            const r = await calculateSingleIndicator(indicator, y.year_id, null);
+                            return r.calculated && r.value !== null && !isNaN(r.value)
+                                ? { period: y.year_name, value: r.value, sortKey: y.year_order * 100 }
+                                : null;
+                        })());
                     }
                 } else {
-                    // Mensual: un cálculo por cada (año, mes). Si falta dato, se omite el punto.
-                    for (const year of years) {
-                        for (let month = 1; month <= 12; month++) {
-                            const result = await calculateSingleIndicator(indicator, year.year_id, String(month));
-                            if (result.calculated && result.value !== null && !isNaN(result.value)) {
-                                values.push({
-                                    period: `${monthShort[month - 1]} ${year.year_name}`,
-                                    value: result.value,
-                                    sortKey: year.year_order * 100 + month
-                                });
-                            }
+                    // Un punto por (año, mes)
+                    for (const y of yearsToProcess) {
+                        for (let m = 1; m <= 12; m++) {
+                            tasks.push((async () => {
+                                const r = await calculateSingleIndicator(indicator, y.year_id, String(m));
+                                return r.calculated && r.value !== null && !isNaN(r.value)
+                                    ? {
+                                        period: `${monthShort[m - 1]} ${y.year_name}`,
+                                        value: r.value,
+                                        sortKey: y.year_order * 100 + m
+                                      }
+                                    : null;
+                            })());
                         }
                     }
                 }
 
-                // Ordenar cronológicamente
-                return values.sort((a, b) => a.sortKey - b.sortKey);
+                const results = await Promise.all(tasks);
+                return results
+                    .filter(r => r !== null)
+                    .sort((a, b) => a.sortKey - b.sortKey);
 
             } catch (error) {
                 console.error('❌ Error obteniendo histórico de indicador:', error);
