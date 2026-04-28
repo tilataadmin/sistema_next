@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.04.28.13.10">
+    <meta name="page-version" content="26.04.28.13.50">
     
     <title>Configurar certificados laborales - SchoolNet</title>
     
@@ -520,8 +520,362 @@
 
     <script>
         // ==========================================
-        // EL JAVASCRIPT VIENE EN LOS FRAGMENTOS 2 Y 3
+        // VARIABLES GLOBALES
         // ==========================================
+        let currentUser = null;
+        let tiposContratoCache = [];
+        let modalTipoContrato = null;
+        let supabaseStorageClient = null;
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🔐 Validando acceso a Configurar certificados laborales...');
+
+            try {
+                // 1. Validar permiso
+                const hasAccess = await validatePageAccess('Configurar certificados laborales');
+                if (!hasAccess) return;
+
+                console.log('✅ Acceso permitido');
+
+                // 2. Obtener sesión
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showMessage('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+                currentUser = session.user;
+
+                // 3. Inicializar cliente de Supabase Storage (solo para subir firma)
+                supabaseStorageClient = supabase.createClient(
+                    SUPABASE_CONFIG.url,
+                    SUPABASE_CONFIG.anonKey
+                );
+
+                // 4. Inicializar componentes
+                inicializarModales();
+
+                // 5. Cargar datos iniciales (pestaña 1 está activa por defecto)
+                await cargarTiposContrato();
+
+                // 6. Configurar event listeners
+                configurarEventos();
+
+                console.log('✅ Página inicializada correctamente');
+
+            } catch (error) {
+                console.error('❌ Error en inicialización:', error);
+                showMessage('Error al cargar la página: ' + error.message, 'danger');
+            }
+        });
+
+        // ==========================================
+        // INICIALIZAR MODALES BOOTSTRAP
+        // ==========================================
+        function inicializarModales() {
+            const modalEl = document.getElementById('modal-tipo-contrato');
+            if (modalEl) {
+                modalTipoContrato = new bootstrap.Modal(modalEl);
+            }
+        }
+
+        // ==========================================
+        // CONFIGURAR EVENT LISTENERS
+        // ==========================================
+        function configurarEventos() {
+            // Submit del formulario de tipo de contrato
+            const formTipo = document.getElementById('form-tipo-contrato');
+            if (formTipo) {
+                formTipo.addEventListener('submit', guardarTipoContrato);
+            }
+
+            // Carga lazy de pestañas (cuando se hace clic por primera vez)
+            const tabPlantilla = document.getElementById('tab-plantilla-tab');
+            const tabFirmante = document.getElementById('tab-firmante-tab');
+
+            if (tabPlantilla) {
+                tabPlantilla.addEventListener('shown.bs.tab', function() {
+                    if (typeof inicializarPestanaPlantilla === 'function') {
+                        inicializarPestanaPlantilla();
+                    }
+                });
+            }
+
+            if (tabFirmante) {
+                tabFirmante.addEventListener('shown.bs.tab', function() {
+                    if (typeof inicializarPestanaFirmante === 'function') {
+                        inicializarPestanaFirmante();
+                    }
+                });
+            }
+        }
+
+        // ==========================================================================
+        // PESTAÑA 1: TIPOS DE CONTRATO
+        // ==========================================================================
+
+        // ==========================================
+        // CARGAR TIPOS DE CONTRATO
+        // ==========================================
+        async function cargarTiposContrato() {
+            const tbody = document.getElementById('tbody-tipos-contrato');
+            try {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                            Cargando tipos de contrato...
+                        </td>
+                    </tr>
+                `;
+
+                const data = await supabaseRequest(
+                    '/contract_types?select=*&order=type_name.asc'
+                );
+
+                tiposContratoCache = data || [];
+                renderizarTiposContrato(tiposContratoCache);
+
+                console.log(`✅ ${tiposContratoCache.length} tipos de contrato cargados`);
+
+            } catch (error) {
+                console.error('❌ Error cargando tipos de contrato:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-danger py-4">
+                            Error al cargar tipos de contrato: ${error.message}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // ==========================================
+        // RENDERIZAR TABLA DE TIPOS
+        // ==========================================
+        function renderizarTiposContrato(tipos) {
+            const tbody = document.getElementById('tbody-tipos-contrato');
+
+            if (!tipos || tipos.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                            <p class="mt-2 mb-2">No hay tipos de contrato registrados</p>
+                            <button class="btn btn-sm btn-primary" onclick="abrirModalTipoContrato()">
+                                <i class="bi bi-plus-circle me-1"></i>Crear primer tipo
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = tipos.map(t => {
+                const badgeClass = t.is_active ? 'badge-active' : 'badge-inactive';
+                const badgeText = t.is_active ? 'Activo' : 'Inactivo';
+                const toggleIcon = t.is_active ? 'bi-toggle-on' : 'bi-toggle-off';
+                const toggleColor = t.is_active ? 'text-success' : 'text-secondary';
+                const toggleTitle = t.is_active ? 'Desactivar' : 'Activar';
+                const descripcionHtml = t.type_description
+                    ? `<small class="text-muted">${escapeHtml(t.type_description)}</small>`
+                    : '<small class="text-muted fst-italic">Sin descripción</small>';
+
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(t.type_name)}</strong></td>
+                        <td>${descripcionHtml}</td>
+                        <td class="text-center">
+                            <span class="badge ${badgeClass}">${badgeText}</span>
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-primary me-1"
+                                    onclick="editarTipoContrato('${t.contract_type_id}')"
+                                    title="Editar">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    onclick="toggleEstadoTipoContrato('${t.contract_type_id}')"
+                                    title="${toggleTitle}">
+                                <i class="bi ${toggleIcon} ${toggleColor}"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ==========================================
+        // ABRIR MODAL — NUEVO TIPO
+        // ==========================================
+        function abrirModalTipoContrato() {
+            const form = document.getElementById('form-tipo-contrato');
+            form.reset();
+
+            document.getElementById('tipo-id').value = '';
+            document.getElementById('tipo-activo').checked = true;
+            document.getElementById('modal-tipo-label').innerHTML = `
+                <i class="bi bi-plus-circle me-2"></i>Nuevo tipo de contrato
+            `;
+
+            modalTipoContrato.show();
+        }
+
+        // ==========================================
+        // ABRIR MODAL — EDITAR TIPO
+        // ==========================================
+        function editarTipoContrato(id) {
+            const tipo = tiposContratoCache.find(t => t.contract_type_id === id);
+            if (!tipo) {
+                showMessage('Tipo de contrato no encontrado', 'warning');
+                return;
+            }
+
+            document.getElementById('tipo-id').value = tipo.contract_type_id;
+            document.getElementById('tipo-nombre').value = tipo.type_name || '';
+            document.getElementById('tipo-descripcion').value = tipo.type_description || '';
+            document.getElementById('tipo-activo').checked = tipo.is_active !== false;
+            document.getElementById('modal-tipo-label').innerHTML = `
+                <i class="bi bi-pencil me-2"></i>Editar tipo de contrato
+            `;
+
+            modalTipoContrato.show();
+        }
+
+        // ==========================================
+        // GUARDAR TIPO DE CONTRATO (CREATE / UPDATE)
+        // ==========================================
+        async function guardarTipoContrato(e) {
+            e.preventDefault();
+
+            const id = document.getElementById('tipo-id').value.trim();
+            const nombre = document.getElementById('tipo-nombre').value.trim();
+            const descripcion = document.getElementById('tipo-descripcion').value.trim();
+            const activo = document.getElementById('tipo-activo').checked;
+
+            if (!nombre) {
+                showMessage('El nombre del tipo es obligatorio', 'warning');
+                return;
+            }
+
+            const submitBtn = e.submitter;
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+
+            try {
+                const payload = {
+                    type_name: nombre,
+                    type_description: descripcion || null,
+                    is_active: activo,
+                    updated_at: new Date().toISOString()
+                };
+
+                if (id) {
+                    // UPDATE
+                    await supabaseRequest(
+                        `/contract_types?contract_type_id=eq.${id}`,
+                        {
+                            method: 'PATCH',
+                            body: JSON.stringify(payload)
+                        }
+                    );
+                    showMessage('Tipo de contrato actualizado correctamente', 'success');
+                } else {
+                    // INSERT
+                    await supabaseRequest(
+                        '/contract_types',
+                        {
+                            method: 'POST',
+                            body: JSON.stringify(payload)
+                        }
+                    );
+                    showMessage('Tipo de contrato creado correctamente', 'success');
+                }
+
+                modalTipoContrato.hide();
+                await cargarTiposContrato();
+
+            } catch (error) {
+                console.error('❌ Error guardando tipo de contrato:', error);
+
+                // Detectar conflicto de unicidad
+                if (error.message && error.message.includes('duplicate')) {
+                    showMessage('Ya existe un tipo de contrato con ese nombre', 'warning');
+                } else {
+                    showMessage('Error al guardar: ' + error.message, 'danger');
+                }
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        }
+
+        // ==========================================
+        // ACTIVAR / DESACTIVAR TIPO DE CONTRATO
+        // ==========================================
+        async function toggleEstadoTipoContrato(id) {
+            const tipo = tiposContratoCache.find(t => t.contract_type_id === id);
+            if (!tipo) return;
+
+            const nuevoEstado = !tipo.is_active;
+            const accion = nuevoEstado ? 'activar' : 'desactivar';
+
+            if (!confirm(`¿Confirmas ${accion} el tipo "${tipo.type_name}"?`)) return;
+
+            try {
+                await supabaseRequest(
+                    `/contract_types?contract_type_id=eq.${id}`,
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            is_active: nuevoEstado,
+                            updated_at: new Date().toISOString()
+                        })
+                    }
+                );
+
+                showMessage(`Tipo de contrato ${nuevoEstado ? 'activado' : 'desactivado'}`, 'success');
+                await cargarTiposContrato();
+
+            } catch (error) {
+                console.error('❌ Error cambiando estado:', error);
+                showMessage('Error al cambiar estado: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================================================
+        // UTILIDADES COMUNES (compartidas entre las 3 pestañas)
+        // ==========================================================================
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function mostrarLoading(texto = 'Cargando...') {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.querySelector('p').textContent = texto;
+                overlay.classList.remove('hidden');
+            }
+        }
+
+        function ocultarLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.classList.add('hidden');
+        }
+
+        // ==========================================================================
+        // EL JS DE LAS PESTAÑAS 2 Y 3 VIENE EN EL FRAGMENTO 3
+        // ==========================================================================
+
+        console.log('✅ Fragmento 2 cargado: pestaña Tipos de contrato lista');
     </script>
 </body>
 </html>
