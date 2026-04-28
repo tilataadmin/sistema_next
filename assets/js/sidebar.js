@@ -100,15 +100,15 @@ const MODULE_ITEM_ORDER = {
         'Secciones / Áreas',
         'Subáreas',
         'Roles y cargos',
-        'Trabajadores',
-        'Categorías de ausencias',
+        'Configurar certificados laborales',
+        'Gestionar trabajadores',
+        'Gestionar categorías de ausencias',
         'Autorizar ausencias',
         'Gestionar todas las ausencias',
         'Ajustar saldos de ausencias',
         'Revisión de nómina',
         'Ver reportes de ausencias',
-        'Ver dashboard de talento humano',
-        'Paz y salvos'
+        'Ver dashboard de talento humano'
     ],
     'training': [
        'Ejes formativos',
