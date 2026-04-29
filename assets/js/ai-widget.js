@@ -15,28 +15,8 @@
         `<img src="/assets/img/rigoberto-head.svg" width="${size}" height="${size}" alt="Rigoberto" style="display:inline-block; vertical-align:middle;" />`;
     const RIGOBERTO_SVG_WHITE = rigoHeadImg(28);
 
-    const RIGOBERTO_SVG_COLOR = `<svg viewBox="10 0 140 165" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-        <rect x="20" y="45" width="120" height="110" rx="40" fill="#5F1C1F"/>
-        <ellipse cx="35" cy="38" rx="16" ry="36" fill="#5F1C1F" transform="rotate(-20, 35, 38)"/>
-        <ellipse cx="35" cy="38" rx="9" ry="24" fill="#D4A0A2" transform="rotate(-20, 35, 38)"/>
-        <ellipse cx="125" cy="38" rx="16" ry="36" fill="#5F1C1F" transform="rotate(20, 125, 38)"/>
-        <ellipse cx="125" cy="38" rx="9" ry="24" fill="#D4A0A2" transform="rotate(20, 125, 38)"/>
-        <ellipse cx="80" cy="125" rx="38" ry="26" fill="#D4A0A2"/>
-        <ellipse cx="56" cy="88" rx="12" ry="13" fill="white"/>
-        <ellipse cx="104" cy="88" rx="12" ry="13" fill="white"/>
-        <circle cx="58" cy="87" r="7" fill="#1a1a2e"/>
-        <circle cx="106" cy="87" r="7" fill="#1a1a2e"/>
-        <circle cx="61" cy="84" r="2.5" fill="white"/>
-        <circle cx="109" cy="84" r="2.5" fill="white"/>
-        <rect x="38" y="72" width="36" height="30" rx="8" fill="none" stroke="#2c2c3a" stroke-width="2.5"/>
-        <rect x="86" y="72" width="36" height="30" rx="8" fill="none" stroke="#2c2c3a" stroke-width="2.5"/>
-        <line x1="74" y1="87" x2="86" y2="87" stroke="#2c2c3a" stroke-width="2.5"/>
-        <line x1="38" y1="82" x2="24" y2="78" stroke="#2c2c3a" stroke-width="2" stroke-linecap="round"/>
-        <line x1="122" y1="82" x2="136" y2="78" stroke="#2c2c3a" stroke-width="2" stroke-linecap="round"/>
-        <ellipse cx="72" cy="120" rx="4" ry="3.5" fill="#5F1C1F"/>
-        <ellipse cx="88" cy="120" rx="4" ry="3.5" fill="#5F1C1F"/>
-        <path d="M62 132 Q80 144 98 132" fill="none" stroke="#7A3538" stroke-width="2.5" stroke-linecap="round"/>
-    </svg>`;
+    // Cuerpo completo de Rigoberto (versión granate) — para pantalla de bienvenida
+    const RIGOBERTO_SVG_COLOR = `<img src="/assets/img/rigoberto-full.svg" width="100" alt="Rigoberto" style="display:inline-block;" />`;
 
     // Inyectar estilos
     const style = document.createElement('style');
