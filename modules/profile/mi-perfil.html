@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.21.13.00">
+    <meta name="page-version" content="26.04.28.07.05">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1310,6 +1310,312 @@
         
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // ==========================================================================
+        // PESTAÑA: CERTIFICADO LABORAL
+        // ==========================================================================
+
+        let certificateTabInitialized = false;
+        let certificateState = {
+            currentYear: null,         // Año académico vigente
+            salary: null,              // Salario del año vigente
+            contract: null,            // Contrato del año vigente (con tipo de contrato)
+            template: null,            // Plantilla activa
+            signer: null,              // Firmante activo
+            institutionConfig: null,   // Datos institucionales (NIT, dirección, teléfono, ciudad, logo)
+            primaryRole: null,         // Cargo principal del trabajador
+            documentType: null,        // Tipo de documento del trabajador
+            canIssue: false            // Bandera: ¿puede emitir certificado?
+        };
+
+        // Inicializar la pestaña la primera vez que se muestra
+        document.addEventListener('DOMContentLoaded', function() {
+            const certTab = document.getElementById('certificate-tab');
+            if (certTab) {
+                certTab.addEventListener('shown.bs.tab', async function() {
+                    if (!certificateTabInitialized) {
+                        await inicializarPestañaCertificado();
+                        certificateTabInitialized = true;
+                    }
+                });
+            }
+        });
+
+        // ==========================================
+        // INICIALIZAR PESTAÑA: validar datos y mostrar UI correspondiente
+        // ==========================================
+        async function inicializarPestañaCertificado() {
+            try {
+                // 1) Cargar todos los datos necesarios en paralelo
+                const [
+                    yearData,
+                    salaryData,
+                    contractData,
+                    templateData,
+                    signerData,
+                    institutionData,
+                    rolesData,
+                    docTypeData,
+                    historyData
+                ] = await Promise.all([
+                    supabaseRequest('/academic_years?select=year_id,year_name&is_current=eq.true&limit=1'),
+                    supabaseRequest(`/worker_salaries?select=*&worker_id=eq.${workerData.worker_id}`),
+                    supabaseRequest(`/worker_contracts?select=*,contract_types(type_name)&worker_id=eq.${workerData.worker_id}`),
+                    supabaseRequest('/certificate_template?select=*&is_active=eq.true&order=updated_at.desc&limit=1'),
+                    supabaseRequest('/certificate_signer?select=*&is_active=eq.true&order=updated_at.desc&limit=1'),
+                    supabaseRequest('/system_config?select=institution_tax_id,institution_address,institution_phone,logo_url&limit=1'),
+                    supabaseRequest(`/worker_job_roles?select=is_primary_role,job_roles(role_name)&worker_id=eq.${workerData.worker_id}&assignment_status=eq.active&is_primary_role=eq.true&limit=1`),
+                    workerData.document_type_id
+                        ? supabaseRequest(`/document_types?select=document_type_id,document_type_name,document_type_abbr&document_type_id=eq.${workerData.document_type_id}&limit=1`)
+                        : Promise.resolve([]),
+                    supabaseRequest(`/worker_certificates_log?select=*&worker_id=eq.${workerData.worker_id}&order=issued_at.desc`)
+                ]);
+
+                // 2) Año vigente (crítico)
+                if (!yearData || yearData.length === 0) {
+                    return mostrarErrorCertificado(
+                        'No hay un año académico marcado como vigente',
+                        'Contacta al área de configuración del sistema.'
+                    );
+                }
+                certificateState.currentYear = yearData[0];
+
+                // 3) Datos del trabajador para el año vigente
+                certificateState.salary = (salaryData || []).find(s => s.academic_year_id === certificateState.currentYear.year_id) || null;
+                certificateState.contract = (contractData || []).find(c => c.academic_year_id === certificateState.currentYear.year_id) || null;
+
+                // 4) Configuración general
+                certificateState.template = templateData && templateData.length > 0 ? templateData[0] : null;
+                certificateState.signer = signerData && signerData.length > 0 ? signerData[0] : null;
+                certificateState.institutionConfig = institutionData && institutionData.length > 0 ? institutionData[0] : null;
+                certificateState.primaryRole = rolesData && rolesData.length > 0 ? rolesData[0] : null;
+                certificateState.documentType = docTypeData && docTypeData.length > 0 ? docTypeData[0] : null;
+
+                // 5) Renderizar UI según el estado
+                renderizarEstadoCertificado();
+
+                // 6) Renderizar historial
+                renderizarHistorialCertificados(historyData || []);
+
+            } catch (error) {
+                console.error('❌ Error inicializando pestaña certificado:', error);
+                mostrarErrorCertificado(
+                    'Error al cargar datos',
+                    error.message
+                );
+            }
+        }
+
+        // ==========================================
+        // RENDERIZAR EL ESTADO (puede emitir o le falta algo)
+        // ==========================================
+        function renderizarEstadoCertificado() {
+            const container = document.getElementById('certificate-status-container');
+            const faltantes = [];
+
+            if (!certificateState.salary) {
+                faltantes.push('Salario del año vigente no registrado');
+            }
+            if (!certificateState.contract) {
+                faltantes.push('Tipo de contrato del año vigente no registrado');
+            }
+            if (!certificateState.template) {
+                faltantes.push('No hay plantilla de certificado activa en el sistema');
+            }
+            if (!certificateState.signer) {
+                faltantes.push('No hay firmante configurado en el sistema');
+            } else if (!certificateState.signer.signature_url) {
+                faltantes.push('El firmante configurado no tiene firma cargada');
+            }
+            if (!certificateState.primaryRole) {
+                faltantes.push('No tienes un cargo principal asignado');
+            }
+
+            // Datos institucionales: advertencia, no bloqueante (la plantilla puede mostrarlos vacíos)
+            const institucionalesIncompletos = !certificateState.institutionConfig
+                || !certificateState.institutionConfig.institution_tax_id
+                || !certificateState.institutionConfig.institution_address
+                || !certificateState.institutionConfig.institution_phone;
+
+            if (faltantes.length > 0) {
+                certificateState.canIssue = false;
+                const lista = faltantes.map(f => `<li>${f}</li>`).join('');
+                container.innerHTML = `
+                    <div class="alert alert-warning mb-0">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-exclamation-triangle me-2"></i>No es posible emitir tu certificado en este momento
+                        </h6>
+                        <p class="mb-2">Falta(n) los siguientes datos:</p>
+                        <ul class="mb-3">${lista}</ul>
+                        <hr>
+                        <p class="mb-0 small">
+                            <i class="bi bi-envelope me-1"></i>
+                            Contacta al área de Talento Humano para que completen tu información.
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Todo bien: mostrar formulario de emisión
+            certificateState.canIssue = true;
+
+            const advertenciaInstitucional = institucionalesIncompletos
+                ? `<div class="alert alert-info mb-3 py-2">
+                       <small>
+                           <i class="bi bi-info-circle me-1"></i>
+                           Algunos datos institucionales (NIT, dirección o teléfono) no están configurados. El certificado se emitirá igualmente, pero esos campos aparecerán vacíos.
+                       </small>
+                   </div>`
+                : '';
+
+            const nombreCompleto = `${workerData.worker_first_name} ${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''}`.trim();
+            const cargoNombre = certificateState.primaryRole.job_roles.role_name;
+            const tipoContratoNombre = certificateState.contract.contract_types.type_name;
+            const salarioFormateado = '$ ' + Number(certificateState.salary.salary_amount).toLocaleString('es-CO');
+
+            container.innerHTML = `
+                ${advertenciaInstitucional}
+                <div class="card border-success mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title mb-3">
+                            <i class="bi bi-check-circle-fill text-success me-2"></i>Datos que aparecerán en tu certificado
+                        </h6>
+                        <div class="row g-2 small">
+                            <div class="col-md-6"><strong>Nombre:</strong> ${escapeHtmlCert(nombreCompleto)}</div>
+                            <div class="col-md-6"><strong>Documento:</strong> ${escapeHtmlCert(workerData.worker_id_doc)}</div>
+                            <div class="col-md-6"><strong>Cargo:</strong> ${escapeHtmlCert(cargoNombre)}</div>
+                            <div class="col-md-6"><strong>Tipo de contrato:</strong> ${escapeHtmlCert(tipoContratoNombre)}</div>
+                            <div class="col-md-6"><strong>Año académico:</strong> ${escapeHtmlCert(certificateState.currentYear.year_name)}</div>
+                            <div class="col-md-6"><strong>Salario:</strong> <span id="cert-preview-salary">${salarioFormateado}</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="cert-include-salary" checked>
+                    <label class="form-check-label" for="cert-include-salary">
+                        <strong>Incluir salario en el certificado</strong>
+                    </label>
+                    <div class="form-text">
+                        Desmárcalo si necesitas un certificado sin información salarial.
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-primary" id="btn-generate-certificate">
+                        <i class="bi bi-file-earmark-pdf me-1"></i>Generar certificado
+                    </button>
+                </div>
+            `;
+
+            // Listener: ocultar/mostrar el salario en la vista previa según el checkbox
+            const checkbox = document.getElementById('cert-include-salary');
+            if (checkbox) {
+                checkbox.addEventListener('change', function() {
+                    const previewSalary = document.getElementById('cert-preview-salary');
+                    if (previewSalary) {
+                        previewSalary.textContent = checkbox.checked ? salarioFormateado : '(no se incluirá)';
+                        previewSalary.style.color = checkbox.checked ? '' : '#999';
+                        previewSalary.style.fontStyle = checkbox.checked ? '' : 'italic';
+                    }
+                });
+            }
+
+            // Listener del botón generar (la función la implementamos en el siguiente fragmento)
+            const btnGenerate = document.getElementById('btn-generate-certificate');
+            if (btnGenerate) {
+                btnGenerate.addEventListener('click', function() {
+                    if (typeof generarCertificadoLaboral === 'function') {
+                        generarCertificadoLaboral();
+                    } else {
+                        showMessage('Función de generación aún no disponible. Intenta de nuevo en un momento.', 'warning');
+                    }
+                });
+            }
+        }
+
+        // ==========================================
+        // MOSTRAR ERROR EN EL CONTENEDOR DE CERTIFICADO
+        // ==========================================
+        function mostrarErrorCertificado(titulo, descripcion) {
+            const container = document.getElementById('certificate-status-container');
+            container.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <h6 class="alert-heading">
+                        <i class="bi bi-x-circle me-2"></i>${escapeHtmlCert(titulo)}
+                    </h6>
+                    <p class="mb-0 small">${escapeHtmlCert(descripcion)}</p>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // RENDERIZAR HISTORIAL DE CERTIFICADOS EMITIDOS
+        // ==========================================
+        function renderizarHistorialCertificados(certificates) {
+            const container = document.getElementById('certificate-history-container');
+
+            if (!certificates || certificates.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-inbox" style="font-size: 1.5rem;"></i>
+                        <div class="mt-1 small">No has emitido certificados aún</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const filas = certificates.map(c => {
+                const fecha = new Date(c.issued_at).toLocaleDateString('es-CO', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+                const statusBadge = c.status === 'valid'
+                    ? '<span class="badge bg-success">Válido</span>'
+                    : '<span class="badge bg-secondary">Anulado</span>';
+                const downloadBtn = c.pdf_url
+                    ? `<a href="${escapeHtmlCert(c.pdf_url)}" target="_blank" class="btn btn-sm btn-outline-primary" title="Descargar PDF">
+                           <i class="bi bi-download"></i>
+                       </a>`
+                    : '<span class="text-muted small">PDF no disponible</span>';
+
+                return `
+                    <tr>
+                        <td><code>${escapeHtmlCert(c.certificate_number)}</code></td>
+                        <td><small>${fecha}</small></td>
+                        <td>${statusBadge}</td>
+                        <td class="text-end">${downloadBtn}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Radicado</th>
+                                <th>Fecha de emisión</th>
+                                <th>Estado</th>
+                                <th class="text-end">Descargar</th>
+                            </tr>
+                        </thead>
+                        <tbody>${filas}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // UTILIDAD: escape HTML (versión local con sufijo para no chocar con otros)
+        // ==========================================
+        function escapeHtmlCert(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
         }
 
         console.log('🎉 Mi Perfil cargado correctamente');
