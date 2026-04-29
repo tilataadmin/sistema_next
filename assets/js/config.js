@@ -1856,7 +1856,12 @@ function getManualUrl() {
 // HTML del navbar
 function createNavbarHTML() {
     const session = getStoredSession();
-    const userName = session?.user?.user_display_name || session?.user?.user_name || 'Usuario';
+    const fullName = session?.user?.user_display_name || session?.user?.user_name || 'Usuario';
+    // Extraer primer nombre del display: formato "Apellido1 [Apellido2] Nombres"
+    // 3+ palabras → primer nombre es palabra[2]; 2 palabras → palabra[1]; 1 palabra → palabra[0]
+    const _parts = fullName.trim().split(/\s+/);
+    const _firstNameRaw = _parts.length >= 3 ? _parts[2] : (_parts.length === 2 ? _parts[1] : _parts[0]);
+    const userName = _firstNameRaw.charAt(0).toUpperCase() + _firstNameRaw.slice(1).toLowerCase();
     
     // Detectar ruta al manual automáticamente
     const manualUrl = getManualUrl();
