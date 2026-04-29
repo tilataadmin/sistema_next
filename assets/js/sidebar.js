@@ -720,9 +720,9 @@ async function injectSidebar() {
     // Actualizar breadcrumbs con nombres de módulos correctos
     updateBreadcrumb(permData);
 
-    // Mostrar popup de novedades (solo la primera vez)
-    showChangelogPopup();
-
+    // Mostrar anuncio activo del sistema (si hay y no fue visto)
+    showActiveAnnouncement();
+    
     console.log('✅ Sidebar inyectado correctamente');
 }
 
@@ -908,84 +908,138 @@ function updateBreadcrumb(permData) {
 }
 
 // ==========================================
-// 9. POPUP DE NOVEDADES (temporal)
+// POPUP DE ANUNCIOS DEL SISTEMA
+// Lee dinámicamente de la tabla system_announcements
 // ==========================================
 
-function showChangelogPopup() {
-    const CHANGELOG_VERSION = '2026-04-14';
-    const CHANGELOG_KEY = 'schoolnet_changelog_seen';
+const ANNOUNCEMENTS_SEEN_KEY = 'schoolnet_announcements_seen';
 
-    const seen = localStorage.getItem(CHANGELOG_KEY);
-    if (seen === CHANGELOG_VERSION) return;
-
+async function showActiveAnnouncement() {
     const session = getStoredSession();
     if (!session || !session.user) return;
     if (window.location.pathname.includes('login.html')) return;
 
-    setTimeout(() => {
-        const overlay = document.createElement('div');
-        overlay.id = 'sn-changelog-overlay';
-        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;';
+    try {
+        // Consultar el anuncio activo más reciente
+        const ahoraISO = new Date().toISOString();
+        const url = '/system_announcements?select=announcement_id,title,content,priority,expires_at&is_active=eq.true&or=(expires_at.is.null,expires_at.gt.' + ahoraISO + ')&order=published_at.desc&limit=1';
+        const data = await supabaseRequest(url);
 
-        overlay.innerHTML = `
-            <div style="background:white;border-radius:12px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
-                <div style="background:var(--system-primary-color,#1B365D);color:white;padding:1.25rem 1.5rem;border-radius:12px 12px 0 0;">
-                    <h5 style="margin:0;font-size:1.1rem;">
-                        <i class="bi bi-stars me-2"></i>Novedades en SchoolNet
-                    </h5>
-                </div>
-                <div style="padding:1.5rem;">
-                    <p style="color:#495057;font-size:0.9rem;margin-bottom:1rem;">Hemos reorganizado la navegación para que sea más fácil encontrar lo que necesitas.</p>
+        if (!data || data.length === 0) return;
 
-                    <div style="margin-bottom:1rem;">
-                        <div style="display:flex;align-items:start;gap:0.75rem;margin-bottom:0.75rem;">
-                            <span style="background:#E6F1FB;color:#185FA5;border-radius:8px;padding:6px 8px;font-size:1rem;flex-shrink:0;"><i class="bi bi-layout-sidebar"></i></span>
-                            <div>
-                                <strong style="font-size:0.85rem;">Menú lateral</strong>
-                                <p style="font-size:0.8rem;color:#6c757d;margin:2px 0 0;">Ahora tienes un menú en el costado izquierdo con acceso directo a todas las funciones. Usa el botón <strong>☰</strong> para abrirlo o cerrarlo.</p>
-                            </div>
-                        </div>
+        const ann = data[0];
 
-                        <div style="display:flex;align-items:start;gap:0.75rem;margin-bottom:0.75rem;">
-                            <span style="background:#EAF3DE;color:#3B6D11;border-radius:8px;padding:6px 8px;font-size:1rem;flex-shrink:0;"><i class="bi bi-house-heart"></i></span>
-                            <div>
-                                <strong style="font-size:0.85rem;">Mi Espacio</strong>
-                                <p style="font-size:0.8rem;color:#6c757d;margin:2px 0 0;">Tu página de inicio ahora muestra tus tareas, procedimientos y accesos rápidos personalizados.</p>
-                            </div>
-                        </div>
+        // Verificar si el usuario ya lo vio
+        const seenRaw = localStorage.getItem(ANNOUNCEMENTS_SEEN_KEY);
+        let seenIds = [];
+        try {
+            seenIds = seenRaw ? JSON.parse(seenRaw) : [];
+            if (!Array.isArray(seenIds)) seenIds = [];
+        } catch (e) {
+            seenIds = [];
+        }
 
-                        <div style="display:flex;align-items:start;gap:0.75rem;">
-                            <span style="background:#FAEEDA;color:#854F0B;border-radius:8px;padding:6px 8px;font-size:1rem;flex-shrink:0;"><i class="bi bi-unlock"></i></span>
-                            <div>
-                                <strong style="font-size:0.85rem;">Acceso simplificado</strong>
-                                <p style="font-size:0.8rem;color:#6c757d;margin:2px 0 0;">Funciones como tareas, ausencias, formación y tickets ahora están disponibles para todos sin necesidad de permisos especiales.</p>
-                            </div>
-                        </div>
-                    </div>
+        if (seenIds.includes(ann.announcement_id)) return;
 
-                    <button id="sn-changelog-close" style="width:100%;padding:0.6rem;border:none;background:var(--system-primary-color,#1B365D);color:white;border-radius:8px;font-size:0.9rem;cursor:pointer;font-weight:500;">
-                        Entendido
-                    </button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(overlay);
-
-        document.getElementById('sn-changelog-close').addEventListener('click', () => {
-            overlay.remove();
-            localStorage.setItem(CHANGELOG_KEY, CHANGELOG_VERSION);
-        });
-
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.remove();
-                localStorage.setItem(CHANGELOG_KEY, CHANGELOG_VERSION);
+        // Mostrar según prioridad
+        setTimeout(() => {
+            if (ann.priority === 'Informativo') {
+                showAnnouncementToast(ann, seenIds);
+            } else {
+                showAnnouncementModal(ann, seenIds);
             }
-        });
+        }, 1000);
 
-    }, 1000);
+    } catch (error) {
+        console.error('❌ Error cargando anuncio activo:', error);
+    }
 }
 
+function markAnnouncementSeen(announcementId, seenIds) {
+    if (!seenIds.includes(announcementId)) {
+        seenIds.push(announcementId);
+        // Mantener máximo 50 IDs (los más recientes)
+        if (seenIds.length > 50) seenIds = seenIds.slice(-50);
+        localStorage.setItem(ANNOUNCEMENTS_SEEN_KEY, JSON.stringify(seenIds));
+    }
+}
+
+function showAnnouncementModal(ann, seenIds) {
+    const overlay = document.createElement('div');
+    overlay.id = 'sn-announcement-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+    overlay.innerHTML = `
+        <div style="background:white;border-radius:12px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+            <div style="background:var(--system-primary-color,#1B365D);color:white;padding:1.25rem 1.5rem;border-radius:12px 12px 0 0;">
+                <h5 style="margin:0;font-size:1.1rem;">
+                    <i class="bi bi-megaphone-fill me-2"></i>${escapeAnnouncementHtml(ann.title)}
+                </h5>
+            </div>
+            <div style="padding:1.5rem;color:#333;font-size:0.92rem;line-height:1.55;">
+                <div class="sn-ann-content">${ann.content}</div>
+                <button id="sn-announcement-close" style="width:100%;margin-top:1.5rem;padding:0.65rem;border:none;background:var(--system-primary-color,#1B365D);color:white;border-radius:8px;font-size:0.92rem;cursor:pointer;font-weight:500;">
+                    Entendido
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => {
+        overlay.remove();
+        markAnnouncementSeen(ann.announcement_id, seenIds);
+    };
+
+    document.getElementById('sn-announcement-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+    });
+}
+
+function showAnnouncementToast(ann, seenIds) {
+    const toast = document.createElement('div');
+    toast.id = 'sn-announcement-toast';
+    toast.style.cssText = 'position:fixed;bottom:20px;right:20px;max-width:380px;background:white;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.18);z-index:9999;overflow:hidden;border-left:4px solid var(--system-primary-color,#1B365D);animation:snToastIn 0.3s ease;';
+
+    toast.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:14px 16px;">
+            <i class="bi bi-info-circle-fill" style="color:var(--system-primary-color,#1B365D);font-size:1.2rem;flex-shrink:0;margin-top:2px;"></i>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:0.9rem;color:#222;margin-bottom:4px;">${escapeAnnouncementHtml(ann.title)}</div>
+                <div class="sn-ann-content" style="font-size:0.82rem;color:#555;line-height:1.45;">${ann.content}</div>
+            </div>
+            <button id="sn-toast-close" style="background:none;border:none;color:#999;cursor:pointer;font-size:1.1rem;line-height:1;padding:0;flex-shrink:0;" title="Cerrar">×</button>
+        </div>
+    `;
+
+    // Inyectar animación si no existe
+    if (!document.getElementById('sn-toast-styles')) {
+        const styleEl = document.createElement('style');
+        styleEl.id = 'sn-toast-styles';
+        styleEl.textContent = '@keyframes snToastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } .sn-ann-content p:last-child { margin-bottom: 0; } .sn-ann-content p { margin: 0 0 8px 0; }';
+        document.head.appendChild(styleEl);
+    }
+
+    document.body.appendChild(toast);
+
+    const close = () => {
+        toast.remove();
+        markAnnouncementSeen(ann.announcement_id, seenIds);
+    };
+
+    document.getElementById('sn-toast-close').addEventListener('click', close);
+
+    // Auto-close a los 8 segundos
+    setTimeout(close, 8000);
+}
+
+function escapeAnnouncementHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 console.log('✅ Módulo sidebar.js cargado');
