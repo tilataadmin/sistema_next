@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="2026.04.29.10.00">
+    <title>Verificación de certificado laboral - SchoolNet</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f5f6f8;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        .verify-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+
+        .verify-card {
+            max-width: 600px;
+            width: 100%;
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        .verify-header {
+            padding: 2rem;
+            text-align: center;
+            color: white;
+        }
+
+        .verify-header.valid {
+            background: #198754;
+        }
+
+        .verify-header.voided {
+            background: #6c757d;
+        }
+
+        .verify-header.error {
+            background: #dc3545;
+        }
+
+        .verify-icon {
+            font-size: 4rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .verify-status {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .verify-subtitle {
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+
+        .verify-body {
+            padding: 2rem;
+        }
+
+        .info-row {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            color: #212529;
+        }
+
+        .verify-footer {
+            background: #f8f9fa;
+            padding: 1rem 2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #6c757d;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .verify-footer img {
+            max-height: 30px;
+            margin-bottom: 0.5rem;
+        }
+
+        .loading-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="verify-container">
+        <div class="card verify-card" id="result-card">
+            <!-- Estado inicial: cargando -->
+            <div class="loading-state" id="loading-state">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <div>Verificando certificado...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =====================================================================
+        // CONFIGURACIÓN
+        // =====================================================================
+        const SUPABASE_URL = 'https://mrtuerkncqodhakuwjob.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ydHVlcmtuY3FvZGhha3V3am9iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NjYyNjUsImV4cCI6MjA3MzM0MjI2NX0.BVTBqvTDMpzWSo5jDaiRRYP_oUMf2o3tl5yNwEfBYVk';
+
+        // =====================================================================
+        // INICIALIZACIÓN
+        // =====================================================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            const certificateNumber = obtenerParametroUrl('id');
+
+            if (!certificateNumber) {
+                renderizarError(
+                    'Certificado no especificado',
+                    'No se proporcionó el número de radicado del certificado a verificar.'
+                );
+                return;
+            }
+
+            // Validar formato del radicado para evitar inyecciones
+            if (!/^CERT-\d{4}-\d{5}$/.test(certificateNumber)) {
+                renderizarError(
+                    'Radicado inválido',
+                    'El número de radicado tiene un formato no válido.'
+                );
+                return;
+            }
+
+            try {
+                const certificate = await consultarCertificado(certificateNumber);
+
+                if (!certificate) {
+                    renderizarNoEncontrado(certificateNumber);
+                    return;
+                }
+
+                renderizarCertificado(certificate);
+
+            } catch (error) {
+                console.error('Error consultando certificado:', error);
+                renderizarError(
+                    'Error de verificación',
+                    'No fue posible conectarse con el servicio de verificación. Por favor intenta más tarde.'
+                );
+            }
+        });
+
+        // =====================================================================
+        // OBTENER PARÁMETRO DE LA URL
+        // =====================================================================
+        function obtenerParametroUrl(name) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        }
+
+        // =====================================================================
+        // CONSULTAR CERTIFICADO EN LA VISTA PÚBLICA
+        // =====================================================================
+        async function consultarCertificado(certificateNumber) {
+            const url = `${SUPABASE_URL}/rest/v1/vw_certificate_verification`
+                + `?certificate_number=eq.${encodeURIComponent(certificateNumber)}`
+                + `&select=*&limit=1`;
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+            }
+
+            const data = await response.json();
+            return data && data.length > 0 ? data[0] : null;
+        }
+
+        // =====================================================================
+        // RENDERIZAR CERTIFICADO ENCONTRADO
+        // =====================================================================
+        function renderizarCertificado(c) {
+            const card = document.getElementById('result-card');
+            const isValid = c.certificate_status === 'valid';
+
+            const fechaEmision = new Date(c.issued_at).toLocaleDateString('es-CO', {
+                year: 'numeric', month: 'long', day: 'numeric'
+            });
+
+            // Cabecera según estado
+            let headerClass, iconClass, statusText, subtitleText;
+
+            if (isValid) {
+                headerClass = 'valid';
+                iconClass = 'bi-patch-check-fill';
+                statusText = 'Certificado verificado';
+                subtitleText = 'Este certificado fue emitido oficialmente por SchoolNet.';
+            } else {
+                headerClass = 'voided';
+                iconClass = 'bi-x-octagon-fill';
+                statusText = 'Certificado anulado';
+                const fechaAnulacion = c.voided_at
+                    ? new Date(c.voided_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
+                    : '';
+                subtitleText = fechaAnulacion
+                    ? `Anulado el ${fechaAnulacion}.`
+                    : 'Este certificado ha sido anulado.';
+            }
+
+            // Bloque de razón de anulación (solo si aplica)
+            const voidedReasonHtml = !isValid && c.voided_reason
+                ? `<div class="info-row">
+                       <div class="info-label">Razón de anulación</div>
+                       <div class="info-value">${escapeHtml(c.voided_reason)}</div>
+                   </div>`
+                : '';
+
+            card.innerHTML = `
+                <div class="verify-header ${headerClass}">
+                    <div class="verify-icon">
+                        <i class="bi ${iconClass}"></i>
+                    </div>
+                    <div class="verify-status">${statusText}</div>
+                    <div class="verify-subtitle">${subtitleText}</div>
+                </div>
+
+                <div class="verify-body">
+                    <div class="info-row">
+                        <div class="info-label">Radicado</div>
+                        <div class="info-value"><code>${escapeHtml(c.certificate_number)}</code></div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Trabajador</div>
+                        <div class="info-value">${escapeHtml(c.snapshot_full_name)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Documento de identidad</div>
+                        <div class="info-value">${escapeHtml(c.snapshot_document_type || 'Documento')}: ${escapeHtml(c.masked_document_number)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Cargo</div>
+                        <div class="info-value">${escapeHtml(c.snapshot_job_role || 'No registrado')}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Fecha de emisión</div>
+                        <div class="info-value">${fechaEmision}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Ciudad de expedición</div>
+                        <div class="info-value">${escapeHtml(c.snapshot_expedition_city || 'No registrada')}</div>
+                    </div>
+                    ${voidedReasonHtml}
+                </div>
+
+                <div class="verify-footer">
+                    <div>Verificación realizada por <strong>SchoolNet · Colegio Tilatá</strong></div>
+                    <div class="mt-1">Por privacidad, datos como salario y fecha de ingreso no se muestran en esta página.</div>
+                </div>
+            `;
+        }
+
+        // =====================================================================
+        // RENDERIZAR CERTIFICADO NO ENCONTRADO
+        // =====================================================================
+        function renderizarNoEncontrado(certificateNumber) {
+            const card = document.getElementById('result-card');
+            card.innerHTML = `
+                <div class="verify-header error">
+                    <div class="verify-icon">
+                        <i class="bi bi-exclamation-octagon-fill"></i>
+                    </div>
+                    <div class="verify-status">Certificado no encontrado</div>
+                    <div class="verify-subtitle">El radicado consultado no corresponde a ningún certificado emitido.</div>
+                </div>
+                <div class="verify-body">
+                    <div class="info-row">
+                        <div class="info-label">Radicado consultado</div>
+                        <div class="info-value"><code>${escapeHtml(certificateNumber)}</code></div>
+                    </div>
+                    <div class="alert alert-warning mt-3 mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <small>
+                            Si llegaste a esta página escaneando un código QR de un certificado físico,
+                            es posible que el certificado sea apócrifo o que haya un error.
+                            Contacta directamente al Colegio Tilatá para confirmar.
+                        </small>
+                    </div>
+                </div>
+                <div class="verify-footer">
+                    <div>Verificación realizada por <strong>SchoolNet · Colegio Tilatá</strong></div>
+                </div>
+            `;
+        }
+
+        // =====================================================================
+        // RENDERIZAR ERROR GENÉRICO
+        // =====================================================================
+        function renderizarError(titulo, descripcion) {
+            const card = document.getElementById('result-card');
+            card.innerHTML = `
+                <div class="verify-header error">
+                    <div class="verify-icon">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    </div>
+                    <div class="verify-status">${escapeHtml(titulo)}</div>
+                    <div class="verify-subtitle">${escapeHtml(descripcion)}</div>
+                </div>
+                <div class="verify-footer">
+                    <div>Verificación realizada por <strong>SchoolNet · Colegio Tilatá</strong></div>
+                </div>
+            `;
+        }
+
+        // =====================================================================
+        // ESCAPE HTML
+        // =====================================================================
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
