@@ -3,12 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.07.05">
+    <meta name="page-version" content="26.04.28.07.15">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <!-- Librerías para generación de certificado -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
     <style>
         :root {
@@ -1616,6 +1620,456 @@
             const div = document.createElement('div');
             div.textContent = String(text);
             return div.innerHTML;
+        }
+
+        // ==========================================================================
+        // GENERACIÓN DEL CERTIFICADO LABORAL
+        // ==========================================================================
+
+        async function generarCertificadoLaboral() {
+            if (!certificateState.canIssue) {
+                showMessage('No se puede emitir el certificado en este momento', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('btn-generate-certificate');
+            const originalText = btn.innerHTML;
+
+            try {
+                // Bloquear botón
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generando...';
+                mostrarLoading('Generando tu certificado laboral...');
+
+                // 1) GENERAR NÚMERO DE RADICADO
+                const certificateNumber = await generarNumeroRadicado();
+                console.log('📄 Radicado generado:', certificateNumber);
+
+                // 2) CONSTRUIR URL DE VERIFICACIÓN
+                const verifyUrl = `${window.location.origin}/verify-certificate.html?id=${certificateNumber}`;
+
+                // 3) GENERAR QR EN BASE64
+                mostrarLoading('Generando código QR...');
+                const qrDataUrl = await generarQRDataUrl(verifyUrl);
+
+                // 4) DETERMINAR SI INCLUIR SALARIO
+                const incluirSalario = document.getElementById('cert-include-salary').checked;
+
+                // 5) PREPARAR DATOS PARA REEMPLAZAR EN PLANTILLA
+                const datosCertificado = construirDatosCertificado(certificateNumber, verifyUrl, qrDataUrl, incluirSalario);
+
+                // 6) REEMPLAZAR VARIABLES EN LA PLANTILLA
+                const htmlFinal = reemplazarVariablesPlantilla(certificateState.template.template_html, datosCertificado);
+
+                // 7) ENVOLVER EN HTML COMPLETO PARA PDF
+                const htmlParaPdf = envolverHtmlParaPdf(htmlFinal, datosCertificado);
+
+                // 8) GENERAR PDF
+                mostrarLoading('Convirtiendo a PDF...');
+                const pdfBlob = await generarPdfBlob(htmlParaPdf, certificateNumber);
+
+                // 9) SUBIR PDF A STORAGE
+                mostrarLoading('Guardando certificado...');
+                const pdfUrl = await subirPdfStorage(pdfBlob, certificateNumber);
+
+                // 10) REGISTRAR EN BD
+                mostrarLoading('Registrando emisión...');
+                await registrarCertificadoEnBD(certificateNumber, pdfUrl, datosCertificado, incluirSalario);
+
+                // 11) DESCARGAR PDF AL USUARIO
+                descargarPdf(pdfBlob, certificateNumber);
+
+                // 12) RECARGAR HISTORIAL
+                const historyData = await supabaseRequest(
+                    `/worker_certificates_log?select=*&worker_id=eq.${workerData.worker_id}&order=issued_at.desc`
+                );
+                renderizarHistorialCertificados(historyData || []);
+
+                ocultarLoading();
+                showMessage(`Certificado ${certificateNumber} emitido correctamente. La descarga inició automáticamente.`, 'success');
+
+            } catch (error) {
+                console.error('❌ Error generando certificado:', error);
+                ocultarLoading();
+                showMessage('Error al generar el certificado: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+
+        // ==========================================
+        // GENERAR NÚMERO DE RADICADO ÚNICO POR AÑO
+        // ==========================================
+        async function generarNumeroRadicado() {
+            const year = new Date().getFullYear();
+            const prefix = `CERT-${year}-`;
+
+            // Buscar el último radicado del año actual
+            const ultimo = await supabaseRequest(
+                `/worker_certificates_log?select=certificate_number&certificate_number=like.${prefix}*&order=certificate_number.desc&limit=1`
+            );
+
+            let nextNum = 1;
+            if (ultimo && ultimo.length > 0) {
+                const lastNumber = ultimo[0].certificate_number;
+                const lastSeq = parseInt(lastNumber.split('-')[2], 10);
+                if (!isNaN(lastSeq)) {
+                    nextNum = lastSeq + 1;
+                }
+            }
+
+            const seqStr = String(nextNum).padStart(5, '0');
+            return `${prefix}${seqStr}`;
+        }
+
+        // ==========================================
+        // GENERAR QR EN DATA URL (base64)
+        // ==========================================
+        function generarQRDataUrl(text) {
+            return new Promise((resolve, reject) => {
+                try {
+                    // Crear contenedor temporal oculto
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.position = 'absolute';
+                    tempDiv.style.left = '-9999px';
+                    document.body.appendChild(tempDiv);
+
+                    new QRCode(tempDiv, {
+                        text: text,
+                        width: 150,
+                        height: 150,
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+
+                    // qrcodejs genera un canvas y/o img. Esperamos un tick para que termine.
+                    setTimeout(() => {
+                        const canvas = tempDiv.querySelector('canvas');
+                        const img = tempDiv.querySelector('img');
+                        let dataUrl = null;
+
+                        if (canvas) {
+                            dataUrl = canvas.toDataURL('image/png');
+                        } else if (img && img.src) {
+                            dataUrl = img.src;
+                        }
+
+                        document.body.removeChild(tempDiv);
+
+                        if (dataUrl) {
+                            resolve(dataUrl);
+                        } else {
+                            reject(new Error('No se pudo generar el QR'));
+                        }
+                    }, 100);
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        }
+
+        // ==========================================
+        // CONSTRUIR DATOS PARA REEMPLAZO DE VARIABLES
+        // ==========================================
+        function construirDatosCertificado(certificateNumber, verifyUrl, qrDataUrl, incluirSalario) {
+            const inst = certificateState.institutionConfig || {};
+            const signer = certificateState.signer;
+            const contract = certificateState.contract;
+            const salary = certificateState.salary;
+            const cargo = certificateState.primaryRole.job_roles.role_name;
+            const docType = certificateState.documentType;
+
+            const nombreCompleto = `${workerData.worker_first_name} ${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''}`.trim().toUpperCase();
+
+            // Fechas en español
+            const fechaExpedicion = formatearFechaEspañol(new Date());
+            const fechaIngreso = workerData.worker_entry_date
+                ? formatearFechaEspañol(parsearFechaIso(workerData.worker_entry_date))
+                : 'No registrada';
+
+            // Salario
+            const salarioNumero = incluirSalario
+                ? '$ ' + Number(salary.salary_amount).toLocaleString('es-CO')
+                : '';
+            const salarioLetras = incluirSalario
+                ? convertirNumeroALetras(Number(salary.salary_amount))
+                : '';
+
+            return {
+                logo_url: inst.logo_url || '',
+                nit: inst.institution_tax_id || '',
+                direccion: inst.institution_address || '',
+                telefono: inst.institution_phone || '',
+                ciudad: signer.expedition_city || '',
+                fecha_expedicion: fechaExpedicion,
+                nombre_completo: nombreCompleto,
+                tipo_documento: docType ? docType.document_type_name : '',
+                documento: workerData.worker_id_doc || '',
+                cargo: cargo,
+                fecha_ingreso: fechaIngreso,
+                tipo_contrato: contract.contract_types.type_name,
+                salario_numero: salarioNumero,
+                salario_letras: salarioLetras,
+                firmante_nombre: signer.signer_name,
+                firmante_cargo: signer.signer_role_text,
+                firma_url: signer.signature_url,
+                radicado: certificateNumber,
+                qr_url: qrDataUrl
+            };
+        }
+
+        // ==========================================
+        // REEMPLAZAR VARIABLES EN LA PLANTILLA
+        // ==========================================
+        function reemplazarVariablesPlantilla(htmlPlantilla, datos) {
+            let html = htmlPlantilla;
+            for (const [key, value] of Object.entries(datos)) {
+                // Escapar regex meta-chars en la clave (improbable pero seguro)
+                const safeKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`\\$\\$${safeKey}\\$\\$`, 'g');
+                html = html.replace(regex, value || '');
+            }
+            return html;
+        }
+
+        // ==========================================
+        // ENVOLVER HTML PARA PDF (estilos + estructura)
+        // ==========================================
+        function envolverHtmlParaPdf(htmlContenido, datos) {
+            // Cabecera con logo (si existe), pie con firma y QR
+            const logoHtml = datos.logo_url
+                ? `<img src="${datos.logo_url}" alt="Logo" style="max-height: 80px; max-width: 200px;">`
+                : '';
+
+            const firmaHtml = datos.firma_url
+                ? `<img src="${datos.firma_url}" alt="Firma" style="max-height: 80px; max-width: 250px;">`
+                : '';
+
+            const qrHtml = datos.qr_url
+                ? `<img src="${datos.qr_url}" alt="QR de verificación" style="width: 100px; height: 100px;">`
+                : '';
+
+            return `
+                <div style="font-family: Arial, sans-serif; font-size: 12pt; color: #000; padding: 30px; max-width: 800px; margin: 0 auto;">
+                    <!-- Cabecera con logo -->
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        ${logoHtml}
+                    </div>
+
+                    <!-- Cuerpo del certificado (de la plantilla) -->
+                    <div style="line-height: 1.6; text-align: justify;">
+                        ${htmlContenido}
+                    </div>
+
+                    <!-- Pie con QR de verificación -->
+                    <div style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc; display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="font-size: 9pt; color: #666; max-width: 60%;">
+                            <strong>Verificación:</strong><br>
+                            Radicado: ${datos.radicado}<br>
+                            Escanea el código QR para validar este certificado en línea.
+                        </div>
+                        <div style="text-align: center;">
+                            ${qrHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // GENERAR PDF (Blob)
+        // ==========================================
+        async function generarPdfBlob(html, certificateNumber) {
+            const opt = {
+                margin: [10, 10, 10, 10],
+                filename: `${certificateNumber}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, logging: false },
+                jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' }
+            };
+
+            // Crear contenedor temporal
+            const tempContainer = document.createElement('div');
+            tempContainer.innerHTML = html;
+            tempContainer.style.position = 'absolute';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.top = '0';
+            tempContainer.style.width = '800px';
+            document.body.appendChild(tempContainer);
+
+            try {
+                const blob = await html2pdf().set(opt).from(tempContainer).output('blob');
+                return blob;
+            } finally {
+                document.body.removeChild(tempContainer);
+            }
+        }
+
+        // ==========================================
+        // SUBIR PDF A SUPABASE STORAGE
+        // ==========================================
+        async function subirPdfStorage(blob, certificateNumber) {
+            // Inicializar cliente storage si no existe
+            if (!window._certStorageClient) {
+                window._certStorageClient = supabase.createClient(
+                    SUPABASE_CONFIG.url,
+                    SUPABASE_CONFIG.anonKey
+                );
+            }
+
+            const filePath = `issued/${workerData.worker_id}/${certificateNumber}.pdf`;
+            const file = new File([blob], `${certificateNumber}.pdf`, { type: 'application/pdf' });
+
+            const { data, error } = await window._certStorageClient
+                .storage
+                .from('certificates')
+                .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false,
+                    contentType: 'application/pdf'
+                });
+
+            if (error) {
+                throw new Error('Error subiendo PDF: ' + error.message);
+            }
+
+            const { data: urlData } = window._certStorageClient
+                .storage
+                .from('certificates')
+                .getPublicUrl(filePath);
+
+            return urlData.publicUrl;
+        }
+
+        // ==========================================
+        // REGISTRAR CERTIFICADO EN worker_certificates_log
+        // ==========================================
+        async function registrarCertificadoEnBD(certificateNumber, pdfUrl, datos, incluirSalario) {
+            const payload = {
+                certificate_number: certificateNumber,
+                worker_id: workerData.worker_id,
+                academic_year_id: certificateState.currentYear.year_id,
+                worker_full_name: datos.nombre_completo,
+                worker_document: workerData.worker_id_doc,
+                worker_role: datos.cargo,
+                worker_entry_date: workerData.worker_entry_date,
+                contract_type: datos.tipo_contrato,
+                salary_amount: incluirSalario ? Number(certificateState.salary.salary_amount) : null,
+                salary_included: incluirSalario,
+                signer_name: datos.firmante_nombre,
+                signer_role: datos.firmante_cargo,
+                pdf_url: pdfUrl,
+                verify_url: `${window.location.origin}/verify-certificate.html?id=${certificateNumber}`,
+                status: 'valid',
+                issued_by_user_id: currentUser.user_id
+            };
+
+            await supabaseRequest('/worker_certificates_log', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+        }
+
+        // ==========================================
+        // DESCARGAR PDF AL USUARIO
+        // ==========================================
+        function descargarPdf(blob, certificateNumber) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${certificateNumber}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        // ==========================================
+        // UTILIDADES DE FECHA
+        // ==========================================
+        function parsearFechaIso(isoString) {
+            // Evitar problemas de timezone: parsear como local
+            const [y, m, d] = isoString.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function formatearFechaEspañol(date) {
+            const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                           'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+            const dia = date.getDate();
+            const mes = meses[date.getMonth()];
+            const año = date.getFullYear();
+            return `${dia} de ${mes} de ${año}`;
+        }
+
+        // ==========================================
+        // CONVERTIR NÚMERO A LETRAS (pesos colombianos)
+        // ==========================================
+        function convertirNumeroALetras(num) {
+            if (num === 0) return 'CERO PESOS M/CTE';
+
+            const unidades = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
+            const especiales = ['DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE'];
+            const decenas = ['', '', 'VEINTI', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+            const decenasExactas = ['', 'DIEZ', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+            const centenas = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+
+            function convertirGrupo(n) {
+                if (n === 0) return '';
+                if (n === 100) return 'CIEN';
+
+                let texto = '';
+                const c = Math.floor(n / 100);
+                const resto = n % 100;
+                const d = Math.floor(resto / 10);
+                const u = resto % 10;
+
+                if (c > 0) texto += centenas[c] + ' ';
+
+                if (resto >= 10 && resto <= 19) {
+                    texto += especiales[resto - 10];
+                } else if (d === 2 && u > 0) {
+                    texto += 'VEINTI' + unidades[u].toLowerCase().toUpperCase();
+                } else if (d > 0) {
+                    if (u === 0) {
+                        texto += decenasExactas[d];
+                    } else {
+                        texto += decenas[d] + ' Y ' + unidades[u];
+                    }
+                } else if (u > 0) {
+                    texto += unidades[u];
+                }
+
+                return texto.trim();
+            }
+
+            const millones = Math.floor(num / 1000000);
+            const miles = Math.floor((num % 1000000) / 1000);
+            const resto = num % 1000;
+
+            let texto = '';
+
+            if (millones > 0) {
+                if (millones === 1) {
+                    texto += 'UN MILLÓN ';
+                } else {
+                    texto += convertirGrupo(millones) + ' MILLONES ';
+                }
+            }
+
+            if (miles > 0) {
+                if (miles === 1) {
+                    texto += 'MIL ';
+                } else {
+                    texto += convertirGrupo(miles) + ' MIL ';
+                }
+            }
+
+            if (resto > 0) {
+                texto += convertirGrupo(resto);
+            }
+
+            return texto.trim() + ' PESOS M/CTE';
         }
 
         console.log('🎉 Mi Perfil cargado correctamente');
