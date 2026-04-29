@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.28.08.30">
+    <meta name="page-version" content="26.04.28.08.31">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1884,21 +1884,38 @@
         // ==========================================
         async function generarPdfBlob(html, certificateNumber) {
             const opt = {
-                margin: [10, 10, 10, 10],
+                margin: [15, 15, 15, 15],
                 filename: `${certificateNumber}.pdf`,
                 image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true, logging: false },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false,
+                    backgroundColor: '#ffffff',
+                    windowWidth: 800
+                },
                 jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' }
             };
 
-            // Crear contenedor temporal
+            // Crear contenedor temporal visible (opacity 0) — html2canvas tiene problemas con nodos off-screen
             const tempContainer = document.createElement('div');
             tempContainer.innerHTML = html;
-            tempContainer.style.position = 'absolute';
-            tempContainer.style.left = '-9999px';
+            tempContainer.style.position = 'fixed';
             tempContainer.style.top = '0';
+            tempContainer.style.left = '0';
             tempContainer.style.width = '800px';
+            tempContainer.style.opacity = '0';
+            tempContainer.style.pointerEvents = 'none';
+            tempContainer.style.zIndex = '-1';
+            tempContainer.style.backgroundColor = '#ffffff';
             document.body.appendChild(tempContainer);
+
+            // Esperar a que las imágenes (firma, QR) carguen
+            await esperarImagenes(tempContainer);
+
+            // Pequeño delay adicional para asegurar el render
+            await new Promise(resolve => setTimeout(resolve, 300));
 
             try {
                 const blob = await html2pdf().set(opt).from(tempContainer).output('blob');
@@ -1906,6 +1923,26 @@
             } finally {
                 document.body.removeChild(tempContainer);
             }
+        }
+
+        // ==========================================
+        // ESPERAR A QUE TODAS LAS IMÁGENES DEL CONTENEDOR CARGUEN
+        // ==========================================
+        function esperarImagenes(container) {
+            const imgs = container.querySelectorAll('img');
+            if (imgs.length === 0) return Promise.resolve();
+
+            return Promise.all(Array.from(imgs).map(img => {
+                if (img.complete && img.naturalHeight !== 0) {
+                    return Promise.resolve();
+                }
+                return new Promise(resolve => {
+                    img.addEventListener('load', resolve, { once: true });
+                    img.addEventListener('error', resolve, { once: true }); // resolver igual si falla
+                    // Timeout de seguridad: 5 segundos máximo
+                    setTimeout(resolve, 5000);
+                });
+            }));
         }
 
         // ==========================================
