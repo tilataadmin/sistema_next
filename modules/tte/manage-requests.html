@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.05.14.20">
+    <meta name="page-version" content="26.5.5.11.50">
     <title>Gestión de Solicitudes TTE - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -668,7 +668,7 @@
             try {
                 console.log('📡 Cargando solicitudes...');
                 
-                const solicitudes = await supabaseRequest('/tte_requests?select=*,tte_categories(category_name),tte_priorities(priority_name,max_response_days)&order=created_at.desc');
+                const solicitudes = await supabaseRequest('/tte_requests?select=*,tte_categories(category_name),tte_priorities(priority_name,max_response_days),tte_request_fragments(category_id)&order=created_at.desc');
                 
                 solicitudesCache = solicitudes || [];
                 renderizarTabla(solicitudesCache);
@@ -788,7 +788,13 @@
             }
             
             if (filterCategory) {
-                filtradas = filtradas.filter(s => s.category_id === filterCategory);
+                filtradas = filtradas.filter(s => {
+                    // Coincide la categoría principal de la incidencia
+                    if (s.category_id === filterCategory) return true;
+                    // O alguno de sus fragmentos es de esa categoría
+                    if (s.tte_request_fragments && s.tte_request_fragments.some(f => f.category_id === filterCategory)) return true;
+                    return false;
+                });
             }
             
             if (filterResponse) {
@@ -1148,7 +1154,7 @@
             try {
                 mostrarLoading();
                 
-                // Actualizar estado en BD
+                // Actualizar estado de la incidencia en BD
                 await supabaseRequest(`/tte_requests?request_id=eq.${solicitudActual.request_id}`, {
                     method: 'PATCH',
                     body: JSON.stringify({
@@ -1157,6 +1163,18 @@
                         closed_at: new Date().toISOString()
                     })
                 });
+                
+                // Si la incidencia tiene fragmentos, marcarlos todos como aprobados
+                // (la respuesta consolidada ya los incorpora; los fragmentos se archivan)
+                if (solicitudActual.has_fragments) {
+                    await supabaseRequest(`/tte_request_fragments?request_id=eq.${solicitudActual.request_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            response_status: 'approved',
+                            responded_at: new Date().toISOString()
+                        })
+                    });
+                }
                 
                 // Enviar email al usuario
                 await enviarEmailRespuesta(solicitudActual);
@@ -1194,7 +1212,7 @@
             try {
                 mostrarLoading();
                 
-                // Actualizar en BD
+                // Actualizar la incidencia
                 await supabaseRequest(`/tte_requests?request_id=eq.${solicitudActual.request_id}`, {
                     method: 'PATCH',
                     body: JSON.stringify({
@@ -1204,6 +1222,18 @@
                         closed_at: new Date().toISOString()
                     })
                 });
+                
+                // Si la incidencia tiene fragmentos, marcarlos todos como aprobados
+                // (la respuesta consolidada ya los incorpora; los fragmentos se archivan)
+                if (solicitudActual.has_fragments) {
+                    await supabaseRequest(`/tte_request_fragments?request_id=eq.${solicitudActual.request_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            response_status: 'approved',
+                            responded_at: new Date().toISOString()
+                        })
+                    });
+                }
                 
                 // Actualizar solicitud actual para el email
                 solicitudActual.response_text = respuestaTexto;
@@ -1225,6 +1255,7 @@
                 ocultarLoading();
             }
         }
+        
         
         // ==========================================
         // ENVIAR EMAIL DE RESPUESTA AL USUARIO
