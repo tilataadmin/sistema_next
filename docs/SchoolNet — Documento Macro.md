@@ -1,0 +1,2156 @@
+# SchoolNet — Documento Macro
+
+**Versión:** 0.3.3
+**Fecha:** 4 de mayo de 2026
+**Estado:** En construcción — Lote 3 de 7 cerrado (early-alerts + new-students + follow-ups completos)
+**Mantenedor:** Desarrollos
+**Proyecto:** SchoolNet (Colegio Tilatá)
+
+---
+
+## Tabla de contenido
+
+1. Introducción y propósito
+2. Cómo leer este documento
+
+**CAPA 1 — Arquitectura permanente**
+3. Stack y plataformas
+4. Convenciones del proyecto
+5. Modelo de permisos
+6. Integraciones externas
+7. Estructura de la BD por dominios
+
+**CAPA 2 — Catálogo de módulos**
+8. Índice de módulos del sistema
+9. Fichas de módulos
+   - 9.1 `procedures` — Procedimientos
+   - 9.2 `security` — Seguridad
+   - 9.3 `config` — Configuración
+   - 9.4 `hr` — Talento Humano
+   - 9.5 `early-alerts` — Alertas Tempranas
+   - 9.6 `follow-ups` — Seguimientos (parcial)
+   - 9.7 `new-students` — Gestión de Estudiantes Nuevos
+
+**CAPA 3 — Mapa de relaciones entre módulos**
+
+**Anexos**
+- A. Trabajo pendiente detectado
+- B. Inventario de manuales por módulo
+- C. Glosario
+
+**Bitácora de versiones**
+
+---
+
+## 1. Introducción y propósito
+
+Este documento describe SchoolNet a nivel macro: arquitectura permanente, catálogo funcional de módulos, y relaciones entre módulos. Está pensado como herramienta de gestión accionable: refleja el **estado real** del sistema (no un estado objetivo), incluyendo módulos en producción, módulos en construcción, módulos en diseño y huecos de documentación.
+
+El documento se construye y mantiene por lotes. Cada lote procesa uno o varios módulos del sistema usando como fuente principal los manuales de usuario indexados en el sistema RAG (tablas `ai_documents` y `ai_document_chunks`). Para módulos sin manual, las fuentes son los documentos de diseño internos, el sidebar y la base de datos.
+
+**Audiencia:**
+
+- **Desarrollos:** referencia de arquitectura, dependencias e inventario de pendientes.
+- **Coordinaciones del colegio:** entendimiento general de qué hace cada módulo y cómo se relacionan.
+- **Equipos externos puntuales:** punto de partida para proyectos que requieran integración con SchoolNet.
+
+**Lo que este documento no es:**
+
+- No es manual de usuario (para eso están los manuales por página en `/manual/...`).
+- No es documentación técnica de implementación (para eso están `Conocimiento_del_proyecto`, `DataBase`, `config.js`).
+- No es plan de proyecto.
+
+---
+
+## 2. Cómo leer este documento
+
+### 2.1 Estructura
+
+Tres capas que se actualizan a ritmos distintos:
+
+- **Capa 1 — Arquitectura permanente.** Cambia poco. Stack, convenciones, integraciones externas, modelo de permisos, dominios de la BD.
+- **Capa 2 — Catálogo de módulos.** Cambia con cada nuevo módulo o cada actualización funcional. Una ficha por módulo, ~1-2 páginas.
+- **Capa 3 — Mapa de relaciones.** Se reconstruye cuando cambian las dependencias entre módulos.
+
+### 2.2 Encabezado de estado de cada ficha
+
+Cada ficha de módulo abre con tres campos:
+
+- **Implementación:** `En producción` / `En producción parcial` / `En construcción` / `En diseño` / `Pendiente`.
+- **Documentación de usuario:** `Completa` / `Parcial` / `Pendiente`.
+- **Notas de transición:** información sobre migraciones de permisos, reestructuraciones pendientes, o cambios planeados que afectan al módulo.
+
+### 2.3 Marcas de funcionalidades
+
+Cada funcionalidad listada en una ficha tiene una de estas marcas:
+
+| Marca | Significado |
+|---|---|
+| ✓ | Implementada y con manual de usuario al día |
+| ◐ | Implementada pero sin manual o con manual desactualizado |
+| ○ | En sidebar pero sin verificar implementación (a confirmar) |
+| ◇ | En diseño, no implementada |
+
+### 2.4 Sección "Observaciones"
+
+Cada ficha cierra con una sección de observaciones que recoge inconsistencias detectadas: páginas en sidebar sin manual, manuales sin entrada en sidebar, paths que no corresponden al módulo nuevo (caso `general-tools`), etc. Estas observaciones alimentan el Anexo A.
+
+### 2.5 Anexo de trabajo pendiente
+
+El documento cierra con el consolidado de huecos accionables. Esto convierte al macro en herramienta de gestión y no solo descriptiva.
+
+---
+
+# CAPA 1 — Arquitectura permanente
+
+## 3. Stack y plataformas
+
+> *Pendiente — desarrollo completo al cierre del procesamiento de los 7 lotes de fichas.*
+
+Resumen mínimo:
+
+- **Frontend:** Vanilla JavaScript + Bootstrap 5.3.0 + Bootstrap Icons 1.10.0.
+- **Backend:** Supabase (PostgreSQL) accedido vía REST con `supabaseRequest()` desde el cliente.
+- **Hosting:** Vercel (incluye serverless functions en CommonJS para crons y endpoints).
+- **Dominio de producción:** `schoolnet.colegiotilata.edu.co`.
+- **Repositorios:** `Tilata_Next` (SchoolNet principal) + repositorio separado para el asistente IA (Rigoberto).
+
+## 4. Convenciones del proyecto
+
+> *Pendiente — desarrollo completo al cierre.*
+
+Anclajes mínimos para uso inmediato:
+
+- `supabaseRequest(endpoint, options)` se llama **sin** `headers`. Pasar headers sobreescribe la autenticación.
+- URLs de Supabase en una sola línea, sin saltos.
+- Clave de sesión: `'nextSystemSession'` (no `'schoolnetSession'`).
+- Fechas con `getCurrentDateColombia()` y `formatDateForDatabase()`. Nunca `new Date().toISOString()` para fechas sin hora.
+- RLS deshabilitado plataforma-wide (seguridad enforced en capa JS).
+- PostgREST: `neq` en vez de `ne` para filtros de no-igualdad.
+- UI sin gradientes (solid colors only).
+
+## 5. Modelo de permisos
+
+> *Pendiente — desarrollo completo al cierre.*
+
+Resumen:
+
+- Tabla `permissions` con campo `permission_module` (slug del módulo).
+- Tabla `roles` y vínculo `role_permissions`.
+- Vínculo `users` ↔ `user_roles` ↔ `roles`.
+- Columna `is_universal` en `permissions`: permisos universales se inyectan automáticamente al sidebar de cualquier usuario autenticado, sin necesidad de asignación por rol.
+- Reestructuración v2026 reduce y normaliza nombres de módulos. Ver Anexo A para detalles.
+
+## 6. Integraciones externas
+
+> *Pendiente — desarrollo completo al cierre.*
+
+Integraciones activas:
+
+| Integración | Propósito | Configuración |
+|---|---|---|
+| **Phidias** | Fuente de verdad de matrículas y notas | Token + URL en `system_config` |
+| **Google Apps Script** | Envío de notificaciones por email | Endpoint en `config.js` (`NOTIFICATION_CONFIG.endpoint`) |
+| **Anthropic API** | Asistente IA Rigoberto (RAG sobre manuales) | Tabla `ai_config`, modelo `claude-sonnet-4-20250514` |
+| **Google Calendar** | Sincronización de eventos institucionales / Días Tilatá | Calendar ID en `system_config` |
+| **Supabase Storage** | Archivos adjuntos (manuales, documentos, fotos, evidencias) | Buckets configurados sin RLS |
+
+## 7. Estructura de la BD por dominios
+
+> *Pendiente — desarrollo completo al cierre.*
+
+Macro-dominios (tentativo, a refinar):
+
+- **Identidad y permisos:** `users`, `workers`, `roles`, `permissions`, `role_permissions`, `user_roles`.
+- **Estructura académica:** `academic_years`, `sections`, `grades`, `courses`, `academic_areas`, `academic_subjects`, `academic_assignments`, `programs`, `families`, `students`.
+- **Catálogos auxiliares:** `eps`, `genders`, `cost_centers`, etc.
+- **Talento humano:** ausencias, paz y salvos, divisiones, calendario laboral, nómina.
+- **Procedimientos y formularios:** `forms`, `form_fields`, `form_responses`, `procedures`, `procedure_steps`, `procedure_instances`.
+- **Acompañamiento estudiantil:** seguimientos, alertas tempranas, EAE, estudiantes nuevos.
+- **Operación:** servicios, eventos, salidas pedagógicas, mantenimiento.
+- **Financiero:** presupuesto (rubros, subítems, traslados, sobreejecuciones), tarifas, proveedores.
+- **Medición:** indicadores, encuestas, segmentaciones.
+- **Documental:** contratos, certificados, manual de convivencia.
+- **Comunidad:** consulta de comunidad, listas, alumni.
+- **Sistema IA:** `ai_documents`, `ai_document_chunks`, `ai_chat_*`, `ai_config`, `ai_table_access`.
+
+---
+
+# CAPA 2 — Catálogo de módulos
+
+## 8. Índice de módulos del sistema
+
+Total: **27 módulos** definidos en sidebar.
+
+| # | Módulo (slug) | Implementación | Manual | Procesado en macro |
+|---|---|---|---|---|
+| 1 | `my-space` | En sidebar (hub) | Sin manual (probablemente no requiere) | ☐ |
+| 2 | `new-students` | Producción | Completo (7 manuales) | ✓ (§ 9.7) |
+| 3 | `follow-ups` | Producción | Completo (15 manuales) | ✓ (§ 9.6) |
+| 4 | `early-alerts` | Producción | Completo (5 manuales) | ✓ (§ 9.5) |
+| 5 | `alumni` | En diseño | Sin manual | ☐ |
+| 6 | `community` | Reestructuración | Heredado de general-tools | ☐ |
+| 7 | `hr` | Producción | Completo (18 manuales) | ✓ (§ 9.4) |
+| 8 | `training` | En construcción | Sin manual | ☐ |
+| 9 | `teacher-eval` | En diseño | Sin manual | ☐ |
+| 10 | `indicators` | Producción | Completo (11 manuales) | ☐ |
+| 11 | `tte` | En construcción | Sin manual | ☐ |
+| 12 | `surveys` | Producción | Completo (11 manuales) | ☐ |
+| 13 | `procedures` | Producción | Completo (9 manuales) | ✓ (§ 9.1) |
+| 14 | `institutional-eval` | En diseño | Sin manual | ☐ |
+| 15 | `project-management` | Reestructuración | Heredado de general-tools | ☐ |
+| 16 | `admissions` | En construcción | Sin manual | ☐ |
+| 17 | `events` | Producción | Completo (6 manuales) | ☐ |
+| 18 | `services` | Producción | Completo (19 manuales) | ☐ |
+| 19 | `attendance` | Reestructuración | Heredado de general-tools | ☐ |
+| 20 | `environmental` | Por confirmar | Sin manual | ☐ |
+| 21 | `suppliers` | Por confirmar | Sin manual | ☐ |
+| 22 | `budget` | Producción | Completo (23 manuales) | ☐ |
+| 23 | `contracts` | Reestructuración | Heredado de general-tools | ☐ |
+| 24 | `certificates` | Producción | Mínimo (1 manual) | ✓ (§ 9.8) |
+| 25 | `knowledge` | Reestructuración | Heredado de general-tools | ☐ |
+| 26 | `config` | Producción | Completo (13 manuales) | ✓ (§ 9.3) |
+| 27 | `security` | Producción | Completo (11 manuales) | ✓ (§ 9.2) |
+
+**Notas:**
+
+- "Heredado de general-tools" significa que las páginas/manuales todavía viven físicamente bajo `/manual/general-tools/` pero según la reestructuración v2026 deben redistribuirse al módulo correspondiente.
+- El módulo `general-tools` no aparece en el sidebar nuevo (ya fue reemplazado en navegación), pero los manuales aún conservan ese path.
+
+## 9. Fichas de módulos
+
+### 9.1 `procedures` — Procedimientos
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (9 páginas con manual, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Sin movimientos pendientes según la reestructuración v2026. Permiso "Ver mis solicitudes (procedimientos)" se exhibe como universal en `my-space`, pero la implementación sigue residiendo en este módulo. |
+
+#### Propósito
+
+Gestiona flujos de trabajo institucionales de principio a fin. Permite definir formularios para recopilar información, encadenar pasos con responsables y plazos, ejecutar las solicitudes, hacer seguimiento individual y global, y analizar el rendimiento.
+
+Distingue dos artefactos centrales:
+
+- **Formulario:** estructura de campos para recopilar datos. Puede usarse de forma independiente (la respuesta queda registrada inmediatamente como completada) o como entrada inicial de un procedimiento.
+- **Procedimiento:** flujo de trabajo con pasos secuenciales. Tiene un formulario inicial obligatorio, uno o más pasos con responsables, y reglas de avance (lineal, bifurcación o final).
+
+#### Conceptos clave
+
+- **Tipos de procedimiento:** *Interno* (solo usuarios autenticados) y *Externo* (enlace público con captcha, útil para familias y proveedores).
+- **Tipos de paso:** Manual (acción humana, único que admite bifurcación), Notificación (correo y avanza solo), Enviar correo a destinatario del formulario (con variables dinámicas), Paralelo (múltiples tareas simultáneas, no admite bifurcación), Automático (reservado, no implementado).
+- **Tipos de campo en formularios:** texto corto, texto largo, número, fecha, dropdown, radio, checkbox, archivo, SI/NO, selección desde tabla del sistema (estudiantes, trabajadores, grados, cursos, áreas académicas, secciones, familias, géneros, roles).
+- **Características transversales:** SLA por paso en días hábiles, pre-llenado automático (nombre/email/fecha del usuario), campos condicionales, bifurcaciones, pasos paralelos con espera de cierre completo.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | Índice del módulo | Acceso al módulo | ✓ |
+| `forms.html` | Gestionar Formularios | Gestionar formularios | ✓ |
+| `procedures.html` | Gestionar Procedimientos | Gestionar procedimientos | ✓ |
+| `execute.html` | Ejecutar Procedimiento | Ejecutar procedimientos | ✓ |
+| `execute-form.html` | Llenar Formulario | Ejecutar formularios | ✓ |
+| `my-requests.html` | Mis Solicitudes | Universal (`my-space`) | ✓ |
+| `records.html` | Consultar Registros | Consultar registros de procedimientos | ✓ |
+| `query-submissions.html` | Consultar Respuestas | Consultar respuestas de formularios | ✓ |
+| `dashboard.html` | Dashboard de Procedimientos | Ver dashboard de procedimientos | ✓ |
+
+#### Flujo típico
+
+Crear formulario → crear procedimiento asociado → configurar pasos con responsables y SLAs → validar flujo → activar → ejecutar (interno o vía enlace público) → seguimiento por solicitante en *Mis Solicitudes* y por coordinadores en *Consultar Registros* → análisis en *Dashboard*.
+
+#### Roles típicos
+
+- **Coordinadores y administradores de procesos:** gestionan formularios y procedimientos.
+- **Usuarios operativos del colegio:** ejecutan procedimientos y llenan formularios.
+- **Cualquier usuario autenticado:** consulta sus propias solicitudes (permiso universal).
+- **Supervisores y coordinadores:** consultan registros globales y respuestas de formularios que ellos crearon.
+- **Dirección y gerencia:** acceso al Dashboard para análisis de cumplimiento SLA.
+- **Personas externas (familias, proveedores):** ejecutan procedimientos de tipo Externo vía enlace público sin login.
+
+#### Tablas principales
+
+| Tabla | Propósito |
+|---|---|
+| `forms` | Definición de formularios (nombre, descripción, modo de uso, estado) |
+| `form_fields` | Campos de cada formulario (tipo, validaciones, condicionales, pre-llenado) |
+| `form_responses` | Respuestas individuales por campo |
+| `field_option_catalog` | Opciones de campos de tipo selección |
+| `procedures` | Definición de procedimientos (interno/externo, formulario asociado, estado) |
+| `procedure_steps` | Pasos de cada procedimiento (tipo, responsable, SLA, bifurcaciones) |
+| `procedure_instances` | Solicitudes individuales (activas, completadas, canceladas) |
+
+> El campo `procedure_id` en `procedure_instances` admite NULL (constraint removido) para soportar formularios independientes que generan instancias completadas sin procedimiento asociado.
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos y roles.
+- **`hr` / `workers`:** los responsables de pasos se seleccionan de trabajadores activos.
+- **`config`:** los campos "selección desde tabla del sistema" consumen catálogos académicos (estudiantes, grados, cursos, áreas académicas, secciones, familias).
+- **Sistema de tareas (en `general-tools` → `project-management` tras reestructuración):** cada paso manual genera una tarea en el panel del responsable.
+- **Sistema de notificaciones por email** (Google Apps Script).
+- **`admissions`:** consume el módulo. El Paso 4 del proceso de admisiones se diligencia mediante una `procedure_instance` con un formulario dinámico.
+
+#### Observaciones
+
+- Módulo maduro y autocontenido. Documentación uniforme en todas las páginas.
+- Tres páginas de consulta similares pero con propósitos distintos: `my-requests` (personal, con cancelación), `records` (global, con SLA y vista agregada), `query-submissions` (análisis por contenido de campos). El propio módulo dedica una sección a explicar las diferencias.
+- El Dashboard tiene modo comparación contra período anterior y exporta a PDF y CSV.
+- Los procedimientos externos generan enlaces públicos compartibles por email, WhatsApp o QR.
+- Posible discrepancia: el sidebar puede listar "Ver reportes de procedimientos" como ítem aparte. Pendiente verificar si es función adicional o forma parte del Dashboard. Si es separada, hay un manual posiblemente faltante.
+
+---
+
+### 9.2 `security` — Seguridad
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (11 páginas con manual, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Tres movimientos pendientes según la reestructuración v2026: (a) llegan a `security` el permiso "Configuración general" (`5706f41d-…`) desde `config`; (b) sale "Gestión de Tickets de Soporte" (`8afc5261-…`) hacia `my-space`; (c) normalización del campo `permission_module` para "Gestión de carnets" (`33d5ed9e-…`) de `Seguridad` a `security`. |
+
+#### Propósito
+
+Centro de control de identidad, autorización y trazabilidad. Gestiona usuarios, roles, permisos, vínculos usuario-rol, registros de auditoría inmutables, carnets RFID para identificación física, reportes de bugs y tickets de soporte que cualquier usuario puede crear desde cualquier página del sistema.
+
+#### Conceptos clave
+
+- **Jerarquía de seguridad:** Permisos (acción atómica) → se agrupan en Roles → se asignan a Usuarios. La verificación de cada acción del sistema baja por esta cadena.
+- **Tipos de permisos:** READ (consultar), WRITE (crear/editar), DELETE (eliminar), ADMIN (control total de un módulo). El tipo es informativo y ayuda a estructurar; no altera por sí mismo el comportamiento del control de acceso.
+- **Permiso universal:** flag `is_universal = true`. Todo usuario autenticado lo recibe automáticamente sin asignación por rol. Se usa para items de `my-space` y funciones que cualquiera debe poder ejecutar (por ejemplo, "Mis solicitudes" del módulo procedures).
+- **Rol Super Admin:** marca especial sobre el rol que otorga acceso total al sistema, independiente de los permisos específicos asignados al rol. Práctica recomendada por los manuales: no más de 1–2 roles con esta marca.
+- **Convención de nombres de permisos:** `modulo_accion_recurso` en minúsculas con guion bajo (ej. `hr_view_contracts`, `follow_ups_delete_note`). Recomendación de los manuales, no validación técnica.
+- **Usuarios:** identidad de acceso al sistema. Tienen `username` único, email, nombre para mostrar, proveedor de autenticación (Local / Google / Microsoft / GitHub), y estado (Activo / Inactivo / Suspendido). Vinculados a `workers` por coincidencia exacta de email.
+- **Trabajador asociado:** cuando el email del usuario coincide con el de un trabajador activo, en pantalla aparece el contexto laboral (división, área, roles laborales). Si no coincide, el usuario se considera "sin trabajador asociado" — caso normal para usuarios administrativos o de sistema.
+- **Estados de usuario:** *Inactivo* significa baja definitiva (ya no labora). *Suspendido* es bloqueo temporal con expectativa de reactivación. Inactivar cierra sesión inmediatamente y revoca acceso.
+- **Logs de auditoría:** registro inmutable de cambios (INSERT/UPDATE/DELETE) con valores anteriores y nuevos. Generados vía triggers en BD. Las tablas `role_permissions` y `user_roles` son auditables para investigar cambios de seguridad.
+- **Carnets RFID:** códigos únicos asignados uno a uno a trabajadores y estudiantes. Validación cruzada para evitar duplicados entre poblaciones.
+- **Reportes de bugs:** botón flotante embebido en cada página. Cualquier usuario reporta. Flujo: Pendiente → En Revisión → Resuelto → Cerrado, con prioridades Crítica / Alta / Media / Baja.
+- **Tickets de soporte:** sistema más completo que bugs, con categorías personalizables, prioridades por categoría, asignación de responsable, diferimiento con fecha y razón, registro de avances, y priorización automática por puntaje. Categorías y prioridades son configurables por el administrador.
+- **Estados de ticket:** Pendiente → Asignado → En Revisión → En Desarrollo → Resuelto → Cerrado. *Resuelto* admite reapertura; *Cerrado* es terminal.
+- **Priorización automática de tickets:** algoritmo que combina peso de categoría, prioridad reportada, días pendiente, cantidad de usuarios del módulo afectado y cantidad de tickets similares (mismo módulo o página). Excluye tickets diferidos a futuro y categoría "Permisos".
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | Inicio del módulo con métricas | Acceso al módulo | ✓ |
+| `users.html` | Gestión de Usuarios | Gestión de usuarios | ✓ |
+| `roles.html` | Gestión de Roles | Gestión de roles | ✓ |
+| `permissions.html` | Gestión de Permisos | Gestión de permisos | ✓ |
+| `role-permissions.html` | Configurar Permisos (vincular permisos a roles) | Configurar permisos | ✓ |
+| `user-roles.html` | Asignar Roles (vincular roles a usuarios) | Asignar roles | ✓ |
+| `audit-log.html` | Logs de Auditoría | Logs de auditoría | ✓ |
+| `id-cards.html` | Gestión de Carnets RFID (trabajadores y estudiantes) | Gestión de carnets | ✓ |
+| `bug-management.html` | Gestión de Reportes de Bugs | Gestión de Reportes de Bugs | ✓ |
+| `ticket-categories.html` | Categorías de Tickets de Soporte | Categorías de Tickets | ✓ |
+| `ticket-management.html` | Gestión de Tickets de Soporte | Gestión de Tickets de Soporte (universal en `my-space` post-reestructuración) | ✓ |
+| `config.html` (post-reestructuración) | Configuración General (migra desde `config`) | Configuración general | ◇ |
+| Consulta de seguridad | Listada en reestructuración v2026 (`d44121e7-…`), sin verificar manual | Consulta de seguridad | ○ |
+
+#### Flujos típicos
+
+- **Onboarding de usuario:** crear usuario en `users.html` con proveedor de autenticación → asignar roles desde `user-roles.html` (o desde el propio formulario de creación) → el sidebar del usuario se construye automáticamente con permisos de sus roles + universales.
+- **Definición de un rol nuevo:** crear rol en `roles.html` con nombre, descripción, estado y eventual marca Super Admin → asignar permisos uno por uno en `role-permissions.html` (vista de dos paneles, click sobre permiso para alternar asignado/disponible).
+- **Creación de un permiso nuevo:** definir en `permissions.html` con nombre técnico (`modulo_accion_recurso`), descripción, módulo, tipo (READ/WRITE/DELETE/ADMIN), URL de manual opcional → ir a `role-permissions.html` y asignar a los roles que correspondan. *Crear el permiso es solo la mitad del trabajo: sin asignación a un rol no surte efecto.*
+- **Bloqueo de un usuario:** desde `users.html`, botón de inactivar → el usuario pierde acceso inmediatamente y se cierra su sesión.
+- **Auditoría de un cambio:** filtrar por tabla/usuario/fechas en `audit-log.html` → ver detalle con valores anteriores y nuevos en formato JSON → exportar a CSV. Las tablas `role_permissions` y `user_roles` son los blancos típicos para investigar otorgamientos indebidos.
+- **Carnet RFID:** ubicar persona en `id-cards.html` → asignar código (escaneado con scanner Honeywell o entrada manual) → sistema valida unicidad cruzada entre trabajadores y estudiantes.
+- **Bug reportado:** usuario reporta desde botón flotante en cualquier página (incluye captura automática de URL/módulo) → administrador revisa en `bug-management.html` → asigna responsable, prioridad, estado → documenta resolución.
+- **Ticket de soporte:** usuario reporta desde mismo botón flotante seleccionando categoría → notificación automática al responsable de la categoría → administrador en `ticket-management.html` puede reclasificar, asignar responsable, registrar avances, diferir con fecha/razón, o ejecutar "Priorizar Pendientes" para ver puntaje calculado y atender primero los de mayor impacto.
+- **Configuración del catálogo de tickets:** en `ticket-categories.html` se definen categorías (con ícono Bootstrap, color, responsable, texto guía para el reportante) y dentro de cada una sus prioridades (con etiqueta, color, orden, marca de "por defecto"). Una sola prioridad por categoría puede ser la default.
+
+#### Roles típicos
+
+- **Administrador del sistema:** acceso completo a todas las funciones (típicamente rol con marca Super Admin).
+- **Administrador de seguridad:** rol específico para operación de usuarios/roles/permisos sin necesidad de Super Admin.
+- **Equipo técnico / Desarrollos:** acceso a `audit-log`, `bug-management` y `ticket-management` para investigación y atención de soporte.
+- **Personal autorizado de operaciones:** acceso a `id-cards` para entrega y gestión de carnets físicos (típicamente recursos humanos o portería).
+- **Cualquier usuario autenticado:** capacidad de reportar bugs y crear tickets desde el botón flotante. Acceso a tickets propios.
+
+#### Tablas principales
+
+| Tabla | Propósito |
+|---|---|
+| `users` | Usuarios (username, email, display_name, provider, status) |
+| `roles` | Roles (con flag de Super Admin, descripción, estado) |
+| `permissions` | Permisos (con `permission_module`, `permission_type` READ/WRITE/DELETE/ADMIN, `is_universal`, URL de manual opcional) |
+| `role_permissions` | Vínculo rol ↔ permiso |
+| `user_roles` | Vínculo usuario ↔ rol |
+| `audit_log` | Registro inmutable de cambios (con valores anteriores y nuevos en JSON) |
+| `bug_reports` | Reportes de bugs (estado, prioridad, asignación, capturas) |
+| `tickets` | Tickets de soporte (con categoría, prioridad, estado, responsable, fecha de diferimiento, razón de diferimiento, historial de avances) |
+| `ticket_categories` | Catálogo de categorías de tickets (ícono, color, responsable, texto guía, orden, estado) |
+| `ticket_priorities` | Opciones de prioridad por categoría (etiqueta, color, orden, default) |
+| `workers` (campo RFID) | Código RFID asignado al trabajador |
+| `students` (campo RFID) | Código RFID asignado al estudiante |
+
+> Nombres de tablas a confirmar contra la BD del proyecto antes de cualquier desarrollo (`tickets` / `ticket_priorities` en particular).
+
+#### Dependencias con otros módulos
+
+- **Todos los módulos:** consumen el sistema de permisos. Cada página llama a la verificación al cargar.
+- **`hr` / `workers`:** vínculo usuario ↔ trabajador por email para mostrar contexto laboral en `user-roles.html`. Los carnets RFID se asignan a trabajadores.
+- **`config` / `students`:** los carnets RFID también se asignan a estudiantes.
+- **Todos los módulos con datos sensibles:** disparan `audit_log` vía triggers de BD para INSERT/UPDATE/DELETE.
+- **`my-space`:** "Gestión de Tickets de Soporte" se exhibirá en `my-space` post-reestructuración (los usuarios verán sus propios tickets), pero la administración global sigue en `security`.
+- **Sistema de notificaciones (Apps Script):** envía correos a responsables de categoría cuando se crea un ticket nuevo, al reportante cuando hay cambios en su ticket, y al responsable cuando se le asigna un ticket.
+
+#### Observaciones
+
+- **Confirmar lista oficial de funciones del módulo.** El `index.html` del manual lista 8 funciones; la reestructuración v2026 lista 10 (agrega Categorías de Tickets, Consulta de seguridad y Configuración general). Manuales de Categorías de Tickets y Tickets de Soporte sí existen; "Consulta de seguridad" no aparece como manual indexado.
+- **Permisos no se eliminan, se desactivan.** Los manuales explicitan esta práctica para mantener integridad histórica. Aplica también a roles. La eliminación de tickets sí es posible y permanente — borra historial.
+- **Logs de auditoría son inmutables y solo registran cambios (INSERT/UPDATE/DELETE).** No registran lecturas. Auditoría de consultas a información sensible requeriría sistema adicional.
+- **Riesgo de cambios de nombre de permiso en código.** Los manuales advierten que renombrar un permiso ya en uso programáticamente puede romper validaciones. Coordinar con Desarrollos antes de renombrar.
+- **Validación cruzada de RFID** entre trabajadores y estudiantes está bien implementada — vale la pena documentarlo como regla de negocio en Capa 1.
+- **Reportes de bugs no permiten al usuario final ver el estado de su reporte.** Tickets sí (vía notificaciones por correo y enlace de consulta). Esta diferencia entre los dos sistemas (bugs vs. tickets) puede generar confusión a usuarios que reportan desde el mismo botón flotante. Considerar consolidar en un único flujo a futuro.
+- **El algoritmo de priorización automática de tickets** combina varias señales (peso de categoría, prioridad, antigüedad, usuarios del módulo, similares). Documentar pesos y fórmula en Capa 1 cuando se haga el desarrollo completo, ya que es una decisión arquitectónica relevante.
+- **Asignación masiva de roles no existe en UI.** Los manuales lo confirman: la asignación es individual. Para operaciones masivas se requiere SQL o desarrollo específico.
+- **Sin función de copia de roles.** Para crear un rol parecido a otro hay que hacerlo manualmente. Posible mejora futura.
+
+---
+
+### 9.3 `config` — Configuración
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (13 páginas con manual, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Tres movimientos pendientes según reestructuración v2026: (a) `config.html` (Configuración General) migra a `security`; (b) `annual-fees.html` (Tarifas Anuales) migra a `budget`; (c) `pedagogical-days.html` y `generar-dias-tilata.html` deben migrar desde `general-tools` hacia este módulo. Hoy las páginas siguen físicamente donde están; el cambio es de `permission_module`, no de archivos. |
+
+#### Propósito
+
+Centro de control de la estructura organizacional y académica del colegio. Define el cimiento que consume el resto de SchoolNet: identidad institucional, períodos académicos, jerarquía académica (sección → grado → curso → estudiante), agrupación curricular (áreas, asignaturas, programas), datos de personas (familias, estudiantes), tarifas y catálogos auxiliares (EPS).
+
+#### Conceptos clave
+
+- **Jerarquía académica:** Sección → Grado → Curso → Estudiantes. Cada estudiante pertenece a un curso (que pertenece a un grado, que pertenece a una sección). Cada nivel tiene su propio responsable (director de sección, director de curso).
+- **Año académico actual:** solo uno puede estar marcado como tal en todo el sistema. Define el período por defecto en todas las pantallas. Estados: Activo, Inactivo, Cerrado.
+- **CEA (Costo Educativo Anual):** valor base por grado/año. Matrícula = 10% del CEA. Pensión mensual = (CEA − Matrícula) ÷ 10 (10 meses). Servicios opcionales (alimentación, transporte, extracurriculares) se cobran adicionalmente.
+- **Familia:** agrupa estudiantes (hermanos). Tiene un código único **permanente** (no editable). Permite facturación consolidada y descuentos por hermanos.
+- **Asignación académica:** grilla por año-grado. Filas son asignaturas (agrupadas por área), columnas son cursos. Cada celda asigna un docente. Incluye marca "Inglés" por asignatura-grado para el programa bilingüe.
+- **Áreas vs. Programas:** áreas agrupan asignaturas relacionadas (Matemáticas, Ciencias, Humanidades). Programas son iniciativas transversales (PEP, PAI, PD). Cada uno tiene su propio coordinador. Una asignatura siempre pertenece a un área; los programas operan sobre grados o sobre el plantel completo.
+- **EPS:** catálogo único compartido entre estudiantes y trabajadores. Soporta inactivación sin eliminación para preservar referencias históricas.
+- **Integración con Phidias:** desde `students.html` se sincronizan estudiantes nuevos. Crea familias automáticamente cuando no existen. **No** actualiza estudiantes ya registrados en SchoolNet.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Marca |
+|---|---|---|
+| `index.html` | Índice del módulo con métricas bajo demanda | ✓ |
+| `config.html` | Configuración General (migra a `security`) | ✓ |
+| `years.html` | Años Académicos | ✓ |
+| `sections.html` | Gestión de Secciones | ✓ |
+| `grades.html` | Gestión de Grados | ✓ |
+| `courses.html` | Gestión de Cursos | ✓ |
+| `academic-areas.html` | Gestión de Áreas Académicas | ✓ |
+| Gestión de Asignaturas | Referida desde otros manuales pero sin manual con filename propio indexado | ◐ |
+| `academic-assignments.html` | Asignación Académica | ✓ |
+| `programs.html` | Gestión de Programas | ✓ |
+| `families.html` | Gestionar Familias | ✓ |
+| `students.html` | Gestionar Estudiantes (incluye sync Phidias) | ✓ |
+| `annual-fees.html` | Tarifas Anuales (migra a `budget`) | ✓ |
+| `eps.html` | Gestionar EPS | ✓ |
+| Jornadas pedagógicas | Llega desde `general-tools` post-reestructuración | ◐ (existe en `/manual/general-tools/`, redistribuir) |
+| Generar Días Tilatá | Llega desde `general-tools` post-reestructuración | ◐ (existe en `/manual/general-tools/`, redistribuir) |
+
+#### Roles típicos
+
+- **Administrador del sistema:** acceso total. Configura identidad institucional, años, integraciones Phidias y Calendar.
+- **Secretaría académica / coordinación:** alta y mantenimiento de estudiantes, familias, cursos, asignaciones académicas.
+- **Coordinadores de área:** consultados al definir asignaciones académicas; aparecen como responsables en `academic-areas`.
+- **Coordinadores de programa:** responsables en `programs`.
+- **Directores de sección y de curso:** definidos acá, consumidos por otros módulos (HR, follow-ups, attendance).
+- **Tesorería / financiero:** define `annual-fees`. Tras la reestructuración, esta función vivirá en `budget`.
+
+#### Tablas principales
+
+| Tabla | Propósito |
+|---|---|
+| `system_config` | Configuración global (nombre, logo, colores, año actual, representante legal, Phidias, Calendar) |
+| `academic_years` | Años académicos con estado y rango de fechas |
+| `sections` | Secciones |
+| `grades` | Grados (con sección, orden, año de promoción) |
+| `courses` | Cursos/salones (con grado, orden, director) |
+| `academic_areas` | Áreas académicas (con coordinador) |
+| `academic_subjects` / `academic_subject_grades` | Asignaturas y su asociación con grados |
+| `academic_assignments` | Grilla de asignaciones docente-asignatura-curso por año |
+| `programs` | Programas especiales |
+| `families` | Familias con código único |
+| `students` | Estudiantes con vínculo a familia y curso |
+| `annual_fees` | Tarifas por grado/año |
+| `eps` | Catálogo de EPS |
+
+#### Dependencias con otros módulos
+
+- **`security`:** todas las funciones requieren permisos. `config.html` (página) migra al módulo `security`.
+- **`hr`:** consume `workers` para selectores de coordinadores y directores. Comparte `eps`.
+- **`budget`:** consume `annual-fees`. Tras la reestructuración, el permiso de tarifas vive en `budget`.
+- **Phidias:** sincronización unidireccional Phidias → SchoolNet en `students.html`. También se configura aquí la integración para asistencia.
+- **`follow-ups`, `early-alerts`, `new-students`, `services`, `events`, `procedures`, `admissions`:** todos consumen `students`, `courses`, `grades`, `sections`, `families` como entidades centrales.
+- **`indicators`, `surveys`:** consumen secciones, grados y áreas para segmentación.
+- **Google Calendar:** vinculación opcional vía Calendar ID (eventos institucionales / Días Tilatá).
+- **Google Apps Script:** notificaciones por email del módulo.
+
+#### Observaciones
+
+- **Inconsistencia detectada (Asignaturas):** el `index.html` del módulo lista "10 funciones principales", y otras páginas refieren a "Áreas y Asignaturas" como entidad gestionable, pero **no se encuentra un manual con filename `subjects.html` o `academic-subjects.html` indexado**. Posibles causas: (a) la gestión de asignaturas vive dentro de `academic-areas.html` o `academic-assignments.html` y no tiene página propia; (b) la página existe pero su manual no está indexado; (c) la funcionalidad no está implementada como entidad separada. **Acción:** confirmar con desarrollos.
+- **Confusión de naming entre `config.html` (página) y `config` (módulo):** el manual `config.html` documenta una página llamada "Configuración General" que es parte del módulo `config` pero migrará al módulo `security`. Cuando se ejecute la reestructuración, conviene renombrar el manual o moverlo a `/manual/security/config.html` para evitar ambigüedad.
+- **EPS aparece en `config` pero su uso es transversal:** la entidad EPS la consumen tanto estudiantes (`config`) como trabajadores (`hr`). Su ubicación en `config` es razonable (catálogo), pero documentar el uso transversal en el manual.
+- **Campos de familia no editables:** el código de familia es permanente. Si hay errores de captura, requiere corrección directa en BD. Documentado en el manual y reforzado en la UI.
+- **Sincronización Phidias unidireccional:** solo importa estudiantes nuevos. No actualiza ni borra. Cambios de curso, retiros, etc., deben hacerse manualmente en SchoolNet. Esto puede generar deriva entre Phidias y SchoolNet a mitad de año si los procesos administrativos no son rigurosos.
+- **Tarifas anuales requieren guardado fila por fila.** Cambios masivos no son atómicos. Si se cierra la página o se cambia de año sin guardar cada fila modificada, se pierden los cambios. Riesgo operativo a comunicar.
+- **Asignaciones académicas se guardan como bloque por grado.** El sistema avisa cambios sin guardar al cambiar de grado. Buena práctica: terminar y guardar un grado completo antes de pasar al siguiente.
+
+---
+
+### 9.4 `hr` — Talento Humano
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (18 páginas con manual). Es el módulo con mayor cobertura documental del sistema (junto con `services` y `general-tools`). |
+| **Notas de transición** | Dos movimientos pendientes según la reestructuración v2026: (a) `pedagogical-days.html` y `generar-dias-tilata.html` migran desde `general-tools` hacia `config` (no a `hr`); (b) la "Configuración general" de `config.html` migra a `security`. El módulo HR como tal no recibe ni envía permisos en la reestructuración. |
+
+#### Propósito
+
+Administra todo el ciclo del personal vinculado a la institución: estructura organizacional jerárquica, registro de trabajadores con sus datos personales/laborales, sistema completo de ausencias laborales (categorías, solicitudes, autorizaciones, saldos, calendario, reportes), gestión de paz y salvos para retiros o cambios de cargo, y herramienta de revisión de nómina por comparación de archivos CSV.
+
+Es el módulo más complejo del sistema en términos de reglas de negocio (categorías de ausencia configurables, plazos diferenciados de fin de mes, niveles de autorización en cadena, paz y salvos con deduplicación de revisores, jerarquía organizacional de 4 niveles).
+
+#### Conceptos clave
+
+##### Estructura organizacional (4 niveles)
+
+```
+División (Nivel 1)
+   └── Centro de Costo (Nivel 2)
+         └── Área / Sección (Nivel 3)
+               └── Subárea (Nivel 4)
+```
+
+- **División:** categoría principal por función general (ej. Académica, Administrativa, Servicios Generales, Docentes). Tiene responsable opcional.
+- **Centro de Costo:** subdivisión dentro de una división. Asociado a presupuesto. Centro especial: `Docencia` — identifica trabajadores docentes para procesos como paz y salvo masivo y derecho a CIE-10/sección académica.
+- **Área / Sección Organizacional:** tercer nivel, dentro de un centro de costo. *No confundir con secciones académicas (`config.sections`)* — son entidades distintas con el mismo término popular.
+- **Subárea:** nivel más detallado. Es donde se asignan los trabajadores. La métrica "Sin Estructura" del dashboard cuenta trabajadores sin subárea asignada.
+- **Cascada de activación:** para que una subárea aparezca en selectores, los cuatro niveles superiores deben estar activos. Una división inactiva oculta toda su rama.
+
+##### Roles laborales (independientes de la estructura)
+
+- **Roles/Cargos:** describen *qué hace* la persona (Docente de Matemáticas, Coordinador, Secretaria, Auxiliar). Son independientes de la estructura organizacional, que describe *dónde trabaja*.
+- **No son los mismos que los roles del módulo `security`.** Los roles de `hr` son etiquetas administrativas/laborales; los roles de `security` controlan permisos del sistema. Una persona puede tener roles laborales sin tener acceso al sistema, y viceversa.
+- **Un trabajador tiene un rol principal + opcionalmente roles secundarios.** Solo uno puede ser principal. Cambiar otro a principal degrada automáticamente al anterior.
+
+##### Trabajadores
+
+- Datos obligatorios: documento, primer nombre, primer apellido, email, género, fecha de nacimiento, fecha de ingreso, estado, división, centro de costo.
+- Datos opcionales: segundo apellido, calendario alternativo (para Calendario B), sección académica (`config.sections`, solo docentes), marca "trabajador de reemplazo".
+- **Trabajador de reemplazo:** marca booleana. Si está activa al crear, el sistema *no* asigna saldos automáticos de horas personales ni días de calamidad.
+- **Vinculación con `users`:** al crear un trabajador activo no-reemplazo, el sistema intenta crear automáticamente un usuario con username `inicialnombre+apellido` (ej. `jgarcia`), contraseña temporal `TempPass123!` y rol "Usuario base". Si ya existe un usuario activo con ese email, falla con mensaje específico.
+- **Jefes:** un trabajador tiene uno o más jefes asignados, con un único jefe principal. Determina a quién llegan las solicitudes de autorización.
+- **Ruta de formación:** se genera bajo demanda (botón en la fila del trabajador). Lee los roles del trabajador, busca unidades formativas asociadas, agrega las que faltan a su ruta. Vínculo con módulo `training`.
+
+##### Sistema de ausencias
+
+- **Categorías de ausencia:** entidades configurables que actúan como "recetas". Cada categoría define todas las reglas de negocio: si es pagada, si requiere autorización, niveles de autorización requeridos, si descuenta saldo, si controla límite, si es solo día completo, si requiere CIE-10, si notifica a jefes/sección/instancia superior, si es trabajo remoto, si admite repetición diaria (lactancia), si está restringida a Administrativos/Servicios Generales (días de descanso remunerado), días para auto-escalamiento a TH y a instancia superior.
+- **Tipo de conteo:** días hábiles (excluye fines de semana y festivos del calendario laboral) o días calendario.
+- **Repetición diaria:** modelo especial para lactancia — la trabajadora define rango y horas diarias; el sistema crea instancia repetida cada día hábil del rango.
+- **Saldos por trabajador:**
+  - Horas personales (límite anual configurable en `absence-config.html`).
+  - Días de calamidad (límite anual).
+  - Días de descanso remunerado (solo Administrativos y Servicios Generales).
+- **Inicialización de saldos:** acción anual que reemplaza saldos de todos los trabajadores activos con los valores configurados. Aplicar más de una vez al año reemplaza completamente los ajustes de inicialización anteriores (no los consumos por ausencias aprobadas).
+- **Niveles de autorización en cadena:** Jefe Directo → Talento Humano → Instancia Superior (Director de Sección o Estratega). Cada nivel debe aprobar para pasar al siguiente. Cualquier rechazo en la cadena rechaza la solicitud completa, sin importar aprobaciones previas.
+- **Plazos de registro retroactivo:** plazo normal (ej. 2 días después de la fecha de ausencia) y plazo de fin de mes reducido a partir del día configurado (ej. desde el 28). El personal de TH no tiene esta restricción.
+- **Inconsistencia:** un día con ausencia de día completo aprobada *y* registro de asistencia. Detectada en reportes y dashboard.
+- **Día injustificado:** día laborable sin asistencia ni ausencia aprobada.
+- **Estados de solicitud:** Pendiente → Aprobada / Rechazada / Cancelada.
+
+##### Calendario laboral
+
+- Organizado por **año académico** (agosto a julio, no calendario solar).
+- Tipos de día no laborable: Festivo, Receso Remunerado, Receso No Remunerado, Día Virtual.
+- **Día Virtual:** todo el personal trabaja remoto. Es día laboral, no afecta saldos.
+- **Aplicación de descuento de receso remunerado:** acción manual sobre cada receso. Descuenta los días hábiles del período al saldo de Administrativos y Servicios Generales. Marca "Aplicado" persistente, no se revierte automáticamente.
+- **Pre-carga de festivos colombianos:** función que calcula automáticamente festivos fijos, festivos Ley Emiliani (trasladados a lunes) y festivos variables (basados en fecha de Pascua: Jueves Santo, Viernes Santo, Ascensión, Corpus Christi, Sagrado Corazón).
+
+##### Paz y Salvos
+
+- **Áreas de paz y salvo:** dependencias del colegio que dan visto bueno de no-pendientes (ej. Biblioteca, Sistemas, Contabilidad, Inventarios). Cada área tiene un responsable.
+- **Administradores de paz y salvo:** trabajadores especiales con permiso para activar procesos y ver el panorama global. Definidos en `absence-config.html`. El acceso a la página `clearances.html` *no* usa el sistema de permisos tradicional — se calcula automáticamente por rol (admin / responsable de área / jefe / director de sección).
+- **Activación individual:** un proceso para un trabajador específico (típico de retiro o cambio de cargo).
+- **Activación masiva:** genera procesos para todos los docentes activos (centro de costo = Docencia). Típico de cierre de año escolar.
+- **Generación automática de checks:** al activar, el sistema crea un check por cada área activa + director de sección (si docente) + cada jefe directo del trabajador. Aplica deduplicación: si una persona cumple varios roles para el mismo trabajador, recibe un solo check.
+- **Estados de check:** otorgado (verde) / pendiente (naranja). Con observaciones opcionales.
+- **Cierre por trabajador:** cuando todos los checks están otorgados, el administrador puede cerrar el paz y salvo del trabajador. Una vez cerrado, no se permite reabrir desde la UI.
+- **Completar proceso vs. cancelar proceso:** *Completar* cierra todos los paz y salvos pendientes del proceso aunque no estén otorgados (acción agresiva, usar con cuidado). *Cancelar* anula el proceso conservando los registros.
+
+##### Revisión de nómina
+
+- Herramienta cliente-side que compara dos archivos CSV (mes anterior vs. mes actual).
+- **Procesamiento local:** los archivos no se suben a ningún servidor — todo ocurre en el navegador. Punto de seguridad/confidencialidad.
+- Detecta: registros nuevos, posibles retiros, diferencias en valores.
+- Salida: archivo `diferencias_nomina.csv` con columna "Inconsistencia" describiendo el tipo.
+- Formato esperado del CSV: documento, nombre, _, código concepto, nombre concepto, _, valor.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | Inicio del módulo con métricas de configuración | Acceso al módulo | ✓ |
+| **Configuración estructural** | | | |
+| `divisions.html` | Divisiones Organizacionales | Divisiones | ✓ |
+| `cost-centers.html` | Centros de Costo (con división) | Centros de costos | ✓ |
+| `organizational-areas.html` | Secciones / Áreas Organizacionales | Secciones / Áreas | ✓ |
+| `subareas.html` | Subáreas | Subáreas | ✓ |
+| `job-roles.html` | Roles y Cargos laborales | Roles y cargos | ✓ |
+| `absence-config.html` | Configuración de TH (límites, correos, plazos, jornada, áreas y admin de paz y salvo) | Configurar ausencias | ✓ |
+| **Personal** | | | |
+| `workers.html` | Gestionar Trabajadores (crea usuario y ruta de formación bajo demanda) | Gestionar trabajadores | ✓ |
+| `payroll-review.html` | Revisión de Nómina (comparación CSV cliente-side) | Revisión de nómina | ✓ |
+| **Ausencias** | | | |
+| `absence-categories.html` | Categorías de Ausencias | Gestionar categorías de ausencias | ✓ |
+| `work-calendar.html` | Calendario Laboral (por año académico) | Configurar calendario laboral | ✓ |
+| `request-absence.html` | Solicitar Ausencia (mi propia solicitud) | Solicitar ausencias | ✓ |
+| `authorize-absences.html` | Autorizar Ausencias (aprobar/rechazar) | (Acceso por asignación, no por permiso) | ✓ |
+| `adjust-balances.html` | Ajustar Saldos (manual, individual) | Ajustar saldos de ausencias | ✓ |
+| `manage-absences.html` | Gestionar Ausencias (administración global) | Gestionar todas las ausencias | ✓ |
+| **Paz y Salvos** | | | |
+| `clearances.html` | Paz y Salvos (activación, panorama, checks) | (Acceso por asignación, no por permiso) | ✓ |
+| **Reportes** | | | |
+| `hr-dashboard.html` | Dashboard ejecutivo de TH | Ver dashboard de talento humano | ✓ |
+| `absence-reports.html` | Reportes de Ausencias (4 tipos, exportables a Excel) | Ver reportes de ausencias | ✓ |
+
+#### Flujos típicos
+
+- **Onboarding completo de un trabajador:** crear divisiones → centros de costo → áreas → subáreas → roles laborales → en `workers.html`, formulario de 5 pestañas (Información Personal → Ubicación Organizacional en cascada → Roles → Jefes → Resumen) → al guardar, sistema asigna saldos automáticos (si activo, no-reemplazo) y crea usuario en sistema → opcionalmente, generar ruta de formación.
+- **Solicitud de ausencia (vista del trabajador):** el trabajador entra a `request-absence.html`, ve sus saldos, selecciona categoría → el formulario se adapta (día completo vs. horas, con/sin reemplazo) → adjunta soportes (PDF, imagen, foto desde cámara) → envía → el sistema valida saldo, crea autorizaciones según niveles requeridos por la categoría, notifica a jefes.
+- **Autorización de ausencia (vista del jefe):** llega correo → el jefe entra a `authorize-absences.html` → ve solicitudes con su nivel de autorización (Jefe Directo / TH / Instancia Superior) → revisa detalle, soportes, timeline → aprueba (con comentario opcional) o rechaza (con motivo obligatorio) → si era el último nivel, sistema notifica al trabajador y al reemplazo, descuenta saldo si la categoría lo exige.
+- **Ausencia administrativa (vista del personal de TH):** entra a `manage-absences.html` → puede crear solicitud para *cualquier* trabajador, eligiendo estado inicial Pendiente o Aprobada (esta última registra la ausencia sin requerir autorizaciones, útil para ausencias ya autorizadas por otros canales) → puede editar solicitudes existentes (sin cambiar estado) → puede agregar archivos a solicitudes ya creadas.
+- **Inicialización anual de saldos:** en `absence-config.html`, configurar límites anuales (horas personales, días de calamidad, máx. horas por cita médica, días de descanso remunerado) → guardar configuración → ejecutar "Inicializar Saldos" → sistema reemplaza saldos de todos los trabajadores activos. Operación una vez al año.
+- **Ajuste manual de saldo (excepción):** en `adjust-balances.html`, buscar trabajador → tipo de saldo (horas o días de calamidad) → cantidad (positiva suma, negativa resta) → razón obligatoria → aplicar. Cada ajuste queda en historial inmutable con autor y fecha. Para corregir un ajuste se crea otro con valor opuesto.
+- **Cierre anual con paz y salvos masivos:** activar proceso masivo en `clearances.html` (genera checks para todos los docentes activos × todas las áreas × director de sección × jefes) → revisores entran a su panel "Mis Checks" → otorgan o no, con observaciones → administrador monitorea panorama matricial → cierra trabajadores individualmente cuando completan todos sus checks → al final del proceso, "Completar Proceso" cierra el resto.
+- **Revisión mensual de nómina:** exportar CSV de nómina del mes anterior y del actual desde sistema externo → cargar ambos en `payroll-review.html` → procesamiento local en navegador → descargar `diferencias_nomina.csv` → analizar en Excel.
+
+#### Roles típicos
+
+- **Gestor de Talento Humano:** rol con todos los permisos del módulo. Único rol que ve las métricas del `index.html`.
+- **Super Administrador:** mismo acceso que Gestor de TH + funciones de administradores de paz y salvo.
+- **Coordinadores y administrativos:** consumen la información de estructura y roles, pero no la editan.
+- **Cualquier trabajador:** acceso a `request-absence.html` (sus propias solicitudes) y al historial de sus ausencias.
+- **Jefes y directores de sección:** acceso a `authorize-absences.html` para sus subordinados; acceso a su panel de paz y salvo para los trabajadores donde tienen check asignado. Sin permiso explícito requerido — el acceso se determina por asignación.
+- **Responsables de áreas de paz y salvo:** acceso al panel "Mis Checks" en `clearances.html`. Sin permiso explícito.
+- **Administradores de paz y salvo:** trabajadores listados en `absence-config.html` como administradores. Pueden activar procesos y ver el panorama completo. Sin permiso explícito de sistema; lista hardcodeada en configuración del módulo.
+- **Estratega de división:** definido externamente (no se gestiona desde HR). Recibe notificaciones de ausencias con flag "Notificar a instancia superior".
+
+#### Tablas principales
+
+> Nombres tentativos a confirmar contra la BD del proyecto antes de cualquier desarrollo.
+
+| Tabla | Propósito |
+|---|---|
+| `workers` | Trabajadores (con vínculo a subárea, jefes, sección académica, RFID, marca de reemplazo, calendario alternativo) |
+| `worker_roles` | Vínculo trabajador ↔ rol laboral (con flag de principal) |
+| `worker_managers` | Vínculo trabajador ↔ jefe (con flag de principal) |
+| `divisions` | Divisiones organizacionales |
+| `cost_centers` | Centros de costo (con división) |
+| `organizational_areas` | Áreas/Secciones (con centro de costo) |
+| `subareas` | Subáreas (con área) |
+| `job_roles` | Catálogo de roles/cargos laborales |
+| `absence_categories` | Categorías de ausencia con todas sus reglas configurables |
+| `absences` o `absence_requests` | Solicitudes de ausencia (con estado, fechas, horas, totales, descripción) |
+| `absence_authorizations` | Niveles de autorización por solicitud (con estado, autorizador, fecha, comentario) |
+| `absence_files` | Archivos adjuntos a solicitudes |
+| `absence_balances` | Saldos por trabajador (horas personales, días de calamidad, días de descanso) |
+| `absence_balance_adjustments` | Historial inmutable de ajustes manuales y de inicialización |
+| `attendance_records` o equivalente | Registros de entrada/asistencia (consumido por reportes de inconsistencias) |
+| `work_calendar_periods` | Períodos no laborables por año académico |
+| `clearance_areas` | Áreas configurables de paz y salvo (con responsable, orden, estado) |
+| `clearance_admins` | Trabajadores con privilegios de administrador de paz y salvo |
+| `clearance_processes` | Procesos de paz y salvo (individual o masivo, con motivo y notas) |
+| `clearance_checks` | Checks individuales (trabajador × revisor × proceso) con estado y observaciones |
+| Configuración HR | Posiblemente en `system_config` o tabla específica: límites, correos por sección, plazos, jornada |
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos. Vinculación bidireccional usuario ↔ trabajador por email. La creación de usuario al alta de trabajador toca tablas de `security`.
+- **`config`:** consume `eps` (catálogo compartido), `sections` (sección académica para docentes). La métrica "Sin Estructura" del dashboard depende de `subareas` correctamente asignadas.
+- **`training`:** la generación automática de "ruta de formación" en `workers.html` lee unidades formativas asociadas a roles laborales. Si `training` no está implementado, el botón puede fallar.
+- **`procedures`:** los responsables de pasos manuales se eligen de `workers` activos.
+- **`budget`:** centros de costo de `hr` aplican también a presupuesto. Los autorizadores presupuestales son trabajadores (con `worker_email_legacy` para retro-compatibilidad documentada en bitácora del proyecto).
+- **`indicators`, `surveys`:** segmentaciones por sección, centro de costo, área pueden usar la estructura de HR.
+- **Phidias:** posible cruce con asistencia (a confirmar). El reporte de inconsistencias asume disponibilidad de registros de asistencia.
+- **Google Apps Script:** envía correos de notificación de solicitudes y autorizaciones a los emails configurados por sección y a la coordinación de TH.
+- **Cron jobs:** documentado en bitácora — cron de ausencias automáticas corre 1 AM Colombia días hábiles, procesando D-2.
+
+#### Observaciones
+
+- **Tres entidades distintas que se llaman "sección" en el sistema.** Causa de confusión recurrente:
+  - **Sección académica** (`config.sections`): Preescolar, Primaria, Bachillerato, Media. Asignada a docentes.
+  - **Sección/Área Organizacional** (`hr.organizational_areas`): tercer nivel de la estructura HR (no relacionado con sección académica).
+  - **Sección de un curso**: agrupación de estudiantes dentro de un grado (también en `config`).
+  Documentar en glosario como prioridad.
+- **Sistema de permisos paralelo en `clearances.html`.** No usa `permissions` tradicionales — calcula acceso por rol funcional (admin de paz y salvo / responsable de área / jefe / director de sección). Esta excepción debe documentarse en Capa 1 como decisión arquitectónica.
+- **Inicialización de saldos no es idempotente en cuanto a inicializaciones previas:** cada ejecución *reemplaza* los registros de inicialización anteriores. Los consumos por ausencias aprobadas no se afectan. Riesgo: ejecutar dos veces en el año con valores distintos puede generar inconsistencias percibidas si no se entiende que reemplaza.
+- **Aplicación de descuento de receso remunerado no es reversible automáticamente.** Si se elimina un período al que ya se aplicó, los descuentos en saldos quedan. Requiere ajustes manuales individuales. Documentado en el manual pero conviene un alert en UI antes de eliminar.
+- **Los plazos de fin de mes son una regla de negocio fuerte que excluye a TH.** La excepción para personal de TH no está claramente expuesta en `request-absence.html` para usuarios finales — aparece solo en la sección "Notas" del manual. Considerar mostrar el plazo aplicable en la UI.
+- **Edición de solicitudes en `manage-absences.html` no recalcula autorizaciones.** Si se cambia trabajador, categoría o fechas, las autorizaciones existentes no se invalidan. Riesgo conceptual: una solicitud aprobada por A para B puede terminar a nombre de C sin nueva autorización. Documentado en el manual como característica deliberada (no se modifica el estado), pero amerita política institucional clara.
+- **Crear solicitud como "Aprobada" desde `manage-absences.html` salta toda la cadena de autorizaciones.** Función poderosa para casos justificados. Debería auditarse con frecuencia para detectar abuso.
+- **Reportes de ausencias solo consideran trabajadores activos.** Si un trabajador fue inactivado, su histórico desaparece de los reportes. Esto puede ser problemático para auditorías de períodos pasados.
+- **Inactivar usuario en sistema vs. inactivar trabajador en HR no están sincronizados explícitamente.** Un trabajador inactivo todavía puede tener usuario activo y viceversa. La documentación menciona que al crear trabajador se crea usuario, pero no documenta el cierre coordinado al inactivar.
+- **No hay cancelación de solicitud por parte del trabajador.** Una vez enviada, el trabajador no puede retirarla — debe pedir a TH. Posible mejora futura: permitir cancelación de solicitudes en estado Pendiente por el solicitante original.
+- **`payroll-review.html` no guarda historial.** Cada comparación se pierde al cerrar la página. Si se requiere auditoría de revisiones de nómina, hoy depende de que el operador guarde manualmente el CSV resultante.
+- **Función "Generar ruta de formación" depende de `training`.** Si ese módulo no está implementado o sus tablas están vacías, el botón puede aparentar funcionar (sin agregar nada) o fallar silenciosamente. Verificar comportamiento en QA.
+- **Pre-carga de festivos colombianos hardcoded.** Si se quiere usar el sistema en otro país, hay que reescribir esa función. Posible refactor: tabla `country_holidays` parametrizable.
+- **Validación de fechas: el calendario laboral debe estar al día para que los reportes y el cálculo de días hábiles sean correctos.** Si nadie pre-carga festivos al inicio del año, el cálculo de días injustificados se distorsiona. Considerar alerta automática a inicio de año si el calendario está vacío.
+- **El módulo es candidato a tener su propio documento detallado** dado el volumen de reglas de negocio. Esta ficha es una vista de gestión; una documentación técnica completa probablemente excede el formato del macro.
+
+---
+
+### 9.5 `early-alerts` — Alertas Tempranas
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (5 páginas con manual, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Sin movimientos en la reestructuración v2026. Módulo autocontenido. |
+
+#### Propósito
+
+Sistema de detección y seguimiento de situaciones de riesgo a **nivel de familia** (no de estudiante individual — esta es la diferencia clave frente a `follow-ups`). Permite documentar situaciones familiares que afectan el bienestar y proceso educativo de los estudiantes (situación económica, violencia intrafamiliar, problemas de salud, contexto familiar complejo, etc.) y dar seguimiento mediante asignación de tareas a trabajadores.
+
+El enfoque "familia" implica que cuando se registra una alerta, todos los estudiantes de esa familia quedan asociados al caso, lo que permite atender el contexto completo en lugar de tratar a cada hermano por separado.
+
+#### Conceptos clave
+
+- **Alerta:** registro a nivel de familia con causa, descripción y estado de severidad.
+- **Tres estados de severidad (semáforo):**
+  - **Rojo / Crítico:** atención inmediata.
+  - **Amarillo / Moderado:** seguimiento cercano.
+  - **Verde / Leve:** monitoreo, no urgente.
+- **Causas (catálogo):** entidades configurables que clasifican el tipo de alerta (Bajo rendimiento académico, Inasistencias frecuentes, Problemas de convivencia, Situación familiar compleja, etc.). Gestionadas en `alert-types.html`. Pueden activarse/desactivarse pero no eliminarse si tienen alertas asociadas.
+- **Tarea de seguimiento:** acción asignada a un trabajador específico desde la gestión de la alerta. Tiene descripción, responsable, progreso y estado (Asignada / En progreso / Cerrada). El cierre de tarea es irreversible.
+- **Cierre de alerta:** acción irreversible. Una vez cerrada, no se puede reabrir, modificar el estado ni agregar tareas. Si la situación reaparece, se crea nueva alerta.
+- **Carga diferida de métricas:** las métricas del índice del módulo no se calculan automáticamente al cargar la página. El usuario debe presionar "Cargar Métricas" — decisión de optimización para no penalizar la apertura del módulo.
+- **Visibilidad por rol:** `Estrategas` y `Super Admin` ven todo; `Directivo docente` ve solo familias cuyos estudiantes pertenecen a su sección; otros roles no ven métricas. El filtro de sección en el dashboard se pre-selecciona automáticamente para Directivos docentes.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | Inicio del módulo con métricas (carga diferida) | Acceso al módulo | ✓ |
+| `alert-types.html` | Causas de Alertas (catálogo) | Causas de alertas tempranas | ✓ |
+| `register-alerts.html` | Registrar Alertas | Registro de alertas | ✓ |
+| `manage-alerts.html` | Gestionar Alertas (cambio de estado, tareas, cierre) | Gestión de alertas tempranas | ✓ |
+| `dashboard.html` | Tablero de Control (vista ejecutiva) | Tablero de control de alertas tempranas | ✓ |
+
+**Permiso adicional sin página propia:** `Atender gestiones asignadas` — permite a un trabajador ver y actualizar las tareas que le fueron asignadas, sin acceso completo al módulo.
+
+#### Flujos típicos
+
+- **Configuración inicial:** definir el catálogo de causas en `alert-types.html` antes de empezar a registrar alertas.
+- **Registro:** desde `register-alerts.html`, seleccionar familia → ver tarjetas con todos los estudiantes de esa familia (foto, curso, edad) → seleccionar tipo de causa → estado inicial (Rojo/Amarillo/Verde) → descripción detallada en editor de texto → enviar. El sistema notifica automáticamente a los responsables.
+- **Gestión:** desde `manage-alerts.html`, filtrar por causa/estado/sección → abrir alerta → cambiar estado en línea (degradación típica Rojo→Amarillo→Verde a medida que mejora la situación) → "Gestionar" para abrir tareas → asignar nuevas tareas a trabajadores con notificación por correo → cerrar tareas individuales → cerrar la alerta cuando la situación esté resuelta.
+- **Análisis:** `dashboard.html` muestra métricas (totales, distribución por sección, top 5 causas, alertas por trabajador, tendencia 6 meses, alertas recientes 10 últimas). Filtrable por período, sección y estado. No actualiza en tiempo real — los datos se cargan al abrir o al aplicar filtros.
+
+#### Roles típicos
+
+- **Estrategas:** ven y gestionan alertas de toda la institución. Métricas globales.
+- **Super Administradores:** mismo alcance que Estrategas.
+- **Directivos docentes (Directores de sección):** ven y gestionan alertas de familias con estudiantes en su sección. Métricas filtradas a su sección.
+- **Trabajadores asignados a tareas:** acceden a sus tareas vía permiso `Atender gestiones asignadas`. Sin acceso al módulo completo.
+- **Padres / estudiantes:** sin acceso. Las alertas son información interna confidencial.
+
+#### Tablas principales
+
+> Nombres tentativos a confirmar contra la BD del proyecto.
+
+| Tabla | Propósito |
+|---|---|
+| `alerts` o equivalente | Alertas tempranas (con familia, causa, estado, descripción, fecha, autor, estado abierto/cerrado, fecha de cierre) |
+| `alert_types` | Catálogo de causas (con nombre, descripción, estado activo/inactivo) |
+| `alert_tasks` | Tareas de seguimiento por alerta (responsable, descripción, progreso, estado, fechas) |
+| `families` (config) | Familias afectadas por alertas |
+| `students` (config) | Estudiantes asociados (vía familia) — visualizados en las tarjetas |
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos. Los roles `Estrategas` y `Directivo docente` deben existir y estar correctamente asignados.
+- **`config`:** consume `families` (entidad central del módulo) y `students` (para mostrar tarjetas con foto/curso/edad). La sección académica para filtros viene de `config.sections`.
+- **`hr` / `workers`:** los responsables de tareas se eligen de trabajadores activos.
+- **Sistema de notificaciones (Apps Script):** envía correos al asignar tareas. Las alertas mismas pueden generar notificación al crearse (a confirmar quiénes son los destinatarios — los manuales mencionan que llegan a "personas designadas por la institución para gestionar alertas tempranas, generalmente dirección o el área de bienestar estudiantil"). Configuración específica institucional, no documentada en los manuales.
+
+#### Observaciones
+
+- **Diferencia conceptual clave con `follow-ups`:** Alertas Tempranas = nivel familia; Seguimientos = nivel estudiante individual (con sub-tipos: individual, grupal, EAE, confidencial). Conviene documentar esta distinción en el glosario y en cualquier capacitación de usuarios — confundir los dos módulos es el error de uso más probable.
+- **Cierre irreversible** tanto de alertas como de tareas. Sin opción de reapertura desde UI. Si se requiere "reabrir", el flujo institucional es crear nueva alerta. Considerar política para casos donde la situación reaparece — ¿se considera continuación o nuevo caso?
+- **Sin cancelación por parte del solicitante:** el patrón es consistente con el resto de SchoolNet (mismo problema en `hr.request-absence` y otros módulos). Solo administradores pueden cancelar/cerrar.
+- **Carga diferida de métricas en index** — patrón aplicado solo aquí entre los módulos procesados hasta ahora. En otros módulos las métricas son automáticas. Convendría unificar el patrón a nivel plataforma (o documentar por qué este módulo es excepción).
+- **El reportador no es visible en el módulo a otros usuarios:** los manuales mencionan que el sistema registra quién creó la alerta pero no documentan dónde se exhibe ese dato. Verificar si aparece en la gestión.
+- **Confidencialidad alta:** los manuales son enfáticos sobre la sensibilidad. Aplica auditoría de accesos a `alerts` como buena práctica (vía `audit_log` de `security`).
+- **Visibilidad para Directivo Docente filtrada por sección:** funciona porque las familias se vinculan a estudiantes y los estudiantes a cursos/secciones. Si un estudiante de una familia cambia de sección a mitad de año, podría haber inconsistencias en quién puede ver qué. A confirmar.
+- **No hay exportación directa** ni del dashboard ni de listados. Limitación documentada. Si se requiere reporte para consejo directivo o entes externos, hoy depende de capturas de pantalla.
+- **Aún no hay vista para el trabajador asignado** documentada con manual propio (el permiso `Atender gestiones asignadas` existe pero su página no aparece en el inventario indexado). Verificar si la vista está implementada o pendiente.
+
+---
+
+### 9.6 `follow-ups` — Seguimientos
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (15 páginas indexadas, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Sin movimientos en la reestructuración v2026. Módulo autocontenido. |
+
+#### Propósito
+
+Sistema central de **seguimiento académico, disciplinario y de acompañamiento a estudiantes individuales**. Permite documentar incidencias, observaciones, situaciones especiales y procesos de apoyo, manteniendo historial completo por estudiante y facilitando la coordinación entre el equipo docente, directivo y de orientación.
+
+A diferencia de `early-alerts` (que opera a nivel de familia), `follow-ups` opera a nivel de **estudiante individual** (con un caso especial: los asuntos grupales aplican a curso/promoción completa).
+
+#### Conceptos clave
+
+##### Tipos de registros
+
+El módulo distingue **cuatro tipos de registros** con tablas, permisos y reglas distintas:
+
+| Tipo | Tabla principal | Confidencialidad | Categorización | Uso |
+|---|---|---|---|---|
+| **Asunto Individual** | `stm_students_topics` | Regular | Sí, múltiple | Seguimiento académico/disciplinario común |
+| **Asunto Grupal** | `stm_prom_topics` | Regular | Sí, múltiple | Situación que afecta a un curso completo |
+| **Asunto EAE** | Ver nota abajo | Sensible | Sí, múltiple | Casos del Equipo de Apoyo Estudiantil (acompañamiento profesional) |
+| **Nota Confidencial** | `stm_confidential_notes` (separada) | Máxima | No (todas son confidenciales por igual) | Información extremadamente sensible (familiar, médica, psicológica) |
+
+> **⚠ Ambigüedad documental sobre EAE.** Los manuales de las páginas EAE (registro, gestión, revisión) describen el modelo como `stm_students_topics` con flag `is_eae = true` —es decir, los asuntos EAE comparten tabla con los individuales y se distinguen por bandera. Sin embargo, en la BD del proyecto existe una tabla separada llamada `eae_topics` con campos especializados (`supports`, `actions`, `recommendations`, `followup`, `topic_conclusion`, `topic_strategy`, `confidential_note`) y referencias a `gas_student_id` / `gas_worker_id`. Los dos modelos no son compatibles. Posibilidades: (a) `eae_topics` es legacy de un módulo anterior y no se usa hoy; (b) `eae_topics` se usa para algún flujo concreto que los manuales no documentan; (c) los manuales reflejan una refactorización anterior y la tabla `eae_topics` se quedó. **Acción pendiente:** verificar contra el código de las páginas EAE qué tabla consultan realmente. Hasta resolverlo, este punto se mantiene como observación abierta.
+
+##### Banderas y estados
+
+- **`is_open`:** estado del registro. `'SI'` = editable por el creador; `'NO'` = cerrado, solo lectura. El cierre lo hacen directores/administradores. Irreversible desde UI.
+- **`is_escalable`:** indica si el asunto debe escalarse para conocimiento de directivos. Los asuntos grupales se marcan como escalables siempre. En individuales, depende del caso y se decide en `review-individual-issues`.
+- **`is_eae`:** flag que (según los manuales) distingue Asuntos EAE de Asuntos Individuales regulares en la misma tabla. Ver ambigüedad documental señalada arriba.
+- **Categorías:** entidades configurables en `categories.html`. Cada asunto puede tener varias. Las notas confidenciales NO usan categorías (decisión deliberada — categorizar facilitaría búsquedas inadvertidas de información sensible).
+
+##### Flujo de triage de asuntos individuales (escalable / no escalable)
+
+Los asuntos individuales tienen un flujo de **clasificación y cierre** que involucra tres páginas distintas:
+
+1. **Registro** (`individual-issues.html` o `eae-issues.html`): docente o EAE crea el asunto. Por defecto queda con `is_escalable` sin definir o en un valor por defecto.
+2. **Triage** (`review-individual-issues.html`): el director del curso revisa los asuntos abiertos de sus cursos y los clasifica como `is_escalable = 'SI'` o `'NO'` mediante un selector inline en la tabla. El cambio se guarda al instante (PATCH directo sobre `stm_students_topics`). La clasificación es reversible mientras el asunto esté abierto.
+3. **Cierre según clasificación**:
+   - Si `is_escalable = 'NO'` → director del curso cierra desde `manage-unescalated-issues.html` (un solo botón "Cerrar", sin documentación adicional).
+   - Si `is_escalable = 'SI'` → cierre desde una función "Gestionar Asuntos Escalables" que los manuales mencionan repetidamente pero **sin manual indexado en el módulo**. Probablemente requiere documentar conclusión y estrategia antes de cerrar.
+
+**Asimetría intencional:** los asuntos no escalables pueden cerrarse "rápido" (solo el botón); los escalables requieren documentación porque son más graves. Es coherente con el principio del módulo: dejar trazabilidad proporcional a la gravedad.
+
+##### Asignación de usuarios a cursos (`user-course-assignments`)
+
+Función exclusiva de directores de sección (validación hardcoded, no por permiso tradicional). Permite designar trabajadores responsables de cada curso para tareas de seguimiento.
+
+- **Patrón destructivo de guardado:** al pulsar "Guardar asignaciones", el sistema **reemplaza completamente** la lista de asignados del curso. No agrega ni quita selectivamente. Implicación: si el director ve 5 asignados existentes, marca 2 nuevos sin verificar los anteriores y guarda, los 5 originales se pierden y solo quedan los 2 marcados.
+- El propio manual destaca esta característica con advertencia explícita.
+- **Filtro por centro de costos** obligatorio para mostrar la lista de trabajadores. Sin filtro, no se ve a nadie.
+- Visualización: trabajadores ya asignados aparecen resaltados en verde con casilla pre-marcada. Sirve como "memoria visual" para evitar el riesgo destructivo del párrafo anterior.
+- **No envía notificaciones** al ser asignado o desasignado de un curso. La comunicación es manual.
+
+##### Recursos asociados a estudiantes (desde `course-follow-ups.html`)
+
+Además de los cuatro tipos de registros, el módulo gestiona desde la vista por curso:
+
+- **Tareas:** acciones asignadas a trabajadores con fecha límite, descripción y progreso. Estados: Asignada, En proceso, Completada, Cancelada.
+- **Documentos:** vinculaciones a archivos en Google Drive (no se sube el archivo, solo el enlace). Con descripción y autor.
+- **Estrategias:** plan de acompañamiento personalizado por estudiante. Solo **una abierta a la vez**. Cierre irreversible. Historial completo en "Estrategias Anteriores".
+- **Metas (con semáforo Rojo/Amarillo/Verde):** **funcionalidad temporalmente deshabilitada** según `general-queries.html`. La pestaña "Estado Metas" existe en la UI pero retorna mensaje de no disponible.
+
+##### Editor enriquecido
+
+Casi todas las páginas usan **Quill 1.3.6** (CDN, tema Snow, altura 200px). Almacenamiento como HTML completo. Formatos: encabezados H1–H3, negrita, cursiva, subrayado, tachado, listas, enlaces. Indicador visual de validez (borde verde con contenido suficiente; rojo cuando está vacío).
+
+##### Búsqueda inteligente de estudiantes
+
+Patrón replicado en varias páginas: autocompletado con debounce de 500–600 ms a partir de 2 caracteres, búsqueda por nombre/apellido/segundo apellido, navegación con flechas y Enter, hasta 15–20 resultados, foto del estudiante mostrada al seleccionar. **Selección obligatoria de la lista** — escribir el nombre sin seleccionar invalida la operación.
+
+##### Permiso universal en sidebar (post-reestructuración)
+
+Algunos accesos del módulo aparecen como universales en `my-space` (a confirmar específicamente cuáles). El acceso a `follow-ups` desde el sidebar respeta el sistema de permisos estándar.
+
+#### Funcionalidades
+
+| Página | Grupo | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | — | Acceso al módulo | ✓ |
+| `categories.html` | Configuración | Gestionar categorías | ✓ |
+| `user-course-assignments.html` | Configuración | Asignar usuarios a cursos | ✓ |
+| `individual-issues.html` | Registro | Registrar asuntos individuales | ✓ |
+| `group-issues.html` | Registro | Registrar asuntos grupales | ✓ |
+| `eae-issues.html` | Registro | Registrar asuntos EAE | ✓ |
+| `confidential-notes.html` | Registro | Notas confidenciales | ✓ |
+| `review-individual-issues.html` | Gestión | Revisar asuntos individuales | ✓ |
+| `manage-unescalated-issues.html` | Gestión | Gestionar asuntos no escalados | ✓ |
+| `manage-group-issues.html` | Gestión | Gestionar asuntos grupales | ✓ |
+| `manage-eae-issues.html` | Gestión | Gestionar asuntos EAE | ✓ |
+| `course-follow-ups.html` | Gestión | Seguimientos por cursos | ✓ |
+| `course-follow-up-queries.html` | Consultas | Consultas a seguimientos por cursos | ✓ |
+| `query-confidential-notes.html` | Consultas | Consultar notas confidenciales | ✓ |
+| `general-queries.html` | Consultas | Consultas | ✓ |
+
+> Total: 14 funciones + index = 15 manuales. Todos procesados.
+
+#### Flujos típicos
+
+- **Configuración inicial:** crear catálogo de categorías en `categories.html`. Asignar usuarios responsables a cursos en `assign-users-to-courses.html` (solo directores de sección).
+- **Registro de asunto individual (caso más común):** docente abre `individual-issues.html` → busca al estudiante con autocompletado → describe en editor Quill → selecciona una o varias categorías → guarda → sistema notifica al director del curso y al director de sección. Mientras el registro esté abierto, puede editarlo desde "Mis registros".
+- **Registro de asunto grupal:** un director de curso registra desde `group-issues.html` → selecciona el curso (organizado por sección > grado > curso) → categorías → descripción → guarda → notifica siempre al director de curso *y* al director de sección. Marcado siempre como escalable.
+- **Registro de asunto EAE:** miembro del Equipo de Apoyo Estudiantil registra desde `eae-issues.html` → mismo flujo que individual pero con `is_eae = true`. La notificación a directores no distingue visualmente que es un EAE (los directores ven "Nuevo Asunto Individual Registrado" igual que en los regulares).
+- **Registro de nota confidencial:** registrante autorizado abre `confidential-notes.html` → busca estudiante → describe en editor (sin categorías) → guarda. El registro va a tabla separada (`stm_confidential_notes`), notifica a directores con encabezado especial "Nueva Nota Confidencial" y advertencia explícita de confidencialidad. Solo visible para personal con permisos específicos.
+- **Vista por curso del director:** director abre `course-follow-ups.html` → selecciona curso → ve tabla de estudiantes con cinco contadores por estudiante (E.A.E, Asuntos, Tareas, Documentos, Estrategias). Click en cada botón abre modal con detalle. Desde aquí puede crear tareas (con notificación por correo al responsable), vincular documentos de Google Drive, gestionar estrategias (crear/editar/cerrar), pero los asuntos son solo lectura (su gestión es desde otras páginas).
+- **Vista de consulta por curso (read-only):** misma información que la anterior pero sin opciones de creación/edición. Para directivos que solo necesitan revisar.
+- **Consultas analíticas:** `general-queries.html` ofrece **siete pestañas** (Historia Estudiante, Asuntos Promoción, Estadísticas, Análisis Tareas, Estado Metas, Reportes, Búsqueda Avanzada). Cada una con filtros propios. La pestaña Metas está deshabilitada actualmente.
+- **Edición de registros propios:** el creador puede editar la descripción y categorías de un registro mientras esté abierto, desde un botón "Mis registros" en cada página de registro. Lista hasta 50 registros editables.
+
+#### Roles típicos
+
+- **Docentes:** registran asuntos individuales y notas confidenciales (si tienen el permiso). Pueden ser asignados como responsables de tareas.
+- **Directores de curso:** registran asuntos individuales y grupales del curso que dirigen. Acceden a `course-follow-ups.html` para sus cursos. Reciben todas las notificaciones de asuntos de sus estudiantes. Cierran asuntos cuando se resuelven.
+- **Directores de sección:** acceden a `course-follow-ups.html` para todos los cursos de su sección. Asignan responsables de cursos en `assign-users-to-courses.html`. Reciben notificaciones de asuntos cuando son distintos del director del curso.
+- **Equipo de Apoyo Estudiantil (EAE):** registran y gestionan asuntos EAE (`eae-issues.html`, `manage-eae-issues.html`). Acceso especial a documentos confidenciales del EAE.
+- **Personal autorizado para confidencialidad:** registran y consultan notas confidenciales. Acceso máximamente restringido.
+- **Administradores / Estrategas:** acceso global, vistas de consulta general (`general-queries.html`).
+
+#### Tablas principales
+
+| Tabla | Propósito |
+|---|---|
+| `stm_students_topics` | Asuntos a nivel estudiante. Campos clave: `topic_id`, `student_id`, `topic_date`, `topic_description`, `email` (autor), `is_open`, `is_escalable`, posiblemente `is_eae` |
+| `stm_students_topics_categories` | Vínculo asunto individual ↔ categoría (muchos a muchos) |
+| `stm_prom_topics` | Asuntos a nivel curso/promoción |
+| `stm_prom_topics_categories` | Vínculo asunto grupal ↔ categoría |
+| `stm_confidential_notes` | Notas confidenciales (tabla separada con campos restringidos: sin categorías, sin escalable, con autor, con timestamps) |
+| `stm_category` | Catálogo de categorías compartido entre asuntos individuales y grupales |
+| `eae_topics` | **Tabla observada en BD pero con uso ambiguo.** Campos: `eae_topic_id`, `gas_student_id`, `gas_worker_id`, `topic_date`, `topic_description`, `supports`, `actions`, `recommendations`, `followup`, `topic_conclusion`, `topic_strategy`, `is_open`, `confidential_note`. Los manuales no la mencionan. Posible legacy o flujo no documentado. **Verificar contra el código.** |
+| `tasks` | Tareas asignadas a trabajadores (módulo transversal). Campos clave: `task_id`, `student_id`, `assigned_to_mail`, `assigned_to_name`, `due_date`, `task_description`, `task_progress`, `task_state`, `module_type` (default `'follow-ups'`), `reference_id`, `reference_type`. Confirmada en BD |
+| `task_progress_notes` | Notas de avance sobre cada tarea. Confirmada en BD |
+| `task_documents` | Documentos vinculados a tareas (archivo o link externo). Confirmada en BD |
+| `task_deliverables` | Entregables específicos asignados dentro de una tarea. Confirmada en BD |
+| Vinculación de documentos a asuntos / estrategias | Estructuras adicionales de seguimiento por curso. Estructuras tentativas — pendiente confirmar nombres exactos contra BD |
+
+> El módulo de tareas (`tasks` y satélites) es **transversal**: lo consume `follow-ups` pero también otros módulos. La columna `module_type` y el par `reference_id` / `reference_type` permiten saber a qué entidad de qué módulo está vinculada cada tarea.
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos. Roles institucionales clave consumidos por la lógica del módulo: director de curso, director de sección, EAE, Estrategas, Super Admin.
+- **`config`:** consume `students`, `courses`, `grades`, `sections`, `families` para selección y filtrado. Las consultas por curso/promoción dependen de la jerarquía académica. La asignación de director del curso (campo `course_director_email` en `courses`) determina qué asuntos ve cada director en `review-individual-issues` y `manage-unescalated-issues`.
+- **`hr` / `workers`:** los responsables de tareas y los trabajadores asignables a cursos se eligen del listado de trabajadores activos. La función `user-course-assignments` filtra por centro de costos.
+- **Sistema transversal de tareas (`tasks`, `task_progress_notes`, `task_documents`, `task_deliverables`):** módulo compartido con otros módulos del sistema. `follow-ups` es uno de los principales consumidores (campo `module_type = 'follow-ups'`). Las tareas creadas desde `course-follow-ups`, `manage-group-issues` y otras páginas alimentan este sistema único, accesible también desde "Gestionar Tareas" según mencionan los manuales.
+- **Google Drive:** vinculación de documentos a asuntos, estrategias y tareas. SchoolNet no aloja archivos, solo enlaces. Permisos del archivo dependen del Drive.
+- **Google Apps Script:** notificaciones por correo a directores de curso, directores de sección, trabajadores asignados a tareas, y reportantes (en algunos casos). El bug detectado de subject genérico "Nuevo Asunto Individual" para asuntos EAE sigue abierto.
+- **`early-alerts`:** módulos hermanos pero independientes. Trabajan en niveles distintos (familia vs. estudiante). No comparten tablas ni se referencian directamente.
+- **`new-students`:** integración **entrante** confirmada en §9.7. La primera actividad del proceso de inculturación crea automáticamente un asunto de seguimiento en `stm_students_topics`. La asociación entre actividad de inculturación y creación de asunto está hardcoded (pendiente confirmar y eventualmente parametrizar).
+- **`indicators`, `surveys`:** posibles consumidores de los conteos del módulo (a confirmar en lotes posteriores).
+
+#### Observaciones
+
+**Sobre el modelo de datos:**
+
+- **Ambigüedad EAE (`stm_students_topics` con flag vs. `eae_topics` separada)** — descrita en la nota de Conceptos clave. Es la inconsistencia más relevante del módulo entre manuales y BD. Resolverla con prioridad antes de cualquier desarrollo que toque flujos EAE.
+- **Notas confidenciales en tabla separada (`stm_confidential_notes`)** es coherente con su nivel de privacidad — facilita aplicar permisos y políticas diferenciados. Decisión sólida.
+- **Categorías compartidas entre asuntos individuales y grupales** (`stm_category`) — eficiente pero implica que crear una categoría aquí afecta a ambos tipos. Si en el futuro se quisieran categorías independientes, requeriría refactor.
+- **Sistema de tareas transversal** (`tasks` con `module_type` y `reference_id`/`reference_type`): patrón limpio de polimorfismo de referencias. Los asuntos individuales, grupales y estrategias pueden todos generar tareas que conviven en una única tabla y se consultan filtradas por módulo o por entidad. Documentar como decisión arquitectónica en Capa 1 cuando se haga el desarrollo de esa sección.
+- **Límite de 150 registros** en consultas de `review-individual-issues` y `manage-unescalated-issues`. Si un director acumula más de 150 asuntos abiertos, los más antiguos quedan invisibles. Mejora candidata: paginación o alerta cuando se alcanza el límite.
+
+**Sobre el flujo de triage de escalamiento:**
+
+- **Función "Gestionar Asuntos Escalables" mencionada repetidamente en manuales pero sin manual indexado.** El manual de `manage-unescalated-issues` describe el flujo bifurcado (escalable → otra función; no escalable → esta), pero no aparece página correspondiente en la lista del módulo. Posibilidades: (a) funcionalidad pendiente de implementar, (b) implementada pero sin manual, (c) la función vive en otro módulo (coordinación). **Verificar.**
+- **Cierre rápido de no escalables irreversible.** El cierre desde `manage-unescalated-issues` es un solo botón sin documentación obligatoria de conclusión. Coherente con la naturaleza menor de los asuntos, pero implica que un cierre por error es difícil de revertir. El propio manual lo advierte.
+- **Re-clasificación es la salida** si el director descubre que un asunto no escalable es más complejo: ir a `review-individual-issues`, cambiar a `is_escalable = 'SI'`, dejar que la función de escalables lo gestione. El flujo está bien diseñado pero requiere disciplina.
+
+**Sobre `user-course-assignments`:**
+
+- **Patrón destructivo de guardado.** El reemplazo completo en lugar de delta crea riesgo operativo: olvidar marcar a alguien que ya estaba lo desasigna silenciosamente. El resaltado verde de pre-marcados mitiga el riesgo pero no lo elimina. Mejora candidata: cambiar a modelo de delta (agregar/quitar) o mostrar advertencia cuando se quitarían trabajadores previamente asignados.
+- **Validación hardcoded de "director de sección".** No usa el sistema de permisos tradicional para determinar acceso. Es la segunda excepción del tipo en el sistema (la primera es `clearances.html` en `hr`). Documentar como patrón conocido en Capa 1.
+- **Sin notificación al asignar/desasignar.** El trabajador asignado se entera por canal humano. Mejora candidata: notificación de bienvenida con enlace al manual del módulo.
+
+**Sobre confidencialidad y privacidad:**
+
+- **Notas confidenciales NO se categorizan por diseño.** Los manuales explican que categorizar "podría facilitar inadvertidamente la búsqueda de información sensible específica". Decisión deliberada de privacidad por diseño.
+- **`query-confidential-notes` no muestra al autor** aunque la BD lo registra. Cuando se necesita saber quién escribió una nota, el manual indica que se debe contactar al administrador. Implica fricción innecesaria — considerar mostrar el autor a usuarios con rol especial.
+- **Búsqueda de notas confidenciales solo por nombre y fecha**, no por contenido. Decisión defendible (minimiza superficie de exfiltración) pero limita análisis legítimos.
+- **Bug detectado en notificaciones EAE:** los correos a directores no distinguen visualmente que es un asunto EAE. Llegan como "Nuevo Asunto Individual Registrado" igual que los regulares. Debería diferenciarse el subject/encabezado.
+- **El manual de notas confidenciales advierte explícitamente "no tomar capturas de pantalla, no copiar, no imprimir".** Pero no hay control técnico que lo impida. Es protocolo institucional, no enforcement. Documentar como expectativa institucional, no como característica de seguridad.
+
+**Sobre flujos de uso:**
+
+- **Tres páginas de consulta similares** (procedures.records, my-requests, query-submissions) ya documentadas en §9.1. En `follow-ups` el patrón se repite con `course-follow-ups` (gestión) vs. `course-follow-up-queries` (solo lectura) — buena práctica replicada.
+- **Pestaña "Estado Metas" deshabilitada** en `general-queries.html`. Sin fecha de reactivación documentada. Si la funcionalidad no va a volver, retirar la pestaña; si sí, comunicar timeline.
+- **No hay reabrir estrategias cerradas.** Si se necesita continuar acompañamiento, hay que crear nueva — los manuales sugieren copiar y pegar contenido. Limitación a documentar institucionalmente.
+- **Selección de estudiante con foto:** patrón consistente en todas las páginas de registro. Buena práctica de UX para confirmar visualmente la selección y reducir error.
+- **Imposibilidad de eliminar registros (todos los tipos)** por razones de auditoría. Solo edición mientras estén abiertos. Coherente con el resto de SchoolNet.
+
+**Sobre integraciones:**
+
+- **Documentos en Google Drive:** SchoolNet no aloja archivos. Si Drive cambia permisos o se elimina el archivo, el enlace deja de funcionar. Los manuales lo documentan pero no proponen monitoreo automático.
+- **Notificaciones a directores cuando son distintos** (director de curso vs. director de sección): la deduplicación está bien, pero si son la misma persona, los manuales mencionan que se envía solo una vez. Confirmar implementación.
+- **Tareas creadas desde `manage-group-issues` aparecen también en "Gestionar Tareas"** del módulo transversal. Ofrece dos puntos de entrada al mismo dato — flexibilidad útil pero también riesgo de modificaciones contradictorias si dos usuarios las gestionan en paralelo.
+
+**Inconsistencias terminológicas:**
+
+- **"Apoyo Educativo Especializado" vs. "Equipo de Apoyo Estudiantil" vs. "Equipo de Atención Especial"** — los manuales usan los tres términos para EAE. La sigla es la misma pero el desarrollo varía. Estandarizar en glosario y UI.
+- **`PAGE_CONFIG.modulePath` usa `'tracking'` en `individual-issues.html`** mientras el resto del módulo usa `'follow-ups'`. Inconsistencia menor que puede afectar logging/analítica. Verificar y normalizar.
+- **Typo en CSS de `review-individual-issues.html`:** la regla `.bug-report-card` usa `--system-primaryy-color` (doble y). Cae al fallback de color, no es crítico, pero conviene corregir.
+
+**Sobre código no implementado:**
+
+- **Funciones placeholder en `review-individual-issues`:** `exportarCSV()` e `imprimirTabla()` están declaradas globalmente pero los manuales aclaran que son para implementación futura. Si nunca se implementan, retirar para evitar confusión a usuarios que las descubran en consola.
+- **Filtros por teclado (Alt+1, Alt+2, Alt+3) en `review-individual-issues`** documentados como atajos pero el propio manual señala que "puede estar deshabilitada en la interfaz actual". Verificar.
+- **Modo debug accesible vía `Ctrl+Shift+D`** solo en localhost/vercel.app. Útil para desarrollo, sin impacto en producción.
+
+**Sobre la documentación de usuario misma:**
+
+- **Volumen y profundidad muy desigual** entre manuales: `confidential-notes.html`, `manage-unescalated-issues.html`, `eae-issues.html` y `review-individual-issues.html` superan los 10 chunks con detalle exhaustivo (incluyendo aspectos técnicos de BD); `categories.html` tiene 3 chunks. Conviene homogeneizar nivel de detalle.
+- **Algunos manuales incluyen detalles técnicos** (nombres de tablas, campos, queries SQL, versiones de Quill, configuración interna) que normalmente no van en manuales de usuario. Útil para Desarrollos pero inusual. Considerar separar manual de usuario vs. documentación técnica.
+- **El manual de `manage-unescalated-issues` reconoce un "texto residual" en el modal de cierre:** "Asegúrate de haber completado la conclusión y estrategia antes de cerrar" — se aclara que en esta función no hay conclusión/estrategia, es texto heredado de otra página. Limpiar para no confundir.
+
+---
+
+### 9.7 `new-students` — Gestión de Estudiantes Nuevos
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (7 páginas con manual, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Sin movimientos en la reestructuración v2026. Módulo autocontenido. |
+
+#### Propósito
+
+Sistema de gestión del **proceso de inculturación**: la serie de actividades secuenciales que cada estudiante nuevo y su familia deben completar para integrarse a la institución (entrevistas, visitas guiadas, reuniones con coordinación, entrega de uniformes, etc.). El módulo permite definir el catálogo de actividades, designar a los trabajadores responsables (actores), reportar oficialmente cuándo un estudiante ingresa al proceso, registrar las actividades a medida que se completan y monitorear el avance global.
+
+> **Nota terminológica:** los manuales usan el término "inculturación", concepto que originalmente proviene de la antropología cultural y la teología. En el contexto del Colegio Tilatá probablemente refiere al proceso integral de integración del nuevo estudiante a la cultura institucional. Conviene definirlo en glosario para usuarios sin ese marco de referencia.
+
+#### Conceptos clave
+
+- **Actividad:** paso del proceso de inculturación. Tiene **orden numérico único** (que define la secuencia), nombre obligatorio (máx. 100 caracteres) y descripción opcional (máx. 500 caracteres). No se puede eliminar si tiene registros asociados; tampoco hay desactivación lógica — el workaround documentado en los manuales es renombrar a `[NO USAR]` o `[INACTIVA]`.
+- **Actor:** trabajador del colegio que participa activamente en el proceso. Vinculados desde un sistema dual de listas (Disponibles ↔ Vinculados) con selección masiva. Solo trabajadores con estado activo en HR aparecen en las listas. Un trabajador puede ser actor de múltiples módulos a la vez.
+- **Reporte de estudiante nuevo:** registro inicial que activa el proceso para un estudiante. **Solo se permite una vez por estudiante** (validación de duplicados). La fecha de ingreso no puede ser futura; si es de más de un mes atrás, el sistema advierte pero permite continuar.
+- **Estado del estudiante en el proceso:**
+  - **En Proceso:** reportado pero no ha completado todas las actividades activas.
+  - **Finalizado:** completó todas las actividades activas del catálogo. Cálculo dinámico contra el catálogo actual.
+- **Registro de actividad:** documenta cuándo un estudiante completó una actividad específica. Tiene fecha (no futura), descripción opcional con editor enriquecido, documento de Drive opcional, y queda asociado al usuario que lo creó como "responsable". **Inmutable post-guardado** (no editable desde UI). El sistema permite registrar la misma actividad-estudiante más de una vez por diseño ("puede ser legítimo repetir una actividad").
+- **Actividad especial con efecto cruzado:** los manuales mencionan explícitamente que "algunas actividades, especialmente las primeras, tienen lógica especial. Por ejemplo, la primera actividad puede crear automáticamente un tema de seguimiento en otro módulo del sistema." Integración asíncrona con `follow-ups`. Confirmar implementación.
+- **Visibilidad por rol:** `Estrategas` ven toda la institución; `Directivos docentes` ven solo su sección; los actores y demás usuarios solo ven los registros que ellos crearon o las funciones que tienen permitidas.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | Inicio del módulo con métricas (En Proceso, Finalizados) | Acceso al módulo | ✓ |
+| `activities.html` | Configuración del catálogo de actividades | Actividades | ✓ |
+| `actors.html` | Vinculación de trabajadores como actores | Actores | ✓ |
+| `new-students-report.html` | Reporte oficial de estudiante nuevo (activación) | Reporte de estudiantes nuevos | ✓ |
+| `register-activities.html` | Documentación de actividades completadas | Registrar actividades | ✓ |
+| `registration-queries.html` | Historial individual con exportación CSV | Consulta de registro | ✓ |
+| `students-dashboard.html` | Dashboard ejecutivo con 6 métricas + filtros | Tablero de control | ✓ |
+
+#### Flujos típicos
+
+- **Configuración inicial (única vez por institución):**
+  1. Definir catálogo de actividades en `activities.html`. Buena práctica documentada: numerar con saltos (10, 20, 30...) para permitir inserciones intermedias después.
+  2. Vincular trabajadores como actores en `actors.html`. Recomendación documentada: 3–8 actores de áreas diversas (académico, pastoral, coordinación).
+
+- **Operación recurrente (por cada estudiante nuevo):**
+  1. **Reporte:** un coordinador abre `new-students-report.html` → busca al estudiante en lista de estudiantes activos → confirma fecha de ingreso → guarda → sistema notifica por correo a **todos los actores configurados** (no solo al director de curso).
+  2. **Ejecución:** los actores realizan las actividades del proceso con la familia.
+  3. **Registro:** después de cada actividad, el actor abre `register-activities.html` → busca al estudiante con autocompletado (solo aparecen "En proceso") → selecciona la actividad → confirma fecha → describe detalles en editor Quill → adjunta documento de Drive si aplica → guarda. Sistema notifica por correo al **director del curso** del estudiante.
+  4. **Consulta:** cualquier actor o coordinador puede revisar el historial completo de un estudiante en `registration-queries.html` con tabla cronológica y exportación a CSV.
+  5. **Monitoreo agregado:** coordinadores y directivos revisan el dashboard `students-dashboard.html` para identificar cuellos de botella, estudiantes sin actividades (alerta crítica) y porcentajes de completitud globales.
+
+- **Cierre del proceso (automático):** cuando un estudiante completa todas las actividades activas del catálogo, su estado pasa a "Finalizado" y deja de aparecer en las listas de búsqueda de `register-activities` y posiblemente otras consultas. Los manuales no aclaran si hay notificación de cierre.
+
+#### Roles típicos
+
+- **Estrategas / Coordinadores generales:** acceso a todo (toda la institución), configuran actividades y actores, monitorean dashboard.
+- **Directivos docentes (Directores de sección):** ven métricas filtradas a su sección, pueden gestionar actividades y registros de su área.
+- **Actores (trabajadores vinculados):** ejecutan y registran actividades. Reciben notificaciones cuando se reporta un estudiante nuevo. Sin acceso a configuración del módulo.
+- **Administradores del sistema:** únicos con capacidad para corregir errores (eliminar reporte erróneo, eliminar registro duplicado, reactivar estudiantes Finalizados, etc.) — toda corrección pasa por contacto con admin.
+- **Padres / estudiantes:** sin acceso. Las notificaciones se manejan por contacto humano, no por correo automático.
+
+#### Tablas principales
+
+> Nombres tentativos a confirmar contra la BD del proyecto. El manual del dashboard menciona explícitamente la tabla `new_students`.
+
+| Tabla | Propósito |
+|---|---|
+| `new_students` (confirmada por manual) | Estudiantes reportados en el proceso (con fecha de ingreso, autor del reporte, posiblemente flag de finalización) |
+| `new_students_activities` o equivalente | Catálogo de actividades del proceso (con orden, nombre, descripción) |
+| `new_students_records` o equivalente | Registros de actividades completadas (estudiante, actividad, fecha, descripción, URL Drive, responsable) |
+| `new_students_actors` o equivalente | Vinculación de trabajadores como actores del módulo |
+
+#### Dependencias con otros módulos
+
+- **`config`:** consume `students` (estudiantes activos para reportar), `courses`/`grades`/`sections` (filtros de visibilidad y vista por sección).
+- **`hr` / `workers`:** los actores se eligen del listado de trabajadores activos. Si un trabajador se inactiva en HR, deja de aparecer en las listas de actores aunque siga vinculado en la BD.
+- **`security`:** sistema de permisos. Roles `Estrategas` y `Directivo docente` deben existir.
+- **`follow-ups`:** integración asíncrona — la primera actividad del proceso puede crear automáticamente un asunto/tema de seguimiento en `stm_students_topics`. Es la única integración cruzada documentada hasta ahora entre módulos de SchoolNet.
+- **Google Drive:** vinculación de documentos a registros de actividad. Mismo patrón que `follow-ups`: SchoolNet solo guarda el enlace.
+- **Google Apps Script:** notificaciones por correo. Patrón de notificaciones diferenciado en este módulo:
+  - Al reportar estudiante nuevo → notifica a **todos los actores vinculados** (no a director de curso).
+  - Al registrar actividad → notifica al **director del curso** del estudiante.
+  - Al vincular trabajador como actor → **NO se notifica nada**, debe avisarse manualmente.
+
+#### Observaciones
+
+**Sobre el modelo de datos y reglas:**
+
+- **Sin desactivación lógica de actividades.** Solo eliminación (bloqueada si tienen registros) o el workaround manual de prefijos `[NO USAR]`. Mejora candidata: agregar campo `is_active` con filtrado automático en `register-activities`. El patrón ya existe en otros módulos (`alert_types` en `early-alerts`, categorías en `follow-ups`).
+- **Fechas en `new_students` y registros se permiten "hasta un mes atrás" sin advertencia, más allá con advertencia.** Decisión razonable. El manual no documenta si hay validación contra fechas anteriores al inicio del año académico — riesgo de errores de digitación masivos al inicio de año si alguien escribe 2025 en lugar de 2026.
+- **Se permite registrar la misma actividad-estudiante más de una vez por diseño.** Documentado como característica, no bug. Implicación: la métrica "Actividades Realizadas" del dashboard puede inflarse y el cálculo de "porcentaje de completitud" depende de cómo cuenta el sistema (actividades distintas vs. registros totales). El manual del dashboard sugiere que el porcentaje individual cuenta actividades distintas, pero el detalle no es explícito. Verificar.
+- **Estudiantes Finalizados desaparecen de búsquedas.** Para ver historial de un estudiante que ya completó el proceso, hay que contactar al admin. Si la institución necesita análisis longitudinal (cohortes año tras año), esto es una limitación. Mejora candidata: parámetro "incluir Finalizados" en consultas.
+
+**Sobre integraciones y notificaciones:**
+
+- **Integración con `follow-ups` documentada solo en el manual de `register-activities`** ("Algunas actividades especialmente las primeras pueden crear automáticamente un tema de seguimiento en otro módulo"). Si esto es cierto, el flag de qué actividad dispara qué efecto debería estar configurable. Si está hardcoded en código (ej. "actividad con id X dispara creación de tema"), es frágil — un cambio de catálogo puede romper la integración. **Verificar implementación urgente.**
+- **Inconsistencia en notificaciones:** vincular un actor no genera notificación pero los demás eventos del módulo sí. Los actores deben enterarse por canales fuera del sistema. Mejora candidata: notificación de bienvenida automática al ser vinculados (con un enlace al manual del módulo).
+- **Notificación al reporte va a TODOS los actores** mientras notificación al registro de actividad va solo al director del curso. Asimetría que tiene sentido (al reportar, cualquier actor puede iniciar; al registrar, solo el director del curso necesita saberlo), pero conviene documentarla institucionalmente.
+
+**Sobre UX y flujos de corrección:**
+
+- **No hay edición ni eliminación desde UI** para ningún registro del módulo (reportes, registros de actividad). Todo error pasa por admin. Para una institución que recibe 50+ estudiantes nuevos al año, esto puede saturar al admin. Mejora candidata: ventana de gracia (5 minutos) para que el creador pueda corregir.
+- **Filtro por fechas en `registration-queries` no afecta la exportación CSV.** Si filtras por mes y exportas, el CSV trae todo. Inconsistencia documentada en el manual ("Si necesitas exportar solo un rango de fechas específico, exporta todo y luego filtra en Excel"). Mejora candidata: respetar filtros activos en exportación.
+- **Responsables se muestran como "nombre + primer apellido"** en consultas. Si dos trabajadores tienen el mismo nombre + primer apellido, no se distinguen. Caso poco común pero posible — mejorar a "nombre + dos apellidos" o agregar identificador.
+- **Atajos de teclado documentados en `registration-queries`** (Alt+E, Alt+F, Alt+R) — único módulo que los expone explícitamente. Si funcionan, conviene mencionarlos en otros módulos también.
+
+**Sobre el dashboard y métricas:**
+
+- **El número "Sin Actividades" del dashboard es una métrica crítica** que el manual destaca: "DEBE tender a cero". Buen indicador operativo. Considerar dispararlo como alerta automática a coordinadores cuando supere un umbral.
+- **El dashboard NO se actualiza en tiempo real** (snapshot al cargar). Patrón consistente con el resto de SchoolNet. Para reuniones de equipo, puede dar lugar a confusión si alguien acaba de registrar una actividad.
+- **Sin exportación del dashboard.** Mismo límite que en `early-alerts`. Para reportes formales hay que combinar capturas de pantalla con CSV de `registration-queries`.
+- **Umbrales de color hardcoded** (verde ≥80%, amarillo 50–79%, rojo <50%). Documentado como no configurable. Si la institución quiere fijar criterios distintos, requiere cambio de código.
+
+**Sobre terminología y comunicación:**
+
+- **Término "inculturación"** puede no ser intuitivo para todo el personal. Si el colegio tiene afiliación religiosa, probablemente sea claro. Si es laico, considerar renombrar a "integración" o "acompañamiento de bienvenida". Documentar institucionalmente.
+- **Se sugiere a los actores "tomar capturas de pantalla periódicas"** del dashboard como evidencia de progreso. Indicador de que la funcionalidad de reporte/exportación está sub-desarrollada.
+
+---
+### 9.8 `certificates` — Generación de Certificados
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Mínima (1 página con manual: `certificates-generator.html`, en `document_status = 'ready'`) |
+| **Notas de transición** | Sin movimientos en la reestructuración v2026. Módulo autocontenido. |
+
+#### Propósito
+
+Herramienta utilitaria para **generar archivos PDF con certificados personalizados de forma masiva**, a partir de una plantilla PDF y un archivo CSV con los datos de los participantes. Pensada para imprimir documentos en lote: diplomas, certificados de participación, escarapelas, reconocimientos.
+
+A diferencia del resto de módulos del sistema (que gestionan flujos institucionales con persistencia de datos), este módulo **no almacena absolutamente nada**: ni la plantilla, ni el CSV, ni los PDFs generados. Es 100% client-side. El módulo no tiene tablas en la base de datos.
+
+#### Conceptos clave
+
+- **Procesamiento client-side puro:** todo ocurre en el navegador del usuario. La plantilla PDF y el CSV se cargan localmente, se procesan en memoria, y el PDF resultante se descarga directamente al equipo. No hay backend involucrado.
+- **Wizard de 6 pasos:** carga de CSV → selección de columnas a mapear → carga de plantilla PDF → posicionamiento visual de campos → configuración de formato → vista previa y generación.
+- **Mapeo limitado a 4 campos:** la primera columna del CSV es siempre el nombre del participante (obligatorio); se pueden agregar hasta 3 columnas adicionales como campos de certificado.
+- **Posicionamiento point-and-click:** el usuario hace clic sobre la plantilla en pantalla para indicar dónde aparece cada dato. El texto se centra horizontalmente sobre el punto elegido.
+- **Fuente única hardcoded:** Helvetica Bold. No es personalizable.
+- **Sin persistencia de configuración:** al cerrar la pestaña se pierde todo. Si se requiere regenerar el PDF, hay que repetir el wizard completo.
+- **Diferenciación con certificados de `events`:** el manual aclara explícitamente que esta herramienta es para *impresión masiva*. Si se requiere envío por correo electrónico de certificados individuales (típico tras un evento con asistencia registrada), se debe usar la funcionalidad de certificados del módulo `events` — que según el manual existe pero **no aparece como página propia entre los 6 manuales indexados de `events`**. Posible función embebida en `events-detail.html` o gap de documentación.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `certificates-generator.html` | Wizard completo de generación masiva | Generar certificados | ✓ |
+
+> Único manual del módulo. No hay índice (`index.html`) ni configuración separada — toda la funcionalidad vive en una sola página.
+
+#### Flujo típico
+
+1. **Preparar archivos previamente:** un CSV con los datos (primera columna = nombre, separador coma, valores con coma encerrados en comillas dobles) y un PDF de una sola página con el diseño base.
+2. **Paso 1:** cargar CSV. Sistema valida formato, detecta columnas, advierte sobre filas vacías o duplicados.
+3. **Paso 2:** seleccionar hasta 3 columnas adicionales además del nombre (máx. 4 campos en total).
+4. **Paso 3:** cargar plantilla PDF. Si tiene más de una página, solo se usa la primera.
+5. **Paso 4:** clic sobre cada campo en la lista izquierda y luego clic en la plantilla para posicionarlo. El sistema selecciona automáticamente el siguiente campo sin posicionar.
+6. **Paso 5:** ajustar tamaño del nombre, tamaño de los demás campos, y color del texto.
+7. **Paso 6:** vista previa con datos del primer participante. Si está correcto, generar el PDF; descarga automática.
+
+#### Roles típicos
+
+- **Cualquier coordinador, docente o administrativo** que necesite generar lotes de certificados para un evento.
+- Sin diferenciación de roles internos: el permiso es binario (tiene o no acceso al generador).
+
+#### Tablas principales
+
+**Ninguna.** El módulo no persiste datos en la base de datos.
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos. Único permiso: "Generar certificados".
+- **No tiene otras dependencias.** Es un módulo autocontenido sin integraciones con `config`, `hr`, `events`, ni ninguna otra entidad del sistema. Los datos de los participantes los provee el usuario externamente.
+
+#### Observaciones
+
+- **Sin persistencia de plantillas y posicionamientos.** Documentado como limitación en el manual: "cada vez que uses el generador, tienes que volver a subir la plantilla y volver a posicionar los campos". Mejora candidata si la operación se vuelve recurrente: guardar plantillas + sus posicionamientos como "presets" reutilizables.
+- **Fuente única (Helvetica Bold) no personalizable.** Si una plantilla requiere otra fuente específica, debe estar incrustada en el diseño fijo del PDF; el texto personalizable seguirá usando Helvetica.
+- **Sin combinación de texto fijo + variable.** Si se necesita "Sr. " + nombre o "Doctor " + nombre, hay que pre-procesar el CSV.
+- **Soporte de caracteres limitado al español.** Caracteres CJK, cirílicos, árabes generan campos vacíos con advertencia. El manual sugiere reportar a Desarrollos si se requiere soporte específico.
+- **Sin envío por correo.** El manual remite explícitamente a `events` para ese caso de uso, pero esa funcionalidad de envío no aparece documentada en los 6 manuales indexados de `events`. **Verificar.**
+- **Sin almacenamiento backend** implica también: sin auditoría de quién generó qué certificados, sin historial de lotes generados, sin posibilidad de regenerar un PDF idéntico. Para algunas instituciones esto puede ser limitación regulatoria.
+- **Aclaración de naming en sidebar:** el módulo se llama `certificates` pero la funcionalidad real es "generación de certificados en lote". El término "certificates" en otros sistemas escolares suele referir a certificados oficiales (de estudios, de notas, de matrícula), que aquí no existen — al menos no en este módulo. Considerar renombrar a "certificate-generator" o equivalente para evitar expectativas incorrectas.
+- **Probado hasta 100 certificados.** Sin límite estricto pero el manual advierte que cantidades grandes (500+) generan PDFs pesados y procesamiento más lento.
+
+---
+
+### 9.9 `events` — Eventos
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (6 páginas con manual: `index`, `events-dashboard`, `events-manage`, `events-detail`, `events-institutions`, `events-settings`, todas en `document_status = 'ready'`) |
+| **Notas de transición** | Sin movimientos en la reestructuración v2026. Módulo autocontenido, separado físicamente del módulo `services` aunque institucionalmente se les agrupa como "Servicios y Eventos" en algunos manuales. |
+
+#### Propósito
+
+Gestión integral de **eventos institucionales con inscripción pública o controlada**: ferias universitarias, jornadas de orientación profesional, días de puertas abiertas, talleres con instituciones invitadas, entre otros. Cubre el ciclo completo: definición del evento, configuración de franjas horarias y talleres, gestión del catálogo de instituciones invitadas, generación de formularios públicos de inscripción, control de asistencia diaria mediante códigos QR, y reportes de participación.
+
+A diferencia del módulo `services` (que maneja eventos *internos institucionales* como salidas pedagógicas, deportivas y eventos en las instalaciones), `events` se enfoca en eventos donde participan **instituciones externas** y/o donde se requiere un **proceso de inscripción pública** vía formulario en línea.
+
+> **Demarcación con `services` (confirmada al procesar §9.10):** `events` cubre eventos con **instituciones externas e inscripción pública** (ferias universitarias, jornadas de orientación, días de puertas abiertas con instituciones invitadas). `services` cubre operación logística interna del colegio (transporte, alimentación, salidas pedagógicas) **incluyendo eventos institucionales internos** (`internal-events.html` con cafecitos, primeras comuniones, actos cívicos, día de la familia). Los manuales de `internal-events` son explícitos en que aquí se manejan eventos *dentro de las instalaciones* sin instituciones externas. La regla operativa para usuarios: *si tu evento involucra inscripciones públicas o instituciones invitadas → módulo Eventos. Si es un evento institucional interno con coordinación logística → módulo Servicios → Eventos Internos.*
+
+#### Conceptos clave
+
+- **Evento:** entidad principal. Tiene nombre, descripción, fecha(s), lugar, tipo de participantes (Solo Internos / Solo Externos / Ambos) y un conjunto de franjas horarias.
+- **Tipo de participantes:**
+  - **Solo Internos:** únicamente comunidad del colegio (estudiantes, familias, trabajadores).
+  - **Solo Externos:** únicamente personas de instituciones invitadas.
+  - **Ambos:** mixto — el formulario público diferencia origen del inscrito.
+- **Franja:** bloque de tiempo dentro de un evento, con dos modalidades:
+  - **Plenaria:** sesión única para todos los participantes (ej. conferencia de apertura).
+  - **Con Talleres:** la franja se subdivide en talleres simultáneos. Los participantes eligen *uno* de los talleres disponibles en esa franja.
+- **Taller / Grupo:** subdivisión de una franja con talleres. Tiene nombre, descripción opcional, capacidad máxima y conteo automático de inscritos. Restricción clave: *un participante asiste a UN solo taller por franja*.
+- **Catálogo de instituciones:** entidad transversal del módulo. Tipos disponibles: Preescolar, Colegio, Universidad, Empresa, Fundación, Otro. Reutilizable entre eventos.
+- **Inscripción:** vínculo participante ↔ evento. Datos típicos: nombre, documento, email, institución (si es externo), curso (si es interno), selección de talleres por franja.
+- **Asistencia:** registro de presencia día a día mediante escaneo de QR. Cada inscrito tiene un QR único de asistencia (uno por día del evento).
+- **Tres tipos de QR distintos en el módulo:**
+  - **QR de asistencia:** uno por inscrito por día. Usado en portería/entrada.
+  - **QR de inscripción pública:** único por evento. Apunta al formulario público.
+  - **QR de talleres:** para gestión post-inscripción de la asignación a talleres.
+- **Variables dinámicas en correos:** `{NOMBRE}`, `{EVENTO}`, `{FECHA}`, `{HORA}`, `{LUGAR}`, `{DOCUMENTO}`. Sustituidas al envío.
+- **Estados del evento (deducidos de los manuales):** Borrador, Publicado, Activo (durante días del evento), Finalizado, Cancelado.
+- **Datos congelados al cerrar el evento:** patrón sistémico de SchoolNet (igual que en `services`). Una vez finalizado, los conteos y costos no recalculan.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso (probable) | Marca |
+|---|---|---|---|
+| `index.html` | Índice del módulo | Acceso al módulo | ✓ |
+| `events-dashboard.html` | Dashboard ejecutivo del módulo (manual extremadamente conciso, solo 2 chunks) | Dashboard de eventos | ✓ |
+| `events-manage.html` | Listado y gestión global de eventos (crear, editar, publicar, cancelar) | Gestionar eventos | ✓ |
+| `events-detail.html` | Vista detallada de un evento con 5 pestañas: Información, Franjas y Grupos, Inscripciones, Asistencias, Reportes | Ver eventos / Gestionar eventos | ✓ |
+| `events-institutions.html` | Catálogo de instituciones invitadas | Gestionar instituciones (probable) | ✓ |
+| `events-settings.html` | Configuración del módulo (6 pestañas) | Configurar módulo de eventos | ✓ |
+
+#### Estructura de `events-settings.html` (6 pestañas)
+
+1. **General:** parámetros básicos del módulo (nombre por defecto del organizador, datos de contacto institucional, etc.).
+2. **Plantillas de Correo:** plantillas reutilizables con las variables dinámicas (`{NOMBRE}`, `{EVENTO}`, etc.).
+3. **Formulario Público:** configuración del formulario de inscripción público (campos visibles, obligatorios, mensaje de bienvenida, mensaje de confirmación, reCAPTCHA).
+4. **Permisos y Roles:** configuración de quién puede gestionar qué dentro del módulo.
+5. **Notificaciones:** destinatarios de notificaciones automáticas (nuevas inscripciones, eventos próximos, etc.).
+6. **Avanzado:** features de configuración avanzada (Google Calendar sync, webhooks, modo depuración, exportar configuración) — **descritas en el manual pero implementación backend posiblemente incompleta**. Verificar antes de prometer estas capacidades.
+
+> **Importante (UX):** cambiar de pestaña en `events-settings` sin guardar **pierde los cambios** sin advertencia. Los manuales lo señalan explícitamente. Patrón inconsistente con otras páginas de configuración del sistema.
+
+#### Estructura de `events-detail.html` (5 pestañas)
+
+1. **Información:** datos generales del evento (editables si está en estado adecuado).
+2. **Franjas y Grupos:** estructura horaria y talleres. Define los bloques que verá el inscrito al elegir.
+3. **Inscripciones:** listado de inscritos con filtros, búsqueda, importación CSV, inscripción manual y eliminación selectiva.
+4. **Asistencias:** registro y consulta de asistencias diarias por QR.
+5. **Reportes:** estadísticas del evento (total inscritos, asistencia por día, ocupación de talleres, distribución por institución).
+
+#### Flujos típicos
+
+- **Configuración inicial del módulo (única vez):** en `events-settings.html`, configurar plantillas de correo, datos del formulario público, destinatarios de notificaciones. Cuidar guardado pestaña por pestaña.
+
+- **Creación de un evento nuevo:**
+  1. Desde `events-manage.html`, crear evento → completar información general (nombre, fecha, lugar, tipo de participantes).
+  2. Pasar a `events-detail.html` → pestaña **Franjas y Grupos** → definir las franjas (Plenaria o Con Talleres). Para cada franja con talleres, agregar los talleres con su capacidad.
+  3. Si el evento permite externos, ir a `events-institutions.html` y verificar que las instituciones invitadas están en el catálogo. Asociarlas al evento.
+  4. Publicar el evento → genera enlace público y QR de inscripción.
+  5. Compartir enlace/QR con instituciones invitadas.
+
+- **Recepción de inscripciones:** los inscritos llenan el formulario público (con reCAPTCHA, único uso de reCAPTCHA documentado en SchoolNet hasta ahora). Al confirmar, reciben correo de bienvenida con su QR de asistencia. La inscripción aparece automáticamente en el listado del evento.
+
+- **Inscripción manual o por importación:** desde la pestaña **Inscripciones** de `events-detail`, el coordinador puede:
+  - Inscribir manualmente a alguien (cuando alguien no puede usar el formulario público).
+  - Importar un CSV con múltiples inscripciones (la importación **solo agrega**, no reemplaza ni actualiza existentes).
+  - **Limitación:** las inscripciones manuales y las importadas por CSV **NO disparan el correo de confirmación automático** que sí reciben los del formulario público. Asimetría documentada. Los manuales sugieren enviar el correo manualmente como workaround.
+  - **Limitación:** desde la inscripción manual no se puede asignar talleres directamente — debe hacerse después desde la gestión del evento.
+
+- **Día del evento:** en portería se escanean los QR de asistencia con la app/lector. Cada escaneo registra la presencia del día. La pestaña **Asistencias** del evento muestra el conteo en tiempo real.
+
+- **Post-evento:** consultar reportes desde la pestaña **Reportes**. **Limitación:** los reportes de asistencia **NO son exportables a Excel** en la versión actual. Solo visualización en pantalla. Mejora candidata.
+
+- **Eliminación de un evento:** acción **destructiva**. Borra el evento, todas sus franjas, todos sus grupos/talleres, todas las inscripciones y todas las asistencias asociadas. Sin confirmación adicional más allá del modal estándar. **Sin función de "duplicar evento"** — para crear un evento similar al anterior hay que recrearlo desde cero.
+
+#### Roles típicos
+
+- **Coordinadores de eventos institucionales:** crean y gestionan eventos. Configuran franjas, talleres, inscripciones.
+- **Personal de portería / control de acceso:** escanean QR de asistencia los días del evento. Acceso restringido a la pestaña Asistencias.
+- **Administradores del módulo:** acceso completo, configuran `events-settings`, gestionan catálogo de instituciones.
+- **Inscritos externos:** acceso únicamente al formulario público (sin login), confirmación por correo.
+- **Inscritos internos (estudiantes/trabajadores):** mismo formulario público pero seleccionando origen "Interno" cuando aplica.
+
+#### Tablas principales
+
+> Nombres tentativos a confirmar contra la BD del proyecto antes de cualquier desarrollo.
+
+| Tabla | Propósito |
+|---|---|
+| `events` | Eventos (con nombre, fechas, lugar, tipo de participantes, estado) |
+| `event_franjas` o equivalente | Franjas horarias del evento (tipo Plenaria / Con Talleres) |
+| `event_workshops` o `event_groups` | Talleres dentro de franjas con talleres (capacidad, conteo) |
+| `event_institutions` | Vínculo m2m evento ↔ institución invitada |
+| `event_institutions_catalog` | Catálogo maestro de instituciones (con tipo) |
+| `event_registrations` | Inscripciones individuales al evento |
+| `event_registration_workshops` | Selección de taller por franja por inscrito |
+| `event_attendances` | Asistencias diarias por QR |
+| Configuración del módulo | Posiblemente en `system_config` o tabla específica del módulo |
+
+> **Pendiente verificar contra DataBase real.** Los manuales describen las entidades funcionales pero no detallan nombres de tablas.
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos. Permisos detectados/probables: Acceso al módulo, Dashboard de eventos, Ver eventos, Gestionar eventos, Gestionar instituciones, Configurar módulo de eventos.
+- **`config`:** consume `students`, `courses`, `grades`, `sections` para inscripciones de participantes internos.
+- **`hr` / `workers`:** consume `workers` para configurar destinatarios de notificaciones y aprobadores (si aplica).
+- **`surveys`:** **primera dependencia cruzada confirmada.** El formulario de inscripción puede incluir un enlace a una encuesta (típico para feedback post-evento). Documentado en los manuales como link configurable.
+- **Google Apps Script:** envío de correos automáticos al inscribirse vía formulario público. Plantillas configurables con variables dinámicas.
+- **Google Calendar:** mencionado en la pestaña Avanzado de `events-settings` como posibilidad de sincronización automática de eventos al calendario institucional. **Implementación backend posiblemente incompleta.** Verificar.
+- **reCAPTCHA:** integración externa única en SchoolNet (no aparece en otros módulos procesados hasta ahora). Usado en el formulario público para prevenir spam.
+- **Generación de QR:** librería cliente (probable `qrcodejs`, presente en otras partes del sistema).
+
+#### Observaciones
+
+**Sobre la separación con `services`:**
+
+- **Solapamiento conceptual con `services`:** ambos módulos manejan "eventos" institucionales. La hipótesis funcional (eventos públicos con instituciones externas vs. eventos internos logísticos) es razonable pero no está documentada explícitamente en los manuales. Documentar institucionalmente cuándo usar uno y cuándo el otro para evitar duplicación.
+- **Función de certificados con envío por correo** (mencionada en `certificates` §9.8 como propia de `events`) **NO aparece como página propia entre los 6 manuales indexados de `events` ni se confirmó al cerrar el Lote 4.** Posibilidades: (a) está embebida en `events-detail.html` (probable, dada la estructura de 5 pestañas); (b) está implementada pero sin manual; (c) está en diseño y aún no implementada. **Pendiente verificar contra el código.** Patrón emergente del sistema: hay funciones referidas en manuales que probablemente están embebidas en otras páginas o no implementadas (también ocurre con "Gestionar Asuntos Escalables" en `follow-ups`).
+
+**Sobre asimetrías y limitaciones del flujo:**
+
+- **Las inscripciones manuales y las importadas por CSV no disparan correo automático.** Asimetría con el formulario público. Mejora candidata: parametrizar la opción de envío al inscribir manualmente.
+- **La importación CSV solo agrega, no actualiza.** Si se requiere modificar inscripciones masivamente, hay que eliminarlas y reimportar.
+- **Desde la inscripción manual no se asignan talleres directamente.** Hay que entrar a la inscripción individualmente para asignarlos. Mejora candidata: incluir selector de talleres en el modal de inscripción manual.
+- **Sin función "duplicar evento".** Para eventos recurrentes (ej. feria anual), hay que recrearlos. Mejora candidata clara.
+- **Eliminación destructiva sin advertencia ampliada.** Aunque existe modal estándar, conviene confirmación explícita por el alcance: borra franjas, grupos, inscripciones y asistencias.
+- **Reportes de asistencias NO exportables a Excel.** Limitación documentada. Para presentar reportes formales, hoy depende de capturas de pantalla.
+
+**Sobre UX y configuración:**
+
+- **Cambio de pestaña en `events-settings` sin guardar pierde cambios.** Patrón inconsistente con módulos donde hay guardado independiente por pestaña. Mejora candidata: indicador visual de cambios sin guardar y/o confirmación al cambiar de pestaña.
+- **Pestaña "Avanzado" con features posiblemente no implementadas.** Google Calendar sync, webhooks, modo depuración, exportar config — descritas en el manual con detalle pero sin evidencia clara de implementación backend. Riesgo: prometer al usuario capacidades que el sistema no tiene.
+
+**Sobre integraciones:**
+
+- **Primera y única referencia a reCAPTCHA en SchoolNet.** Documentar en Capa 1 como integración externa cuando se trabaje esa sección. Validar que el sitekey está correctamente configurado en producción.
+- **Primera dependencia cruzada confirmada con `surveys`** (link a encuesta desde formulario público). Anotar al cerrar §9.13/§9.14 (Lote 7) para registrar la integración bidireccional si aplica.
+
+**Sobre el inventario de funciones:**
+
+- **`events-dashboard.html` tiene un manual extremadamente conciso (2 chunks).** Inusualmente breve para un dashboard del módulo. Posibilidades: (a) el dashboard es genuinamente simple (pocos widgets); (b) el manual está incompleto. Verificar.
+
+**Sobre datos y persistencia:**
+
+- **Datos congelados al finalizar evento** (patrón sistémico de SchoolNet, ya visto en `services`). Coherente con la arquitectura general.
+- **QR de asistencia: uno por inscrito por día.** Implica que un evento de 3 días genera 3 QR distintos por persona. Considerar si esto se comunica claramente al inscrito en el correo de confirmación (¿le llegan los 3 QR? ¿solo el del primer día y luego se generan?). Verificar.
+
+### 9.10 `services` — Servicios y Eventos (operación interna)
+
+#### Estado
+
+| Campo | Valor |
+|---|---|
+| **Implementación** | En producción |
+| **Documentación de usuario** | Completa (19 páginas con manual, todas en `document_status = 'ready'`). Es el módulo con mayor cobertura documental del sistema (junto con `hr` y `general-tools`). |
+| **Notas de transición** | Sin movimientos en la reestructuración v2026 según los manuales. Recibirá `annual-fees.html` desde `config` solo si el permiso "Tarifas anuales" se reasigna a este módulo en lugar de a `budget` (la nota de transición de `config` apunta a `budget` como destino). |
+
+#### Propósito
+
+Módulo más amplio del sistema en alcance funcional. Cubre **toda la operación logística interna** del colegio: salidas pedagógicas, deportivas y de representación; eventos institucionales internos (cafecitos, primeras comuniones, actos cívicos); servicios recurrentes (extracurriculares, transporte de personal); subsistema completo de mantenimiento locativo; y funciones administrativas auxiliares (atención a familias por admisiones, accesos y servicios estudiantiles, tiqueteras de almuerzos para visitantes).
+
+> **Nombre oficial vs. slug.** Los manuales usan consistentemente "Servicios y Eventos" como nombre del módulo. El sidebar lo llama solo `services`. El término "Eventos" en el nombre genera potencial confusión con el módulo separado `events` (§9.9). La demarcación operativa es:
+> - **`events` (§9.9):** eventos institucionales con instituciones externas e inscripción pública (ferias universitarias, jornadas de orientación, días de puertas abiertas).
+> - **`services` (este módulo):** eventos institucionales internos + toda la operación logística asociada (transporte, alimentación, mantenimiento).
+> 
+> La demarcación se confirmó al procesar `internal-events.html` en este módulo: lista explícitamente como ejemplos "cafecitos con familias, primeras comuniones, actos cívicos, día de la familia" — todos eventos *dentro* de las instalaciones, sin formularios públicos ni instituciones externas.
+
+#### Conceptos clave
+
+##### Tres ejes operativos del módulo
+EJE 1: SALIDAS                    EJE 2: EVENTOS INTERNOS         EJE 3: SERVICIOS RECURRENTES
+─ Pedagógicas (por grado)         ─ Institucionales en sede       ─ Extracurriculares (por ciclo)
+─ Deportivas (por equipo)         ─ Refrigerios + áreas apoyo     ─ Transporte de personal (rutas)
+─ Representación (por grupo)      ─ Costos por área (post)
+─ Aprobación obligatoria          ─ Aprobación obligatoria        ─ Sin aprobación caso a caso
+─ Estados con transición auto.    ─ Estados manuales              ─ Registro diario continuo
+SUBSISTEMA TRANSVERSAL: MANTENIMIENTO    FUNCIONES ADMINISTRATIVAS AUXILIARES
+─ Solicitudes universales (cualquier      ─ Atención a familias por admisiones
+trabajador, sin permiso)                ─ Accesos y servicios estudiantiles
+─ Gestión por equipo de mantenimiento     ─ Tiqueteras (almuerzos visitantes)
+─ Estados de 6 niveles + timeline
+##### Estados unificados de salidas y eventos internos
+
+Las tres modalidades de salidas y los eventos internos comparten un modelo de estados con cambio automático:
+
+| Estado | Origen | Acciones disponibles |
+|---|---|---|
+| **Programación** | Inicial al crear | Editar (si no aprobada), eliminar (si no aprobada), cancelar (si aprobada) |
+| **Inminente** | Automático X días antes (configurable) | Registrar asistencia, dar banderazo, suspender |
+| **En proceso** | Manual (banderazo) | Solo suspender en emergencia |
+| **Realizada** | Manual o automático post-fecha | Solo consultar |
+| **Suspendida** | Manual (con motivo obligatorio) | Final, irreversible |
+| **Cancelada** | Manual (con motivo obligatorio) | Final, irreversible |
+
+> **El cambio automático Programación → Inminente puede tardar hasta 1 hora** según los manuales. Sugiere job programado / cron, no trigger en tiempo real. Verificar en código.
+
+##### Datos congelados (patrón sistémico)
+
+**Confirmado en 6 contextos del módulo** como decisión arquitectónica de SchoolNet: tarifas y costos se guardan inmutables al momento de creación.
+- Salidas pedagógicas, deportivas, de representación: tarifas de transporte congeladas al crear la salida.
+- Eventos internos: costos de refrigerios congelados al crear; costos de áreas de apoyo congelados al aprobar la solicitud o al cambiar estado del evento.
+- Aprobaciones (`approvals`): costos congelados al aprobar la solicitud.
+- Transporte de personal: `frozen_trip_value` por registro diario, distinto del `trip_value` actual de la ruta.
+- Extracurriculares: tarifa congelada en cada configuración de vehículos (con modelo de versionado por `vigente desde`).
+- Reportes: usan los valores congelados, no los actuales.
+
+##### Tres modelos de control de acceso coexistentes en el módulo
+
+1. **Permisos tradicionales:** la mayoría de funciones (salidas, eventos internos, extracurriculares, transporte personal, configuración, reportes, aprobaciones, equipos deportivos).
+2. **Acceso universal sin permiso:** `maintenance-request.html`, `my-maintenance-requests.html` — cualquier trabajador con sesión activa puede usarlas.
+3. **Acceso calculado por relación:** `event-costs.html` (responsable de área de apoyo), `svc-meal-tickets.html` (responsable/solicitante/notificador de rubro de tiqueteras). El acceso no se asigna por rol sino que se calcula por la relación del usuario con entidades del sistema.
+
+##### Aprobador vs. Responsable del evento
+
+Distinción institucional explícita en `internal-events`:
+- **Aprobador:** persona con permiso "Resolución de solicitudes" que revisa y autoriza/rechaza la solicitud. Rol de supervisión y control presupuestal. Decide pero no opera.
+- **Responsable del evento:** trabajador designado para coordinar la ejecución el día del evento. Recibe notificación de designación. Es el punto de contacto para áreas de apoyo.
+
+##### Distinción operativa: rechazar vs. suspender vs. cancelar
+
+- **Rechazar** (en `approvals`): decisión previa al evento por parte del aprobador. Antes de que llegue la fecha.
+- **Cancelar** (en gestión del evento): decisión administrativa antes de la fecha (típicamente desde estado Programación con solicitud aprobada).
+- **Suspender** (en gestión del evento): decisión operativa el día del evento (clima, orden público, emergencia). Desde Inminente o En proceso.
+
+Los tres son finales e irreversibles. Cancelar y suspender requieren motivo obligatorio.
+
+#### Funcionalidades
+
+| Página | Funcionalidad | Permiso requerido | Marca |
+|---|---|---|---|
+| `index.html` | Índice del módulo con métricas de carga diferida y badges contextuales | Acceso al módulo | ✓ |
+| **Configuración** | | | |
+| `config.html` | Configuración general (12 pestañas) | Configuración de servicios | ✓ |
+| `sports-teams.html` | Equipos deportivos (disciplinas, categorías, equipos, integrantes) | Equipos deportivos | ✓ |
+| **Salidas y eventos** | | | |
+| `pedagogical-trips.html` | Salidas pedagógicas (wizard 5 pasos, por grado) | Salidas pedagógicas | ✓ |
+| `sports-trips.html` | Salidas deportivas (wizard 4 pasos, por equipo) | Salidas deportivas | ✓ |
+| `rep-trips.html` | Salidas de representación (wizard 5 pasos, por grupo) | Salidas de representación | ✓ |
+| `rep-groups.html` | Grupos de representación (Coro, Danza, Naciones Unidas, etc.) | Grupos de representación | ✓ |
+| `internal-events.html` | Eventos internos (wizard 4 pasos, refrigerios + áreas de apoyo) | Eventos internos | ✓ |
+| **Servicios recurrentes** | | | |
+| `extracurricular.html` | Transporte extracurriculares (ciclos + configuración + registro diario + resumen) | Extracurriculares | ✓ |
+| `staff-transport.html` | Transporte de personal (rutas + registro diario + resumen mensual) | Transporte de personal | ✓ |
+| **Gestión** | | | |
+| `approvals.html` | Bandeja centralizada de aprobaciones (pedagógicas, deportivas, eventos internos) | Aprobaciones de servicios | ✓ |
+| `event-costs.html` | Registro de costos por responsables de áreas de apoyo | Registro de costos de eventos | ✓ |
+| `reports.html` | 4 reportes (consolidado transporte, detalle transporte, eventos internos, solicitudes) | Reportes de servicios | ✓ |
+| **Subsistema mantenimiento** | | | |
+| `maintenance-request.html` | Crear solicitud de reparación locativa | Universal (sin permiso) | ✓ |
+| `my-maintenance-requests.html` | Consultar solicitudes propias | Universal (sin permiso) | ✓ |
+| `maintenance-management.html` | Gestión global del equipo de mantenimiento | Gestión de mantenimiento | ✓ |
+| **Funciones administrativas auxiliares** | | | |
+| `admissions-family.html` | Solicitudes de refrigerios para familias en admisiones | Atención a familias por admisiones (+ rol notificador) | ✓ |
+| `student-services.html` | Configuración por estudiante de accesos y servicios de alimentación | Accesos y servicios estudiantiles | ✓ |
+| `svc-meal-tickets.html` | Tiqueteras de almuerzos y refrigerios para visitantes | Calculado por relación con rubro presupuestal | ✓ |
+
+> **Inventario inconsistente con el `index.html` del módulo:** el índice declara 10 permisos / 4 grupos, pero existen 19 manuales reales. Las 9 páginas adicionales (`index` mismo, `admissions-family`, `student-services`, `maintenance-*` (3), `rep-trips`, `rep-groups`, `svc-meal-tickets`) son sub-páginas operativas no listadas en el panel principal. Probablemente accesibles por enlaces directos, breadcrumbs o desde flujos de otras páginas. **Verificar contra sidebar.js y BD `permissions` al consolidar el documento macro.**
+
+#### Subsistemas detallados
+
+##### Subsistema 1 — Salidas (3 modalidades con asimetrías)
+
+| Característica | Pedagógicas | Deportivas | Representación |
+|---|---|---|---|
+| Wizard | 5 pasos | 4 pasos | 5 pasos |
+| Organización | Por grado | Por equipo deportivo | Por grupo de representación |
+| Cálculo de participantes | Auto. desde grados (`status='Activo'`) | Auto. desde equipo activo | Auto. desde integrantes del grupo |
+| Adultos acompañantes | Cantidad + nombres opcionales | Cantidad obligatoria (default 1) | Búsqueda y selección de trabajadores |
+| Refrigerios opcionales | Sí | No (no aparecen en wizard de 4 pasos) | Sí (paso 4) |
+| Entradas opcionales | Sí | No | No |
+| Modalidades transporte | Solo ida / Solo regreso / Ida y vuelta | Solo ida / Solo regreso / Ida y vuelta | Solo ida / Solo regreso / Ida y regreso |
+| Nodos de transporte | No documentado | No documentado | Sí, configurables por modalidad |
+| Genera PDF oficial | No documentado | No documentado | **Sí** (con datos de estudiantes, EPS, espacio para firma, contactos de emergencia) |
+| Cruce con asistencia institucional | No documentado | No documentado | **Sí** (estudiantes que registraron entrada quedan pre-marcados) |
+| Aparece en `approvals` | Sí | Sí | No (¿?) |
+
+Las dos últimas asimetrías de `rep-trips` son notables: solo este flujo genera PDF oficial y cruza con registro de entrada al colegio. Los otros dos no documentan estas funciones. Posible gap funcional o decisión deliberada (las salidas de representación tienen mayor exigencia por exposición pública institucional).
+
+##### Subsistema 2 — Equipos y grupos (3 niveles)
+
+- **`sports-teams.html`** organiza equipos en 3 niveles jerárquicos: **Disciplina → Categoría → Equipo**. Equipo = combinación Disciplina + Categoría + Género (Masculino / Femenino / Mixto). Categorías con campo `orden` numérico configurable (recomendación de saltos 10/20/30 para inserciones futuras). Sistema NO impide crear equipos duplicados con misma combinación — limitación documentada. Estudiantes pueden estar en múltiples equipos simultáneamente.
+- **`rep-groups.html`** maneja grupos artísticos, académicos y deportivos representativos (Coro, Danza, Orquesta, Naciones Unidas). Más simple: cada grupo tiene nombre + director opcional + integrantes. Sin estructura jerárquica.
+- **Patrón compartido entre los dos:** búsqueda de estudiantes con autocompletado a partir de 3 letras, deduplicación automática (un estudiante retirado y reagregado se reactiva en lugar de duplicarse), estudiantes retirados como historial separado con opción de reactivar.
+
+##### Subsistema 3 — Eventos internos + costos (flujo bifurcado)
+
+Modelo único en el sistema: el flujo de costos se reparte entre dos páginas:
+
+1. **`internal-events.html`:** el coordinador del evento crea la solicitud incluyendo refrigerios (con costo calculado automáticamente) y selecciona áreas de apoyo (con instrucciones obligatorias para cada área). Las áreas son configurables desde `config.html` → Áreas de Apoyo.
+2. **`event-costs.html`:** los responsables de cada área de apoyo (configurados también en `config.html`) registran los costos reales de su servicio. Tres opciones: registrar valor, marcar "sin costos asociados" (confirmación activa, distinta a "no hacer nada"), o deshacer una marca de "sin costos".
+
+**Doble ventana de bloqueo de costos** (lo que ocurra primero):
+- Cambio de estado del evento (Completado / Suspendido / Cancelado).
+- Aprobación de la solicitud por el aprobador (los costos se cargan al presupuesto institucional).
+
+**Implicación operativa:** los responsables de área tienen una ventana de tiempo limitada para registrar costos antes de que el aprobador autorice. Si el aprobador autoriza muy rápido, los responsables pueden quedar sin tiempo. **El sistema NO bloquea la aprobación aunque haya costos pendientes** — el aprobador aprueba con costos parciales si así decide.
+
+##### Subsistema 4 — Mantenimiento (tres páginas con dos modos de acceso)
+
+Subsistema autocontenido pero integrado al módulo. Modelo de estados de 6 niveles con transiciones controladas. Línea de tiempo (timeline) visible al solicitante y al gestor — el patrón de auditoría visible más rico del sistema procesado hasta ahora.
+
+- **`maintenance-request.html`:** crear solicitud. Acceso universal sin permiso. Hasta 2 fotos (cámara, archivo o drag & drop). JPG/PNG/WebP máx. 5MB.
+- **`my-maintenance-requests.html`:** consultar solicitudes propias. Acceso universal sin permiso. Solo lectura.
+- **`maintenance-management.html`:** gestión global. Permiso "Gestión de mantenimiento" requerido. Acciones: cambiar estado, asignar técnico, cambiar prioridad, definir fecha esperada, registrar avances con foto.
+
+**Transición automática:** asignar técnico a solicitud Abierta o Reabierta → cambia estado a Asignado. Es la única transición automática del subsistema; el resto son manuales.
+
+**Notificación por correo solo en cambios de estado** (no en cambios de prioridad, asignación, fecha esperada, avances). La asignación que dispara cambio automático sí notifica vía el cambio de estado.
+
+**Cierre irreversible.** Resuelto sí admite Reabierto; Cerrado es terminal.
+
+##### Subsistema 5 — Servicios recurrentes (transporte de personal y extracurriculares)
+
+Dos modelos distintos para problemas similares:
+
+**`staff-transport.html` — modelo simple:**
+- Rutas como entidades permanentes (Norte, Sur, Cajicá) con tarifa actual + `vigente desde`.
+- Registro diario binario: realizado / no realizado.
+- Tarifa congelada por registro (`frozen_trip_value` distinto de tarifa actual).
+- Resumen mensual para liquidación.
+- **Limitación:** no soporta tarifas variables por día de la semana (workaround: crear rutas separadas).
+- **Hallazgo defensivo:** la FAQ menciona explícitamente "Cambié el valor de una ruta y los registros pasados cambiaron de total → Esto NO debería pasar... si efectivamente cambió, es un bug del sistema". Sugiere que el bug ha ocurrido históricamente.
+
+**`extracurricular.html` — modelo versionado:**
+- Ciclos académicos como contenedores con fechas y días programados.
+- Configuración de vehículos por día con `vigente desde` (permite múltiples configuraciones sucesivas para el mismo día).
+- Registro diario por vehículo configurado: realizado/no realizado, pasajeros si realizado, motivo si no.
+- Tarifa congelada en cada configuración.
+- Modelo arquitectónicamente superior a `staff-transport`: cambios a mitad de ciclo se manejan creando nueva configuración en lugar de editar la existente; el sistema elige automáticamente la más reciente válida para cada fecha.
+
+**Costo por recorrido completo, no por pasajero.** En ambos modelos, vehículo de 30 con 10 pasajeros se cobra como tarifa completa. Coherente con contratos típicos de proveedores.
+
+**Ninguno descuenta automáticamente festivos.** Operador debe registrar manualmente como "no realizado" + motivo. En `staff-transport` no registrar = no realizado implícito; en `extracurricular` no registrar = sin información.
+
+##### Subsistema 6 — Funciones administrativas auxiliares
+
+- **`admissions-family.html`:** primera integración bidireccional confirmada con `budget`. Crear solicitud → genera requerimiento presupuestal aprobado + actualiza ejecutado del rubro. Cancelar → revierte automáticamente.
+- **`student-services.html`:** configuración por estudiante de tipo de acceso (mañana/tarde, independientes) y servicios de alimentación (cafetería, refrigerio). Trabajo por curso con guardado inmediato por campo (parpadeo verde/rojo). Acciones masivas con patrón destructivo (asignar acceso a todos, copiar mañana → tarde).
+- **`svc-meal-tickets.html`:** segunda integración bidireccional confirmada con `budget`. Mismo patrón de creación/reversión. Triple modalidad de acceso (responsable de rubro, solicitante autorizado, notificador). Identificación de rubros por nombre con prefijo "Tiqueteras..." — **frágil, ver Observaciones.**
+
+#### Roles típicos
+
+- **Coordinadores académicos:** crean salidas pedagógicas, deportivas y eventos internos. Son los principales usuarios del módulo.
+- **Aprobadores institucionales:** reciben solicitudes en `approvals`. Permiso "Resolución de solicitudes" — rol con visibilidad presupuestal.
+- **Equipo de mantenimiento:** acceso a `maintenance-management`. Líder del equipo + técnicos.
+- **Cualquier trabajador:** puede crear solicitudes de mantenimiento (sin permiso) y consultar las propias.
+- **Responsables de áreas de apoyo:** registran costos de eventos en sus áreas vía `event-costs`. Asignación por catálogo en `config`.
+- **Administradores presupuestales:** acceso a `svc-meal-tickets` y `admissions-family` por relación con rubros del presupuesto.
+- **Personal administrativo:** gestiona `student-services` (accesos y alimentación de estudiantes).
+- **Tesorería / financiero:** consume reportes de `reports.html` para validar facturas de proveedores y soportar pagos.
+
+#### Tablas principales
+
+> Nombres tentativos a confirmar contra la BD del proyecto. La complejidad y diversidad funcional del módulo implica un volumen alto de tablas que el documento no enumera exhaustivamente.
+
+**Configuración:**
+- `service_destinations` — Destinos de transporte
+- `service_student_rates` / `service_extracurricular_rates` — Tarifarios separados
+- `service_nodes` — Nodos de transporte
+- `service_meal_menus` — Refrigerios catálogo
+- `service_support_areas` — Áreas de apoyo (con responsable y placeholder)
+- `service_notifications_by_type` — Notificadores por tipo de servicio
+- `service_access_types` — Tipos de acceso al colegio
+- `service_maintenance_priorities` — Prioridades de mantenimiento
+- `service_general_spaces` — Espacios para reportes de mantenimiento
+- `service_maintenance_notifications` — Notificadores de mantenimiento
+- `service_parameters` — Parámetros generales (días Inminente, días antelación, precios, ítem presupuestal admisiones)
+
+**Salidas y eventos:**
+- `pedagogical_trips`, `sports_trips`, `representation_trips` — Salidas (probablemente con tabla común o herencia)
+- `internal_events` — Eventos internos
+- `event_meals`, `event_support_services` — Refrigerios y servicios de apoyo solicitados
+- `event_support_costs` — Costos registrados por responsables
+- `service_approvals` — Bandeja centralizada de solicitudes
+- `trip_attendance`, `trip_unlinked` — Asistencia y desvinculaciones por salida
+
+**Equipos y grupos:**
+- `sports_disciplines`, `sports_categories`, `sports_teams`, `sports_team_members`
+- `representation_groups`, `representation_group_members`
+
+**Servicios recurrentes:**
+- `extracurricular_cycles`, `extracurricular_vehicle_configs`, `extracurricular_daily_records`
+- `staff_transport_routes`, `staff_transport_daily_records`
+
+**Mantenimiento:**
+- `maintenance_requests` — Solicitudes
+- `maintenance_request_photos` — Fotos adjuntas
+- `maintenance_request_timeline` — Eventos cronológicos (estados, asignaciones, prioridades, fechas, avances)
+- `maintenance_progress_photos` — Fotos de avances
+
+**Auxiliares:**
+- `admissions_family_requests` — Solicitudes de refrigerios para familias en admisiones
+- `student_access_assignments` — Tipos de acceso por estudiante (mañana/tarde)
+- `student_meal_services` — Servicios de alimentación por estudiante (cafetería/refrigerio)
+- `meal_tickets_requests` — Tiqueteras
+
+#### Dependencias con otros módulos
+
+- **`security`:** sistema de permisos. Múltiples permisos del módulo. Tres modalidades de control de acceso conviven en el módulo.
+- **`config`:** consume `students`, `courses`, `grades`, `sections`, `families` para selección y filtrado. La configuración de tarifas anuales (`annual-fees.html`) está en `config` pero migra a `budget` post-reestructuración.
+- **`hr` / `workers`:** consume `workers` activos para selectores de aprobador, responsable, técnico, asignaciones a equipos, integrantes de grupos, actores, etc. Función de "centro de costos" en `user-course-assignments` filtra trabajadores. Ítems presupuestales se gestionan vinculados a `worker_id` para responsables de rubros.
+- **`budget`:** **integración bidireccional confirmada en al menos dos flujos** (`admissions-family.html` y `svc-meal-tickets.html`). Crear solicitud → genera requerimiento presupuestal aprobado y actualiza ejecutado. Cancelar → revierte automáticamente. **Aprobación de eventos internos también carga al presupuesto** (mecanismo no detallado en los manuales pero implícito en el congelamiento de costos al aprobar). Sistema NO valida saldo disponible antes de crear — responsabilidad del área financiera.
+- **`attendance`:** integración entrante en `rep-trips.html` (cruce con registro de entrada al colegio del día). **Verificar implementación** — no claro si es módulo `attendance` o sistema RFID directo.
+- **`surveys`:** dependencia entrante mencionada en `events` (link a encuesta desde formulario público) — no aplica a `services` directamente pero la mencionamos por completitud al Lote 4.
+- **`certificates`:** módulo separado (§9.8) referenciado por `events` para envío por correo, pero esa función no aparece como página propia en `events`. No vínculo directo con `services`.
+- **Google Apps Script:** notificaciones por correo en múltiples flujos. Patrón de notificaciones múltiples en `internal-events` (4 destinatarios distintos por evento). Notificaciones recurrentemente "caen en spam" según troubleshooting de los manuales.
+- **Google Drive:** no documentada en este módulo.
+- **Phidias:** sin integración directa documentada en este módulo.
+
+#### Observaciones
+
+**Sobre la demarcación con `events`:**
+
+- **Solapamiento conceptual con módulo `events` clarificado.** Los manuales de `internal-events.html` confirman que aquí se manejan eventos *dentro de las instalaciones* sin instituciones externas. Documentar institucionalmente el criterio para evitar duplicación de funciones. Idealmente, comunicar a usuarios la regla: *"si tu evento involucra inscripciones públicas o instituciones invitadas → módulo Eventos. Si es un evento institucional interno con coordinación logística → módulo Servicios y Eventos → Eventos Internos."*
+- **El nombre "Servicios y Eventos" en los manuales** vs. el slug `services` en sidebar genera potencial confusión. Considerar:
+  - Renombrar el slug a `services-events` o similar para alineación.
+  - O renombrar los manuales a "Servicios" únicamente.
+  - El estado actual es la peor combinación: dos nombres para el mismo módulo + un módulo separado con uno de los nombres.
+
+**Sobre el inventario funcional:**
+
+- **`index.html` del módulo está desactualizado.** Lista 10 permisos / 4 grupos pero el módulo tiene 19 manuales con funcionalidad. Las 9 páginas no listadas son funcionalmente importantes (subsistema de mantenimiento entero, salidas de representación, tiqueteras, atención a familias, accesos estudiantiles). **Acción crítica:** auditar con sidebar.js y la tabla `permissions` qué páginas tienen permiso explícito y cuáles son sub-páginas embebidas.
+- **3 modalidades de salidas con asimetrías deliberadas pero no completamente documentadas.** Solo `rep-trips` genera PDF oficial y cruza con asistencia institucional. ¿Decisión deliberada (mayor exigencia para salidas con exposición pública) o gap funcional? Verificar.
+- **Función "Gestionar Asuntos Escalables" del módulo `follow-ups`** y **función de "Certificados con envío por correo" del módulo `events`** son ambas mencionadas en otros manuales pero ausentes como página propia. Patrón emergente: hay funciones referidas que probablemente están embebidas en otras páginas o no implementadas. Revisar al final del documento todas estas referencias huérfanas.
+
+**Sobre control de acceso (decisión arquitectónica del módulo):**
+
+- **Tres modalidades de control de acceso coexisten** en el mismo módulo. Documentar como decisión arquitectónica del sistema en Capa 1: "funciones con vínculo financiero o estructural (responsabilidad sobre rubros, asignación a áreas) usan acceso calculado por relación, no por permisos tradicionales".
+- **Acceso universal para mantenimiento** (`maintenance-request`, `my-maintenance-requests`) sin permiso explícito es coherente con la naturaleza del problema: cualquier trabajador debe poder reportar daños en infraestructura.
+- **Validación de identificación frágil en `svc-meal-tickets`:** los rubros de tiqueteras se identifican por **nombre que contiene el prefijo "Tiqueteras..."**. Si alguien renombra el rubro a "Bebidas y refrigerios invitados" en `budget`, la lógica del módulo se rompe silenciosamente. **Mejora candidata:** flag explícito `is_meal_ticket = true` en el ítem presupuestal.
+
+**Sobre patrones sistémicos:**
+
+- **Datos congelados** confirmado en 6 contextos del módulo. Documentar como decisión arquitectónica explícita en Capa 1: *"todo registro de costo guarda el valor vigente al momento de creación, inmutable a cambios futuros del catálogo de origen. El cálculo de reportes y liquidaciones siempre usa los valores congelados, no los actuales."* Patrón fuerte y consistente.
+- **Patrón destructivo de edición/guardado** repetido en `user-course-assignments`, `student-services`, `internal-events` (en edición). Variante crítica en `internal-events`: las notificaciones NO se reenvían al editar. Si agregas un área de apoyo en edición post-rechazo, el responsable de esa área no se entera. Mejora candidata: parametrizar reenvío de notificaciones en edición.
+- **Cierre irreversible** sin reapertura desde UI confirmado en mantenimiento, salidas, eventos, aprobaciones. Coherente con el resto del sistema.
+- **Sin edición ni eliminación** desde UI para múltiples flujos (mantenimiento, transporte personal, tiqueteras, admisiones). Toda corrección pasa por administrador o área financiera. Patrón sistémico.
+- **Wizards heterogéneos** entre flujos cercanos: 5/4/5/4 pasos según modalidad. Decisión por dominio razonable pero genera curva de aprendizaje para usuarios que tocan varios.
+
+**Sobre integraciones:**
+
+- **`budget` como dependencia central confirmada.** Al menos dos flujos con integración bidireccional (`admissions-family`, `svc-meal-tickets`) y un tercero implícito (eventos internos al aprobarse). Hipótesis: el módulo `budget` (lote 5) tendrá vínculos con varios módulos de `services`. Anotar para validar al procesar §9.X budget.
+- **Notificaciones por correo recurrentemente "caen en spam"** según troubleshooting de varios manuales del módulo. Indicador de problema de deliverability del Apps Script (probablemente SPF/DKIM/DMARC). Considerar revisión de configuración de envío.
+- **`attendance` como dependencia entrante** solo confirmada en `rep-trips`. Verificar implementación e identificar el módulo o sistema fuente del registro de entradas.
+
+**Sobre limitaciones operativas:**
+
+- **Sin descuento automático de festivos** en `staff-transport` ni `extracurricular`. Operador debe registrar manualmente. Riesgo de costos sobreestimados si nadie registra festivos.
+- **Sin notificación al responsable de área cuando se le agrega tras edición** de evento interno. Comunicación queda fuera del sistema.
+- **Sin validación de saldo presupuestal** en flujos con afectación a `budget`. Decisión arquitectónica documentada pero operativamente delicada.
+- **Reportes de eventos con `Servicios = "Pendientes"`** cuando áreas de apoyo no han registrado costos. El reporte se genera con totales incompletos sin marca clara. Mejora candidata: alerta visible.
+- **Sin programación automática de envío de reportes** ni exportación CSV/PDF de varios reportes (mantenimiento, eventos, asistencias del módulo `events`). Workaround común: capturas de pantalla. Indicador de funcionalidad de reporte/exportación sub-desarrollada en general.
+- **Bug histórico defensivo en FAQ de `staff-transport`** sobre congelamiento de tarifas. Sugiere que el patrón de congelamiento ha tenido problemas de implementación. Revisar código antes de tocar.
+
+**Sobre consistencia de modelos:**
+
+- **`extracurricular` vs. `staff-transport`** son dos soluciones distintas para problemas similares (registro diario + liquidación mensual + tarifas congeladas). El modelo de `extracurricular` con versionado por `vigente desde` es arquitectónicamente superior. **Refactor candidato:** migrar `staff-transport` al mismo modelo de versionado en una iteración futura.
+- **Asimetría de inscripción en `events` vs. `internal-events`:** el primero tiene formulario público con reCAPTCHA + correo automático; el segundo no maneja inscripciones de participantes (los participantes se cuentan desde matrícula del colegio). Coherente con la demarcación interno/externo.
+- **Múltiples menús por grupo en refrigerios** en `internal-events` (Refrigerio Estándar + Jugo adicional como dos líneas) — característica que las salidas no tienen. Asimetría en modelo de datos. Si surge necesidad en salidas, requiere refactor.
+
+**Sobre el módulo como pieza institucional:**
+
+- **El módulo como conjunto cubre ~25% de la operación administrativa del colegio.** En volumen documental es el más grande del sistema (19 manuales). En complejidad funcional es comparable o superior a `hr`. **Candidato a tener su propio documento detallado** dado el alcance — esta ficha es vista de gestión, no documentación técnica completa.
+- **El módulo es operacionalmente crítico:** transporte diario, mantenimiento, eventos institucionales, alimentación de visitantes. Una caída del módulo afecta operación visible del colegio (a diferencia de módulos como `surveys` o `indicators` que son de soporte gerencial).
+
+---
+
+# CAPA 3 — Mapa de relaciones entre módulos
+
+Mapa preliminar a partir de los módulos ya procesados:
+
+config (cimiento académico)
+   ├── consumido por: prácticamente todo el sistema
+   ├── envía a security: config.html (post-reestructuración)
+   ├── envía a budget: annual-fees.html (post-reestructuración)
+   └── consumido por services en TODAS las funciones operativas:
+       students, courses, grades, sections, families para salidas,
+       eventos internos, mantenimiento, accesos estudiantiles,
+       equipos deportivos, grupos de representación
+
+security (cimiento de identidad)
+   ├── consumido por: todo módulo (verificación de permisos)
+   ├── recibe de config: Configuración general
+   ├── envía a my-space: Gestión de Tickets de Soporte
+   ├── consume de hr: vínculo usuario ↔ trabajador por email
+   └── consumido por services: tres modalidades de control de acceso
+       coexisten (permisos tradicionales, acceso universal sin permiso,
+       acceso calculado por relación)
+
+hr (cimiento organizacional y de personal)
+   ├── consumido por: budget, procedures, follow-ups, early-alerts,
+   │                  surveys, indicators, services
+   ├── consume de config: eps, sections (sección académica)
+   ├── consume de training: unidades formativas para ruta de formación
+   ├── envía a security: creación automática de usuario al alta de trabajador
+   ├── consumido por services: workers activos para selectores de
+   │   aprobadores, técnicos, responsables, integrantes de equipos
+   │   y grupos, actores. Filtro por centro de costos en
+   │   user-course-assignments y svc-meal-tickets
+   └── posiblemente integra con Phidias para cruce de asistencia
+
+procedures
+   ├── consume de: security, hr, config
+   ├── consumido por: admissions (Paso 4)
+   └── consume sistema de tareas (project-management) y notificaciones
+
+early-alerts (alertas a nivel familia)
+   ├── consume de: config (families, students, sections),
+   │              hr (workers para tareas),
+   │              security (roles Estrategas, Directivo docente)
+   └── independiente de follow-ups (mismo nivel temático, datos distintos)
+
+follow-ups (seguimientos a nivel estudiante individual y grupal)
+   ├── consume de: config (students, courses, grades, sections),
+   │              hr (workers, directores de curso/sección),
+   │              security (sistema de permisos y auditoría)
+   ├── integra con: Google Drive (documentos vinculados)
+   ├── envía notificaciones a: directores de curso, directores de
+   │                          sección, trabajadores asignados a tareas
+   ├── independiente de early-alerts (nivel familia vs. nivel estudiante)
+   └── recibe creación automática de temas desde new-students
+       (primera actividad del proceso → asunto en stm_students_topics)
+
+new-students (proceso de inculturación de estudiantes nuevos)
+   ├── consume de: config (students, sections, courses),
+   │              hr (workers para vinculación como actores),
+   │              security (roles Estrategas, Directivo docente)
+   ├── integra con: Google Drive (documentos vinculados a registros)
+   ├── envía a follow-ups: creación automática de tema de seguimiento
+   │   en la primera actividad del proceso (integración asíncrona)
+   ├── envía notificaciones a: actores (al reportar estudiante),
+   │                          director del curso (al registrar actividad)
+   └── único módulo que envía notificaciones a todos los actores
+       en lugar de a directores específicos
+
+certificates (generación masiva de certificados PDF)
+   ├── consume de: security (único permiso "Generar certificados")
+   └── módulo autocontenido — sin tablas en BD, sin otras dependencias.
+       Procesamiento 100% client-side. Datos provistos por el usuario
+       externamente
+
+events (eventos institucionales con instituciones externas e inscripción pública)
+   ├── consume de: security,
+   │              config (students, courses para participantes internos),
+   │              hr (workers para destinatarios de notificaciones)
+   ├── envía a surveys: link a encuesta desde formulario público
+   │                    de inscripción (primera dependencia cruzada
+   │                    confirmada con surveys)
+   ├── integra con: reCAPTCHA (única referencia en SchoolNet hasta ahora),
+   │               Google Calendar (sync mencionada en pestaña Avanzado,
+   │                                implementación a verificar),
+   │               qrcodejs o similar para generación de QR
+   ├── envía notificaciones a: inscritos vía formulario público
+   │                          (correo de confirmación con QR de asistencia)
+   └── independiente de services. Demarcación: events maneja eventos
+       con inscripción pública e instituciones externas; services
+       maneja eventos institucionales internos en internal-events.html
+
+services (operación logística interna del colegio — el módulo más extenso del sistema)
+   ├── consume de: security (3 modalidades de control de acceso),
+   │              config (students, courses, grades, sections, families),
+   │              hr (workers para múltiples roles)
+   ├── envía a budget: integración bidireccional confirmada en
+   │   admissions-family.html y svc-meal-tickets.html (crear =
+   │   genera requerimiento aprobado + actualiza ejecutado del rubro;
+   │   cancelar = revierte automáticamente). Probable tercera
+   │   integración implícita en aprobación de eventos internos
+   ├── consume de attendance (o sistema RFID): rep-trips cruza
+   │   con registro de entrada al colegio del día (estudiantes que
+   │   registraron entrada quedan pre-marcados en asistencia).
+   │   Implementación a verificar
+   ├── integra con: Google Apps Script (notificaciones múltiples),
+   │               qrcodejs y similares para escaneo de QR de asistencia
+   │               (en flujos de mantenimiento y eventos)
+   ├── relación con events: módulos separados pero institucionalmente
+   │   complementarios. events = inscripción pública + externos;
+   │   services.internal-events = institucionales internos
+   ├── relación con certificates: certificates referencia a events
+   │   para envío por correo, no a services
+   └── subsistema de mantenimiento autocontenido dentro del módulo.
+       Acceso universal a maintenance-request y my-maintenance-requests
+       (sin permiso explícito requerido)
+
+---
+
+# Anexos
+
+## Anexo A — Trabajo pendiente detectado
+
+### A.1 Reestructuración v2026 pendiente de aplicar
+
+| Permiso (id parcial) | Función | Origen → Destino |
+|---|---|---|
+| `5706f41d-…` | Configuración general | `config` → `security` |
+| `22934563-…` | Tarifas anuales | `config` → `budget` |
+| `51228c79-…` | Jornadas pedagógicas | `general-tools` → `config` |
+| `d049d61c-…` | Generar días Tilatá | `general-tools` → `config` |
+| `8afc5261-…` | Gestión de Tickets de Soporte | `security` → `my-space` |
+| `33d5ed9e-…` | Gestión de carnets | normalizar `Seguridad` → `security` |
+
+### A.2 Inconsistencias documentación vs. sidebar
+
+- **`config`:** referencia a "Áreas y Asignaturas" sin manual `subjects.html` indexado. Confirmar si la gestión de asignaturas tiene página propia.
+- **`security`:** `index.html` del manual lista 8 funciones; reestructuración v2026 lista 10. Falta verificar manual de "Consulta de seguridad" (`d44121e7-…`).
+- **`procedures`:** posible función "Ver reportes de procedimientos" en sidebar sin manual separado. Verificar si se cubre en Dashboard.
+- **`hr`:** `clearances.html` tiene un sistema de permisos paralelo (acceso por rol funcional, no por `permissions`). Documentar como excepción arquitectónica.
+
+### A.3 Páginas en `/manual/general-tools/` a redistribuir
+
+Total: 18 páginas indexadas bajo `/manual/general-tools/` que deberían vivir en otros módulos según el sidebar nuevo. Listado para acción posterior cuando se procese el lote correspondiente (Lote 6).
+
+### A.4 Módulos sin manual de usuario
+
+Lista preliminar de módulos del sidebar sin manuales indexados:
+
+- `my-space` (probablemente no requiere — es hub)
+- `alumni` (en diseño)
+- `community` (reestructuración, hereda de general-tools)
+- `training` (en construcción)
+- `teacher-eval` (en diseño)
+- `tte` (en construcción)
+- `institutional-eval` (en diseño)
+- `project-management` (reestructuración)
+- `admissions` (en construcción)
+- `attendance` (reestructuración)
+- `environmental` (a confirmar)
+- `suppliers` (a confirmar)
+- `contracts` (reestructuración)
+- `knowledge` (reestructuración)
+
+Estos módulos se documentarán al final del proceso, usando como fuentes los documentos de diseño existentes en el proyecto, el sidebar, la BD, y conversación directa con desarrollos.
+
+### A.5 Hallazgos del Lote 2 (`hr` + cierre de `security`)
+
+**Hallazgos en `hr`:**
+
+- **Tres entidades llamadas "sección"** en el sistema (académica, organizacional, de curso). Documentar en Glosario y considerar normalización terminológica.
+- **Sistema de permisos paralelo en `clearances.html`** (acceso por rol funcional, no por `permissions`). Decisión arquitectónica a documentar en Capa 1.
+- **Ruta de formación depende de `training`** que no está implementado. Verificar comportamiento del botón cuando la tabla destino está vacía.
+- **Pre-carga de festivos colombianos hardcoded** — refactor candidato a tabla parametrizable.
+- **Edición de solicitudes de ausencia no recalcula autorizaciones.** Posible riesgo institucional. Definir política.
+- **`payroll-review.html` sin historial.** Si se requiere auditoría, documentar que el operador debe archivar manualmente.
+- **Inactivar trabajador en HR no inactiva usuario en `security`** (ni viceversa). Considerar trigger o checklist.
+- **Reportes de ausencias excluyen trabajadores inactivos.** Problemático para auditorías de períodos pasados.
+- **No hay cancelación de solicitud por el trabajador** — solo TH puede cancelar. Mejora candidata.
+- **Doble ruta de creación de solicitud** (`request-absence` vs. `manage-absences` con estado Aprobada que salta autorizaciones). La segunda debe auditarse periódicamente.
+
+**Cierre de `security`:**
+
+- **Lista oficial de funciones del módulo a confirmar.** `index.html` lista 8, reestructuración v2026 lista 10. Manual de "Consulta de seguridad" no aparece indexado.
+- **Bugs vs. tickets:** dos sistemas distintos accesibles desde el mismo botón flotante. Considerar consolidación.
+- **No hay copia de roles ni asignación masiva** en UI. Mejoras candidatas para administración a escala.
+- **Algoritmo de priorización de tickets** debe documentarse en Capa 1 (pesos y fórmula).
+
+### A.6 Hallazgos del Lote 3 (`early-alerts` + `follow-ups` parcial)
+
+**Hallazgos en `early-alerts`:**
+
+- **Diferencia conceptual con `follow-ups`** (nivel familia vs. nivel estudiante). Documentar prominentemente — confundir los dos módulos es el error de uso más probable.
+- **Cierre irreversible** tanto de alertas como de tareas. Sin política institucional documentada para casos donde la situación reaparece.
+- **Carga diferida de métricas en index** — patrón único entre los módulos procesados. Considerar unificar (todo módulo lazy o todo módulo eager) o documentar la excepción.
+- **Permiso `Atender gestiones asignadas` sin página propia indexada.** Verificar si la vista para el trabajador asignado está implementada.
+- **Notificaciones de creación de alerta** no documentan claramente quién las recibe. Variabilidad institucional. Centralizar en configuración.
+- **Sin exportación de dashboard ni listados.** Limitación para reportes formales (consejo directivo, entes externos).
+- **Posible inconsistencia con Directivo docente** si un estudiante de una familia cambia de sección a mitad de año. A confirmar.
+
+**Hallazgos en `follow-ups` (módulo cerrado en v0.3.3):**
+
+*Modelo de datos:*
+- **Ambigüedad EAE entre `stm_students_topics` con flag `is_eae` y `eae_topics` como tabla separada en BD.** Es la inconsistencia más relevante del módulo. La tabla `eae_topics` existe en BD con campos especializados (`supports`, `actions`, `recommendations`, `topic_conclusion`, `topic_strategy`, `confidential_note`, referencias a `gas_student_id` / `gas_worker_id`) pero los manuales no la mencionan. **Acción:** verificar contra el código de `eae-issues.html`, `manage-eae-issues.html` y `register-eae-*` qué tabla consultan realmente.
+- **Categorías compartidas entre asuntos individuales y grupales** (`stm_category`). Refactor candidato si se quisieran independientes.
+- **Sistema transversal de tareas (`tasks`, `task_progress_notes`, `task_documents`, `task_deliverables`)** consumido por múltiples módulos vía `module_type` y polimorfismo `reference_id`/`reference_type`. Documentar como decisión arquitectónica en Capa 1.
+- **Límite hardcoded de 150 registros** en consultas de `review-individual-issues` y `manage-unescalated-issues`. Sin paginación. Riesgo de invisibilizar asuntos antiguos.
+
+*Flujo de triage de escalamiento:*
+- **Función "Gestionar Asuntos Escalables" mencionada repetidamente en manuales pero sin manual indexado.** Verificar si está implementada y dónde vive (¿coordinación, otro módulo?).
+- **Cierre rápido de no escalables irreversible** desde un solo botón sin documentación obligatoria.
+- **Texto residual en modal de cierre** de `manage-unescalated-issues`: menciona "conclusión y estrategia" que esa función no tiene. Limpiar.
+
+*`user-course-assignments`:*
+- **Patrón destructivo de guardado:** reemplaza completamente la lista de asignados. Mejora candidata: pasar a modelo de delta o mostrar advertencia explícita.
+- **Validación hardcoded de "director de sección"**, no por permisos tradicionales. Segunda excepción del tipo en el sistema (la primera es `clearances.html` en `hr`).
+- **Sin notificaciones** al asignar/desasignar trabajadores a cursos.
+
+*Confidencialidad:*
+- **Bug en notificaciones EAE:** llegan como "Nuevo Asunto Individual Registrado" sin distinguir EAE. Diferenciar subject/encabezado.
+- **Notas confidenciales se notifican con contenido completo en correo** — riesgo si el correo no está cifrado.
+- **`query-confidential-notes` no muestra al autor** aunque la BD lo registra. Fricción innecesaria; considerar mostrarlo a roles autorizados.
+- **Búsqueda de notas confidenciales solo por nombre/fecha**, no por contenido. Decisión defendible pero limita análisis legítimos.
+- **Advertencias de confidencialidad sin enforcement técnico** ("no capturas, no copiar, no imprimir") — protocolo institucional, no característica de seguridad.
+
+*Inconsistencias terminológicas y código:*
+- **`PAGE_CONFIG.modulePath` usa `'tracking'` en `individual-issues.html`** mientras el resto usa `'follow-ups'`. Normalizar.
+- **Tres siglas distintas para EAE** ("Apoyo Educativo Especializado", "Equipo de Apoyo Estudiantil", "Equipo de Atención Especial"). Estandarizar.
+- **Typo CSS** `--system-primaryy-color` en `review-individual-issues.html`. Cae al fallback, no crítico.
+- **Funciones placeholder no implementadas:** `exportarCSV()`, `imprimirTabla()` en `review-individual-issues`. Retirar o implementar.
+- **Atajos Alt+1/2/3** documentados pero el propio manual reconoce que pueden estar deshabilitados. Verificar.
+
+*Otros:*
+- **Pestaña "Estado Metas" deshabilitada** en `general-queries.html`. Sin fecha de reactivación.
+- **No hay reabrir estrategias cerradas.** Crear nueva es el workaround documentado.
+- **Volumen de manuales muy desigual** (3 chunks en `categories.html` vs. 12 en `manage-unescalated-issues`). Homogeneizar.
+- **Algunos manuales incluyen detalles técnicos de BD** que normalmente no van en manual de usuario. Considerar separar manual de usuario vs. documentación técnica.
+
+### A.7 Hallazgos del Lote 3 (`new-students`)
+
+- **Integración hardcoded con `follow-ups`.** "La primera actividad puede crear automáticamente un tema de seguimiento en otro módulo." Si la asociación está en código y no en configuración, es frágil ante cambios del catálogo de actividades. **Verificar implementación urgente.** Si está hardcoded, parametrizar (ej. agregar campo `triggers_follow_up_topic` al catálogo de actividades).
+- **Sin desactivación lógica de actividades.** Solo eliminación bloqueada o el workaround manual de prefijar `[NO USAR]` al nombre. Mejora candidata: campo `is_active`. Patrón ya existente en `early-alerts.alert_types` y `follow-ups.stm_category`.
+- **Sistema permite registrar actividades duplicadas por diseño.** Documentado como característica. Implicación: la métrica "Actividades Realizadas" del dashboard puede inflarse. Verificar cómo cuenta el "porcentaje de completitud" individual (actividades distintas vs. registros totales) — el manual no lo aclara.
+- **Estudiantes Finalizados desaparecen de búsquedas activas.** Para análisis longitudinal hay que pedir al admin. Limitación para reportes anuales o de cohortes.
+- **Sin edición ni eliminación desde UI** para reportes y registros. Toda corrección pasa por admin. Para institución con flujo alto de estudiantes nuevos, satura. Mejora candidata: ventana de gracia de 5 minutos para el creador.
+- **Filtro por fechas no afecta exportación CSV** en `registration-queries`. Inconsistencia documentada. Mejora candidata: respetar filtros activos.
+- **Responsable se muestra como "nombre + primer apellido"** — colisión posible con homónimos. Ampliar a dos apellidos o agregar identificador.
+- **Asimetría en notificaciones del módulo:**
+  - Reportar estudiante → notifica a **todos los actores**.
+  - Registrar actividad → notifica al **director del curso**.
+  - Vincular actor → **NO notifica nada** (debe avisarse manualmente fuera del sistema).
+  Considerar notificación de bienvenida al ser vinculado como actor.
+- **Dashboard sin actualización en tiempo real.** Patrón consistente con el resto del sistema. Sin exportación directa.
+- **Métrica "Sin Actividades" del dashboard** es un buen indicador operativo crítico ("DEBE tender a cero"). Considerar dispararlo como alerta automática a coordinadores cuando supere umbral.
+- **Umbrales de color hardcoded** en dashboard (verde ≥80%, amarillo 50-79%, rojo <50%). Si la institución quiere otros, requiere cambio de código.
+- **Término "inculturación"** poco intuitivo si la institución es laica. Considerar renombrar a "integración" o "acompañamiento de bienvenida". Documentar en glosario.
+- **Atajos de teclado documentados solo en `registration-queries`** (Alt+E, Alt+F, Alt+R). Si funcionan, conviene exponerlos en otros módulos también.
+- **Reportes manuales sugeridos** ("toma capturas de pantalla periódicas") como evidencia de progreso. Indica que la funcionalidad de reporte/exportación está sub-desarrollada.
+
+---
+
+## Anexo B — Inventario de manuales por módulo
+
+| Módulo (slug) | Páginas indexadas | Fragmentos | Estado en macro |
+|---|---:|---:|---|
+| `services` | 19 | 130 | Pendiente (Lote 4) |
+| `general-tools` | 18 | 129 | Pendiente (Lote 6, redistribuir) |
+| `hr` | 18 | 68 | Procesado (§ 9.4) |
+| `follow-ups` | 15 | 124 | Procesado (§ 9.6) |
+| `budget` | 23 | 98 | Pendiente (Lote 5) |
+| `config` | 13 | 87 | Procesado (§ 9.3) |
+| `security` | 11 | 41 | Procesado (§ 9.2) |
+| `surveys` | 11 | 46 | Pendiente (Lote 7) |
+| `indicators` | 11 | 44 | Pendiente (Lote 7) |
+| `procedures` | 9 | 82 | Procesado (§ 9.1) |
+| `new-students` | 7 | 52 | Procesado (§ 9.7) |
+| `events` | 6 | 37 | Pendiente (Lote 4) |
+| `early-alerts` | 5 | 22 | Procesado (§ 9.5) |
+| `certificates` | 1 | 8 | Pendiente (Lote 4) |
+| **Total** | **167** | **968** | |
+
+Documentos no-manuales en `ai_documents`:
+
+- Atributos IB (txt)
+- Atributos Tilatá (txt)
+- Manual de Convivencia (pdf)
+- Rigoberto (md, posiblemente documentación del propio asistente)
+
+---
+
+## Anexo C — Glosario
+
+> *Glosario en construcción. Se completa al cierre del documento. Términos ya identificados:*
+
+**Estructurales y de plataforma:**
+- **Calendario académico:** ciclo agosto–julio. Distinto del calendario calendario solar.
+- **Calendario alternativo (Calendario B):** marca opcional en trabajadores con calendario laboral distinto al institucional.
+- **Calendar ID:** identificador de Google Calendar configurado en `system_config`.
+- **Phidias:** sistema externo, fuente de verdad de matrículas y notas.
+- **Workspace:** Google Workspace adoptado a nivel de dominio.
+
+**Marco IB y pedagógico:**
+- **CEA:** Costo Educativo Anual. Base del cálculo de matrícula y pensiones.
+- **PEP, PAI, PD:** programas IB (Primary Years, Middle Years, Diploma). Transversales a grados.
+
+**Identidad y permisos:**
+- **Permiso universal:** flag `is_universal = true`. Inyectado a todo usuario autenticado sin asignación por rol.
+- **Super Admin:** marca de rol que otorga acceso total.
+- **RFID:** código único físico para acceso, asistencia, biblioteca, cafetería. Validación cruzada trabajadores ↔ estudiantes.
+
+**Tickets y soporte:**
+- **Diferimiento de ticket:** acción de posponer un ticket con fecha futura y razón. Excluye al ticket de la priorización automática.
+- **Priorización de tickets:** algoritmo que ordena pendientes por puntaje compuesto.
+
+**HR — Estructura organizacional:**
+- **División → Centro de Costo → Área → Subárea:** jerarquía de 4 niveles para asignación de personal.
+- **Centro de Costo "Docencia":** identificador funcional para procesos masivos de paz y salvo y derecho a sección académica.
+- **Sección (3 acepciones distintas):**
+  - Sección académica (Preescolar, Primaria, Bachillerato, Media) — entidad de `config`.
+  - Sección/Área Organizacional — tercer nivel HR.
+  - Sección de un curso — agrupación de estudiantes dentro de un grado.
+- **Estratega de división:** rol externo a HR que recibe notificaciones de "instancia superior" en ausencias.
+- **Trabajador de reemplazo:** marca booleana que excluye asignación automática de saldos.
+
+**HR — Ausencias:**
+- **Categoría de ausencia:** entidad configurable que define todas las reglas de un tipo de ausencia.
+- **CIE-10:** Clasificación Internacional de Enfermedades. Código requerido para incapacidades médicas.
+- **Saldo de horas personales / días de calamidad / días de descanso remunerado:** acumulados configurables que se inicializan anualmente.
+- **Inicialización de saldos:** acción que reemplaza saldos de todos los trabajadores activos con valores configurados.
+- **Trabajo remoto:** marca de categoría que indica que la ausencia *no* es ausencia real (la persona está trabajando desde otro lugar).
+- **Plazo normal / plazo de fin de mes:** ventanas para registro retroactivo de ausencias, diferenciadas según fecha del mes.
+- **Inconsistencia:** día con ausencia de día completo aprobada *y* registro de asistencia.
+- **Día injustificado:** día laborable sin asistencia ni ausencia aprobada.
+
+**HR — Calendario laboral:**
+- **Festivo, Receso Remunerado, Receso No Remunerado, Día Virtual:** tipos de día no laborable.
+- **Ley Emiliani:** norma colombiana que traslada festivos al lunes siguiente.
+- **Aplicación de descuento de receso:** acción manual que descuenta días hábiles del período al saldo de Administrativos y Servicios Generales.
+
+**HR — Paz y Salvos:**
+- **Área de paz y salvo:** dependencia que da visto bueno de no-pendientes (Biblioteca, Sistemas, Contabilidad, etc.).
+- **Administrador de paz y salvo:** trabajador con privilegio para activar procesos y ver el panorama global. Lista en `absence-config.html`.
+- **Activación masiva:** generación de procesos para todos los docentes activos. Típico de cierre de año.
+- **Deduplicación de checks:** una persona que cumple varios roles para un mismo trabajador recibe un solo check.
+
+**Otros:**
+- **SLA en procedimientos:** tiempo máximo en días hábiles para completar un paso.
+- **Reestructuración v2026:** cambio de organización de permisos entre módulos pendiente de aplicar (ver Anexo A.1).
+- **Cierre anual:** proceso institucional de fin de año académico que dispara paz y salvos masivos, inicialización de saldos, etc.
+
+**Acompañamiento estudiantil:**
+- **Alerta temprana:** registro de situación de riesgo a nivel **familia** (no estudiante). En `early-alerts`.
+- **Asunto / Seguimiento:** registro a nivel **estudiante** o **curso/promoción**. En `follow-ups`.
+- **Asunto individual:** seguimiento académico/disciplinario regular de un estudiante.
+- **Asunto grupal:** seguimiento a nivel curso completo. Siempre escalable.
+- **Asunto EAE:** seguimiento gestionado por el Equipo de Apoyo Estudiantil (acompañamiento profesional especializado). Distinguido por `is_eae = true`. Tres siglas en uso: "Equipo de Apoyo Estudiantil", "Equipo de Atención Especial", "Apoyo Educativo Especializado" — pendiente de estandarizar.
+- **Nota confidencial:** registro extremadamente sensible (familiar/médico/psicológico). En tabla separada `stm_confidential_notes`, sin categorías por diseño.
+- **Categoría (de seguimiento):** etiqueta configurable que clasifica asuntos. Compartida entre individuales y grupales.
+- **Estrategia (de acompañamiento):** plan personalizado por estudiante. Solo una abierta por estudiante a la vez.
+- **Tarea (de seguimiento):** acción asignada a un trabajador con fecha límite y progreso.
+- **Estados de severidad de alerta:** Rojo (crítico), Amarillo (moderado), Verde (leve).
+- **`is_open` / `is_escalable` / `is_eae`:** flags de registro en `follow-ups`. `is_open` controla edición; `is_escalable` controla visibilidad para directivos; `is_eae` distingue tipo.
+- **Estrategas / Directivo Docente:** roles institucionales con alcance distinto en `early-alerts` (todo vs. su sección).
+- **Triage de asuntos:** flujo de tres pasos en `follow-ups` para asuntos individuales: registro → clasificación escalable/no escalable (en `review-individual-issues`) → cierre según clasificación. La clasificación es reversible mientras el asunto esté abierto.
+- **Asunto escalable / no escalable:** clasificación binaria de un asunto individual que determina por dónde se cierra. *No escalable* = director del curso lo cierra rápido sin documentación adicional. *Escalable* = se gestiona con conclusión y estrategia (función "Gestionar Asuntos Escalables" mencionada en manuales pero sin manual indexado actualmente).
+- **Reportante:** trabajador que crea originalmente un asunto, una nota o una alerta. Distinto del responsable (el que lo gestiona o resuelve). Visible en consultas y notificaciones.
+- **Director de curso vs. director de sección:** dos figuras distintas. El director de curso lleva un único curso (asignado vía campo `course_director_email` en `courses`); el director de sección coordina toda una sección académica (Preescolar, Primaria, Bachillerato, Media). En `follow-ups`, el director de curso ve solo sus cursos; el director de sección ve todos los de su sección.
+- **Asignación trabajador-curso:** vínculo gestionado en `user-course-assignments`. Determina qué trabajadores no-directores pueden hacer seguimiento a estudiantes de un curso específico. Patrón destructivo de guardado: cada vez que se guarda, reemplaza la lista anterior completa.
+- **Sistema transversal de tareas:** módulo compartido (`tasks`, `task_progress_notes`, `task_documents`, `task_deliverables`) consumido por varios módulos del sistema. Cada tarea referencia su origen vía `module_type` (e.g. `'follow-ups'`) y un par polimórfico `reference_id` / `reference_type`. Accesible también desde "Gestionar Tareas" como punto de entrada unificado.
+
+**Estudiantes nuevos / inculturación:**
+
+- **Inculturación:** término del módulo `new-students` que designa el proceso institucional de integración del nuevo estudiante y su familia al colegio. Originario de la antropología cultural; en este contexto refiere al acompañamiento sistemático de bienvenida.
+- **Actividad (de inculturación):** paso del proceso, con orden numérico único, nombre y descripción opcional. No confundir con "actividad" en otros sentidos del sistema.
+- **Actor:** trabajador vinculado al módulo `new-students` que ejecuta y registra actividades. No es lo mismo que un usuario regular del módulo — los actores reciben notificaciones cuando se reporta un estudiante nuevo.
+- **Reporte de estudiante nuevo:** registro inicial que activa el proceso. Único por estudiante.
+- **Estado "En Proceso" / "Finalizado":** estados del estudiante en `new-students`. "Finalizado" se calcula dinámicamente cuando el estudiante completó todas las actividades activas del catálogo en ese momento.
+- **Registro de actividad:** documentación de que un estudiante completó una actividad específica. Inmutable post-guardado. Permite duplicados por diseño.
+
+---
+
+## Bitácora de versiones
+
+### v0.3.3 — 4 de mayo de 2026
+
+- **Cierre de Lote 3 — `follow-ups` completo:** procesados los 5 manuales pendientes (`user-course-assignments`, `review-individual-issues`, `manage-unescalated-issues`, `manage-group-issues`, `query-confidential-notes`) más el cierre de `manage-eae-issues`. Total: 52 fragmentos adicionales.
+- Ficha §9.6 reescrita en su totalidad: nota de "parcial" eliminada, tabla de funcionalidades corregida con nombres reales de archivo (3 nombres tentativos eran incorrectos), todas las marcas ◐ pasadas a ✓.
+- Conceptos clave ampliados con dos sub-secciones nuevas: "Flujo de triage de asuntos individuales" (registro → clasificación → cierre) y "Asignación de usuarios a cursos" (con su patrón destructivo de guardado).
+- Sección de "Tablas principales" reescrita: tabla `eae_topics` documentada como observada-en-BD-con-uso-ambiguo; sistema transversal de tareas (`tasks` y satélites) confirmado contra BD con sus campos clave.
+- Sección de "Dependencias" actualizada para reflejar el sistema transversal de tareas y la integración entrante desde `new-students`.
+- Sección de "Observaciones" reorganizada en bloques temáticos y ampliada con hallazgos del lote completo (~12 ítems nuevos).
+- **Hallazgo crítico señalado:** ambigüedad EAE entre `stm_students_topics` con flag `is_eae` (afirmado por manuales) y `eae_topics` como tabla separada (existente en BD). Documentado como observación abierta a resolver verificando el código de las páginas EAE.
+- **Hallazgo funcional señalado:** función "Gestionar Asuntos Escalables" mencionada repetidamente en manuales pero sin manual indexado en el módulo. Posible gap funcional.
+- Anexo A.6 actualizado: hallazgos de `follow-ups` reescritos en bloques temáticos (modelo de datos, triage, user-course-assignments, confidencialidad, inconsistencias, otros).
+- Anexo B (inventario) actualizado: `follow-ups` marcado como procesado.
+- Índice §8 actualizado: `follow-ups` con marca ✓.
+- Anexo C (glosario) ampliado con 6 términos nuevos: triage, escalable/no escalable, reportante, director de curso vs. sección, asignación trabajador-curso, sistema transversal de tareas.
+
+### v0.3.2 — 4 de mayo de 2026
+
+- **Lote 3 — `new-students` completo:** 7 manuales / 52 fragmentos → ficha §9.7.
+- Capa 3 actualizada: agregado `new-students` al mapa con su integración asíncrona hacia `follow-ups` (creación automática de tema desde primera actividad).
+- Anexo A.6 reorganizado: `new-students` extraído a A.7 separado.
+- Anexo A.7 nuevo con hallazgos específicos del módulo `new-students` (~14 ítems).
+- Anexo B (inventario) actualizado: `new-students` marcado como procesado.
+- Anexo C (glosario) ampliado con sección dedicada a inculturación y `new-students` (~7 términos).
+- Pendiente: cierre de §9.6 `follow-ups` con los 5 manuales restantes (Query A).
+
+### v0.3 — 4 de mayo de 2026
+
+- **Lote 3 procesado parcialmente:**
+  - **`early-alerts` completo** (5 manuales / 22 fragmentos) → ficha §9.5.
+  - **`follow-ups` parcial** (10 de 15 manuales) → ficha §9.6 con marcadores ◐ en las 5 páginas pendientes.
+  - **`new-students` no procesado** — los chunks no llegaron en este envío. Pendiente.
+- Capa 3 actualizada con dependencias preliminares de los nuevos módulos.
+- Anexo A.5 reorganizado para acumular hallazgos por lote; Anexo A.6 nuevo con hallazgos del Lote 3.
+- Anexo B (inventario) actualizado: early-alerts procesado, follow-ups parcial, new-students pendiente.
+- Anexo C (glosario) ampliado con sección dedicada a acompañamiento estudiantil (~12 términos nuevos).
+
+### v0.2 — 4 de mayo de 2026
+
+- **Lote 2 procesado completo: módulo `hr` (Talento Humano), 18 manuales / 68 fragmentos.**
+- **Lote 1 cerrado: completados los 7 manuales pendientes de `security`** (users, roles, permissions, role-permissions, user-roles, ticket-categories, ticket-management).
+- Ficha §9.2 `security` reemplazada por versión completa.
+- Nueva ficha §9.4 `hr` agregada.
+- Capa 3 actualizada con dependencias preliminares de HR.
+- Anexo A.5 reemplazado: hallazgos consolidados del Lote 2.
+- Anexo A.2 actualizado: agrega excepción arquitectónica de `clearances.html`.
+- Anexo B (inventario) actualizado: hr y security marcados como procesados.
+- Anexo C (glosario) ampliado con ~30 términos críticos de HR (ausencias, calendario, paz y salvos, terminología de "sección").
+
+### v0.1 — 30 de abril de 2026
+
+- Creación del documento.
+- Estructura completa de tres capas + anexos.
+- Capa 1 con marcadores de "Pendiente" y resúmenes mínimos.
+- Capa 2: 3 fichas de módulo procesadas:
+  - `procedures` — completa, basada en piloto.
+  - `config` — completa.
+  - `security` — parcial (4 de 11 manuales). Pendiente recibir chunks de 7 manuales.
+- Capa 3 con mapa preliminar.
+- Anexos A–C: estructura armada, contenido inicial poblado, glosario pendiente.
+
+### Próxima versión planeada
+
+- **v0.4 — Lote 4:** `services` (19) + `events` (6) + `certificates` (1). Total 26 páginas. Lote heterogéneo (operaciones del colegio + módulo pequeño).
+- **Verificación pendiente antes del Lote 4** (no bloqueante pero conviene resolver): código de páginas EAE para esclarecer `stm_students_topics` vs. `eae_topics`, y existencia/ubicación de "Gestionar Asuntos Escalables".
+
+---
+
+**Fin del documento v0.3.2.**
