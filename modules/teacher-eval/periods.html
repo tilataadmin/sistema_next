@@ -560,13 +560,52 @@
                     });
                 }
 
-                // Verificar que tenga formularios asociados
+                // Verificar que tenga formularios asociados y que no haya colisión por sección
                 const forms = await supabaseRequest(
-                    `/teval_period_forms?select=form_id&period_id=eq.${periodId}`
+                    `/teval_period_forms?select=form_id,teval_forms(form_name,teval_form_school_sections(section_id,sections(section_name)))&period_id=eq.${periodId}`
                 );
 
                 if (!forms || forms.length === 0) {
                     showMessage('No puede abrir un período sin formularios asociados. Edite el período y asigne al menos un formulario.', 'warning');
+                    return;
+                }
+
+                // Verificar que cada formulario tenga al menos una sección asociada
+                const formsSinSeccion = forms.filter(pf =>
+                    !(pf.teval_forms?.teval_form_school_sections || []).length
+                );
+                if (formsSinSeccion.length > 0) {
+                    const nombres = formsSinSeccion.map(pf => pf.teval_forms?.form_name || 'Sin nombre').join(', ');
+                    showMessage(
+                        `No se puede abrir el período. Estos formularios no tienen secciones asociadas: ${nombres}. Edite los formularios y asigne al menos una sección.`,
+                        'danger'
+                    );
+                    return;
+                }
+
+                // Detectar colisiones: dos formularios cubriendo la misma sección
+                const sectionToForms = {};
+                forms.forEach(pf => {
+                    const formName = pf.teval_forms?.form_name || 'Sin nombre';
+                    (pf.teval_forms?.teval_form_school_sections || []).forEach(ss => {
+                        const secId = ss.section_id;
+                        const secName = ss.sections?.section_name || '';
+                        if (!sectionToForms[secId]) {
+                            sectionToForms[secId] = { sectionName: secName, formNames: [] };
+                        }
+                        sectionToForms[secId].formNames.push(formName);
+                    });
+                });
+
+                const colisiones = Object.values(sectionToForms).filter(s => s.formNames.length > 1);
+                if (colisiones.length > 0) {
+                    const detalle = colisiones.map(c =>
+                        `${c.sectionName} cubierta por: ${c.formNames.join(', ')}`
+                    ).join('; ');
+                    showMessage(
+                        `No se puede abrir el período. Hay secciones cubiertas por más de un formulario: ${detalle}. Edite el período y deje un solo formulario por sección.`,
+                        'danger'
+                    );
                     return;
                 }
 
