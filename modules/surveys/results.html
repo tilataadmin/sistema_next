@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <mena name="page-version" content="26.5.7.12.50">
     <title>Resultados de Encuesta - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -724,6 +725,33 @@
                 font-size: 1.5rem;
             }
         }
+        
+        /* ==========================================
+           BADGE DE ESTADO DE LA APLICACIÓN
+           ========================================== */
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            vertical-align: middle;
+            margin-left: 0.5rem;
+            line-height: 1.4;
+        }
+        
+        .status-open {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .status-closed {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -805,7 +833,16 @@
                     <div class="col-md-4 text-end">
                         <div class="stat-value text-white" id="totalResponses">0</div>
                         <div class="text-white-50">respuestas totales</div>
-                    </div>
+                    </divfunction renderApplicationHeader() {
+                </div>
+            </div>
+            
+            <!-- Aviso de resultados parciales (solo cuando la aplicación está abierta) -->
+            <div class="alert alert-warning d-flex align-items-center mb-4" id="partialResultsAlert" style="display: none;" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+                <div>
+                    <strong>Esta aplicación está abierta.</strong>
+                    Los resultados son parciales y pueden cambiar a medida que se reciben respuestas.
                 </div>
             </div>
 
@@ -1004,10 +1041,10 @@
                 const session = getStoredSession();
                 if (session && session.user) {
                     currentUser = session.user;
-                    console.log('✅ Usuario:', currentUser.user_display_name);
+                    console.log('✅ Usuario:', currentUser.<!-- Header de la aplicación seleccionada -->);
                 }
                 
-                await loadClosedApplications();
+                await loadAvailableApplications();
                 setupEventListeners();
                 
                 ocultarLoading();
@@ -1047,45 +1084,62 @@
         // ==========================================
         // CARGAR APLICACIONES CERRADAS
         // ==========================================
-        async function loadClosedApplications() {
+        async function loadAvailableApplications() {
             try {
-                console.log('📡 Cargando aplicaciones cerradas...');
+                console.log('📡 Cargando aplicaciones abiertas y cerradas...');
                 
-                // CAMBIO: Ya no filtramos por created_by
-                // Cualquier usuario con permiso "Crear encuestas" puede ver TODAS las aplicaciones cerradas
+                // Traemos aplicaciones en estado 'open' o 'closed' (excluimos 'draft')
+                // Cualquier usuario con permiso "Crear encuestas" puede ver TODAS las aplicaciones
                 const applications = await supabaseRequest(
-                    '/survey_applications?select=*,survey_masters(survey_name,created_by,users!survey_masters_created_by_fkey(user_display_name))&status=eq.closed&order=created_at.desc'
+                    '/survey_applications?select=*,survey_masters(survey_name,created_by,users!survey_masters_created_by_fkey(user_display_name))&status=in.(open,closed)&order=created_at.desc'
                 );
                 
                 const select = document.getElementById('applicationSelect');
                 
                 if (applications.length === 0) {
-                    select.innerHTML = '<option value="">No hay aplicaciones cerradas disponibles</option>';
-                    showMessage('No hay aplicaciones cerradas para analizar', 'info');
+                    select.innerHTML = '<option value="">No hay aplicaciones disponibles</option>';
+                    showMessage('No hay aplicaciones disponibles para analizar', 'info');
                     return;
                 }
                 
-                select.innerHTML = '<option value="">Selecciona una aplicación...</option>';
-                applications.forEach(app => {
-                    const option = document.createElement('option');
-                    option.value = app.application_id;
-                    
-                    // Mostrar el nombre del creador si está disponible
-                    const creatorName = app.survey_masters?.users?.user_display_name || 'Desconocido';
-                    option.textContent = `${app.survey_masters.survey_name} - ${app.application_name} (Creador: ${creatorName})`;
-                    
-                    option.dataset.appData = JSON.stringify(app);
-                    select.appendChild(option);
-                });
+                // Separar por estado: abiertas primero, cerradas después.
+                // Dentro de cada grupo se mantiene el orden por created_at desc que viene del API.
+                const openApps = applications.filter(app => app.status === 'open');
+                const closedApps = applications.filter(app => app.status === 'closed');
                 
-                console.log(`✅ ${applications.length} aplicaciones cargadas (todas disponibles)`);
+                select.innerHTML = '<option value="">Selecciona una aplicación...</option>';
+                
+                if (openApps.length > 0) {
+                    const openGroup = document.createElement('optgroup');
+                    openGroup.label = `🟢 Abiertas (${openApps.length})`;
+                    openApps.forEach(app => openGroup.appendChild(buildApplicationOption(app)));
+                    select.appendChild(openGroup);
+                }
+                
+                if (closedApps.length > 0) {
+                    const closedGroup = document.createElement('optgroup');
+                    closedGroup.label = `⚫ Cerradas (${closedApps.length})`;
+                    closedApps.forEach(app => closedGroup.appendChild(buildApplicationOption(app)));
+                    select.appendChild(closedGroup);
+                }
+                
+                console.log(`✅ ${applications.length} aplicaciones cargadas (${openApps.length} abiertas, ${closedApps.length} cerradas)`);
                 
             } catch (error) {
                 console.error('❌ Error cargando aplicaciones:', error);
                 showMessage('Error al cargar aplicaciones: ' + error.message, 'danger');
             }
         }
-
+        
+        // Helper para construir un <option> con los datos de la aplicación
+        function buildApplicationOption(app) {
+            const option = document.createElement('option');
+            option.value = app.application_id;
+            const creatorName = app.survey_masters?.users?.user_display_name || 'Desconocido';
+            option.textContent = `${app.survey_masters.survey_name} - ${app.application_name} (Creador: ${creatorName})`;
+            option.dataset.appData = JSON.stringify(app);
+            return option;
+        }
         
         
         // ==========================================
@@ -1505,7 +1559,14 @@
         // RENDERIZAR HEADER DE APLICACIÓN
         // ==========================================
         function renderApplicationHeader() {
-            document.getElementById('surveyTitle').textContent = surveyMaster.survey_name;
+            const isOpen = selectedApplication.status === 'open';
+            
+            // Título con badge de estado al lado
+            const titleEl = document.getElementById('surveyTitle');
+            const badgeClass = isOpen ? 'status-open' : 'status-closed';
+            const badgeText = isOpen ? 'Abierta' : 'Cerrada';
+            titleEl.innerHTML = `${escapeHtml(surveyMaster.survey_name)} <span class="status-badge ${badgeClass}">${badgeText}</span>`;
+            
             document.getElementById('applicationName').textContent = selectedApplication.application_name;
             
             const startDate = formatDate(selectedApplication.start_date);
@@ -1513,6 +1574,12 @@
             document.getElementById('dateRange').textContent = `Período: ${startDate} - ${endDate}`;
             
             document.getElementById('totalResponses').textContent = allProfiles.length;
+            
+            // Mostrar/ocultar aviso de resultados parciales
+            const partialAlert = document.getElementById('partialResultsAlert');
+            if (partialAlert) {
+                partialAlert.style.display = isOpen ? 'flex' : 'none';
+            }
         }
         
         // ==========================================
