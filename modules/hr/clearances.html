@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.05.11.10.30">
+    <meta name="page-version" content="2026.05.11.10.35">
     <title>Paz y Salvos</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -503,9 +503,20 @@
 
             document.getElementById('toggleCerrados').addEventListener('change', function() {
                 mostrarCerrados = this.checked;
-                renderizarPanorama();
+                renderizarTrabajadoresEnProceso();
             });
+
+            // Botón de PDF dentro del modal de detalle
+            const btnPDFModal = document.getElementById('btnDescargarPDFModal');
+            if (btnPDFModal) {
+                btnPDFModal.addEventListener('click', function() {
+                    if (detalleContextoActual) {
+                        generarPDFTrabajador(detalleContextoActual.workerId, detalleContextoActual.processId);
+                    }
+                });
+            }
         }
+        
 
         // ==========================================
         // UTILIDADES
@@ -861,6 +872,146 @@
                 showMessage('Error al anular: ' + error.message, 'danger');
                 ocultarLoading();
             }
+        }
+
+        // ==========================================
+        // MODAL DETALLE DE PAZ Y SALVO POR TRABAJADOR
+        // ==========================================
+        let modalDetalleInstance = null;
+        let detalleContextoActual = null; // { workerId, processId } para el botón de PDF del modal
+
+        async function verDetalleTrabajador(workerId, processId) {
+            try {
+                detalleContextoActual = { workerId, processId };
+
+                // Filtrar items de este trabajador en este proceso desde el cache
+                const items = allItemsCache.filter(
+                    i => i.worker_id === workerId && i.process_id === processId
+                );
+
+                if (items.length === 0) {
+                    showMessage('No se encontraron paz y salvos para este trabajador', 'warning');
+                    return;
+                }
+
+                // Datos del trabajador (de cualquier item, son los mismos)
+                const nombre = items[0].workers ? formatWorkerName(items[0].workers) : '-';
+
+                // Datos del proceso
+                const proceso = procesosCache.find(p => p.process_id === processId);
+                const procesoDesc = proceso?.process_description || '-';
+                const procesoNotes = proceso?.notes || '';
+
+                // Estado de cierre
+                const closure = closuresCache.find(
+                    c => c.worker_id === workerId && c.process_id === processId
+                );
+                const estaCerrado = closure && closure.is_closed;
+
+                // Cálculo de progreso
+                const total = items.length;
+                const otorgados = items.filter(i => i.is_cleared).length;
+                const porcentaje = total > 0 ? Math.round((otorgados / total) * 100) : 0;
+                const completo = otorgados === total && total > 0;
+
+                // Header del modal
+                document.getElementById('detalle-worker-name').textContent = nombre;
+                document.getElementById('detalle-process-description').textContent = procesoDesc;
+                document.getElementById('detalle-process-notes').innerHTML = procesoNotes
+                    ? `<i class="bi bi-sticky me-1"></i>${procesoNotes}`
+                    : '';
+
+                // Badge de estado
+                const badge = document.getElementById('detalle-estado-badge');
+                if (estaCerrado) {
+                    badge.className = 'badge bg-secondary';
+                    badge.textContent = 'Cerrado';
+                } else if (completo) {
+                    badge.className = 'badge bg-success';
+                    badge.textContent = 'Completo';
+                } else {
+                    badge.className = 'badge bg-warning text-dark';
+                    badge.textContent = 'Pendiente';
+                }
+
+                // Barra de progreso
+                document.getElementById('detalle-progreso-texto').textContent =
+                    `${otorgados} / ${total} otorgados`;
+                const barra = document.getElementById('detalle-progreso-barra');
+                barra.style.width = `${porcentaje}%`;
+                if (porcentaje === 100) barra.style.backgroundColor = '#198754';
+                else if (porcentaje >= 50) barra.style.backgroundColor = '#fd7e14';
+                else barra.style.backgroundColor = '#dc3545';
+
+                // Ordenar items: primero por tipo (área, director, jefe), luego alfabético
+                const ordenTipo = { area: 1, section_director: 2, manager: 3 };
+                const itemsOrdenados = [...items].sort((a, b) => {
+                    const ta = ordenTipo[a.reviewer_type] || 99;
+                    const tb = ordenTipo[b.reviewer_type] || 99;
+                    if (ta !== tb) return ta - tb;
+                    const la = etiquetaTipoRevision(a);
+                    const lb = etiquetaTipoRevision(b);
+                    return la.localeCompare(lb);
+                });
+
+                // Render tabla de items
+                document.getElementById('detalle-items-body').innerHTML = itemsOrdenados.map(item => {
+                    const tipoLabel = etiquetaTipoRevision(item);
+                    const revisor = item.reviewer ? formatWorkerName(item.reviewer) : '-';
+                    const tieneObs = item.observations && item.observations.trim();
+
+                    // Estado visual
+                    let estadoCelda;
+                    let rowClass = '';
+                    if (item.is_cleared) {
+                        estadoCelda = '<i class="bi bi-check-circle-fill text-success me-1"></i>Otorgado';
+                        rowClass = 'table-success';
+                    } else if (tieneObs) {
+                        estadoCelda = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Pendiente';
+                        rowClass = 'table-warning';
+                    } else {
+                        estadoCelda = '<i class="bi bi-clock text-muted me-1"></i>Pendiente';
+                    }
+
+                    const fecha = item.cleared_at ? formatDate(item.cleared_at) : '-';
+                    const obs = tieneObs
+                        ? `<span style="white-space: pre-wrap;">${item.observations}</span>`
+                        : '<span class="text-muted fst-italic">Sin observaciones</span>';
+
+                    return `
+                        <tr class="${rowClass}">
+                            <td>${tipoLabel}</td>
+                            <td>${revisor}</td>
+                            <td>${estadoCelda}</td>
+                            <td><small>${fecha}</small></td>
+                            <td>${obs}</td>
+                        </tr>`;
+                }).join('');
+
+                // Mostrar el modal
+                if (!modalDetalleInstance) {
+                    modalDetalleInstance = new bootstrap.Modal(document.getElementById('modalDetalleTrabajador'));
+                }
+                modalDetalleInstance.show();
+
+            } catch (error) {
+                console.error('❌ Error mostrando detalle:', error);
+                showMessage('Error al cargar el detalle: ' + error.message, 'danger');
+            }
+        }
+
+        // Etiqueta legible del tipo de revisión para un item
+        function etiquetaTipoRevision(item) {
+            if (item.reviewer_type === 'area') {
+                return item.area?.area_name || 'Área';
+            }
+            if (item.reviewer_type === 'section_director') {
+                return `Dir. ${item.section?.section_name || 'Sección'}`;
+            }
+            if (item.reviewer_type === 'manager') {
+                return 'Jefe directo';
+            }
+            return '-';
         }
 
         // ==========================================
@@ -1451,6 +1602,7 @@
         // ==========================================
         window.cerrarTrabajador = cerrarTrabajador;
         window.anularTrabajador = anularTrabajador;
+        window.verDetalleTrabajador = verDetalleTrabajador;
         window.toggleCheckVisual = toggleCheckVisual;
         window.guardarCheck = guardarCheck;
         
