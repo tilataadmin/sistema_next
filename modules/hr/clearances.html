@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.05.11.10.35">
+    <meta name="page-version" content="2026.05.11.10.40">
     <title>Paz y Salvos</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -880,6 +880,65 @@
         let modalDetalleInstance = null;
         let detalleContextoActual = null; // { workerId, processId } para el botón de PDF del modal
 
+        // ==========================================
+        // CARGAR LOGO DEL COLEGIO (base64, cache)
+        // ==========================================
+        let logoBase64Cache = null;
+        let logoCargaIntentada = false;
+        let organizationNameCache = null;
+
+        async function cargarLogoYConfigBase() {
+            if (logoCargaIntentada) {
+                return { logo: logoBase64Cache, orgName: organizationNameCache };
+            }
+            logoCargaIntentada = true;
+
+            try {
+                const configData = await supabaseRequest(
+                    '/system_config?select=organization_name,logo_url&limit=1'
+                );
+                if (!configData || configData.length === 0) {
+                    return { logo: null, orgName: null };
+                }
+
+                organizationNameCache = configData[0].organization_name || null;
+                const logoUrl = configData[0].logo_url;
+
+                if (!logoUrl) {
+                    return { logo: null, orgName: organizationNameCache };
+                }
+
+                // Cargar imagen y convertir a base64
+                logoBase64Cache = await urlImagenABase64(logoUrl);
+                return { logo: logoBase64Cache, orgName: organizationNameCache };
+
+            } catch (error) {
+                console.warn('⚠️ No se pudo cargar logo/config:', error);
+                return { logo: null, orgName: organizationNameCache };
+            }
+        }
+
+        function urlImagenABase64(url) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = function() {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        resolve(canvas.toDataURL('image/png'));
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+                img.src = url;
+            });
+        }
+        
         async function verDetalleTrabajador(workerId, processId) {
             try {
                 detalleContextoActual = { workerId, processId };
@@ -1012,6 +1071,225 @@
                 return 'Jefe directo';
             }
             return '-';
+        }
+
+        // ==========================================
+        // GENERAR PDF DEL ESTADO DEL PAZ Y SALVO
+        // ==========================================
+        async function generarPDFTrabajador(workerId, processId) {
+            try {
+                mostrarLoading();
+
+                // Verificar que jsPDF esté cargado
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    throw new Error('jsPDF no está disponible');
+                }
+
+                // Filtrar items
+                const items = allItemsCache.filter(
+                    i => i.worker_id === workerId && i.process_id === processId
+                );
+                if (items.length === 0) {
+                    showMessage('No se encontraron paz y salvos para este trabajador', 'warning');
+                    ocultarLoading();
+                    return;
+                }
+
+                // Datos del proceso
+                const proceso = procesosCache.find(p => p.process_id === processId);
+                const procesoDesc = proceso?.process_description || '-';
+                const procesoNotes = proceso?.notes || '';
+
+                // Estado de cierre
+                const closure = closuresCache.find(
+                    c => c.worker_id === workerId && c.process_id === processId
+                );
+                const estaCerrado = closure && closure.is_closed;
+
+                // Cargar datos completos del trabajador (sección, documento, email)
+                const workerData = await supabaseRequest(
+                    `/workers?select=worker_id_doc,worker_first_name,worker_last_name_1,worker_last_name_2,email,section:sections(section_name)&worker_id=eq.${workerId}`
+                );
+                const worker = workerData?.[0];
+                if (!worker) {
+                    throw new Error('No se encontraron datos del trabajador');
+                }
+
+                const nombre = formatWorkerName(worker);
+                const documento = worker.worker_id_doc || '-';
+                const email = worker.email || '-';
+                const seccion = worker.section?.section_name || '-';
+
+                // Cargar logo y nombre de la organización
+                const { logo, orgName } = await cargarLogoYConfigBase();
+                const organizacion = orgName || 'Colegio Tilatá';
+
+                // Cálculos de progreso
+                const total = items.length;
+                const otorgados = items.filter(i => i.is_cleared).length;
+                const pendientes = total - otorgados;
+
+                // Ordenar items igual que en el modal
+                const ordenTipo = { area: 1, section_director: 2, manager: 3 };
+                const itemsOrdenados = [...items].sort((a, b) => {
+                    const ta = ordenTipo[a.reviewer_type] || 99;
+                    const tb = ordenTipo[b.reviewer_type] || 99;
+                    if (ta !== tb) return ta - tb;
+                    return etiquetaTipoRevision(a).localeCompare(etiquetaTipoRevision(b));
+                });
+
+                // ============ Construcción del PDF ============
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+                const margenIzq = 15;
+                const anchoUtil = 210 - 30; // ancho A4 (210) menos márgenes laterales
+                let yPos = 15;
+
+                // --- Encabezado: logo + nombre organización + título ---
+                if (logo) {
+                    try {
+                        doc.addImage(logo, 'PNG', margenIzq, yPos, 25, 25);
+                    } catch (e) {
+                        console.warn('No se pudo agregar logo al PDF:', e);
+                    }
+                }
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(14);
+                doc.setTextColor(27, 54, 93); // #1b365d
+                doc.text(organizacion, margenIzq + 30, yPos + 8);
+
+                doc.setFontSize(16);
+                doc.text('Estado de Paz y Salvo', margenIzq + 30, yPos + 17);
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(100, 100, 100);
+                doc.text(`Generado: ${formatDate(new Date().toISOString())}`, margenIzq + 30, yPos + 23);
+
+                yPos += 32;
+
+                // Línea divisoria
+                doc.setDrawColor(27, 54, 93);
+                doc.setLineWidth(0.5);
+                doc.line(margenIzq, yPos, margenIzq + anchoUtil, yPos);
+                yPos += 6;
+
+                // --- Datos del trabajador ---
+                doc.setTextColor(0, 0, 0);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.text('Datos del trabajador', margenIzq, yPos);
+                yPos += 5;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.text(`Nombre: ${nombre}`, margenIzq, yPos); yPos += 5;
+                doc.text(`Documento: ${documento}`, margenIzq, yPos); yPos += 5;
+                doc.text(`Correo: ${email}`, margenIzq, yPos); yPos += 5;
+                doc.text(`Sección: ${seccion}`, margenIzq, yPos); yPos += 7;
+
+                // --- Datos del proceso ---
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.text('Proceso', margenIzq, yPos);
+                yPos += 5;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                const descLines = doc.splitTextToSize(`Descripción: ${procesoDesc}`, anchoUtil);
+                doc.text(descLines, margenIzq, yPos);
+                yPos += descLines.length * 5;
+
+                if (procesoNotes) {
+                    const notesLines = doc.splitTextToSize(`Notas: ${procesoNotes}`, anchoUtil);
+                    doc.text(notesLines, margenIzq, yPos);
+                    yPos += notesLines.length * 5;
+                }
+
+                // Estado general
+                let estadoTexto;
+                if (estaCerrado) estadoTexto = 'Cerrado';
+                else if (otorgados === total) estadoTexto = 'Completo (pendiente de cierre)';
+                else estadoTexto = `En curso (${otorgados} de ${total} otorgados)`;
+
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Estado: ${estadoTexto}`, margenIzq, yPos);
+                yPos += 7;
+
+                // --- Tabla de items con autoTable ---
+                const filas = itemsOrdenados.map(item => {
+                    const tipoLabel = etiquetaTipoRevision(item);
+                    const revisor = item.reviewer ? formatWorkerName(item.reviewer) : '-';
+                    const estado = item.is_cleared ? 'Otorgado' : 'Pendiente';
+                    const fecha = item.cleared_at ? formatDate(item.cleared_at) : '-';
+                    const obs = item.observations || '';
+                    return [tipoLabel, revisor, estado, fecha, obs];
+                });
+
+                doc.autoTable({
+                    startY: yPos,
+                    head: [['Tipo de revisión', 'Revisor', 'Estado', 'Fecha', 'Observaciones']],
+                    body: filas,
+                    margin: { left: margenIzq, right: margenIzq },
+                    styles: { fontSize: 9, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
+                    headStyles: { fillColor: [27, 54, 93], textColor: [255, 255, 255], fontStyle: 'bold' },
+                    alternateRowStyles: { fillColor: [248, 249, 250] },
+                    columnStyles: {
+                        0: { cellWidth: 38 },
+                        1: { cellWidth: 40 },
+                        2: { cellWidth: 22 },
+                        3: { cellWidth: 22 },
+                        4: { cellWidth: 'auto' }
+                    },
+                    didParseCell: function(data) {
+                        // Colorear celda "Estado" según valor
+                        if (data.section === 'body' && data.column.index === 2) {
+                            if (data.cell.raw === 'Otorgado') {
+                                data.cell.styles.textColor = [25, 135, 84];
+                                data.cell.styles.fontStyle = 'bold';
+                            } else {
+                                data.cell.styles.textColor = [220, 53, 69];
+                            }
+                        }
+                    }
+                });
+
+                // --- Resumen al final ---
+                let yResumen = doc.lastAutoTable.finalY + 8;
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.setTextColor(0, 0, 0);
+                doc.text(`Total: ${total}    Otorgados: ${otorgados}    Pendientes: ${pendientes}`, margenIzq, yResumen);
+
+                // --- Pie ---
+                const totalPaginas = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= totalPaginas; i++) {
+                    doc.setPage(i);
+                    doc.setFont('helvetica', 'italic');
+                    doc.setFontSize(8);
+                    doc.setTextColor(120, 120, 120);
+                    doc.text(
+                        `Documento generado automáticamente el ${formatDate(new Date().toISOString())}`,
+                        margenIzq,
+                        290
+                    );
+                    doc.text(`Página ${i} de ${totalPaginas}`, 210 - margenIzq, 290, { align: 'right' });
+                }
+
+                // Nombre del archivo
+                const nombreLimpio = nombre.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').replace(/\s+/g, '_');
+                const fechaArchivo = new Date().toISOString().slice(0, 10);
+                doc.save(`PazYSalvo_${nombreLimpio}_${fechaArchivo}.pdf`);
+
+                ocultarLoading();
+
+            } catch (error) {
+                console.error('❌ Error generando PDF:', error);
+                showMessage('Error al generar PDF: ' + error.message, 'danger');
+                ocultarLoading();
+            }
         }
 
         // ==========================================
@@ -1597,12 +1875,13 @@
             await cargarMisChecks();
         }
 
-        // ==========================================
+       // ==========================================
         // EXPONER FUNCIONES GLOBALMENTE
         // ==========================================
         window.cerrarTrabajador = cerrarTrabajador;
         window.anularTrabajador = anularTrabajador;
         window.verDetalleTrabajador = verDetalleTrabajador;
+        window.generarPDFTrabajador = generarPDFTrabajador;
         window.toggleCheckVisual = toggleCheckVisual;
         window.guardarCheck = guardarCheck;
         
