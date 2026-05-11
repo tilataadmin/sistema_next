@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.05.11.10.25">
+    <meta name="page-version" content="2026.05.11.10.30">
     <title>Paz y Salvos</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -663,12 +663,16 @@
                     ? `<br><small class="text-muted fst-italic"><i class="bi bi-sticky me-1"></i>${proceso.notes}</small>`
                     : '';
 
-                // Botón de cierre (solo si no está cerrado)
+                // Botones de cierre y anulación (solo si no está cerrado)
                 let btnCerrar = '';
+                let btnAnular = '';
                 if (!estaCerrado) {
                     const btnClass = completo ? 'btn-success' : 'btn-outline-success';
-                    btnCerrar = `<button class="btn btn-sm ${btnClass}" onclick="cerrarTrabajador('${w.process_id}','${w.worker_id}')" title="Cerrar paz y salvo">
+                    btnCerrar = `<button class="btn btn-sm ${btnClass} me-1" onclick="cerrarTrabajador('${w.process_id}','${w.worker_id}')" title="Cerrar paz y salvo">
                         <i class="bi bi-lock"></i>
+                    </button>`;
+                    btnAnular = `<button class="btn btn-sm btn-outline-danger" onclick="anularTrabajador('${w.process_id}','${w.worker_id}')" title="Anular / Retirar del proceso">
+                        <i class="bi bi-x-circle"></i>
                     </button>`;
                 }
 
@@ -691,14 +695,51 @@
                                 onclick="verDetalleTrabajador('${w.worker_id}','${w.process_id}')" title="Ver detalle">
                                 <i class="bi bi-eye"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger me-1"
+                            <button class="btn btn-sm btn-outline-secondary me-1"
                                 onclick="generarPDFTrabajador('${w.worker_id}','${w.process_id}')" title="Generar PDF">
                                 <i class="bi bi-file-earmark-pdf"></i>
                             </button>
                             ${btnCerrar}
+                            ${btnAnular}
                         </td>
                     </tr>`;
             }).join('');
+        }
+
+        // ==========================================
+        // AUTO-COMPLETAR PROCESO
+        // Si no quedan trabajadores con closure abierto en este proceso,
+        // se marca el proceso como 'completed'.
+        // ==========================================
+        async function autoCompletarProcesoSiCorresponde(processId) {
+            try {
+                // Buscar closures abiertos del proceso
+                const closuresAbiertos = await supabaseRequest(
+                    `/hr_clearance_worker_closures?select=closure_id&process_id=eq.${processId}&is_closed=eq.false&limit=1`
+                );
+
+                if (closuresAbiertos && closuresAbiertos.length > 0) {
+                    // Aún hay trabajadores abiertos, no hacer nada
+                    return false;
+                }
+
+                // No quedan abiertos: marcar el proceso como completado
+                await supabaseRequest(`/hr_clearance_processes?process_id=eq.${processId}&process_status=eq.active`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        process_status: 'completed',
+                        completed_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                console.log(`✅ Proceso ${processId} auto-completado`);
+                return true;
+
+            } catch (error) {
+                console.warn('⚠️ Error en auto-completar proceso:', error);
+                return false;
+            }
         }
         
         // ==========================================
@@ -735,13 +776,89 @@
                     });
                 }
 
-                showMessage('Paz y salvo cerrado', 'success');
+                // Verificar si fue el último trabajador abierto del proceso
+                const seCompletoProceso = await autoCompletarProcesoSiCorresponde(processId);
+
+                showMessage(
+                    seCompletoProceso
+                        ? 'Paz y salvo cerrado. Proceso completado (todos los trabajadores cerrados).'
+                        : 'Paz y salvo cerrado',
+                    'success'
+                );
+
                 if (isAdmin) await cargarTrabajadoresEnProceso();
                 await cargarMisChecks();
                 ocultarLoading();
+                
             } catch (error) {
                 console.error('❌ Error cerrando:', error);
                 showMessage('Error al cerrar: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // ANULAR TRABAJADOR DEL PROCESO
+        // - Individual: cancela el proceso completo.
+        // - Masivo: elimina los items + closure de este trabajador.
+        //   Si era el último abierto del masivo, auto-completa el proceso.
+        // ==========================================
+        async function anularTrabajador(processId, workerId) {
+            // Identificar tipo de proceso
+            const proceso = procesosCache.find(p => p.process_id === processId);
+            if (!proceso) {
+                showMessage('No se encontró el proceso', 'danger');
+                return;
+            }
+
+            const esMasivo = proceso.process_type === 'massive';
+
+            const mensajeConfirm = esMasivo
+                ? '¿Quitar a este trabajador del proceso masivo? Se eliminarán sus paz y salvos pendientes y su registro de cierre. Esta acción no se puede deshacer.'
+                : '¿Anular el paz y salvo de este trabajador? Esta acción cancela el proceso completo. No se puede deshacer.';
+
+            if (!confirm(mensajeConfirm)) return;
+
+            try {
+                mostrarLoading();
+
+                if (esMasivo) {
+                    // Eliminar items de este trabajador en este proceso
+                    await supabaseRequest(
+                        `/hr_clearance_items?process_id=eq.${processId}&worker_id=eq.${workerId}`,
+                        { method: 'DELETE' }
+                    );
+
+                    // Eliminar el closure de este trabajador en este proceso
+                    await supabaseRequest(
+                        `/hr_clearance_worker_closures?process_id=eq.${processId}&worker_id=eq.${workerId}`,
+                        { method: 'DELETE' }
+                    );
+
+                    // ¿Era el último trabajador abierto del proceso? Auto-completar.
+                    await autoCompletarProcesoSiCorresponde(processId);
+
+                    showMessage('Trabajador retirado del proceso', 'success');
+
+                } else {
+                    // Individual: cancelar el proceso completo
+                    await supabaseRequest(`/hr_clearance_processes?process_id=eq.${processId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            process_status: 'cancelled',
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+
+                    showMessage('Paz y salvo anulado', 'success');
+                }
+
+                await recargarTodo();
+                ocultarLoading();
+
+            } catch (error) {
+                console.error('❌ Error anulando trabajador:', error);
+                showMessage('Error al anular: ' + error.message, 'danger');
                 ocultarLoading();
             }
         }
@@ -1333,6 +1450,7 @@
         // EXPONER FUNCIONES GLOBALMENTE
         // ==========================================
         window.cerrarTrabajador = cerrarTrabajador;
+        window.anularTrabajador = anularTrabajador;
         window.toggleCheckVisual = toggleCheckVisual;
         window.guardarCheck = guardarCheck;
         
