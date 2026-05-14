@@ -80,6 +80,38 @@
 
         <div id="alertContainer"></div>
 
+        <!-- ================================== -->
+        <!-- PANEL APROBADOR: Solicitudes pendientes -->
+        <!-- (solo para el aprobador configurado) -->
+        <!-- ================================== -->
+        <div id="approver-panel" style="display:none;">
+            <div class="card mb-4" style="border-left: 5px solid #1b365d;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-shield-check me-2"></i>Solicitudes Pendientes de Aprobación</span>
+                    <span class="badge bg-primary" id="approver-count">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="tabla-aprobaciones">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Solicitado</th>
+                                    <th>Tipo</th>
+                                    <th>Trabajador / Alcance</th>
+                                    <th>Descripción</th>
+                                    <th>Solicitante</th>
+                                    <th class="text-end">Decisión</th>
+                                </tr>
+                            </thead>
+                            <tbody id="aprobaciones-body">
+                                <tr><td colspan="6" class="text-center text-muted py-4">Cargando solicitudes...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         
         <!-- ================================== -->
         <!-- PANEL TRABAJADORES EN PROCESO       -->
@@ -404,6 +436,42 @@
         </div>
     </div>
 
+    <!-- MODAL: Rechazar Solicitud -->
+    <div class="modal fade" id="modalRechazo" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>Rechazar Solicitud</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="formRechazo">
+                    <div class="modal-body">
+                        <input type="hidden" id="rechazoProcessId">
+                        <p>Vas a rechazar la siguiente solicitud:</p>
+                        <div class="alert alert-light border">
+                            <strong id="rechazoDescripcion">-</strong><br>
+                            <small class="text-muted" id="rechazoSubinfo">-</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="rechazoMotivo" class="form-label">
+                                Motivo del rechazo <span class="text-danger">*</span>
+                            </label>
+                            <textarea class="form-control" id="rechazoMotivo" rows="3" required
+                                placeholder="Explica por qué rechazas esta solicitud..."></textarea>
+                            <small class="text-muted">Este motivo será enviado al solicitante por correo.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-x-circle me-1"></i>Confirmar Rechazo
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
    <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -436,7 +504,8 @@
         let modalIndividualInstance = null;
         let modalMasivoInstance = null;
         let modalProgresoInstance = null;
-
+        let modalRechazoInstance = null;
+        
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
@@ -496,6 +565,11 @@
                     document.getElementById('workers-list-panel').style.display = 'block';
                 }
 
+                // Cargar solicitudes pendientes (solo aprobador)
+                if (isApprover) {
+                    await cargarSolicitudesPendientes();
+                }
+                
                 // Cargar mis checks (para cualquiera que tenga items asignados)
                 await cargarMisChecks();
 
@@ -568,6 +642,7 @@
             modalMasivoInstance = new bootstrap.Modal(document.getElementById('modalActivarMasivo'));
             modalProgresoInstance = new bootstrap.Modal(document.getElementById('modalProgreso'));
             modalConfirmConfidencialInstance = new bootstrap.Modal(document.getElementById('modalConfirmConfidencial'));
+            modalRechazoInstance = new bootstrap.Modal(document.getElementById('modalRechazo'));
         }
 
         function configurarEventos() {
@@ -616,6 +691,12 @@
                     }
                 });
             }
+
+            // Form de rechazo
+            const formRechazo = document.getElementById('formRechazo');
+            if (formRechazo) {
+                formRechazo.addEventListener('submit', confirmarRechazo);
+            }
         }
         
 
@@ -653,7 +734,322 @@
             }
         }
 
-        
+        // ==========================================
+        // PANEL APROBADOR: Cargar solicitudes pendientes
+        // ==========================================
+        async function cargarSolicitudesPendientes() {
+            if (!isApprover) return;
+
+            try {
+                const pendientes = await supabaseRequest(
+                    `/hr_clearance_processes?select=*,solicitante:workers!hr_clearance_processes_activated_by_fkey(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email),objetivo:workers!hr_clearance_processes_target_worker_fkey(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email)&process_status=eq.pending_approval&order=created_at.desc`
+                );
+
+                renderizarSolicitudesPendientes(pendientes || []);
+                document.getElementById('approver-panel').style.display = 'block';
+
+            } catch (error) {
+                console.error('❌ Error cargando solicitudes pendientes:', error);
+                document.getElementById('aprobaciones-body').innerHTML =
+                    '<tr><td colspan="6" class="text-center text-danger py-4">Error al cargar solicitudes</td></tr>';
+            }
+        }
+
+        function renderizarSolicitudesPendientes(solicitudes) {
+            document.getElementById('approver-count').textContent = solicitudes.length;
+
+            if (solicitudes.length === 0) {
+                document.getElementById('aprobaciones-body').innerHTML =
+                    '<tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-check-circle me-1"></i>No hay solicitudes pendientes</td></tr>';
+                return;
+            }
+
+            // Pre-calcular cantidad de docentes para procesos masivos
+            const cantidadDocentesActuales = workersCache.filter(w => w.organizational_cost_center_id === COST_CENTER_DOCENCIA).length;
+
+            document.getElementById('aprobaciones-body').innerHTML = solicitudes.map(p => {
+                const fecha = p.created_at ? formatDate(p.created_at) : '-';
+                const solicitante = p.solicitante ? formatWorkerName(p.solicitante) : '-';
+
+                // Tipo + badges
+                let tipoLabel = '';
+                if (p.process_type === 'massive') {
+                    tipoLabel = '<span class="badge bg-warning text-dark">Masivo</span>';
+                } else if (p.is_confidential) {
+                    tipoLabel = '<span class="badge" style="background-color:#495057;color:white;"><i class="bi bi-lock-fill me-1"></i>Confidencial</span>';
+                } else {
+                    tipoLabel = '<span class="badge bg-primary">Individual</span>';
+                }
+
+                // Alcance
+                let alcance = '';
+                if (p.process_type === 'massive') {
+                    alcance = `<strong>${cantidadDocentesActuales}</strong> docentes activos`;
+                } else if (p.objetivo) {
+                    alcance = formatWorkerName(p.objetivo);
+                } else {
+                    alcance = '-';
+                }
+
+                const descripcion = p.process_description || '-';
+                const notasHtml = p.notes
+                    ? `<br><small class="text-muted fst-italic"><i class="bi bi-sticky me-1"></i>${p.notes}</small>`
+                    : '';
+
+                return `
+                    <tr>
+                        <td><small>${fecha}</small></td>
+                        <td>${tipoLabel}</td>
+                        <td>${alcance}</td>
+                        <td><small>${descripcion}</small>${notasHtml}</td>
+                        <td><small>${solicitante}</small></td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-success me-1"
+                                onclick="aprobarSolicitud('${p.process_id}')" title="Aprobar">
+                                <i class="bi bi-check-lg"></i> Aprobar
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger"
+                                onclick="abrirRechazo('${p.process_id}')" title="Rechazar">
+                                <i class="bi bi-x-lg"></i> Rechazar
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        // ==========================================
+        // APROBAR SOLICITUD
+        // Genera items + closures + notifica a trabajador y revisores
+        // ==========================================
+        async function aprobarSolicitud(processId) {
+            if (!confirm('¿Aprobar esta solicitud? Se generarán los paz y salvos y se enviarán las notificaciones.')) return;
+
+            modalProgresoInstance.show();
+            document.getElementById('progresoTexto').textContent = 'Aprobando solicitud...';
+
+            try {
+                // 1. Recuperar el proceso completo
+                const procesoData = await supabaseRequest(
+                    `/hr_clearance_processes?select=*&process_id=eq.${processId}`
+                );
+                if (!procesoData || procesoData.length === 0) {
+                    throw new Error('Solicitud no encontrada');
+                }
+                const proceso = procesoData[0];
+
+                if (proceso.process_status !== 'pending_approval') {
+                    throw new Error(`La solicitud ya no está pendiente (estado actual: ${proceso.process_status})`);
+                }
+
+                // 2. Generar items según tipo de proceso
+                document.getElementById('progresoTexto').textContent = 'Generando paz y salvos...';
+                let allItems = [];
+                let closureRecords = [];
+                let docentes = [];
+
+                if (proceso.process_type === 'individual') {
+                    const targetWorker = workersCache.find(w => w.worker_id === proceso.target_worker_id);
+                    if (!targetWorker) throw new Error('Trabajador objetivo no encontrado');
+
+                    allItems = await generarItemsTrabajador(processId, targetWorker);
+                    closureRecords.push({
+                        process_id: processId,
+                        worker_id: proceso.target_worker_id,
+                        is_closed: false
+                    });
+
+                } else if (proceso.process_type === 'massive') {
+                    docentes = workersCache.filter(w => w.organizational_cost_center_id === COST_CENTER_DOCENCIA);
+
+                    const docenteIds = docentes.map(d => d.worker_id).join(',');
+                    const todosJefes = await supabaseRequest(
+                        `/worker_managers?select=worker_id,manager_id&assignment_status=eq.active&worker_id=in.(${docenteIds})`
+                    );
+
+                    const secciones = await supabaseRequest(
+                        '/sections?select=section_id,director_email&section_status=eq.active'
+                    );
+                    const directoresMap = new Map();
+                    for (const sec of secciones) {
+                        if (sec.director_email) {
+                            const dir = workersCache.find(w => w.email === sec.director_email);
+                            if (dir) directoresMap.set(sec.section_id, dir.worker_id);
+                        }
+                    }
+
+                    for (const docente of docentes) {
+                        const jefesDocente = (todosJefes || []).filter(j => j.worker_id === docente.worker_id);
+                        const items = generarItemsTrabajadorConDatos(processId, docente, directoresMap, jefesDocente);
+                        allItems.push(...items);
+                        closureRecords.push({
+                            process_id: processId,
+                            worker_id: docente.worker_id,
+                            is_closed: false
+                        });
+                    }
+                }
+
+                // 3. Insertar items en lotes
+                document.getElementById('progresoTexto').textContent = `Insertando ${allItems.length} checks...`;
+                const BATCH_SIZE = 500;
+                for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+                    const batch = allItems.slice(i, i + BATCH_SIZE);
+                    await supabaseRequest('/hr_clearance_items', {
+                        method: 'POST',
+                        body: JSON.stringify(batch)
+                    });
+                }
+
+                // 4. Insertar closures en lotes
+                document.getElementById('progresoTexto').textContent = 'Creando registros de cierre...';
+                for (let i = 0; i < closureRecords.length; i += BATCH_SIZE) {
+                    const batch = closureRecords.slice(i, i + BATCH_SIZE);
+                    await supabaseRequest('/hr_clearance_worker_closures', {
+                        method: 'POST',
+                        body: JSON.stringify(batch)
+                    });
+                }
+
+                // 5. Marcar el proceso como 'active' con auditoría de aprobación
+                document.getElementById('progresoTexto').textContent = 'Activando proceso...';
+                await supabaseRequest(`/hr_clearance_processes?process_id=eq.${processId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        process_status: 'active',
+                        approved_by: currentWorker.worker_id,
+                        approved_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                // 6. Notificar a trabajador(es) — solo si NO es confidencial
+                document.getElementById('progresoTexto').textContent = 'Notificando trabajadores...';
+                if (!proceso.is_confidential) {
+                    if (proceso.process_type === 'individual') {
+                        const targetWorker = workersCache.find(w => w.worker_id === proceso.target_worker_id);
+                        if (targetWorker) await notificarTrabajadorObjetivo(targetWorker);
+                    } else if (proceso.process_type === 'massive') {
+                        for (const docente of docentes) {
+                            await notificarTrabajadorObjetivo(docente);
+                        }
+                    }
+                }
+
+                // 7. Notificar a revisores
+                document.getElementById('progresoTexto').textContent = 'Notificando revisores...';
+                if (proceso.process_type === 'individual') {
+                    const targetWorker = workersCache.find(w => w.worker_id === proceso.target_worker_id);
+                    if (targetWorker) await notificarRevisores(allItems, targetWorker);
+                } else if (proceso.process_type === 'massive') {
+                    await notificarRevisoresMasivo(allItems, docentes);
+                }
+
+                modalProgresoInstance.hide();
+                const detalle = proceso.process_type === 'massive'
+                    ? `${allItems.length} checks para ${docentes.length} docentes`
+                    : `${allItems.length} checks generados`;
+                showMessage(`Solicitud aprobada: ${detalle}`, 'success');
+
+                await recargarTodo();
+
+            } catch (error) {
+                console.error('❌ Error aprobando solicitud:', error);
+                modalProgresoInstance.hide();
+                showMessage('Error al aprobar: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // ABRIR MODAL DE RECHAZO
+        // ==========================================
+        async function abrirRechazo(processId) {
+            try {
+                const procesoData = await supabaseRequest(
+                    `/hr_clearance_processes?select=*,solicitante:workers!hr_clearance_processes_activated_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),objetivo:workers!hr_clearance_processes_target_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&process_id=eq.${processId}`
+                );
+                if (!procesoData || procesoData.length === 0) {
+                    showMessage('Solicitud no encontrada', 'warning');
+                    return;
+                }
+                const p = procesoData[0];
+
+                document.getElementById('rechazoProcessId').value = processId;
+                document.getElementById('rechazoDescripcion').textContent = p.process_description || '-';
+
+                let sub = '';
+                if (p.process_type === 'massive') {
+                    sub = 'Proceso masivo (docentes)';
+                } else if (p.objetivo) {
+                    sub = `Para: ${formatWorkerName(p.objetivo)}`;
+                    if (p.is_confidential) sub += ' — Confidencial';
+                }
+                if (p.solicitante) sub += ` | Solicitado por ${formatWorkerName(p.solicitante)}`;
+                document.getElementById('rechazoSubinfo').textContent = sub;
+
+                document.getElementById('rechazoMotivo').value = '';
+                modalRechazoInstance.show();
+
+            } catch (error) {
+                console.error('❌ Error abriendo rechazo:', error);
+                showMessage('Error al cargar la solicitud: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // CONFIRMAR RECHAZO
+        // ==========================================
+        async function confirmarRechazo(e) {
+            e.preventDefault();
+            const processId = document.getElementById('rechazoProcessId').value;
+            const motivo = document.getElementById('rechazoMotivo').value.trim();
+
+            if (!motivo) {
+                showMessage('Escribe el motivo del rechazo', 'warning');
+                return;
+            }
+
+            try {
+                modalRechazoInstance.hide();
+                mostrarLoading();
+
+                // 1. Cargar el proceso completo para tener datos del solicitante
+                const procesoData = await supabaseRequest(
+                    `/hr_clearance_processes?select=*&process_id=eq.${processId}`
+                );
+                if (!procesoData || procesoData.length === 0) {
+                    throw new Error('Solicitud no encontrada');
+                }
+                const proceso = procesoData[0];
+
+                // 2. Marcar como rechazada
+                await supabaseRequest(`/hr_clearance_processes?process_id=eq.${processId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        process_status: 'rejected',
+                        rejected_by: currentWorker.worker_id,
+                        rejected_at: new Date().toISOString(),
+                        rejection_reason: motivo,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                // 3. Notificar al solicitante
+                await notificarSolicitanteRechazo({
+                    proceso,
+                    motivo,
+                    aprobador: currentWorker
+                });
+
+                showMessage('Solicitud rechazada y solicitante notificado', 'warning');
+                await recargarTodo();
+                ocultarLoading();
+
+            } catch (error) {
+                console.error('❌ Error rechazando:', error);
+                showMessage('Error al rechazar: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
         
         // ==========================================
         // LISTA DE TRABAJADORES: Cargar datos
@@ -2173,10 +2569,13 @@
             if (isAdmin) {
                 await cargarTrabajadoresEnProceso();
             }
+            if (isApprover) {
+                await cargarSolicitudesPendientes();
+            }
             await cargarMisChecks();
         }
 
-       // ==========================================
+        // ==========================================
         // EXPONER FUNCIONES GLOBALMENTE
         // ==========================================
         window.cerrarTrabajador = cerrarTrabajador;
@@ -2185,6 +2584,8 @@
         window.generarPDFTrabajador = generarPDFTrabajador;
         window.toggleCheckVisual = toggleCheckVisual;
         window.guardarCheck = guardarCheck;
+        window.aprobarSolicitud = aprobarSolicitud;
+        window.abrirRechazo = abrirRechazo;
         
     </script>
 </body>
