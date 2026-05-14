@@ -430,7 +430,9 @@
         let allItemsCache = [];       // todos los items de procesos activos
         let closuresCache = [];       // cierres por trabajador
         let mostrarCerrados = false;
-
+        let clearanceApproverWorkerId = null;  // worker_id del aprobador configurado
+        let isApprover = false;                // ¿el usuario actual es el aprobador?
+        
         let modalIndividualInstance = null;
         let modalMasivoInstance = null;
         let modalProgresoInstance = null;
@@ -637,6 +639,18 @@
             workersCache = await supabaseRequest(
                 '/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,section_id,organizational_cost_center_id&worker_status=eq.active&order=worker_last_name_1,worker_last_name_2,worker_first_name'
             );
+
+            // Cargar aprobador configurado
+            try {
+                const configData = await supabaseRequest('/hr_config?select=clearance_approver_worker_id&limit=1');
+                if (configData && configData.length > 0) {
+                    clearanceApproverWorkerId = configData[0].clearance_approver_worker_id || null;
+                    isApprover = clearanceApproverWorkerId === currentWorker.worker_id;
+                }
+                console.log(`🛡️ Aprobador configurado: ${clearanceApproverWorkerId || 'ninguno'} | Soy aprobador: ${isApprover}`);
+            } catch (e) {
+                console.warn('⚠️ Error cargando aprobador:', e);
+            }
         }
 
         
@@ -1689,19 +1703,26 @@
         }
 
         async function ejecutarActivacionIndividual(esConfidencial) {
+            // Validar que exista aprobador configurado
+            if (!clearanceApproverWorkerId) {
+                showMessage('No hay aprobador de procesos configurado. Pídale a un administrador que lo configure en "Configuración de Talento Humano".', 'warning');
+                return;
+            }
+
             const workerId = document.getElementById('individualWorker').value;
             const description = document.getElementById('individualDescription').value.trim();
             const notes = document.getElementById('individualNotes').value.trim();
 
             modalProgresoInstance.show();
-            document.getElementById('progresoTexto').textContent = 'Creando proceso...';
+            document.getElementById('progresoTexto').textContent = 'Creando solicitud...';
 
             try {
-                // 1. Crear proceso
+                // Crear proceso en pending_approval (sin items, sin notificaciones aún)
                 const proceso = await supabaseRequest('/hr_clearance_processes?select=*', {
                     method: 'POST',
                     body: JSON.stringify({
                         process_type: 'individual',
+                        process_status: 'pending_approval',
                         process_description: description || 'Paz y salvo individual',
                         target_worker_id: workerId,
                         activated_by: currentWorker.worker_id,
@@ -1711,46 +1732,27 @@
                 });
                 const processId = proceso[0].process_id;
 
-                // 2. Generar items para este trabajador
-                document.getElementById('progresoTexto').textContent = 'Generando checks...';
+                // Notificar al aprobador
+                document.getElementById('progresoTexto').textContent = 'Enviando solicitud al aprobador...';
                 const targetWorker = workersCache.find(w => w.worker_id === workerId);
-                const items = await generarItemsTrabajador(processId, targetWorker);
-
-                // 3. Insertar items
-                if (items.length > 0) {
-                    await supabaseRequest('/hr_clearance_items', {
-                        method: 'POST',
-                        body: JSON.stringify(items)
-                    });
-                }
-
-                // 4. Crear registro de cierre (abierto)
-                await supabaseRequest('/hr_clearance_worker_closures', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        process_id: processId,
-                        worker_id: workerId,
-                        is_closed: false
-                    })
+                await notificarAprobadorSolicitud({
+                    processId,
+                    tipo: 'individual',
+                    esConfidencial,
+                    descripcion: description || 'Paz y salvo individual',
+                    notas: notes,
+                    targetWorker
                 });
-
-                // 5. Notificaciones
-                document.getElementById('progresoTexto').textContent = 'Enviando notificaciones...';
-                if (!esConfidencial) {
-                    await notificarTrabajadorObjetivo(targetWorker);
-                }
-                // A los revisores se notifica siempre (no saben que es confidencial)
-                await notificarRevisores(items, targetWorker);
 
                 modalProgresoInstance.hide();
                 const tipoMsg = esConfidencial ? ' (confidencial)' : '';
-                showMessage(`Proceso activado${tipoMsg}: ${items.length} checks generados`, 'success');
+                showMessage(`Solicitud${tipoMsg} enviada al aprobador. El proceso quedará activo cuando sea aprobado.`, 'success');
                 await recargarTodo();
 
             } catch (error) {
                 console.error('❌ Error activación individual:', error);
                 modalProgresoInstance.hide();
-                showMessage('Error al activar: ' + error.message, 'danger');
+                showMessage('Error al enviar la solicitud: ' + error.message, 'danger');
             }
         }
 
@@ -1769,6 +1771,13 @@
 
         async function ejecutarActivacionMasiva(e) {
             e.preventDefault();
+
+            // Validar que exista aprobador configurado
+            if (!clearanceApproverWorkerId) {
+                showMessage('No hay aprobador de procesos configurado. Pídale a un administrador que lo configure en "Configuración de Talento Humano".', 'warning');
+                return;
+            }
+
             const description = document.getElementById('masivoDescription').value.trim();
             const notes = document.getElementById('masivoNotes').value.trim();
 
@@ -1776,98 +1785,42 @@
             modalProgresoInstance.show();
 
             try {
-                // 1. Crear proceso
-                document.getElementById('progresoTexto').textContent = 'Creando proceso masivo...';
+                document.getElementById('progresoTexto').textContent = 'Creando solicitud masiva...';
                 const proceso = await supabaseRequest('/hr_clearance_processes?select=*', {
                     method: 'POST',
                     body: JSON.stringify({
                         process_type: 'massive',
+                        process_status: 'pending_approval',
                         process_description: description,
                         target_worker_id: null,
                         activated_by: currentWorker.worker_id,
-                        notes: notes || null
+                        notes: notes || null,
+                        is_confidential: false
                     })
                 });
                 const processId = proceso[0].process_id;
 
-                // 2. Obtener docentes
+                // Contar docentes para incluir el dato en la solicitud
                 const docentes = workersCache.filter(w => w.organizational_cost_center_id === COST_CENTER_DOCENCIA);
 
-                // 3. Pre-cargar jefes de todos los docentes
-                document.getElementById('progresoTexto').textContent = 'Identificando jefes y directores...';
-                const docenteIds = docentes.map(d => d.worker_id).join(',');
-                const todosJefes = await supabaseRequest(
-                    `/worker_managers?select=worker_id,manager_id&assignment_status=eq.active&worker_id=in.(${docenteIds})`
-                );
-
-                // Pre-cargar directores de sección
-                const secciones = await supabaseRequest(
-                    '/sections?select=section_id,director_email&section_status=eq.active'
-                );
-                const directoresMap = new Map();
-                for (const sec of secciones) {
-                    if (sec.director_email) {
-                        const dir = workersCache.find(w => w.email === sec.director_email);
-                        if (dir) directoresMap.set(sec.section_id, dir.worker_id);
-                    }
-                }
-
-                // 4. Generar items para todos los docentes
-                document.getElementById('progresoTexto').textContent = `Generando checks para ${docentes.length} docentes...`;
-                const allItems = [];
-                const closureRecords = [];
-
-                for (const docente of docentes) {
-                    const jefesDocente = (todosJefes || []).filter(j => j.worker_id === docente.worker_id);
-                    const items = generarItemsTrabajadorConDatos(processId, docente, directoresMap, jefesDocente);
-                    allItems.push(...items);
-
-                    closureRecords.push({
-                        process_id: processId,
-                        worker_id: docente.worker_id,
-                        is_closed: false
-                    });
-                }
-
-                // 5. Insertar items en lotes
-                document.getElementById('progresoTexto').textContent = `Insertando ${allItems.length} checks...`;
-                const BATCH_SIZE = 500;
-                for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
-                    const batch = allItems.slice(i, i + BATCH_SIZE);
-                    await supabaseRequest('/hr_clearance_items', {
-                        method: 'POST',
-                        body: JSON.stringify(batch)
-                    });
-                    document.getElementById('progresoTexto').textContent =
-                        `Insertados ${Math.min(i + BATCH_SIZE, allItems.length)} de ${allItems.length} checks...`;
-                }
-
-                // 6. Insertar registros de cierre en lotes
-                document.getElementById('progresoTexto').textContent = 'Creando registros de cierre...';
-                for (let i = 0; i < closureRecords.length; i += BATCH_SIZE) {
-                    const batch = closureRecords.slice(i, i + BATCH_SIZE);
-                    await supabaseRequest('/hr_clearance_worker_closures', {
-                        method: 'POST',
-                        body: JSON.stringify(batch)
-                    });
-                }
-
-                // 7. Notificar
-                document.getElementById('progresoTexto').textContent = 'Notificando docentes...';
-                for (const docente of docentes) {
-                    await notificarTrabajadorObjetivo(docente);
-                }
-                document.getElementById('progresoTexto').textContent = 'Notificando responsables...';
-                await notificarRevisoresMasivo(allItems, docentes);
+                document.getElementById('progresoTexto').textContent = 'Enviando solicitud al aprobador...';
+                await notificarAprobadorSolicitud({
+                    processId,
+                    tipo: 'massive',
+                    esConfidencial: false,
+                    descripcion: description,
+                    notas: notes,
+                    cantidadDocentes: docentes.length
+                });
 
                 modalProgresoInstance.hide();
-                showMessage(`Proceso masivo activado: ${allItems.length} checks para ${docentes.length} docentes`, 'success');
+                showMessage(`Solicitud masiva enviada al aprobador (${docentes.length} docentes). Se activará cuando sea aprobada.`, 'success');
                 await recargarTodo();
 
             } catch (error) {
                 console.error('❌ Error activación masiva:', error);
                 modalProgresoInstance.hide();
-                showMessage('Error al activar proceso masivo: ' + error.message, 'danger');
+                showMessage('Error al enviar la solicitud: ' + error.message, 'danger');
             }
         }
 
@@ -2005,8 +1958,108 @@
         }
 
         // ==========================================
-        // NOTIFICACIONES
+        // NOTIFICAR AL APROBADOR — Solicitud nueva
         // ==========================================
+        async function notificarAprobadorSolicitud({ processId, tipo, esConfidencial, descripcion, notas, targetWorker, cantidadDocentes }) {
+            try {
+                if (!clearanceApproverWorkerId) return;
+
+                const aprobador = workersCache.find(w => w.worker_id === clearanceApproverWorkerId);
+                if (!aprobador || !aprobador.email) {
+                    console.warn('⚠️ Aprobador no encontrado o sin email');
+                    return;
+                }
+
+                const solicitante = formatWorkerName(currentWorker);
+
+                let tipoLegible = 'Individual';
+                if (tipo === 'massive') tipoLegible = 'Masivo (Docentes)';
+                if (esConfidencial) tipoLegible = 'Individual Confidencial';
+
+                // Construir bloque de objetivo según tipo
+                let bloqueObjetivo = '';
+                if (tipo === 'massive') {
+                    bloqueObjetivo = `<strong>Cantidad de docentes:</strong> ${cantidadDocentes || 0}<br>`;
+                } else if (targetWorker) {
+                    bloqueObjetivo = `<strong>Trabajador:</strong> ${formatWorkerName(targetWorker)}<br>`;
+                }
+
+                const banner = esConfidencial ? '#495057' : '#1b365d';
+                const bannerTexto = esConfidencial ? 'Solicitud Confidencial Pendiente de Aprobación' : 'Solicitud de Paz y Salvo Pendiente';
+
+                const html = `
+                    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+                        <div style="background:${banner};color:white;padding:15px;border-radius:8px 8px 0 0;">
+                            <h2 style="margin:0;">${esConfidencial ? '🔒 ' : ''}${bannerTexto}</h2>
+                        </div>
+                        <div style="background:white;padding:20px;border:1px solid #dee2e6;border-radius:0 0 8px 8px;">
+                            <p>Hola ${aprobador.worker_first_name},</p>
+                            <p>${solicitante} ha solicitado activar un proceso de paz y salvo que requiere tu aprobación
+                               antes de generarse y notificarse a las áreas y al trabajador.</p>
+                            <div style="background:#f8f9fa;border-left:4px solid ${banner};padding:12px 15px;margin:15px 0;border-radius:4px;">
+                                <strong>Tipo:</strong> ${tipoLegible}<br>
+                                ${bloqueObjetivo}
+                                <strong>Descripción:</strong> ${descripcion || '-'}<br>
+                                ${notas ? `<strong>Notas:</strong> ${notas}<br>` : ''}
+                                <strong>Solicitante:</strong> ${solicitante}
+                            </div>
+                            ${esConfidencial ? `
+                            <div style="background:#fff3cd;border:1px solid #ffc107;padding:10px 15px;border-radius:4px;margin:10px 0;">
+                                <strong>⚠️ Proceso confidencial:</strong> al aprobar, NO se notificará al trabajador.
+                                Solo se notificará a los revisores (áreas, director de sección y jefes directos).
+                            </div>` : ''}
+                            <p>Ingresa a SchoolNet → Talento Humano → Paz y Salvos para revisar y decidir.</p>
+                            <p style="margin-top:25px;">Cordialmente,<br><strong>SchoolNet</strong></p>
+                        </div>
+                    </div>`;
+
+                await sendNotification(
+                    aprobador.email,
+                    `SchoolNet - ${bannerTexto}`,
+                    html
+                );
+
+            } catch (error) {
+                console.warn('⚠️ Error notificando al aprobador:', error);
+            }
+        }
+
+        // ==========================================
+        // NOTIFICAR AL SOLICITANTE — Solicitud rechazada
+        // ==========================================
+        async function notificarSolicitanteRechazo({ proceso, motivo, aprobador }) {
+            try {
+                const solicitante = workersCache.find(w => w.worker_id === proceso.activated_by);
+                if (!solicitante || !solicitante.email) return;
+
+                const html = `
+                    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+                        <div style="background:#dc3545;color:white;padding:15px;border-radius:8px 8px 0 0;">
+                            <h2 style="margin:0;">Solicitud de Paz y Salvo Rechazada</h2>
+                        </div>
+                        <div style="background:white;padding:20px;border:1px solid #dee2e6;border-radius:0 0 8px 8px;">
+                            <p>Hola ${solicitante.worker_first_name},</p>
+                            <p>La solicitud de paz y salvo que enviaste fue <strong>rechazada</strong> por
+                               ${aprobador ? formatWorkerName(aprobador) : 'el aprobador'}.</p>
+                            <div style="background:#f8f9fa;border-left:4px solid #dc3545;padding:12px 15px;margin:15px 0;border-radius:4px;">
+                                <strong>Descripción:</strong> ${proceso.process_description || '-'}<br>
+                                <strong>Motivo del rechazo:</strong> ${motivo || '-'}
+                            </div>
+                            <p>Si consideras que el rechazo no procede, comunícate directamente con el aprobador.</p>
+                            <p style="margin-top:25px;">Cordialmente,<br><strong>SchoolNet</strong></p>
+                        </div>
+                    </div>`;
+
+                await sendNotification(
+                    solicitante.email,
+                    'SchoolNet - Solicitud de Paz y Salvo Rechazada',
+                    html
+                );
+
+            } catch (error) {
+                console.warn('⚠️ Error notificando rechazo al solicitante:', error);
+            }
+        }
 
         // ==========================================
         // NOTIFICAR AL TRABAJADOR OBJETIVO
