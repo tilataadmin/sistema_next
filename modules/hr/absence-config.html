@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA - Actualizar en cada modificación (Formato: YY.MM.DD.HH.MM) -->
-    <meta name="page-version" content="26.03.20.11.20">
+    <meta name="page-version" content="26.05.14.11.15">
     
     <title>Configuración de Talento Humano</title>
     
@@ -365,6 +365,32 @@
                         <div class="spinner-border spinner-border-sm me-2"></div>Cargando administradores...
                     </div>
                 </div>
+
+                <!-- Aprobador de procesos -->
+                <hr class="my-4">
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-shield-check me-2"></i>
+                    <strong>Aprobador de procesos:</strong> los procesos de paz y salvo
+                    (individuales, confidenciales y masivos) requerirán aprobación de esta persona
+                    antes de activarse. Se busca evitar errores accidentales al iniciar un proceso.
+                </div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-8">
+                        <label for="clearanceApprover" class="form-label">
+                            <i class="bi bi-person-check me-1"></i>
+                            Administrador aprobador
+                        </label>
+                        <select class="form-select" id="clearanceApprover">
+                            <option value="">— Sin aprobador configurado —</option>
+                        </select>
+                        <small class="text-muted">Solo aparecen los trabajadores que ya son administradores de paz y salvos.</small>
+                    </div>
+                    <div class="col-md-4">
+                        <button type="button" class="btn btn-primary w-100" id="btnGuardarAprobador">
+                            <i class="bi bi-check-circle me-1"></i>Guardar Aprobador
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -591,6 +617,7 @@
             document.getElementById('formArea').addEventListener('submit', guardarArea);
             document.getElementById('btnNuevoAdmin').addEventListener('click', abrirModalNuevoAdmin);
             document.getElementById('formAdmin').addEventListener('submit', guardarAdmin);
+            document.getElementById('btnGuardarAprobador').addEventListener('click', guardarAprobador);
             
             console.log('✅ Event listeners configurados');
         }
@@ -1043,12 +1070,55 @@
                     '/hr_clearance_admins?select=*,workers!hr_clearance_admins_worker_fkey(worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email)'
                 );
                 renderizarAdmins();
+                poblarSelectAprobador();
                 console.log(`✅ ${adminsCache.length} administradores cargados`);
             } catch (error) {
                 console.error('❌ Error cargando admins:', error);
             }
         }
 
+        function poblarSelectAprobador() {
+            const select = document.getElementById('clearanceApprover');
+            if (!select) return;
+            const valorActual = currentConfig?.clearance_approver_worker_id || '';
+            select.innerHTML = '<option value="">— Sin aprobador configurado —</option>';
+            adminsCache.forEach(admin => {
+                if (!admin.workers) return;
+                const nombre = formatWorkerName(admin.workers);
+                const selected = admin.worker_id === valorActual ? 'selected' : '';
+                select.innerHTML += `<option value="${admin.worker_id}" ${selected}>${nombre}</option>`;
+            });
+        }
+
+        async function guardarAprobador() {
+            const valor = document.getElementById('clearanceApprover').value || null;
+            const btn = document.getElementById('btnGuardarAprobador');
+            const txtOriginal = btn.innerHTML;
+            try {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+
+                const data = await supabaseRequest(`/hr_config?config_id=eq.${currentConfig.config_id}&select=*`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        clearance_approver_worker_id: valor,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                if (data && data.length > 0) {
+                    currentConfig = data[0];
+                }
+                showMessage(valor ? 'Aprobador configurado' : 'Aprobador removido', 'success');
+            } catch (error) {
+                console.error('❌ Error guardando aprobador:', error);
+                showMessage('Error al guardar el aprobador: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = txtOriginal;
+            }
+        }
+        
         function renderizarAdmins() {
             const container = document.getElementById('admins-container');
             if (!adminsCache || adminsCache.length === 0) {
@@ -1102,14 +1172,35 @@
             }
         }
 
+
         async function eliminarAdmin(adminId, nombre) {
             if (!confirm(`¿Está seguro de quitar a "${nombre}" como administrador?`)) return;
             try {
                 mostrarLoading();
+
+                // Identificar el worker_id de este admin para chequear si es el aprobador
+                const adminBorrado = adminsCache.find(a => a.admin_id === adminId);
+                const workerIdBorrado = adminBorrado?.worker_id;
+
                 await supabaseRequest(`/hr_clearance_admins?admin_id=eq.${adminId}`, {
                     method: 'DELETE'
                 });
-                showMessage('Administrador eliminado exitosamente', 'success');
+
+                // Si este admin era el aprobador, limpiar la configuración
+                if (workerIdBorrado && currentConfig?.clearance_approver_worker_id === workerIdBorrado) {
+                    const data = await supabaseRequest(`/hr_config?config_id=eq.${currentConfig.config_id}&select=*`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            clearance_approver_worker_id: null,
+                            updated_at: new Date().toISOString()
+                        })
+                    });
+                    if (data && data.length > 0) currentConfig = data[0];
+                    showMessage(`Administrador eliminado. Era el aprobador, así que la configuración fue limpiada.`, 'warning');
+                } else {
+                    showMessage('Administrador eliminado exitosamente', 'success');
+                }
+
                 await cargarAdmins();
                 ocultarLoading();
             } catch (error) {
@@ -1118,6 +1209,7 @@
                 ocultarLoading();
             }
         }
+        
     </script>
 </body>
 </html>
