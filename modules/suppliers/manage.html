@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.19.22.00">
+    <meta name="page-version" content="6.5.14.9.55">
     <title>Gestionar Proveedores - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -814,6 +814,10 @@
                     ? `<span class="notif-bell ms-2" title="${openNotifs} notificación(es) abierta(s)"><i class="bi bi-bell-fill"></i><span class="notif-count">${openNotifs}</span></span>` 
                     : '';
 
+                const manualBadge = s.registration_type === 'manually_registered'
+                    ? '<span class="badge bg-dark ms-1" title="Registrado manualmente por el equipo interno"><i class="bi bi-hand-index-thumb me-1"></i>Manual</span>'
+                    : '';
+
                 return `
                 <tr class="row-clickable" ondblclick="verDetalle('${s.supplier_id}')">
                     <td>
@@ -822,6 +826,9 @@
                     </td>
                     <td><span class="supplier-doc">${documento}</span></td>
                     <td class="d-none d-lg-table-cell"><small>${servicios}</small></td>
+                    <td>${badgeTipo(s.person_type)}</td>
+                    <td>${badgeEstado(s.supplier_status)}${manualBadge}</td>
+                    <td class="d-none d-md-table-cell"><small>${fecha}</small></td>
                     <td>${badgeTipo(s.person_type)}</td>
                     <td>${badgeEstado(s.supplier_status)}</td>
                     <td class="d-none d-md-table-cell"><small>${fecha}</small></td>
@@ -899,8 +906,11 @@
             const s = cacheSuppliers.find(x => x.supplier_id === id);
             if (!s) return;
             
+            const manualBadgeDetail = s.registration_type === 'manually_registered'
+                ? ' <span class="badge bg-dark" title="Registrado manualmente"><i class="bi bi-hand-index-thumb me-1"></i>Manual</span>'
+                : '';
             document.getElementById('detail-title').innerHTML = 
-                `<i class="bi bi-person-badge me-2"></i>${getNombreProveedor(s)} ${badgeEstado(s.supplier_status)}`;
+                `<i class="bi bi-person-badge me-2"></i>${getNombreProveedor(s)} ${badgeEstado(s.supplier_status)}${manualBadgeDetail}`;
             
             // Cargar datos relacionados en paralelo
             let condiciones = [], adjuntos = [], aceptaciones = [];
@@ -1555,6 +1565,213 @@
                     </p>
                 </div>
             </div>`;
+        }
+
+        // ==========================================
+        // REGISTRO MANUAL DE PROVEEDORES
+        // ==========================================
+
+        function abrirRegistroManual() {
+            // Limpiar todos los campos
+            document.getElementById('manual-type-natural').checked = false;
+            document.getElementById('manual-type-juridica').checked = false;
+            document.getElementById('manual-fields-natural').style.display = 'none';
+            document.getElementById('manual-fields-juridica').style.display = 'none';
+            document.getElementById('manual-fields-common').style.display = 'none';
+            
+            // Natural
+            document.getElementById('manual-doc-type').value = '';
+            document.getElementById('manual-doc-number').value = '';
+            document.getElementById('manual-first-name').value = '';
+            document.getElementById('manual-second-name').value = '';
+            document.getElementById('manual-last-name-1').value = '';
+            document.getElementById('manual-last-name-2').value = '';
+            
+            // Jurídica
+            document.getElementById('manual-business-name').value = '';
+            document.getElementById('manual-nit').value = '';
+            document.getElementById('manual-nit-dv').value = '';
+            document.getElementById('manual-contact-name').value = '';
+            
+            // Común
+            document.getElementById('manual-products-services').value = '';
+            document.getElementById('manual-email').value = '';
+            document.getElementById('manual-phone').value = '';
+            document.getElementById('manual-worker').value = '';
+            
+            modalManual.show();
+        }
+
+        function toggleManualPersonType() {
+            const tipo = document.querySelector('input[name="manual-person-type"]:checked')?.value;
+            if (!tipo) return;
+            
+            document.getElementById('manual-fields-natural').style.display = tipo === 'natural' ? 'block' : 'none';
+            document.getElementById('manual-fields-juridica').style.display = tipo === 'juridica' ? 'block' : 'none';
+            document.getElementById('manual-fields-common').style.display = 'block';
+        }
+
+        function calcularDVManual() {
+            const nit = document.getElementById('manual-nit').value.replace(/\D/g, '');
+            if (nit.length < 3) {
+                document.getElementById('manual-nit-dv').value = '';
+                return;
+            }
+            // Algoritmo DIAN para dígito de verificación
+            const primos = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+            let sum = 0;
+            const digits = nit.split('').reverse();
+            for (let i = 0; i < digits.length && i < primos.length; i++) {
+                sum += parseInt(digits[i]) * primos[i];
+            }
+            const residuo = sum % 11;
+            const dv = residuo > 1 ? 11 - residuo : residuo;
+            document.getElementById('manual-nit-dv').value = dv;
+        }
+
+        async function confirmarRegistroManual(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-confirm-manual');
+            btn.disabled = true;
+
+            try {
+                // ---- Validar tipo de persona ----
+                const tipo = document.querySelector('input[name="manual-person-type"]:checked')?.value;
+                if (!tipo) {
+                    showMessage('Seleccione el tipo de persona.', 'warning');
+                    btn.disabled = false;
+                    return;
+                }
+
+                // ---- Validaciones campo a campo ----
+                const productsServices = document.getElementById('manual-products-services').value.trim();
+                const workerId = document.getElementById('manual-worker').value;
+                const email = document.getElementById('manual-email').value.trim();
+                const phone = document.getElementById('manual-phone').value.trim();
+
+                if (!productsServices) {
+                    showMessage('Describa los productos o servicios que ofrece.', 'warning');
+                    btn.disabled = false;
+                    return;
+                }
+                if (!workerId) {
+                    showMessage('Seleccione un worker responsable.', 'warning');
+                    btn.disabled = false;
+                    return;
+                }
+                if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    showMessage('El correo electrónico no tiene un formato válido.', 'warning');
+                    btn.disabled = false;
+                    return;
+                }
+
+                // ---- Validaciones por tipo ----
+                let docNumber = '', firstName = '', secondName = '', lastName1 = '', lastName2 = '', docType = '';
+                let businessName = '', nit = '', nitDV = '', contactName = '';
+
+                if (tipo === 'natural') {
+                    docType = document.getElementById('manual-doc-type').value;
+                    docNumber = document.getElementById('manual-doc-number').value.trim();
+                    firstName = document.getElementById('manual-first-name').value.trim();
+                    secondName = document.getElementById('manual-second-name').value.trim();
+                    lastName1 = document.getElementById('manual-last-name-1').value.trim();
+                    lastName2 = document.getElementById('manual-last-name-2').value.trim();
+
+                    if (!docNumber) { showMessage('Ingrese el número de documento.', 'warning'); btn.disabled = false; return; }
+                    if (!firstName) { showMessage('Ingrese el primer nombre.', 'warning'); btn.disabled = false; return; }
+                    if (!lastName1) { showMessage('Ingrese el primer apellido.', 'warning'); btn.disabled = false; return; }
+                } else {
+                    businessName = document.getElementById('manual-business-name').value.trim();
+                    nit = document.getElementById('manual-nit').value.trim();
+                    nitDV = document.getElementById('manual-nit-dv').value;
+                    contactName = document.getElementById('manual-contact-name').value.trim();
+
+                    if (!businessName) { showMessage('Ingrese la razón social.', 'warning'); btn.disabled = false; return; }
+                    if (!nit) { showMessage('Ingrese el NIT.', 'warning'); btn.disabled = false; return; }
+                }
+
+                // ---- Validaciones de duplicados ----
+                
+                // Duplicado por documento/NIT
+                if (tipo === 'natural' && docNumber) {
+                    const dup = await supabaseRequest(
+                        `/sup_suppliers?document_number=eq.${encodeURIComponent(docNumber)}&person_type=eq.natural&select=supplier_id,first_name,last_name_1,supplier_status&limit=1`
+                    );
+                    if (dup && dup.length > 0) {
+                        const d = dup[0];
+                        const nombre = [d.first_name, d.last_name_1].filter(Boolean).join(' ');
+                        const ok = confirm(`Ya existe un proveedor con este documento: ${nombre} (estado: ${d.supplier_status}).\n\n¿Desea continuar de todas formas?`);
+                        if (!ok) { btn.disabled = false; return; }
+                    }
+                } else if (tipo === 'juridica' && nit) {
+                    const dup = await supabaseRequest(
+                        `/sup_suppliers?nit=eq.${encodeURIComponent(nit)}&person_type=eq.juridica&select=supplier_id,business_name,supplier_status&limit=1`
+                    );
+                    if (dup && dup.length > 0) {
+                        const d = dup[0];
+                        const ok = confirm(`Ya existe un proveedor con este NIT: ${d.business_name} (estado: ${d.supplier_status}).\n\n¿Desea continuar de todas formas?`);
+                        if (!ok) { btn.disabled = false; return; }
+                    }
+                }
+
+                // Duplicado por email (UNIQUE en BD, no se puede continuar)
+                if (email) {
+                    const dupEmail = await supabaseRequest(
+                        `/sup_suppliers?email=eq.${encodeURIComponent(email)}&select=supplier_id,business_name,first_name,last_name_1&limit=1`
+                    );
+                    if (dupEmail && dupEmail.length > 0) {
+                        const d = dupEmail[0];
+                        const nombre = d.business_name || [d.first_name, d.last_name_1].filter(Boolean).join(' ');
+                        showMessage(`Ya existe un proveedor registrado con este correo: ${nombre}. El correo debe ser único.`, 'danger');
+                        btn.disabled = false;
+                        return;
+                    }
+                }
+
+                // ---- Construir payload ----
+                const payload = {
+                    person_type: tipo,
+                    registration_type: 'manually_registered',
+                    supplier_status: 'approved',
+                    approved_by: currentSession.user.user_id,
+                    approved_at: new Date().toISOString(),
+                    responsible_worker_id: workerId,
+                    products_services: productsServices,
+                    is_colombian: true,
+                    email: email || null,
+                    phone: phone || null
+                };
+
+                if (tipo === 'natural') {
+                    payload.document_type = docType || null;
+                    payload.document_number = docNumber;
+                    payload.first_name = firstName;
+                    payload.second_name = secondName || null;
+                    payload.last_name_1 = lastName1;
+                    payload.last_name_2 = lastName2 || null;
+                } else {
+                    payload.business_name = businessName;
+                    payload.nit = nit;
+                    payload.nit_verification_digit = nitDV || null;
+                    payload.contact_name = contactName || null;
+                }
+
+                // ---- Insertar ----
+                await supabaseRequest('/sup_suppliers', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                modalManual.hide();
+                showMessage('Proveedor registrado manualmente y aprobado.', 'success');
+                await cargarProveedores();
+
+            } catch (error) {
+                console.error('Error en registro manual:', error);
+                showMessage('Error al registrar proveedor: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         // ==========================================
