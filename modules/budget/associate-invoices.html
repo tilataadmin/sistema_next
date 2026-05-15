@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.24.13.35">
+    <meta name="page-version" content="26.5.15.7.30">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1320,7 +1320,7 @@ async function cerrarRequerimiento() {
             }
         }
         
-        // 4. Actualizar requerimiento con todos los valores
+       // 4. Actualizar requerimiento con todos los valores
         await supabaseRequest(`/execution_requests?request_id=eq.${requerimientoActual.request_id}`, {
             method: 'PATCH',
             body: JSON.stringify({
@@ -1330,6 +1330,31 @@ async function cerrarRequerimiento() {
                 notes_value: totalNC
             })
         });
+        
+        // 4.1. Ajustar executed_value de la asignación.
+        // Al aprobar el requerimiento se sumó requested_value (valorInicial) al executed_value.
+        // Ahora que se cierra, el valor real facturado es valorFinal. Hay que corregir la diferencia.
+        // Si valorFinal < valorInicial: se sumó de más, hay que restar.
+        // Si valorFinal > valorInicial: se sumó de menos, hay que sumar.
+        if (requerimientoActual.assignment_id && valorFinal !== valorInicial) {
+            const diferencia = valorFinal - valorInicial;
+            try {
+                const asigData = await supabaseRequest(
+                    `/budget_assignments?select=executed_value&assignment_id=eq.${requerimientoActual.assignment_id}`
+                );
+                if (asigData && asigData.length > 0) {
+                    const nuevoExecuted = Math.max(0, (asigData[0].executed_value || 0) + diferencia);
+                    await supabaseRequest(`/budget_assignments?assignment_id=eq.${requerimientoActual.assignment_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ executed_value: nuevoExecuted })
+                    });
+                    console.log(`✅ executed_value ajustado en ${diferencia >= 0 ? '+' : ''}${diferencia}`);
+                }
+            } catch (e) {
+                console.warn('⚠️ Error ajustando executed_value de la asignación:', e);
+                // No interrumpir el cierre por esto
+            }
+        }
         
         // 5. Enviar notificación si hay sobreejecución
         if (debeEnviarNotificacion) {
