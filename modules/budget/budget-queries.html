@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.15.7.55">
+    <meta name="page-version" content="26.5.15.8.0">
     <title>Consultas de Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1567,7 +1567,7 @@
             switch (tabActiva) {
                 case 'asignaciones':
                     datos = prepararDatosAsignaciones();
-                    encabezados = ['Categoría', 'Ítem', 'Año', 'Trabajador', 'Detalle', 'Vr. Solicitado', 'Vr. Aprobado', 'Vr. Ejecutado', 'Vr. Disponible', '% Ejecución'];
+                    encabezados = ['Categoría', 'Ítem', 'Año', 'Trabajador', 'Detalle', 'Vr. Solicitado', 'Vr. Aprobado', 'Vr. Comprometido', 'Vr. Ejecutado', 'Vr. Disponible', '% Ejecución'];
                     nombreArchivo = 'Asignaciones_Presupuestales';
                     break;
                 case 'requerimientos':
@@ -1608,14 +1608,17 @@
                 .filter(asig => {
                     const valorSolicitado = asig.requested_value || 0;
                     const valorAprobado = asig.approved_value || 0;
-                    const valorEjecutado = asig.executed_value || 0;
-                    return !(valorSolicitado === 0 && valorAprobado === 0 && valorEjecutado === 0);
+                    const valorComprometido = asig.comprometido_value_calculado || 0;
+                    const valorEjecutado = asig.executed_value_calculado || 0;
+                    return !(valorSolicitado === 0 && valorAprobado === 0 && valorComprometido === 0 && valorEjecutado === 0);
                 })
                 .map(asig => {
                     const valorAprobado = asig.approved_value || 0;
-                    const valorEjecutado = asig.executed_value || 0;
-                    const valorDisponible = valorAprobado - valorEjecutado;
-                    const porcentaje = valorAprobado > 0 ? ((valorEjecutado / valorAprobado) * 100).toFixed(1) : 0;
+                    const valorComprometido = asig.comprometido_value_calculado || 0;
+                    const valorEjecutado = asig.executed_value_calculado || 0;
+                    const valorDisponible = valorAprobado - valorComprometido - valorEjecutado;
+                    const valorUsado = valorComprometido + valorEjecutado;
+                    const porcentaje = valorAprobado > 0 ? ((valorUsado / valorAprobado) * 100).toFixed(1) : 0;
                     
                     return [
                         asig.budget_item?.budget_categories?.category_name || '',
@@ -1625,6 +1628,7 @@
                         asig.category_detail || '',
                         asig.requested_value || 0,
                         valorAprobado,
+                        valorComprometido,
                         valorEjecutado,
                         valorDisponible,
                         parseFloat(porcentaje)
@@ -1742,8 +1746,18 @@
                 return;
             }
         
-            let totalSolicitado = 0;
-            let totalFacturado = 0;
+            // Modelo de 3 categorías para totales:
+            // - Comprometido: requested_value de approved/executed
+            // - Ejecutado: closed_value de closed/pre-closed
+            // - Rechazados: se cuentan aparte (no suman al total operativo)
+            const estadosComprometidos = ['approved', 'executed'];
+            const estadosFacturados = ['closed', 'pre-closed'];
+            let totalComprometido = 0;
+            let totalEjecutado = 0;
+            let totalRechazado = 0;
+            let totalPendiente = 0;
+            let totalSolicitadoGeneral = 0;
+            let totalFacturadoGeneral = 0;
             let html = '';
         
             datosFiltrados.forEach(req => {
@@ -1755,8 +1769,18 @@
                 const estado = req.request_status || 'pending';
                 const fechaCierre = req.responded_at ? formatDate(req.responded_at) : 'Pendiente';
         
-                totalSolicitado += valorSolicitado;
-                totalFacturado += valorFacturado;
+                totalSolicitadoGeneral += valorSolicitado;
+                totalFacturadoGeneral += valorFacturado;
+                
+                if (estadosComprometidos.includes(estado)) {
+                    totalComprometido += valorSolicitado;
+                } else if (estadosFacturados.includes(estado)) {
+                    totalEjecutado += valorFacturado;
+                } else if (estado === 'rejected') {
+                    totalRechazado += valorSolicitado;
+                } else if (estado === 'pending') {
+                    totalPendiente += valorSolicitado;
+                }
         
                 html += `
                     <tr>
@@ -1777,15 +1801,60 @@
             });
         
             tbody.innerHTML = html;
-            tfoot.innerHTML = `
+            
+            // Construir filas de totales desglosadas por categoría operativa.
+            // Esto deja claro qué cuenta como Comprometido, Ejecutado, etc.
+            let totalesHTML = '';
+            
+            if (totalComprometido > 0) {
+                totalesHTML += `
+                    <tr style="background-color:#fff3cd;">
+                        <td colspan="2" class="text-end"><strong>Comprometido (aprobados sin facturar):</strong></td>
+                        <td class="numero"><strong>${formatCurrency(totalComprometido)}</strong></td>
+                        <td colspan="5" class="text-muted small">Suma de Vr. Solicitado de requerimientos aprobados/ejecutados</td>
+                    </tr>
+                `;
+            }
+            if (totalEjecutado > 0) {
+                totalesHTML += `
+                    <tr style="background-color:#d1ecf1;">
+                        <td colspan="2" class="text-end"><strong>Ejecutado (facturado real):</strong></td>
+                        <td colspan="2"></td>
+                        <td class="numero"><strong>${formatCurrency(totalEjecutado)}</strong></td>
+                        <td colspan="3" class="text-muted small">Suma de Vr. Facturado de requerimientos cerrados/pre-cerrados</td>
+                    </tr>
+                `;
+            }
+            if (totalPendiente > 0) {
+                totalesHTML += `
+                    <tr class="text-muted">
+                        <td colspan="2" class="text-end">Pendientes de aprobación:</td>
+                        <td class="numero">${formatCurrency(totalPendiente)}</td>
+                        <td colspan="5" class="small">No afectan el presupuesto hasta que se aprueben</td>
+                    </tr>
+                `;
+            }
+            if (totalRechazado > 0) {
+                totalesHTML += `
+                    <tr class="text-muted">
+                        <td colspan="2" class="text-end">Rechazados/Anulados:</td>
+                        <td class="numero" style="text-decoration:line-through;">${formatCurrency(totalRechazado)}</td>
+                        <td colspan="5" class="small">No suman al presupuesto utilizado</td>
+                    </tr>
+                `;
+            }
+            
+            // Total operativo final (lo que realmente afecta el presupuesto)
+            const totalOperativo = totalComprometido + totalEjecutado;
+            totalesHTML += `
                 <tr class="fila-totales">
-                    <td colspan="2" class="text-end"><strong>TOTALES:</strong></td>
-                    <td class="numero">${formatCurrency(totalSolicitado)}</td>
-                    <td></td>
-                    <td class="numero">${formatCurrency(totalFacturado)}</td>
+                    <td colspan="2" class="text-end"><strong>TOTAL UTILIZADO (Comprometido + Ejecutado):</strong></td>
+                    <td colspan="3" class="numero"><strong>${formatCurrency(totalOperativo)}</strong></td>
                     <td colspan="3"></td>
                 </tr>
             `;
+            
+            tfoot.innerHTML = totalesHTML;
         }
         
         // ==========================================
