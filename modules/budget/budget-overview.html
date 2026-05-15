@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.26.13.45">
+    <meta name="page-version" content="6.5.15.6.40">
     <title>Mi Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -793,21 +793,33 @@
                 
                 const data = await supabaseRequest(query);
                 
-                // "Ejecutado" = lo realmente facturado (closed_value).
-                // Solo los estados closed y pre-closed tienen closed_value poblado
-                // (ver cerrarRequerimiento en asociar-facturas.html).
+                // Modelo de 3 categorías:
+                // - Comprometido: requerimientos aprobados pero aún sin facturar (estados: approved, executed)
+                //   Se suma con requested_value porque aún no hay closed_value.
+                // - Ejecutado: requerimientos ya facturados (estados: closed, pre-closed)
+                //   Se suma con closed_value (valor real de las facturas).
+                // - Excluidos: pending (sin aprobar) y rejected (anulados).
+                // Identidad: Aprobado = Comprometido + Ejecutado + Disponible.
+                const estadosComprometidos = ['approved', 'executed'];
                 const estadosFacturados = ['closed', 'pre-closed'];
                 
                 assignmentsList = data.map(asig => {
+                    let comprometidoCalculado = 0;
                     let executedCalculado = 0;
+                    
                     if (asig.execution_requests && asig.execution_requests.length > 0) {
-                        executedCalculado = asig.execution_requests
-                            .filter(req => estadosFacturados.includes(req.request_status))
-                            .reduce((sum, req) => sum + (req.closed_value || 0), 0);
+                        asig.execution_requests.forEach(req => {
+                            if (estadosComprometidos.includes(req.request_status)) {
+                                comprometidoCalculado += (req.requested_value || 0);
+                            } else if (estadosFacturados.includes(req.request_status)) {
+                                executedCalculado += (req.closed_value || 0);
+                            }
+                        });
                     }
                     
                     return {
                         ...asig,
+                        comprometido_value_calculado: comprometidoCalculado,
                         executed_value_calculado: executedCalculado
                     };
                 });
