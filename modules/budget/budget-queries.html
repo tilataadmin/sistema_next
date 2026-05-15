@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.02.09.49">
+    <meta name="page-version" content="26.5.15.7.50">
     <title>Consultas de Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1008,8 +1008,7 @@
         async function consultarAsignaciones(filtros) {
             try {
                 // Construir query base - AGREGADO budget_item_id
-                let query = '/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,worker_id,academic_year_id,budget_item_id,budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),worker:workers!budget_assignments_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2)&assignment_status=eq.active';
-
+                let query = '/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,worker_id,academic_year_id,budget_item_id,budget_item:budget_items!budget_assignments_item_fkey(item_name,category_id,budget_categories!budget_items_category_fkey(category_name)),academic_year:academic_years!budget_assignments_year_fkey(year_name),worker:workers!budget_assignments_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2),execution_requests(request_id,requested_value,closed_value,request_status)&assignment_status=eq.active';
                 
                 // Aplicar filtros
                 if (filtros.year) {
@@ -1033,6 +1032,33 @@
                         asig.budget_item?.category_id === filtros.categoria
                     );
                 }
+                
+                // Modelo de 3 categorías (alineado con budget-overview.html):
+                // - Comprometido: requerimientos en estados approved/executed (suma requested_value).
+                // - Ejecutado: requerimientos en estados closed/pre-closed (suma closed_value).
+                // - Excluidos: pending y rejected.
+                // Identidad: Aprobado = Comprometido + Ejecutado + Disponible.
+                const estadosComprometidos = ['approved', 'executed'];
+                const estadosFacturados = ['closed', 'pre-closed'];
+                
+                data = data.map(asig => {
+                    let comprometido = 0;
+                    let ejecutadoReal = 0;
+                    if (asig.execution_requests && asig.execution_requests.length > 0) {
+                        asig.execution_requests.forEach(req => {
+                            if (estadosComprometidos.includes(req.request_status)) {
+                                comprometido += (req.requested_value || 0);
+                            } else if (estadosFacturados.includes(req.request_status)) {
+                                ejecutadoReal += (req.closed_value || 0);
+                            }
+                        });
+                    }
+                    return {
+                        ...asig,
+                        comprometido_value_calculado: comprometido,
+                        executed_value_calculado: ejecutadoReal
+                    };
+                });
                 
                 ultimaConsulta.asignaciones = data;
                 renderizarAsignaciones(data);
