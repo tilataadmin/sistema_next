@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.26.13.45">
+    <meta name="page-version" content="6.5.15.6.40">
     <title>Mi Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -788,26 +788,38 @@
             try {
                 // Query para obtener asignaciones del usuario para el año seleccionado
                 // Incluimos los requerimientos para calcular el ejecutado en tiempo real
-                const query = `/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,budget_item:budget_items(item_name),execution_requests(request_id,requested_value,request_status),workers!budget_assignments_worker_id_fkey!inner(email)&workers.email=eq.${currentUserEmail}&academic_year_id=eq.${currentYear}&assignment_status=eq.active&order=budget_item(item_name).asc,category_detail.asc`;
+                const query = `/budget_assignments?select=assignment_id,category_detail,requested_value,approved_value,executed_value,budget_item:budget_items(item_name),execution_requests(request_id,requested_value,closed_value,request_status),workers!budget_assignments_worker_id_fkey!inner(email)&workers.email=eq.${currentUserEmail}&academic_year_id=eq.${currentYear}&assignment_status=eq.active&order=budget_item(item_name).asc,category_detail.asc`;
 
                 
                 const data = await supabaseRequest(query);
                 
-                // Estados que cuentan como "ejecutado"
-                const estadosProductivos = ['approved', 'executed', 'closed', 'pre-closed'];
+                // Modelo de 3 categorías:
+                // - Comprometido: requerimientos aprobados pero aún sin facturar (estados: approved, executed)
+                //   Se suma con requested_value porque aún no hay closed_value.
+                // - Ejecutado: requerimientos ya facturados (estados: closed, pre-closed)
+                //   Se suma con closed_value (valor real de las facturas).
+                // - Excluidos: pending (sin aprobar) y rejected (anulados).
+                // Identidad: Aprobado = Comprometido + Ejecutado + Disponible.
+                const estadosComprometidos = ['approved', 'executed'];
+                const estadosFacturados = ['closed', 'pre-closed'];
                 
-                // Procesar y calcular executed_value en tiempo real
                 assignmentsList = data.map(asig => {
-                    // Calcular el valor ejecutado sumando requested_value de requerimientos productivos
+                    let comprometidoCalculado = 0;
                     let executedCalculado = 0;
+                    
                     if (asig.execution_requests && asig.execution_requests.length > 0) {
-                        executedCalculado = asig.execution_requests
-                            .filter(req => estadosProductivos.includes(req.request_status))
-                            .reduce((sum, req) => sum + (req.requested_value || 0), 0);
+                        asig.execution_requests.forEach(req => {
+                            if (estadosComprometidos.includes(req.request_status)) {
+                                comprometidoCalculado += (req.requested_value || 0);
+                            } else if (estadosFacturados.includes(req.request_status)) {
+                                executedCalculado += (req.closed_value || 0);
+                            }
+                        });
                     }
                     
                     return {
                         ...asig,
+                        comprometido_value_calculado: comprometidoCalculado,
                         executed_value_calculado: executedCalculado
                     };
                 });
