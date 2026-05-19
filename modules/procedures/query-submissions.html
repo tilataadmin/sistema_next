@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.19.1">
+    <meta name="page-version" content="26.5.19.2">
     
     <title>Consultar Respuestas - SchoolNet</title>
     
@@ -568,31 +568,50 @@
         
         function generateDynamicFilters() {
             const container = document.getElementById('dynamicFilters');
+            const wrapper = document.getElementById('dynamicFiltersWrapper');
             container.innerHTML = '';
-            
-            selectedFormFields.forEach(field => {
-                if (field.field_type === 'file') return;
+
+            const filterableFields = selectedFormFields.filter(f => f.field_type !== 'file');
+
+            if (filterableFields.length === 0) {
+                wrapper.style.display = 'none';
+                return;
+            }
+
+            filterableFields.forEach(field => {
                 const filterHtml = generateFilterForField(field);
                 if (filterHtml) container.innerHTML += filterHtml;
             });
+
+            wrapper.style.display = 'block';
+
+            // Reset del panel y buscador al cambiar de formulario
+            document.getElementById('dynamicFiltersToggle').classList.remove('expanded');
+            document.getElementById('dynamicFiltersPanel').classList.remove('show');
+            const searchInput = document.getElementById('dynamicFiltersSearch');
+            searchInput.value = '';
+            searchInput.oninput = filterDynamicFiltersSearch;
+
+            updateActiveFiltersBadge();
         }
         
         function generateFilterForField(field) {
             const filterId = `filter_${field.field_id}`;
             const label = escapeHtml(field.field_label);
-            
+            const searchAttr = `data-field-label="${label.toLowerCase()}"`;
+
             switch (field.field_type) {
                 case 'text':
                 case 'textarea':
                     return `
-                        <div class="filter-group">
+                        <div class="filter-group" ${searchAttr}>
                             <label class="filter-label">${label}</label>
                             <input type="text" class="form-control form-control-sm" id="${filterId}" placeholder="Buscar...">
                         </div>`;
-                    
+
                 case 'number':
                     return `
-                        <div class="filter-group">
+                        <div class="filter-group" ${searchAttr}>
                             <label class="filter-label">${label}</label>
                             <div class="input-group input-group-sm">
                                 <input type="number" class="form-control" id="${filterId}_min" placeholder="Mín">
@@ -600,10 +619,10 @@
                                 <input type="number" class="form-control" id="${filterId}_max" placeholder="Máx">
                             </div>
                         </div>`;
-                    
+
                 case 'date':
                     return `
-                        <div class="filter-group">
+                        <div class="filter-group" ${searchAttr}>
                             <label class="filter-label">${label}</label>
                             <div class="input-group input-group-sm">
                                 <input type="date" class="form-control" id="${filterId}_from">
@@ -611,25 +630,25 @@
                                 <input type="date" class="form-control" id="${filterId}_to">
                             </div>
                         </div>`;
-                    
+
                 case 'select':
                 case 'radio':
                     const options = (field.field_option_catalog || [])
                         .filter(o => o.is_active !== false)
                         .sort((a, b) => a.option_order - b.option_order);
                     return `
-                        <div class="filter-group">
+                        <div class="filter-group" ${searchAttr}>
                             <label class="filter-label">${label}</label>
                             <select class="form-select form-select-sm" id="${filterId}">
                                 <option value="">Todos</option>
                                 ${options.map(opt => `<option value="${opt.option_id}">${escapeHtml(opt.option_label)}</option>`).join('')}
                             </select>
                         </div>`;
-                    
+
                 case 'checkbox':
                 case 'boolean':
                     return `
-                        <div class="filter-group">
+                        <div class="filter-group" ${searchAttr}>
                             <label class="filter-label">${label}</label>
                             <select class="form-select form-select-sm" id="${filterId}">
                                 <option value="">Todos</option>
@@ -637,9 +656,86 @@
                                 <option value="false">No</option>
                             </select>
                         </div>`;
-                    
+
                 default:
                     return '';
+            }
+        }
+
+        // ==========================================
+        // PANEL DE FILTROS DINÁMICOS (toggle, búsqueda, badge)
+        // ==========================================
+
+        function toggleDynamicFilters() {
+            const toggle = document.getElementById('dynamicFiltersToggle');
+            const panel = document.getElementById('dynamicFiltersPanel');
+            toggle.classList.toggle('expanded');
+            panel.classList.toggle('show');
+        }
+
+        function filterDynamicFiltersSearch() {
+            const query = (document.getElementById('dynamicFiltersSearch').value || '').trim().toLowerCase();
+            const groups = document.querySelectorAll('#dynamicFilters .filter-group');
+            groups.forEach(group => {
+                const label = group.dataset.fieldLabel || '';
+                if (!query || label.includes(query)) {
+                    group.classList.remove('filter-hidden');
+                } else {
+                    group.classList.add('filter-hidden');
+                }
+            });
+        }
+
+        function countActiveDynamicFilters() {
+            let count = 0;
+
+            for (const field of selectedFormFields) {
+                if (field.field_type === 'file') continue;
+
+                const filterId = `filter_${field.field_id}`;
+
+                switch (field.field_type) {
+                    case 'text':
+                    case 'textarea': {
+                        const v = document.getElementById(filterId)?.value?.trim();
+                        if (v) count++;
+                        break;
+                    }
+                    case 'number': {
+                        const min = document.getElementById(`${filterId}_min`)?.value;
+                        const max = document.getElementById(`${filterId}_max`)?.value;
+                        if (min || max) count++;
+                        break;
+                    }
+                    case 'date': {
+                        const from = document.getElementById(`${filterId}_from`)?.value;
+                        const to = document.getElementById(`${filterId}_to`)?.value;
+                        if (from || to) count++;
+                        break;
+                    }
+                    case 'select':
+                    case 'radio':
+                    case 'checkbox':
+                    case 'boolean': {
+                        const v = document.getElementById(filterId)?.value;
+                        if (v) count++;
+                        break;
+                    }
+                }
+            }
+
+            return count;
+        }
+
+        function updateActiveFiltersBadge() {
+            const badge = document.getElementById('activeFiltersBadge');
+            if (!badge) return;
+            const count = countActiveDynamicFilters();
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
             }
         }
 
@@ -722,7 +818,9 @@
                 
                 currentResults = paginatedInstances;
                 renderResults(paginatedInstances, totalResults);
-                
+
+                updateActiveFiltersBadge();
+
             } catch (error) {
                 console.error('❌ Error buscando:', error);
                 showAlert('Error al buscar resultados', 'danger');
@@ -1213,6 +1311,7 @@
             });
             
             currentPage = 1;
+            updateActiveFiltersBadge();
             applyFilters();
         }
 
