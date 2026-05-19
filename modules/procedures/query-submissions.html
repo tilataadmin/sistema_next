@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.08.16.30">
+    <meta name="page-version" content="26.5.19.1">
     
     <title>Consultar Respuestas - SchoolNet</title>
     
@@ -297,9 +297,14 @@
         <div class="results-section" id="resultsSection" style="display: none;">
             <div class="results-header">
                 <span class="results-count" id="resultsCount">0 resultados</span>
-                <button type="button" class="btn btn-sm btn-outline-success" onclick="exportToCSV()" id="exportBtn" style="display: none;">
-                    <i class="bi bi-download me-1"></i>Exportar CSV
-                </button>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-primary columns-config-btn" onclick="openColumnsConfig()" id="columnsConfigBtn" style="display: none;">
+                        <i class="bi bi-layout-three-columns me-1"></i>Configurar columnas
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="exportToCSV()" id="exportBtn" style="display: none;">
+                        <i class="bi bi-download me-1"></i>Exportar CSV
+                    </button>
+                </div>
             </div>
             <div class="loading-container" id="resultsLoading" style="display: none;">
                 <div class="text-center">
@@ -340,6 +345,47 @@
         </div>
     </div>
 
+    <!-- Modal: Configurar Columnas -->
+    <div class="modal fade" id="columnsConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-layout-three-columns me-2"></i>Configurar columnas
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">
+                        Selecciona qué campos del formulario quieres ver como columnas adicionales en la tabla.
+                        Las columnas <strong>Solicitante</strong>, <strong>Fecha</strong> y <strong>Estado</strong> siempre se muestran.
+                    </p>
+                    <div class="mb-3">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="columnsConfigSearch" placeholder="Buscar campo...">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <button type="button" class="btn btn-sm btn-link p-0" onclick="selectAllColumns(true)">
+                            Seleccionar todos
+                        </button>
+                        <button type="button" class="btn btn-sm btn-link p-0 text-muted" onclick="selectAllColumns(false)">
+                            Limpiar selección
+                        </button>
+                    </div>
+                    <div class="column-checkbox-list" id="columnsConfigList"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveColumnsConfig()">
+                        <i class="bi bi-check-circle me-1"></i>Aplicar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: Ver Detalle -->
     <div class="modal fade" id="detailModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -375,8 +421,10 @@
         let currentResults = [];
         let currentPage = 1;
         let totalPages = 1;
-        
+        let selectedColumnFieldIds = []; // IDs de campos visibles como columnas dinámicas
+
         const detailModalInstance = new bootstrap.Modal(document.getElementById('detailModal'));
+        const columnsConfigModalInstance = new bootstrap.Modal(document.getElementById('columnsConfigModal'));
 
         // ==========================================
         // INICIALIZACIÓN
@@ -496,6 +544,9 @@
                     .filter(f => f.is_active !== false)
                     .sort((a, b) => a.field_order - b.field_order);
                 
+                // Cargar columnas guardadas para este formulario desde localStorage
+                loadColumnsConfig();
+
                 generateDynamicFilters();
                 
                 document.getElementById('initialState').style.display = 'none';
@@ -733,12 +784,118 @@
         }
 
         // ==========================================
+        // CONFIGURADOR DE COLUMNAS (localStorage)
+        // ==========================================
+
+        function getColumnsStorageKey() {
+            if (!selectedForm) return null;
+            return `query_submissions_cols_form_${selectedForm.form_id}`;
+        }
+
+        function loadColumnsConfig() {
+            const key = getColumnsStorageKey();
+            if (!key) {
+                selectedColumnFieldIds = [];
+                return;
+            }
+            try {
+                const stored = localStorage.getItem(key);
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    // Validar que los IDs guardados todavía existan en el formulario
+                    const validIds = selectedFormFields.map(f => f.field_id);
+                    selectedColumnFieldIds = (parsed || []).filter(id => validIds.includes(id));
+                } else {
+                    selectedColumnFieldIds = [];
+                }
+            } catch (error) {
+                console.warn('⚠️ Error leyendo configuración de columnas:', error);
+                selectedColumnFieldIds = [];
+            }
+        }
+
+        function persistColumnsConfig() {
+            const key = getColumnsStorageKey();
+            if (!key) return;
+            try {
+                localStorage.setItem(key, JSON.stringify(selectedColumnFieldIds));
+            } catch (error) {
+                console.warn('⚠️ Error guardando configuración de columnas:', error);
+            }
+        }
+
+        function openColumnsConfig() {
+            if (!selectedForm) return;
+
+            const listContainer = document.getElementById('columnsConfigList');
+            const fields = selectedFormFields.filter(f => f.field_type !== 'file');
+
+            if (fields.length === 0) {
+                listContainer.innerHTML = '<p class="text-muted text-center mb-0 py-3">Este formulario no tiene campos configurables.</p>';
+            } else {
+                listContainer.innerHTML = fields.map(field => {
+                    const isChecked = selectedColumnFieldIds.includes(field.field_id);
+                    return `
+                        <label class="column-checkbox-item" data-field-label="${escapeHtml(field.field_label).toLowerCase()}">
+                            <input type="checkbox" class="form-check-input column-checkbox" value="${field.field_id}" ${isChecked ? 'checked' : ''}>
+                            <span>${escapeHtml(field.field_label)}</span>
+                        </label>
+                    `;
+                }).join('');
+            }
+
+            // Reset del buscador y filtro
+            const searchInput = document.getElementById('columnsConfigSearch');
+            searchInput.value = '';
+            searchInput.oninput = filterColumnsConfigList;
+
+            columnsConfigModalInstance.show();
+        }
+
+        function filterColumnsConfigList() {
+            const query = (document.getElementById('columnsConfigSearch').value || '').trim().toLowerCase();
+            const items = document.querySelectorAll('#columnsConfigList .column-checkbox-item');
+            items.forEach(item => {
+                const label = item.dataset.fieldLabel || '';
+                item.style.display = (!query || label.includes(query)) ? '' : 'none';
+            });
+        }
+
+        function selectAllColumns(checked) {
+            // Solo aplica a los visibles según el filtro de búsqueda
+            const items = document.querySelectorAll('#columnsConfigList .column-checkbox-item');
+            items.forEach(item => {
+                if (item.style.display === 'none') return;
+                const input = item.querySelector('.column-checkbox');
+                if (input) input.checked = checked;
+            });
+        }
+
+        function saveColumnsConfig() {
+            const checkboxes = document.querySelectorAll('#columnsConfigList .column-checkbox:checked');
+            selectedColumnFieldIds = Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+            persistColumnsConfig();
+            columnsConfigModalInstance.hide();
+
+            // Re-renderizar la tabla con la nueva configuración
+            renderResults(currentResults, allInstances.length);
+        }
+
+        // ==========================================
         // RENDERIZAR RESULTADOS
         // ==========================================
         
         function renderResults(instances, totalResults) {
             document.getElementById('resultsCount').textContent = `${totalResults} resultado${totalResults !== 1 ? 's' : ''}`;
-            
+
+            // El botón de configurar columnas se muestra siempre que haya un formulario seleccionado
+            const columnsBtn = document.getElementById('columnsConfigBtn');
+            if (selectedForm && selectedFormFields.length > 0) {
+                columnsBtn.style.display = 'inline-block';
+            } else {
+                columnsBtn.style.display = 'none';
+            }
+
             if (instances.length === 0) {
                 document.getElementById('emptyResults').style.display = 'block';
                 document.getElementById('resultsTableContainer').style.display = 'none';
@@ -746,47 +903,54 @@
                 document.getElementById('exportBtn').style.display = 'none';
                 return;
             }
-            
+
             document.getElementById('emptyResults').style.display = 'none';
             document.getElementById('resultsTableContainer').style.display = 'block';
             document.getElementById('exportBtn').style.display = 'inline-block';
-            
-            // Encabezados: columnas fijas + primeros 3 campos del formulario
+
+            // Columnas dinámicas: las que el usuario eligió en el configurador
+            const dynamicColumns = selectedColumnFieldIds
+                .map(id => selectedFormFields.find(f => f.field_id === id))
+                .filter(Boolean);
+
+            // Encabezados: columnas fijas + columnas dinámicas elegidas
             const headerRow = document.getElementById('tableHeader');
             headerRow.innerHTML = `
                 <th>#</th>
                 <th>Solicitante</th>
                 <th>Fecha</th>
-                ${selectedFormFields.slice(0, 3).map(f => `<th>${escapeHtml(f.field_label)}</th>`).join('')}
+                <th>Estado</th>
+                ${dynamicColumns.map(f => `<th>${escapeHtml(f.field_label)}</th>`).join('')}
                 <th>Acciones</th>
             `;
-            
+
             // Filas
             const pageSize = parseInt(document.getElementById('pageSize').value);
             const tbody = document.getElementById('tableBody');
-            
+
             tbody.innerHTML = instances.map((instance, index) => {
                 const responses = instance._responses || {};
-                
-                const fieldValues = selectedFormFields.slice(0, 3).map(field => {
+
+                const fieldValues = dynamicColumns.map(field => {
                     const response = responses[field.field_id];
                     return formatResponseValue(field, response);
                 });
-                
+
                 const rowNumber = (currentPage - 1) * pageSize + index + 1;
                 const requesterName = instance.initiated_by_name || 'Desconocido';
                 const requesterEmail = instance.initiated_by_email || '';
-                
+
                 return `
-                    <tr>
+                    <tr class="clickable-row" onclick="viewDetail('${instance.instance_id}')">
                         <td><strong>${rowNumber}</strong></td>
                         <td>
                             <div>${escapeHtml(requesterName)}</div>
                             <small class="text-muted">${escapeHtml(requesterEmail)}</small>
                         </td>
                         <td>${formatDate(instance.started_at)}</td>
+                        <td>${getStatusLabel(instance.instance_status)}</td>
                         ${fieldValues.map(v => `<td>${v}</td>`).join('')}
-                        <td>
+                        <td class="row-actions-cell" onclick="event.stopPropagation();">
                             <button class="btn btn-sm btn-outline-primary" onclick="viewDetail('${instance.instance_id}')" title="Ver detalle">
                                 <i class="bi bi-eye"></i>
                             </button>
@@ -794,7 +958,7 @@
                     </tr>
                 `;
             }).join('');
-            
+
             // Paginación
             if (totalResults > pageSize) {
                 renderPagination(totalResults);
