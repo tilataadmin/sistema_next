@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.19.3">
+    <meta name="page-version" content="26.5.19.4">
     
     <title>Consultar Respuestas - SchoolNet</title>
     
@@ -1230,14 +1230,36 @@
         // EXPORTAR REGISTRO INDIVIDUAL A PDF
         // ==========================================
 
+        function stripHtmlForPDF(html) {
+            if (!html) return '';
+            // Usar el DOM para decodificar entidades y eliminar tags
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            // Reemplazar saltos de bloque por saltos de línea reales
+            tmp.querySelectorAll('p, br, div, li').forEach(el => {
+                el.insertAdjacentText('beforebegin', '\n');
+            });
+            const text = (tmp.textContent || tmp.innerText || '');
+            // Normalizar: colapsar espacios múltiples pero respetar saltos de línea
+            return text
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\n\s*\n\s*\n+/g, '\n\n')
+                .trim();
+        }
+
         function getPlainValueForPDF(field, response) {
             if (!response) return 'Sin respuesta';
 
             switch (field.field_type) {
                 case 'text':
-                case 'textarea':
-                case 'system_table':
                     return response.response_text || '-';
+                case 'textarea':
+                case 'system_table': {
+                    const raw = response.response_text || '';
+                    if (!raw) return '-';
+                    // Si parece HTML, limpiarlo; si no, devolver tal cual
+                    return /<[^>]+>/.test(raw) ? stripHtmlForPDF(raw) : raw;
+                }
                 case 'number':
                     return response.response_number !== null && response.response_number !== undefined
                         ? String(response.response_number)
@@ -1282,13 +1304,16 @@
                 doc.setFont(undefined, 'bold');
                 doc.text(selectedForm.form_name || 'Formulario', marginX, 20);
 
-                // Subtítulo: descripción si existe
-                if (selectedForm.form_description) {
-                    doc.setFontSize(10);
+                // Subtítulo: descripción si existe (limpiando HTML)
+                let descBlockHeight = 0;
+                const cleanDescription = stripHtmlForPDF(selectedForm.form_description);
+                if (cleanDescription) {
+                    doc.setFontSize(9);
                     doc.setFont(undefined, 'normal');
                     doc.setTextColor(100);
-                    const descLines = doc.splitTextToSize(selectedForm.form_description, pageWidth - (marginX * 2));
+                    const descLines = doc.splitTextToSize(cleanDescription, pageWidth - (marginX * 2));
                     doc.text(descLines, marginX, 27);
+                    descBlockHeight = descLines.length * 4; // ~4mm por línea a fontSize 9
                 }
 
                 doc.setTextColor(0);
@@ -1307,8 +1332,8 @@
                 infoRows.push(['Fecha', formatDateTime(instance.started_at)]);
                 infoRows.push(['Estado', getStatusLabel(instance.instance_status)]);
 
-                doc.autoTable({
-                    startY: selectedForm.form_description ? 38 : 28,
+               doc.autoTable({
+                    startY: cleanDescription ? (27 + descBlockHeight + 4) : 28,
                     head: [['Información de la solicitud', '']],
                     body: infoRows,
                     theme: 'grid',
