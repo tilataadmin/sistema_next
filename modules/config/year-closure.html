@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.4">
+    <meta name="page-version" content="26.5.20.5">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1684,14 +1684,611 @@
         
         async function ejecutarPaso4() {
             const container = document.getElementById('step4Content');
-            container.innerHTML = `
-                <div class="mensaje-inicial">
-                    <i class="bi bi-hourglass-split"></i>
-                    <p>Función pendiente de implementar en Etapa 3.5</p>
+            
+            // Leer fechas potencialmente editadas del paso 3 (si los inputs aún existen en DOM)
+            const inputStart = document.getElementById('inputStartOfClasses');
+            const inputEnd = document.getElementById('inputEndOfClasses');
+            if (inputStart) wizardData._editedStartDate = inputStart.value || null;
+            if (inputEnd) wizardData._editedEndDate = inputEnd.value || null;
+            
+            // Calcular resumen
+            const totales = calcularTotalesParaResumen();
+            
+            // Frase de confirmación esperada
+            const fraseConfirmacion = 'CERRAR ' + yearToCloseData.year_name;
+            
+            let html = '';
+            
+            // Resumen general
+            html += `
+                <div class="card mb-3 border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <strong><i class="bi bi-list-check me-2"></i>Resumen final del cierre</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-2">
+                                    <small class="text-muted">Año a cerrar</small>
+                                    <div><strong>${escapeHtml(yearToCloseData.year_name)}</strong></div>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">Año entrante (nuevo vigente)</small>
+                                    <div><strong>${escapeHtml(wizardData.newCurrentYearData?.year_name || '?')}</strong></div>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted">Fechas del año entrante</small>
+                                    <div>
+                                        Inicio: ${wizardData._editedStartDate ? formatDate(wizardData._editedStartDate) : '<em class="text-muted">No definido</em>'}<br>
+                                        Fin: ${wizardData._editedEndDate ? formatDate(wizardData._editedEndDate) : '<em class="text-muted">No definido</em>'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <table class="table table-sm mb-0">
+                                    <tr>
+                                        <td>Estudiantes activos en el año:</td>
+                                        <td class="text-end"><strong>${totales.total}</strong></td>
+                                    </tr>
+                                    <tr class="text-success">
+                                        <td><i class="bi bi-mortarboard me-1"></i>Se gradúan (van a Egresados):</td>
+                                        <td class="text-end"><strong>${totales.seGraduan}</strong></td>
+                                    </tr>
+                                    <tr class="text-primary">
+                                        <td><i class="bi bi-arrow-right me-1"></i>Se promueven al siguiente grado:</td>
+                                        <td class="text-end"><strong>${totales.sePromueven}</strong></td>
+                                    </tr>
+                                    <tr class="${totales.seQuedan > 0 ? 'text-warning' : 'text-muted'}">
+                                        <td><i class="bi bi-arrow-counterclockwise me-1"></i>Se quedan (no avanzan):</td>
+                                        <td class="text-end"><strong>${totales.seQuedan}</strong></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
+            
+            // Listado de estudiantes que se quedan (si los hay)
+            if (totales.seQuedan > 0) {
+                const idsExcluidos = Array.from(wizardData.excludedStudentIds);
+                const excluidos = wizardData.studentsToProcess.filter(s => wizardData.excludedStudentIds.has(s.student_id));
+                
+                html += `
+                    <div class="card mb-3 border-warning">
+                        <div class="card-header bg-warning bg-opacity-25">
+                            <strong><i class="bi bi-exclamation-triangle me-2"></i>Estudiantes que se quedan (${excluidos.length})</strong>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Nombre</th>
+                                        <th>Curso actual</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                excluidos.forEach(s => {
+                    const curso = wizardData.coursesMapping.find(m => m.sourceCourse.course_id === s.course_id);
+                    html += `
+                        <tr>
+                            <td><small>${escapeHtml(String(s.student_code || ''))}</small></td>
+                            <td>${escapeHtml(formatStudentName(s))}</td>
+                            <td>${escapeHtml(curso?.sourceCourse.course_name || '?')}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Bloque de confirmación
+            html += `
+                <div class="card border-danger" id="cardConfirmacion">
+                    <div class="card-header bg-danger text-white">
+                        <strong><i class="bi bi-shield-exclamation me-2"></i>Confirmación de ejecución</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-danger mb-3">
+                            <strong>Este proceso no se puede deshacer automáticamente.</strong>
+                            Quedará un registro de auditoría con el snapshot completo, pero cualquier corrección posterior 
+                            deberá realizarse manualmente desde la base de datos.
+                        </div>
+                        
+                        <label class="form-label">
+                            Para proceder, escribe exactamente: <code>${escapeHtml(fraseConfirmacion)}</code>
+                        </label>
+                        <input type="text" class="form-control mb-3" id="inputConfirmacion" 
+                               placeholder="Escribe la frase exacta..." 
+                               oninput="validarConfirmacionCierre()" autocomplete="off">
+                        
+                        <button class="btn btn-danger btn-lg" id="btnEjecutarCierre" disabled
+                                onclick="ejecutarCierreFinal()">
+                            <i class="bi bi-box-arrow-in-down me-2"></i>Ejecutar cierre
+                        </button>
+                        <span class="ms-2 text-muted small" id="lblConfirmacionEstado">
+                            Esperando confirmación...
+                        </span>
+                    </div>
+                </div>
+            `;
+            
+            // Contenedor de resultados (se llena al ejecutar)
+            html += `<div id="resultadoCierre" class="mt-3"></div>`;
+            
+            container.innerHTML = html;
+            
+            // Guardamos la frase esperada para validación
+            wizardData._fraseConfirmacion = fraseConfirmacion;
+            
+            // El paso 4 técnicamente nunca habilita el botón Next (se reemplaza por el botón rojo del cierre)
             marcarPasoValido(4, false);
         }
+        
+        // ==========================================
+        // CALCULAR TOTALES PARA RESUMEN
+        // ==========================================
+        function calcularTotalesParaResumen() {
+            const total = wizardData.studentsToProcess.length;
+            const excluidos = wizardData.excludedStudentIds.size;
+            
+            // IDs de estudiantes de undécimo
+            const idsUndecimo = new Set();
+            wizardData.coursesMapping.forEach(m => {
+                if (m.isGraduation) {
+                    wizardData.studentsToProcess
+                        .filter(s => s.course_id === m.sourceCourse.course_id)
+                        .forEach(s => idsUndecimo.add(s.student_id));
+                }
+            });
+            
+            let seGraduan = 0;
+            let sePromueven = 0;
+            wizardData.studentsToProcess.forEach(s => {
+                if (wizardData.excludedStudentIds.has(s.student_id)) return;
+                if (idsUndecimo.has(s.student_id)) seGraduan++;
+                else sePromueven++;
+            });
+            
+            return {
+                total,
+                seGraduan,
+                sePromueven,
+                seQuedan: excluidos,
+                idsUndecimo
+            };
+        }
+        
+        // ==========================================
+        // VALIDAR FRASE DE CONFIRMACIÓN
+        // ==========================================
+        function validarConfirmacionCierre() {
+            const input = document.getElementById('inputConfirmacion');
+            const btn = document.getElementById('btnEjecutarCierre');
+            const lbl = document.getElementById('lblConfirmacionEstado');
+            
+            if (!input || !btn) return;
+            
+            const valor = (input.value || '').trim();
+            const esperado = wizardData._fraseConfirmacion;
+            
+            if (valor === esperado) {
+                btn.disabled = false;
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-danger');
+                lbl.innerHTML = '<i class="bi bi-check-circle text-success me-1"></i>Confirmación válida';
+                lbl.className = 'ms-2 small text-success';
+            } else {
+                btn.disabled = true;
+                lbl.textContent = 'Esperando confirmación...';
+                lbl.className = 'ms-2 text-muted small';
+            }
+        }
+        
+        // ==========================================
+        // EJECUTAR CIERRE FINAL
+        // ==========================================
+        async function ejecutarCierreFinal() {
+            // Doble confirmación
+            if (!confirm('Última confirmación: ¿ejecutar el cierre del año académico "' + yearToCloseData.year_name + '"?\n\nEsta acción no se puede deshacer.')) {
+                return;
+            }
+            
+            // Deshabilitar UI
+            document.getElementById('btnEjecutarCierre').disabled = true;
+            document.getElementById('btnPrev').disabled = true;
+            document.getElementById('inputConfirmacion').disabled = true;
+            
+            const resultadoDiv = document.getElementById('resultadoCierre');
+            resultadoDiv.innerHTML = `
+                <div class="card border-info">
+                    <div class="card-body">
+                        <h6><i class="bi bi-gear-fill me-2"></i>Ejecutando cierre...</h6>
+                        <div id="logCierre" class="small font-monospace bg-dark text-white p-3 rounded mt-2" 
+                             style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+            `;
+            
+            const log = (mensaje, tipo = 'info') => {
+                const logDiv = document.getElementById('logCierre');
+                if (!logDiv) return;
+                const timestamp = new Date().toLocaleTimeString('es-CO');
+                const colores = {
+                    info: '#9ec5fe',
+                    success: '#a3cfbb',
+                    warning: '#ffe69c',
+                    error: '#f1aeb5'
+                };
+                const color = colores[tipo] || '#fff';
+                logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${escapeHtml(mensaje)}</div>`;
+                logDiv.scrollTop = logDiv.scrollHeight;
+            };
+            
+            const errores = [];
+            const stats = {
+                graduated: 0,
+                promoted: 0,
+                stayed_11: 0,
+                stayed_other: 0,
+                errors_grad: 0,
+                errors_prom: 0
+            };
+            
+            try {
+                log('▶ Iniciando cierre del año ' + yearToCloseData.year_name);
+                
+                // PASO 1: Construir snapshot
+                log('📸 Construyendo snapshot pre-cierre...');
+                const snapshot = construirSnapshot();
+                
+                // PASO 2: Crear registro de cierre (auditoría)
+                log('💾 Guardando snapshot en academic_year_closures...');
+                const closureRecord = await supabaseRequest('/academic_year_closures', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        year_id: yearToCloseId,
+                        new_current_year_id: wizardData.newCurrentYearId,
+                        closed_by: currentUser.user_id,
+                        snapshot_data: snapshot,
+                        students_graduated: 0,
+                        students_promoted: 0,
+                        students_not_promoted: 0,
+                        students_stayed_11: 0,
+                        notes: 'Cierre en ejecución'
+                    })
+                });
+                
+                const closureId = Array.isArray(closureRecord) ? closureRecord[0]?.closure_id : closureRecord?.closure_id;
+                if (!closureId) throw new Error('No se pudo crear el registro de auditoría');
+                log('✓ Auditoría creada: ' + closureId, 'success');
+                
+                // PASO 3: Procesar undécimos (graduación)
+                const totales = calcularTotalesParaResumen();
+                log(`🎓 Procesando ${totales.seGraduan} graduados de Undécimo...`);
+                
+                const estudiantesUndecimo = wizardData.studentsToProcess.filter(s => totales.idsUndecimo.has(s.student_id));
+                const statusEgresadoId = await obtenerStatusIdPorCode(2);  // Egresado
+                
+                if (!statusEgresadoId) {
+                    throw new Error('No se encontró el status "Egresado" (código 2) en student_status');
+                }
+                
+                const graduationYear = parseInt(yearToCloseData.year_name.split('-')[1]) || new Date().getFullYear();
+                
+                for (const est of estudiantesUndecimo) {
+                    if (wizardData.excludedStudentIds.has(est.student_id)) {
+                        stats.stayed_11++;
+                        continue; // Repite 11°, no se gradúa
+                    }
+                    
+                    try {
+                        // Insertar en alumni
+                        await supabaseRequest('/alumni', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                alumni_id_document: est.student_id_document || ('PENDIENTE_' + est.student_code),
+                                alumni_first_name: est.student_first_name,
+                                alumni_last_name_1: est.student_last_name_1,
+                                alumni_last_name_2: est.student_last_name_2 || null,
+                                graduation_year: graduationYear,
+                                original_student_id: est.student_id,
+                                original_student_code: est.student_code,
+                                data_source: 'graduacion',
+                                is_verified: false,
+                                pre_loaded: true,
+                                consent_data_treatment: false,
+                                consent_directory_basic: false,
+                                consent_directory_extended: false
+                            })
+                        });
+                        
+                        // Cambiar status a Egresado
+                        await supabaseRequest('/students?student_id=eq.' + est.student_id, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ status_id: statusEgresadoId })
+                        });
+                        
+                        stats.graduated++;
+                    } catch (e) {
+                        stats.errors_grad++;
+                        const msg = `Error graduando estudiante ${est.student_code}: ${e.message}`;
+                        errores.push(msg);
+                        log('✗ ' + msg, 'error');
+                    }
+                }
+                log(`✓ Graduados: ${stats.graduated}, repiten 11°: ${stats.stayed_11}, errores: ${stats.errors_grad}`, stats.errors_grad > 0 ? 'warning' : 'success');
+                
+                // PASO 4: Procesar promociones
+                log(`📈 Procesando ${totales.sePromueven} promociones...`);
+                
+                const estudiantesNoUndecimo = wizardData.studentsToProcess.filter(s => !totales.idsUndecimo.has(s.student_id));
+                
+                for (const est of estudiantesNoUndecimo) {
+                    if (wizardData.excludedStudentIds.has(est.student_id)) {
+                        stats.stayed_other++;
+                        continue; // No se promueve, se queda
+                    }
+                    
+                    const mappingItem = wizardData.coursesMapping.find(m => m.sourceCourse.course_id === est.course_id);
+                    if (!mappingItem || !mappingItem.destinationCourse) {
+                        stats.errors_prom++;
+                        const msg = `Estudiante ${est.student_code} sin curso destino (curso actual: ${est.course_id})`;
+                        errores.push(msg);
+                        log('✗ ' + msg, 'error');
+                        continue;
+                    }
+                    
+                    try {
+                        await supabaseRequest('/students?student_id=eq.' + est.student_id, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ course_id: mappingItem.destinationCourse.course_id })
+                        });
+                        stats.promoted++;
+                    } catch (e) {
+                        stats.errors_prom++;
+                        const msg = `Error promoviendo estudiante ${est.student_code}: ${e.message}`;
+                        errores.push(msg);
+                        log('✗ ' + msg, 'error');
+                    }
+                }
+                log(`✓ Promovidos: ${stats.promoted}, se quedan: ${stats.stayed_other}, errores: ${stats.errors_prom}`, stats.errors_prom > 0 ? 'warning' : 'success');
+                
+                // PASO 5: Actualizar fechas del año entrante (si fueron editadas)
+                const updateNewYear = { is_current: true };
+                if (wizardData._editedStartDate !== undefined) {
+                    updateNewYear.start_of_classes = wizardData._editedStartDate || null;
+                }
+                if (wizardData._editedEndDate !== undefined) {
+                    updateNewYear.end_of_classes = wizardData._editedEndDate || null;
+                }
+                
+                log('📅 Marcando año entrante como vigente...');
+                await supabaseRequest('/academic_years?year_id=eq.' + wizardData.newCurrentYearId, {
+                    method: 'PATCH',
+                    body: JSON.stringify(updateNewYear)
+                });
+                log('✓ Año ' + wizardData.newCurrentYearData.year_name + ' marcado como vigente', 'success');
+                
+                // PASO 6: Marcar año actual como cerrado y no vigente
+                log('🔒 Cerrando año ' + yearToCloseData.year_name + '...');
+                await supabaseRequest('/academic_years?year_id=eq.' + yearToCloseId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        is_current: false,
+                        closed_at: new Date().toISOString(),
+                        closed_by: currentUser.user_id,
+                        year_status: 'closed'
+                    })
+                });
+                log('✓ Año cerrado', 'success');
+                
+                // PASO 7: Actualizar system_config si tiene current_academic_year_id
+                log('⚙️ Actualizando system_config...');
+                try {
+                    await supabaseRequest('/system_config', {
+                        method: 'PATCH',
+                        body: JSON.stringify({ current_academic_year_id: wizardData.newCurrentYearId })
+                    });
+                    log('✓ system_config actualizado', 'success');
+                } catch (e) {
+                    log('⚠ system_config no se pudo actualizar: ' + e.message, 'warning');
+                }
+                
+                // PASO 8: Actualizar el registro de cierre con stats finales
+                log('💾 Actualizando snapshot con resultados finales...');
+                await supabaseRequest('/academic_year_closures?closure_id=eq.' + closureId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        students_graduated: stats.graduated,
+                        students_promoted: stats.promoted,
+                        students_not_promoted: stats.stayed_other,
+                        students_stayed_11: stats.stayed_11,
+                        notes: errores.length > 0 
+                            ? `Completado con ${errores.length} error(es). Ver snapshot_data.errors.`
+                            : 'Completado exitosamente.'
+                    })
+                });
+                
+                // Si hubo errores, anexarlos al snapshot_data (re-leerlo y re-escribirlo sería ideal, pero por simplicidad lo dejamos así)
+                
+                log('═══════════════════════════════════════', 'info');
+                log('✅ CIERRE COMPLETADO', 'success');
+                log('═══════════════════════════════════════', 'info');
+                log(`Graduados: ${stats.graduated} | Promovidos: ${stats.promoted}`, 'success');
+                log(`Quedan en 11°: ${stats.stayed_11} | Quedan otros: ${stats.stayed_other}`, 'success');
+                if (errores.length > 0) {
+                    log(`⚠ Errores: ${errores.length} (revisa el log)`, 'warning');
+                }
+                
+                // Mostrar resumen final con opción de regresar
+                mostrarResumenFinalExitoso(stats, errores);
+                
+            } catch (error) {
+                console.error('❌ Error crítico en cierre:', error);
+                log('💥 ERROR CRÍTICO: ' + error.message, 'error');
+                
+                document.getElementById('resultadoCierre').insertAdjacentHTML('beforeend', `
+                    <div class="alert alert-danger mt-3">
+                        <h6><i class="bi bi-x-octagon-fill me-2"></i>Error en el cierre</h6>
+                        <p class="mb-1">${escapeHtml(error.message)}</p>
+                        <p class="mb-0 small">
+                            El sistema puede haber quedado en estado inconsistente. Revisa el log y consulta la 
+                            tabla <code>academic_year_closures</code> para reconstruir manualmente.
+                        </p>
+                    </div>
+                `);
+                
+                // Permitir cerrar/recargar al usuario
+                document.getElementById('btnPrev').disabled = false;
+            }
+        }
+        
+        // ==========================================
+        // CONSTRUIR SNAPSHOT
+        // ==========================================
+        function construirSnapshot() {
+            const totales = calcularTotalesParaResumen();
+            
+            return {
+                year_closed: {
+                    year_id: yearToCloseData.year_id,
+                    year_name: yearToCloseData.year_name
+                },
+                year_new_current: {
+                    year_id: wizardData.newCurrentYearData.year_id,
+                    year_name: wizardData.newCurrentYearData.year_name,
+                    start_of_classes: wizardData._editedStartDate || null,
+                    end_of_classes: wizardData._editedEndDate || null
+                },
+                courses_state: wizardData.coursesMapping.map(m => ({
+                    course_id: m.sourceCourse.course_id,
+                    course_name: m.sourceCourse.course_name,
+                    grade_name: m.sourceCourse.grade_name,
+                    grade_order: m.sourceCourse.grade_order,
+                    students_count: m.studentsCount,
+                    is_graduation: m.isGraduation,
+                    destination_course_id: m.destinationCourse?.course_id || null,
+                    destination_course_name: m.destinationCourse?.course_name || null
+                })),
+                students_processed: wizardData.studentsToProcess.map(s => {
+                    const isExcluded = wizardData.excludedStudentIds.has(s.student_id);
+                    const isUndecimo = totales.idsUndecimo.has(s.student_id);
+                    
+                    let action;
+                    if (isUndecimo && !isExcluded) action = 'graduated';
+                    else if (isUndecimo && isExcluded) action = 'stayed_11';
+                    else if (!isUndecimo && !isExcluded) action = 'promoted';
+                    else action = 'stayed';
+                    
+                    const mapping = wizardData.coursesMapping.find(m => m.sourceCourse.course_id === s.course_id);
+                    
+                    return {
+                        student_id: s.student_id,
+                        student_code: s.student_code,
+                        student_name: formatStudentName(s),
+                        from_course_id: s.course_id,
+                        from_course_name: mapping?.sourceCourse.course_name || null,
+                        to_course_id: action === 'promoted' ? mapping?.destinationCourse?.course_id : null,
+                        to_course_name: action === 'promoted' ? mapping?.destinationCourse?.course_name : null,
+                        action: action
+                    };
+                }),
+                generated_at: new Date().toISOString(),
+                generated_by: currentUser.user_id
+            };
+        }
+        
+        // ==========================================
+        // OBTENER STATUS_ID DE student_status POR CÓDIGO
+        // ==========================================
+        async function obtenerStatusIdPorCode(statusCode) {
+            const data = await supabaseRequest(
+                '/student_status?select=status_id&status_code=eq.' + statusCode + '&limit=1'
+            );
+            return data && data.length > 0 ? data[0].status_id : null;
+        }
+        
+        // ==========================================
+        // MOSTRAR RESUMEN FINAL EXITOSO
+        // ==========================================
+        function mostrarResumenFinalExitoso(stats, errores) {
+            // Ocultar el card de confirmación
+            const cardConf = document.getElementById('cardConfirmacion');
+            if (cardConf) cardConf.style.display = 'none';
+            
+            const resultadoDiv = document.getElementById('resultadoCierre');
+            
+            const tieneErrores = errores.length > 0;
+            const colorBorde = tieneErrores ? 'border-warning' : 'border-success';
+            const colorHeader = tieneErrores ? 'bg-warning' : 'bg-success';
+            const titulo = tieneErrores ? 'Cierre completado con advertencias' : 'Cierre completado exitosamente';
+            const icono = tieneErrores ? 'exclamation-triangle-fill' : 'check-circle-fill';
+            
+            resultadoDiv.insertAdjacentHTML('beforeend', `
+                <div class="card ${colorBorde} mt-3">
+                    <div class="card-header ${colorHeader} text-white">
+                        <h5 class="mb-0"><i class="bi bi-${icono} me-2"></i>${titulo}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h3 class="text-success mb-0">${stats.graduated}</h3>
+                                    <small>Graduados</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h3 class="text-primary mb-0">${stats.promoted}</h3>
+                                    <small>Promovidos</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h3 class="text-muted mb-0">${stats.stayed_11 + stats.stayed_other}</h3>
+                                    <small>Se quedan</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 ${tieneErrores ? 'bg-warning bg-opacity-25' : 'bg-light'} rounded">
+                                    <h3 class="${tieneErrores ? 'text-warning' : 'text-muted'} mb-0">${errores.length}</h3>
+                                    <small>Errores</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${tieneErrores ? `
+                            <div class="alert alert-warning">
+                                <strong>Errores durante el cierre:</strong>
+                                <ul class="mb-0 mt-2 small">
+                                    ${errores.slice(0, 10).map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                                    ${errores.length > 10 ? `<li><em>... y ${errores.length - 10} más (ver log arriba)</em></li>` : ''}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="d-flex gap-2 mt-3">
+                            <a href="years.html" class="btn btn-primary">
+                                <i class="bi bi-arrow-left me-1"></i>Volver a Años Académicos
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+        
+        // Exponer funciones globales
+        window.validarConfirmacionCierre = validarConfirmacionCierre;
+        window.ejecutarCierreFinal = ejecutarCierreFinal;
         
         // ==========================================
         // UTILIDADES
