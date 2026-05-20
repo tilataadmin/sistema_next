@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.5.20.1">
+    <title>Reversar Cierre de Año - SchoolNet</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .loading-overlay.hidden { display: none; }
+        
+        .loading-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ffc107;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .reversa-info-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+        
+        .reversa-info-box strong {
+            color: #856404;
+        }
+        
+        .countdown-box {
+            background: white;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .countdown-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #856404;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0" id="loading-message">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="index.html">Configuración</a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="years.html">Años Académicos</a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Reversar Cierre
+                </li>
+            </ol>
+        </nav>
+
+        <!-- ENCABEZADO -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3 text-warning">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>
+                    Reversar Cierre de Año Académico
+                </h1>
+                <p class="text-muted">
+                    Restaurar el estado anterior al cierre. Solo disponible dentro de las 24 horas siguientes al cierre.
+                </p>
+            </div>
+            <div class="col-auto">
+                <a href="years.html" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Cancelar
+                </a>
+            </div>
+        </div>
+
+        <!-- INFO DEL CIERRE A REVERSAR -->
+        <div class="reversa-info-box" id="cierreInfoBox">
+            <div class="row align-items-center">
+                <div class="col">
+                    <div class="text-muted small">Cierre a reversar</div>
+                    <h4 class="mb-0"><strong id="cierreYearName">Cargando...</strong></h4>
+                    <div class="small text-muted mt-1" id="cierreFechaInfo"></div>
+                </div>
+                <div class="col-auto">
+                    <div class="countdown-box">
+                        <div class="text-muted small">Tiempo restante</div>
+                        <div class="countdown-value" id="countdownValue">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <div id="mainContent">
+            <div class="text-center py-5">
+                <div class="spinner-border text-warning" role="status"></div>
+                <div class="mt-2 text-muted">Cargando información del cierre...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+    
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        
+        let closureId = null;
+        let closureData = null;
+        let snapshotData = null;
+        let inconsistencias = {
+            estudiantesMovidos: [],     // Estudiantes promovidos cuyo course_id ya cambió
+            egresadosActivados: [],     // Egresados con campos modificados después del cierre
+            registrosAlumniFaltantes: [] // Egresados que ya no existen en alumni (alguien los borró)
+        };
+        let currentUser = null;
+        
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const hasAccess = await validatePageAccess('Años académicos');
+                if (!hasAccess) return;
+                
+                const session = getStoredSession();
+                if (session && session.user) currentUser = session.user;
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                closureId = urlParams.get('closure_id');
+                
+                if (!closureId) {
+                    showMessage('No se especificó el cierre a reversar.', 'danger');
+                    return;
+                }
+                
+                await cargarInfoCierre();
+                await ejecutarValidaciones();
+                renderizarResumen();
+                
+            } catch (error) {
+                console.error('❌ Error en inicialización:', error);
+                showMessage('Error al cargar la página: ' + error.message, 'danger');
+            }
+        });
+        
+        // ==========================================
+        // CARGAR INFO DEL CIERRE
+        // ==========================================
+        async function cargarInfoCierre() {
+            const data = await supabaseRequest(
+                '/academic_year_closures?select=*&closure_id=eq.' + closureId
+            );
+            
+            if (!data || data.length === 0) {
+                throw new Error('El cierre no existe');
+            }
+            
+            closureData = data[0];
+            snapshotData = closureData.snapshot_data;
+            
+            // Validaciones críticas
+            if (closureData.reversed_at) {
+                throw new Error('Este cierre ya fue reversado el ' + formatDate(closureData.reversed_at));
+            }
+            
+            const closedAt = new Date(closureData.closed_at);
+            const ahora = new Date();
+            const diffHoras = (ahora - closedAt) / (60 * 60 * 1000);
+            
+            if (diffHoras >= 24) {
+                throw new Error('El período de reversa ha expirado (24 horas). El cierre se ejecutó hace ' + diffHoras.toFixed(1) + ' horas.');
+            }
+            
+            // Renderizar info en el header
+            const yearName = snapshotData?.year_closed?.year_name || 'Desconocido';
+            document.getElementById('cierreYearName').textContent = yearName;
+            document.getElementById('cierreFechaInfo').textContent = 
+                'Cerrado el ' + new Date(closureData.closed_at).toLocaleString('es-CO');
+            
+            const horasRestantes = 24 - diffHoras;
+            document.getElementById('countdownValue').textContent = horasRestantes.toFixed(1) + ' h';
+            
+            console.log('✅ Cierre cargado:', yearName);
+        }
+        
+        // ==========================================
+        // EJECUTAR VALIDACIONES PRE-REVERSA
+        // ==========================================
+        async function ejecutarValidaciones() {
+            mostrarLoading('Verificando consistencia del cierre...');
+            
+            try {
+                const studentsProcessed = snapshotData?.students_processed || [];
+                
+                // === Validación 1: estudiantes promovidos cuyo course_id ya cambió ===
+                const promovidos = studentsProcessed.filter(s => s.action === 'promoted');
+                
+                if (promovidos.length > 0) {
+                    // Traer el estado actual de esos estudiantes
+                    const idsFiltro = '(' + promovidos.map(s => s.student_id).join(',') + ')';
+                    
+                    const estudiantesActuales = await supabaseRequest(
+                        '/students?select=student_id,student_code,course_id&student_id=in.' + idsFiltro
+                    );
+                    
+                    const estadoActualMap = {};
+                    (estudiantesActuales || []).forEach(s => {
+                        estadoActualMap[s.student_id] = s;
+                    });
+                    
+                    promovidos.forEach(snap => {
+                        const actual = estadoActualMap[snap.student_id];
+                        if (!actual) {
+                            // Estudiante ya no existe — caso muy raro
+                            inconsistencias.estudiantesMovidos.push({
+                                student_id: snap.student_id,
+                                student_code: snap.student_code,
+                                student_name: snap.student_name,
+                                motivo: 'Estudiante no encontrado en la BD'
+                            });
+                        } else if (actual.course_id !== snap.to_course_id) {
+                            // Su course_id actual no coincide con el que se le puso en el cierre
+                            inconsistencias.estudiantesMovidos.push({
+                                student_id: snap.student_id,
+                                student_code: snap.student_code,
+                                student_name: snap.student_name,
+                                course_esperado: snap.to_course_name,
+                                course_actual_id: actual.course_id
+                            });
+                        }
+                    });
+                }
+                
+                // === Validación 2: egresados con datos modificados post-cierre ===
+                const graduados = studentsProcessed.filter(s => s.action === 'graduated');
+                
+                if (graduados.length > 0) {
+                    const idsGraduados = graduados.map(s => s.student_id);
+                    const idsFiltro = '(' + idsGraduados.join(',') + ')';
+                    
+                    const alumniRecords = await supabaseRequest(
+                        '/alumni?select=alumni_id,original_student_id,alumni_id_document,is_verified,consent_data_treatment,consent_directory_basic,consent_directory_extended,alumni_email,alumni_phone,deleted_at&original_student_id=in.' + idsFiltro
+                    );
+                    
+                    const alumniMap = {};
+                    (alumniRecords || []).forEach(a => {
+                        alumniMap[a.original_student_id] = a;
+                    });
+                    
+                    graduados.forEach(snap => {
+                        const alumni = alumniMap[snap.student_id];
+                        
+                        if (!alumni) {
+                            // El registro de alumni ya no existe
+                            inconsistencias.registrosAlumniFaltantes.push({
+                                student_id: snap.student_id,
+                                student_code: snap.student_code,
+                                student_name: snap.student_name
+                            });
+                            return;
+                        }
+                        
+                        // Detectar cualquier campo que indique activación de cuenta
+                        const fueModificado = 
+                            alumni.is_verified === true ||
+                            alumni.consent_data_treatment === true ||
+                            alumni.consent_directory_basic === true ||
+                            alumni.consent_directory_extended === true ||
+                            (alumni.alumni_email && alumni.alumni_email.trim() !== '') ||
+                            (alumni.alumni_phone && alumni.alumni_phone.trim() !== '');
+                        
+                        if (fueModificado) {
+                            const modificaciones = [];
+                            if (alumni.is_verified) modificaciones.push('verificado');
+                            if (alumni.consent_data_treatment) modificaciones.push('consentimiento datos');
+                            if (alumni.consent_directory_basic) modificaciones.push('consentimiento directorio básico');
+                            if (alumni.consent_directory_extended) modificaciones.push('consentimiento directorio extendido');
+                            if (alumni.alumni_email) modificaciones.push('email personal');
+                            if (alumni.alumni_phone) modificaciones.push('teléfono');
+                            
+                            inconsistencias.egresadosActivados.push({
+                                student_id: snap.student_id,
+                                student_code: snap.student_code,
+                                student_name: snap.student_name,
+                                modificaciones: modificaciones
+                            });
+                        }
+                    });
+                }
+                
+                console.log('✅ Validaciones completadas:', inconsistencias);
+                
+            } finally {
+                ocultarLoading();
+            }
+        }
+        
+        // ==========================================
+        // RENDERIZAR RESUMEN
+        // ==========================================
+        function renderizarResumen() {
+            const container = document.getElementById('mainContent');
+            const studentsProcessed = snapshotData?.students_processed || [];
+            
+            const totalGraduados = studentsProcessed.filter(s => s.action === 'graduated').length;
+            const totalPromovidos = studentsProcessed.filter(s => s.action === 'promoted').length;
+            const totalQuedaron = studentsProcessed.filter(s => s.action === 'stayed' || s.action === 'stayed_11').length;
+            
+            const totalInconsistencias = 
+                inconsistencias.estudiantesMovidos.length + 
+                inconsistencias.egresadosActivados.length + 
+                inconsistencias.registrosAlumniFaltantes.length;
+            
+            const bloquearReversa = totalInconsistencias > 0;
+            
+            let html = '';
+            
+            // Resumen de lo que se hará en la reversa
+            html += `
+                <div class="card mb-3 border-warning">
+                    <div class="card-header bg-warning bg-opacity-25">
+                        <strong><i class="bi bi-list-check me-2"></i>Operaciones a reversar</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h4 class="text-success mb-0">${totalGraduados}</h4>
+                                    <small>Graduados a desgraduar</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h4 class="text-primary mb-0">${totalPromovidos}</h4>
+                                    <small>Promovidos a devolver</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h4 class="text-muted mb-0">${totalQuedaron}</h4>
+                                    <small>Sin cambio (no se tocan)</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 ${bloquearReversa ? 'bg-danger bg-opacity-25' : 'bg-light'} rounded">
+                                    <h4 class="${bloquearReversa ? 'text-danger' : 'text-success'} mb-0">${totalInconsistencias}</h4>
+                                    <small>Inconsistencias</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <p class="mb-2 small text-muted">Esta operación, si se ejecuta exitosamente:</p>
+                        <ul class="small text-muted mb-0">
+                            <li>Restaura <strong>${totalPromovidos}</strong> estudiantes a su curso anterior.</li>
+                            <li>Borra <strong>${totalGraduados}</strong> registros de la tabla de egresados.</li>
+                            <li>Restaura <strong>${totalGraduados}</strong> estudiantes al estado "Activo".</li>
+                            <li>Restaura el año <strong>${escapeHtml(snapshotData?.year_closed?.year_name || '?')}</strong> como vigente.</li>
+                            <li>Desmarca el año <strong>${escapeHtml(snapshotData?.year_new_current?.year_name || '?')}</strong> como vigente.</li>
+                            <li>Marca este cierre como reversado en el registro de auditoría.</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+            
+            // Bloque de inconsistencias (si las hay)
+            if (totalInconsistencias > 0) {
+                html += `
+                    <div class="card mb-3 border-danger">
+                        <div class="card-header bg-danger text-white">
+                            <strong><i class="bi bi-x-octagon-fill me-2"></i>Inconsistencias detectadas — reversa BLOQUEADA</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="small mb-3">
+                                Se detectaron cambios en los datos después del cierre. La reversa automática se bloquea 
+                                para evitar pérdida de información. Si necesitas reversar, deberás hacerlo manualmente desde la base de datos.
+                            </p>
+                `;
+                
+                if (inconsistencias.egresadosActivados.length > 0) {
+                    html += `
+                        <h6 class="text-danger mt-2">
+                            <i class="bi bi-person-check me-1"></i>
+                            ${inconsistencias.egresadosActivados.length} egresado(s) con datos modificados después del cierre:
+                        </h6>
+                        <ul class="small mb-3">
+                    `;
+                    inconsistencias.egresadosActivados.forEach(e => {
+                        html += `<li>${escapeHtml(e.student_name)} (código ${escapeHtml(String(e.student_code))}) — modificado: ${e.modificaciones.join(', ')}</li>`;
+                    });
+                    html += `</ul>`;
+                }
+                
+                if (inconsistencias.estudiantesMovidos.length > 0) {
+                    html += `
+                        <h6 class="text-danger mt-2">
+                            <i class="bi bi-arrow-left-right me-1"></i>
+                            ${inconsistencias.estudiantesMovidos.length} estudiante(s) movido(s) después del cierre:
+                        </h6>
+                        <ul class="small mb-3">
+                    `;
+                    inconsistencias.estudiantesMovidos.forEach(e => {
+                        const detalle = e.motivo 
+                            ? e.motivo 
+                            : `esperado en "${e.course_esperado}", está en otro curso`;
+                        html += `<li>${escapeHtml(e.student_name)} (código ${escapeHtml(String(e.student_code))}) — ${escapeHtml(detalle)}</li>`;
+                    });
+                    html += `</ul>`;
+                }
+                
+                if (inconsistencias.registrosAlumniFaltantes.length > 0) {
+                    html += `
+                        <h6 class="text-danger mt-2">
+                            <i class="bi bi-trash me-1"></i>
+                            ${inconsistencias.registrosAlumniFaltantes.length} registro(s) de egresado faltante(s):
+                        </h6>
+                        <ul class="small mb-0">
+                    `;
+                    inconsistencias.registrosAlumniFaltantes.forEach(e => {
+                        html += `<li>${escapeHtml(e.student_name)} (código ${escapeHtml(String(e.student_code))}) — ya no existe en la tabla alumni</li>`;
+                    });
+                    html += `</ul>`;
+                }
+                
+                html += `
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <a href="years.html" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Volver a Años Académicos
+                        </a>
+                    </div>
+                `;
+            } else {
+                // Sin inconsistencias — permitir reversa con confirmación
+                const fraseConfirmacion = 'REVERSAR CIERRE ' + (snapshotData?.year_closed?.year_name || '');
+                
+                html += `
+                    <div class="card border-warning">
+                        <div class="card-header bg-warning bg-opacity-25">
+                            <strong><i class="bi bi-shield-exclamation me-2"></i>Confirmación de reversa</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-warning">
+                                <strong>Esta reversa modifica datos en la base.</strong>
+                                Aunque no se detectaron inconsistencias, conviene verificar que ningún proceso externo 
+                                dependa del estado actual antes de continuar.
+                            </div>
+                            
+                            <label class="form-label">
+                                Para proceder, escribe exactamente: <code>${escapeHtml(fraseConfirmacion)}</code>
+                            </label>
+                            <input type="text" class="form-control mb-3" id="inputConfirmacionReversa" 
+                                   placeholder="Escribe la frase exacta..." 
+                                   oninput="validarConfirmacionReversa()" autocomplete="off">
+                            
+                            <button class="btn btn-warning btn-lg" id="btnEjecutarReversa" disabled
+                                    onclick="ejecutarReversa()">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>Ejecutar reversa
+                            </button>
+                            <span class="ms-2 text-muted small" id="lblEstadoReversa">
+                                Esperando confirmación...
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div id="resultadoReversa" class="mt-3"></div>
+                `;
+                
+                // Guardar frase esperada
+                window._fraseReversa = fraseConfirmacion;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // ==========================================
+        // VALIDAR FRASE DE CONFIRMACIÓN
+        // ==========================================
+        function validarConfirmacionReversa() {
+            const input = document.getElementById('inputConfirmacionReversa');
+            const btn = document.getElementById('btnEjecutarReversa');
+            const lbl = document.getElementById('lblEstadoReversa');
+            
+            if (!input || !btn) return;
+            
+            const valor = (input.value || '').trim();
+            const esperado = window._fraseReversa;
+            
+            if (valor === esperado) {
+                btn.disabled = false;
+                lbl.innerHTML = '<i class="bi bi-check-circle text-success me-1"></i>Confirmación válida';
+                lbl.className = 'ms-2 small text-success';
+            } else {
+                btn.disabled = true;
+                lbl.textContent = 'Esperando confirmación...';
+                lbl.className = 'ms-2 text-muted small';
+            }
+        }
+        
+        // ==========================================
+        // EJECUTAR REVERSA
+        // ==========================================
+        async function ejecutarReversa() {
+            if (!confirm('Última confirmación: ¿reversar el cierre del año "' + (snapshotData?.year_closed?.year_name || '?') + '"?')) {
+                return;
+            }
+            
+            document.getElementById('btnEjecutarReversa').disabled = true;
+            document.getElementById('inputConfirmacionReversa').disabled = true;
+            
+            const resultadoDiv = document.getElementById('resultadoReversa');
+            resultadoDiv.innerHTML = `
+                <div class="card border-info">
+                    <div class="card-body">
+                        <h6><i class="bi bi-gear-fill me-2"></i>Ejecutando reversa...</h6>
+                        <div id="logReversa" class="small font-monospace bg-dark text-white p-3 rounded mt-2" 
+                             style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+            `;
+            
+            const log = (mensaje, tipo = 'info') => {
+                const logDiv = document.getElementById('logReversa');
+                if (!logDiv) return;
+                const timestamp = new Date().toLocaleTimeString('es-CO');
+                const colores = {
+                    info: '#9ec5fe', success: '#a3cfbb',
+                    warning: '#ffe69c', error: '#f1aeb5'
+                };
+                const color = colores[tipo] || '#fff';
+                logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${escapeHtml(mensaje)}</div>`;
+                logDiv.scrollTop = logDiv.scrollHeight;
+            };
+            
+            const errores = [];
+            const stats = {
+                students_restored: 0,
+                alumni_deleted: 0,
+                status_restored: 0,
+                year_restored: false,
+                year_demoted: false,
+                config_restored: false
+            };
+            
+            try {
+                log('▶ Iniciando reversa del cierre ' + (snapshotData?.year_closed?.year_name || ''));
+                
+                const studentsProcessed = snapshotData?.students_processed || [];
+                const promovidos = studentsProcessed.filter(s => s.action === 'promoted');
+                const graduados = studentsProcessed.filter(s => s.action === 'graduated');
+                
+                // PASO 1: Restaurar system_config
+                log('⚙️ Restaurando system_config.current_academic_year_id...');
+                try {
+                    await supabaseRequest('/system_config', {
+                        method: 'PATCH',
+                        body: JSON.stringify({ current_academic_year_id: snapshotData.year_closed.year_id })
+                    });
+                    stats.config_restored = true;
+                    log('✓ system_config restaurado', 'success');
+                } catch (e) {
+                    log('⚠ system_config no se pudo restaurar: ' + e.message, 'warning');
+                }
+                
+                // PASO 2: Quitar is_current del año entrante
+                log('📅 Quitando vigencia al año entrante...');
+                await supabaseRequest('/academic_years?year_id=eq.' + snapshotData.year_new_current.year_id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ is_current: false })
+                });
+                stats.year_demoted = true;
+                log('✓ Año ' + snapshotData.year_new_current.year_name + ' ya no es vigente', 'success');
+                
+                // PASO 3: Restaurar año cerrado
+                log('🔓 Restaurando año cerrado como vigente...');
+                await supabaseRequest('/academic_years?year_id=eq.' + snapshotData.year_closed.year_id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        is_current: true,
+                        closed_at: null,
+                        closed_by: null,
+                        year_status: 'active'
+                    })
+                });
+                stats.year_restored = true;
+                log('✓ Año ' + snapshotData.year_closed.year_name + ' restaurado como vigente', 'success');
+                
+                // PASO 4: Devolver promovidos a su curso original
+                log(`📈 Restaurando ${promovidos.length} estudiantes promovidos...`);
+                for (const snap of promovidos) {
+                    try {
+                        await supabaseRequest('/students?student_id=eq.' + snap.student_id, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ course_id: snap.from_course_id })
+                        });
+                        stats.students_restored++;
+                    } catch (e) {
+                        errores.push(`Restaurar curso de ${snap.student_code}: ${e.message}`);
+                        log('✗ Error con ' + snap.student_code + ': ' + e.message, 'error');
+                    }
+                }
+                log(`✓ ${stats.students_restored} estudiantes restaurados a sus cursos`, 'success');
+                
+                // PASO 5: Borrar registros de alumni y restaurar status de graduados
+                log(`🎓 Desgraduando ${graduados.length} estudiantes...`);
+                
+                const statusActivoId = await obtenerStatusIdPorCode(1);
+                if (!statusActivoId) {
+                    throw new Error('No se encontró el status "Activo" (código 1) en student_status');
+                }
+                
+                for (const snap of graduados) {
+                    try {
+                        // Borrar registro de alumni por original_student_id
+                        await supabaseRequest('/alumni?original_student_id=eq.' + snap.student_id, {
+                            method: 'DELETE'
+                        });
+                        stats.alumni_deleted++;
+                        
+                        // Restaurar status a Activo
+                        await supabaseRequest('/students?student_id=eq.' + snap.student_id, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ status_id: statusActivoId })
+                        });
+                        stats.status_restored++;
+                    } catch (e) {
+                        errores.push(`Desgraduar ${snap.student_code}: ${e.message}`);
+                        log('✗ Error con ' + snap.student_code + ': ' + e.message, 'error');
+                    }
+                }
+                log(`✓ ${stats.alumni_deleted} registros de alumni borrados, ${stats.status_restored} estudiantes reactivados`, 'success');
+                
+                // PASO 6: Marcar el closure como reversado
+                log('💾 Marcando cierre como reversado en auditoría...');
+                const reversalNotes = JSON.stringify({
+                    reversed_at: new Date().toISOString(),
+                    stats: stats,
+                    errors: errores
+                });
+                
+                await supabaseRequest('/academic_year_closures?closure_id=eq.' + closureId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        reversed_at: new Date().toISOString(),
+                        reversed_by: currentUser.user_id,
+                        reversal_notes: reversalNotes
+                    })
+                });
+                log('✓ Auditoría actualizada', 'success');
+                
+                log('═══════════════════════════════════════', 'info');
+                log('✅ REVERSA COMPLETADA', 'success');
+                log('═══════════════════════════════════════', 'info');
+                
+                mostrarResumenFinalReversa(stats, errores);
+                
+            } catch (error) {
+                console.error('❌ Error crítico en reversa:', error);
+                log('💥 ERROR CRÍTICO: ' + error.message, 'error');
+                
+                resultadoDiv.insertAdjacentHTML('beforeend', `
+                    <div class="alert alert-danger mt-3">
+                        <h6><i class="bi bi-x-octagon-fill me-2"></i>Error en la reversa</h6>
+                        <p class="mb-1">${escapeHtml(error.message)}</p>
+                        <p class="mb-0 small">
+                            El sistema puede haber quedado parcialmente reversado. Revisa el log y consulta la BD para reconstruir manualmente.
+                        </p>
+                    </div>
+                `);
+            }
+        }
+        
+        // ==========================================
+        // OBTENER STATUS_ID POR CÓDIGO
+        // ==========================================
+        async function obtenerStatusIdPorCode(statusCode) {
+            const data = await supabaseRequest(
+                '/student_status?select=status_id&status_code=eq.' + statusCode + '&limit=1'
+            );
+            return data && data.length > 0 ? data[0].status_id : null;
+        }
+        
+        // ==========================================
+        // MOSTRAR RESUMEN FINAL DE REVERSA
+        // ==========================================
+        function mostrarResumenFinalReversa(stats, errores) {
+            const resultadoDiv = document.getElementById('resultadoReversa');
+            const tieneErrores = errores.length > 0;
+            const titulo = tieneErrores ? 'Reversa completada con advertencias' : 'Reversa completada exitosamente';
+            const icono = tieneErrores ? 'exclamation-triangle-fill' : 'check-circle-fill';
+            const colorBorde = tieneErrores ? 'border-warning' : 'border-success';
+            const colorHeader = tieneErrores ? 'bg-warning' : 'bg-success';
+            
+            resultadoDiv.insertAdjacentHTML('beforeend', `
+                <div class="card ${colorBorde} mt-3">
+                    <div class="card-header ${colorHeader} text-white">
+                        <h5 class="mb-0"><i class="bi bi-${icono} me-2"></i>${titulo}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h3 class="text-primary mb-0">${stats.students_restored}</h3>
+                                    <small>Cursos restaurados</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h3 class="text-info mb-0">${stats.alumni_deleted}</h3>
+                                    <small>Egresados desgraduados</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 bg-light rounded">
+                                    <h3 class="text-success mb-0">${stats.status_restored}</h3>
+                                    <small>Reactivados</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="p-3 ${tieneErrores ? 'bg-warning bg-opacity-25' : 'bg-light'} rounded">
+                                    <h3 class="${tieneErrores ? 'text-warning' : 'text-muted'} mb-0">${errores.length}</h3>
+                                    <small>Errores</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${tieneErrores ? `
+                            <div class="alert alert-warning">
+                                <strong>Errores durante la reversa:</strong>
+                                <ul class="mb-0 mt-2 small">
+                                    ${errores.slice(0, 10).map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                                    ${errores.length > 10 ? `<li><em>... y ${errores.length - 10} más</em></li>` : ''}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        <a href="years.html" class="btn btn-primary mt-2">
+                            <i class="bi bi-arrow-left me-1"></i>Volver a Años Académicos
+                        </a>
+                    </div>
+                </div>
+            `);
+        }
+        
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        
+        function mostrarLoading(mensaje = 'Cargando...') {
+            const overlay = document.getElementById('loading-overlay');
+            const msg = document.getElementById('loading-message');
+            if (msg) msg.textContent = mensaje;
+            overlay.classList.remove('hidden');
+        }
+        
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+        
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+        
+        window.validarConfirmacionReversa = validarConfirmacionReversa;
+        window.ejecutarReversa = ejecutarReversa;
+        
+        console.log('✅ Página de reversa cargada');
+    </script>
+</body>
+</html>
