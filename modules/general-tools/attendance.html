@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.5.20.1"
+    <meta name="page-version" content="26.5.20.2"
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -588,8 +588,11 @@
                         <p class="text-muted small mb-3">
                             Cada registro de estudiante se envía a Phidias automáticamente al momento del registro.
                         </p>
-                        <button class="btn btn-outline-danger w-100" onclick="mostrarErroresPhidias()">
+                        <button class="btn btn-outline-danger w-100 mb-2" onclick="mostrarErroresPhidias()">
                             <i class="bi bi-exclamation-triangle me-2"></i>Ver errores de sincronización
+                        </button>
+                        <button class="btn btn-outline-secondary w-100" onclick="mostrarExportLogsPhidias()">
+                            <i class="bi bi-file-earmark-code me-2"></i>Exportar logs para Phidias
                         </button>
                     </div>
                 </div>
@@ -2663,11 +2666,279 @@
                 btn.disabled = false;
             }
         }
+
+        // ==========================================
+        // EXPORTACIÓN DE LOGS PHIDIAS (request/response)
+        // ==========================================
+        
+        /**
+         * Muestra modal para exportar logs de Phidias en formato JSON
+         * para enviar al equipo técnico de Phidias
+         */
+        async function mostrarExportLogsPhidias() {
+            const { fecha: today } = obtenerFechaHoraColombia();
+            
+            // Eliminar modal anterior si existe
+            const modalAnterior = document.getElementById('modal-export-phidias');
+            if (modalAnterior) modalAnterior.remove();
+            
+            const modalHtml = `
+                <div class="modal fade" id="modal-export-phidias" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-secondary text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-file-earmark-code me-2"></i>Exportar logs para Phidias
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-info small">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Genera un archivo JSON con el request y response completos de cada llamada a Phidias en el rango seleccionado. El token de autenticación se enmascara automáticamente.
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="export-fecha-desde" class="form-label fw-bold">Desde</label>
+                                        <input type="date" class="form-control" id="export-fecha-desde" value="${today}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="export-fecha-hasta" class="form-label fw-bold">Hasta</label>
+                                        <input type="date" class="form-control" id="export-fecha-hasta" value="${today}">
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Filtrar por resultado</label>
+                                    <select class="form-select" id="export-filtro-resultado">
+                                        <option value="todos">Todos los registros</option>
+                                        <option value="error">Solo errores (HTTP no exitosos)</option>
+                                        <option value="success">Solo exitosos</option>
+                                        <option value="phidias_error">Solo con error de negocio de Phidias</option>
+                                    </select>
+                                    <small class="text-muted">"Error de negocio de Phidias" = HTTP 200 pero el response no incluye <code>id</code> (rechazado por Phidias).</small>
+                                </div>
+                                
+                                <div id="export-preview" class="mt-3"></div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-primary" onclick="previsualizarExportPhidias()">
+                                    <i class="bi bi-eye me-1"></i>Previsualizar
+                                </button>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="button" class="btn btn-success" id="btn-descargar-export" disabled onclick="descargarExportPhidias()">
+                                    <i class="bi bi-download me-1"></i>Descargar JSON
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            const modal = new bootstrap.Modal(document.getElementById('modal-export-phidias'));
+            modal.show();
+            
+            document.getElementById('modal-export-phidias').addEventListener('hidden.bs.modal', function() {
+                this.remove();
+            });
+        }
+        
+        // Variable global para los logs cargados (para descarga)
+        let logsPhidiasExport = [];
+        
+        /**
+         * Previsualiza la cantidad de logs que se descargarán
+         */
+        async function previsualizarExportPhidias() {
+            const desde = document.getElementById('export-fecha-desde').value;
+            const hasta = document.getElementById('export-fecha-hasta').value;
+            const filtro = document.getElementById('export-filtro-resultado').value;
+            const preview = document.getElementById('export-preview');
+            const btnDescargar = document.getElementById('btn-descargar-export');
+            
+            if (!desde || !hasta) {
+                preview.innerHTML = '<div class="alert alert-warning small mb-0">Selecciona ambas fechas.</div>';
+                btnDescargar.disabled = true;
+                return;
+            }
+            
+            if (desde > hasta) {
+                preview.innerHTML = '<div class="alert alert-danger small mb-0">La fecha "desde" no puede ser mayor que "hasta".</div>';
+                btnDescargar.disabled = true;
+                return;
+            }
+            
+            preview.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> Consultando...</div>';
+            btnDescargar.disabled = true;
+            
+            try {
+                // Construir filtro de fechas (created_at en rango)
+                const desdeISO = `${desde}T00:00:00`;
+                const hastaISO = `${hasta}T23:59:59`;
+                
+                let query = `/phidias_sync_logs?select=*&created_at=gte.${desdeISO}&created_at=lte.${hastaISO}&order=created_at.asc`;
+                
+                const logs = await supabaseRequest(query);
+                
+                // Aplicar filtro de resultado en cliente (más flexible)
+                let logsFiltrados = logs || [];
+                
+                if (filtro === 'error') {
+                    logsFiltrados = logsFiltrados.filter(l => 
+                        l.sync_result === 'error' || 
+                        l.sync_result === 'network_error' || 
+                        l.sync_result === 'parse_error'
+                    );
+                } else if (filtro === 'success') {
+                    logsFiltrados = logsFiltrados.filter(l => l.sync_result === 'success');
+                } else if (filtro === 'phidias_error') {
+                    // HTTP 200 pero el response no trae id (rechazado por Phidias)
+                    logsFiltrados = logsFiltrados.filter(l => {
+                        if (l.response_status !== 200) return false;
+                        const body = l.response_body;
+                        if (!Array.isArray(body) || body.length === 0) return true;
+                        return !body[0]?.id;
+                    });
+                }
+                
+                logsPhidiasExport = logsFiltrados;
+                
+                if (logsFiltrados.length === 0) {
+                    preview.innerHTML = `
+                        <div class="alert alert-warning small mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            No hay registros en el rango y filtro seleccionados.
+                        </div>
+                    `;
+                    btnDescargar.disabled = true;
+                    return;
+                }
+                
+                // Conteo por categoría
+                const total = logsFiltrados.length;
+                const exitosos = logsFiltrados.filter(l => l.sync_result === 'success' && l.response_body?.[0]?.id).length;
+                const erroresHttp = logsFiltrados.filter(l => l.sync_result !== 'success').length;
+                const erroresNegocio = logsFiltrados.filter(l => 
+                    l.sync_result === 'success' && !l.response_body?.[0]?.id
+                ).length;
+                
+                preview.innerHTML = `
+                    <div class="card bg-light">
+                        <div class="card-body p-3">
+                            <h6 class="mb-3"><i class="bi bi-clipboard-data me-2"></i>Resumen</h6>
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <div class="fs-4 fw-bold text-primary">${total}</div>
+                                    <small class="text-muted">Total</small>
+                                </div>
+                                <div class="col-4">
+                                    <div class="fs-4 fw-bold text-success">${exitosos}</div>
+                                    <small class="text-muted">Exitosos</small>
+                                </div>
+                                <div class="col-4">
+                                    <div class="fs-4 fw-bold text-danger">${erroresHttp + erroresNegocio}</div>
+                                    <small class="text-muted">Con error</small>
+                                </div>
+                            </div>
+                            ${erroresNegocio > 0 ? `
+                                <hr class="my-2">
+                                <small class="text-muted">
+                                    De los errores, <strong>${erroresNegocio}</strong> son rechazos de Phidias (HTTP 200 sin <code>id</code> en response).
+                                </small>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                btnDescargar.disabled = false;
+                
+            } catch (error) {
+                console.error('Error previsualizando export:', error);
+                preview.innerHTML = `<div class="alert alert-danger small mb-0">Error: ${error.message}</div>`;
+                btnDescargar.disabled = true;
+            }
+        }
+        
+        /**
+         * Descarga el JSON con los logs (token enmascarado)
+         */
+        function descargarExportPhidias() {
+            if (logsPhidiasExport.length === 0) return;
+            
+            const desde = document.getElementById('export-fecha-desde').value;
+            const hasta = document.getElementById('export-fecha-hasta').value;
+            
+            // Enmascarar token en headers
+            const logsLimpios = logsPhidiasExport.map(log => {
+                const headersLimpios = { ...(log.request_headers || {}) };
+                if (headersLimpios.Authorization) {
+                    headersLimpios.Authorization = 'Bearer ***';
+                }
+                if (headersLimpios.authorization) {
+                    headersLimpios.authorization = 'Bearer ***';
+                }
+                
+                return {
+                    log_id: log.log_id,
+                    timestamp: log.created_at,
+                    attendance_id: log.attendance_id,
+                    person_id_document: log.person_id_document,
+                    student_code: log.student_code,
+                    request: {
+                        method: log.request_method,
+                        url: log.request_url,
+                        headers: headersLimpios,
+                        body: log.request_body
+                    },
+                    response: {
+                        status: log.response_status,
+                        headers: log.response_headers,
+                        body: log.response_body,
+                        raw_text: log.response_raw_text
+                    },
+                    result: {
+                        sync_result: log.sync_result,
+                        error_message: log.error_message,
+                        duration_ms: log.request_duration_ms
+                    }
+                };
+            });
+            
+            const exportObj = {
+                generated_at: new Date().toISOString(),
+                source_system: 'SchoolNet - Colegio Tilatá',
+                date_range: { from: desde, to: hasta },
+                total_records: logsLimpios.length,
+                note: 'El token Bearer ha sido enmascarado por seguridad. Reemplazado por "Bearer ***".',
+                logs: logsLimpios
+            };
+            
+            const jsonStr = JSON.stringify(exportObj, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            
+            const nombreArchivo = desde === hasta 
+                ? `phidias_logs_${desde}.json`
+                : `phidias_logs_${desde}_a_${hasta}.json`;
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = nombreArchivo;
+            link.click();
+            
+            URL.revokeObjectURL(url);
+        }
         
         // Exponer funciones globales
         window.mostrarErroresPhidias = mostrarErroresPhidias;
         window.reintentarSyncIndividual = reintentarSyncIndividual;
         window.descargarErroresPhidiasCSV = descargarErroresPhidiasCSV;
+        window.mostrarExportLogsPhidias = mostrarExportLogsPhidias;
+        window.previsualizarExportPhidias = previsualizarExportPhidias;
+        window.descargarExportPhidias = descargarExportPhidias;
 
        /**
          * Versión instrumentada de phidiasRequest que captura request/response
