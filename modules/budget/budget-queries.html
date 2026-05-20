@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.15.8.0">
+    <meta name="page-version" content="26.5.20.1">
     <title>Consultas de Presupuesto - Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -1872,25 +1872,36 @@
         // ==========================================
         // CARGAR MOVIMIENTOS EN MODAL
         // ==========================================
+        // Nota: budget_payments.supplier_id apunta a DOS tablas distintas según el registro
+        // (suppliers = legacy, sup_suppliers = modelo nuevo del módulo de proveedores).
+        // Por eso no hay FK declarada y no se puede usar embed PostgREST.
+        // Se hacen 3 queries: pagos + ambas tablas de proveedores, y se mapea en JS.
         async function cargarMovimientosModal(requestId) {
             const tbody = document.getElementById('tbody-movimientos-modal');
             tbody.innerHTML = '<tr><td colspan="5" class="mensaje-inicial"><i class="bi bi-hourglass-split"></i><p>Cargando movimientos...</p></td></tr>';
             document.getElementById('resumen-movimientos-modal').style.display = 'none';
         
             try {
-                const query = '/budget_payments?select=payment_id,payment_type,invoice_number,invoice_description,invoice_value,suppliers!budget_payments_supplier_fkey(supplier_name)&execution_request_id=eq.' + requestId + '&order=invoice_date.desc';
+                // 1. Traer los pagos sin embed
+                const query = '/budget_payments?select=payment_id,payment_type,invoice_number,invoice_description,invoice_value,supplier_id&execution_request_id=eq.' + requestId + '&order=invoice_date.desc';
                 const data = await supabaseRequest(query);
         
                 if (data.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" class="mensaje-inicial"><i class="bi bi-inbox"></i><p>No hay movimientos registrados para este requerimiento</p></td></tr>';
                     return;
                 }
+                
+                // 2. Recolectar supplier_id únicos
+                const supplierIds = [...new Set(data.map(p => p.supplier_id).filter(id => id))];
+                
+                // 3. Construir mapa supplier_id → nombre consultando ambas tablas en paralelo
+                const proveedoresMap = await construirMapaProveedores(supplierIds);
         
                 let html = '';
                 let totalValor = 0;
         
                 data.forEach(mov => {
-                    const proveedorName = mov.suppliers?.supplier_name || 'Sin proveedor';
+                    const proveedorName = proveedoresMap.get(mov.supplier_id) || 'Sin proveedor';
                     const tipoDoc = mov.payment_type || 'N/A';
                     const numero = mov.invoice_number || 'N/A';
                     const descripcion = mov.invoice_description || 'Sin descripción';
@@ -1916,6 +1927,61 @@
                 console.error('Error cargando movimientos:', error);
                 tbody.innerHTML = '<tr><td colspan="5" class="mensaje-inicial"><i class="bi bi-exclamation-triangle"></i><p>Error: ' + error.message + '</p></td></tr>';
             }
+        }
+        
+        // ==========================================
+        // CONSTRUIR MAPA DE PROVEEDORES (legacy + nuevo)
+        // ==========================================
+        // Consulta suppliers (legacy) y sup_suppliers (nuevo) en paralelo,
+        // y devuelve un Map<supplier_id, nombre> combinado.
+        async function construirMapaProveedores(supplierIds) {
+            const mapa = new Map();
+            
+            if (!supplierIds || supplierIds.length === 0) {
+                return mapa;
+            }
+            
+            // PostgREST: filtro IN para arrays de UUIDs
+            const idsParaQuery = '(' + supplierIds.join(',') + ')';
+            
+            try {
+                const [legacy, nuevos] = await Promise.all([
+                    supabaseRequest('/suppliers?select=supplier_id,supplier_name&supplier_id=in.' + idsParaQuery),
+                    supabaseRequest('/sup_suppliers?select=supplier_id,person_type,business_name,first_name,last_name_1,last_name_2&supplier_id=in.' + idsParaQuery)
+                ]);
+                
+                // Llenar mapa con proveedores legacy (suppliers.supplier_name)
+                if (legacy && legacy.length > 0) {
+                    legacy.forEach(s => {
+                        mapa.set(s.supplier_id, s.supplier_name);
+                    });
+                }
+                
+                // Llenar mapa con proveedores nuevos (sup_suppliers - construir nombre según tipo)
+                if (nuevos && nuevos.length > 0) {
+                    nuevos.forEach(s => {
+                        let nombre;
+                        if (s.person_type === 'juridica') {
+                            nombre = s.business_name || 'Sin nombre';
+                        } else {
+                            // Persona natural: concatenar nombre + apellidos
+                            const partes = [
+                                s.first_name,
+                                s.last_name_1,
+                                s.last_name_2
+                            ].filter(p => p && p.trim());
+                            nombre = partes.length > 0 ? partes.join(' ') : 'Sin nombre';
+                        }
+                        mapa.set(s.supplier_id, nombre);
+                    });
+                }
+                
+            } catch (error) {
+                console.error('Error consultando proveedores:', error);
+                // No relanzar: si fallan los nombres, mostramos "Sin proveedor" pero los movimientos sí se ven
+            }
+            
+            return mapa;
         }
         
         // Hacer funciones accesibles globalmente
