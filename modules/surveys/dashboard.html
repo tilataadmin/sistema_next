@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard de Encuestas - SchoolNet</title>
+    <meta name="page-version" content="26.05.20.1">
+    <title>Dashboard de Encuestas</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -864,11 +865,14 @@
         // ==========================================
         // CALCULAR TASA DE RESPUESTA POR APLICACIÓN
         // ==========================================
+        // Población objetivo: solo estudiantes con student_status.status_code = 1 (Activo).
+        // No incluye egresados, retirados ni otros estados, ya que no forman parte
+        // de la población a la que se le aplica la encuesta.
         async function calcularTasaRespuestaPorAplicacion(applicationId, targetAudience) {
             try {
-                // Obtener número de respuestas
-                const responsesData = await supabaseRequest('/survey_respondent_profile?select=count&application_id=eq.' + applicationId);
-                const totalResponses = responsesData[0]?.count || 0;
+                // Obtener número de respuestas recibidas
+                const responsesData = await supabaseRequest('/survey_respondent_profile?select=profile_id&application_id=eq.' + applicationId);
+                const totalResponses = responsesData?.length || 0;
                 
                 if (totalResponses === 0) {
                     return 0;
@@ -879,31 +883,25 @@
                 
                 if (targetAudience === 'students') {
                     // Solo estudiantes activos
-                    const studentsData = await supabaseRequest('/students?select=count&student_status!inner(status_code)&student_status.status_code=in.(1,2,3)');
-                    poblacionObjetivo = studentsData[0]?.count || 0;
+                    poblacionObjetivo = await contarEstudiantesActivos();
                     
                 } else if (targetAudience === 'families') {
-                    // Familias con estudiantes activos * 2 (padre y madre)
-                    const familiesData = await supabaseRequest('/families?select=count,students!inner(student_status!inner(status_code))&students.student_status.status_code=in.(1,2,3)');
-                    const uniqueFamilies = familiesData[0]?.count || 0;
-                    poblacionObjetivo = uniqueFamilies * 2;
+                    // Familias únicas con al menos un estudiante activo * 2 (padre y madre)
+                    const familias = await contarFamiliasConEstudiantesActivos();
+                    poblacionObjetivo = familias * 2;
                     
                 } else if (targetAudience === 'workers') {
                     // Solo trabajadores activos
-                    const workersData = await supabaseRequest('/workers?select=count&worker_status=eq.active');
-                    poblacionObjetivo = workersData[0]?.count || 0;
+                    poblacionObjetivo = await contarTrabajadoresActivos();
                     
                 } else if (targetAudience === 'mixed') {
-                    // Para mixtas, sumar todos (estudiantes + familias*2 + trabajadores)
-                    const studentsData = await supabaseRequest('/students?select=count&student_status!inner(status_code)&student_status.status_code=in.(1,2,3)');
-                    const familiesData = await supabaseRequest('/families?select=count,students!inner(student_status!inner(status_code))&students.student_status.status_code=in.(1,2,3)');
-                    const workersData = await supabaseRequest('/workers?select=count&worker_status=eq.active');
-                    
-                    const students = studentsData[0]?.count || 0;
-                    const families = (familiesData[0]?.count || 0) * 2;
-                    const workers = workersData[0]?.count || 0;
-                    
-                    poblacionObjetivo = students + families + workers;
+                    // Suma de todos (estudiantes + familias*2 + trabajadores)
+                    const [estudiantes, familias, trabajadores] = await Promise.all([
+                        contarEstudiantesActivos(),
+                        contarFamiliasConEstudiantesActivos(),
+                        contarTrabajadoresActivos()
+                    ]);
+                    poblacionObjetivo = estudiantes + (familias * 2) + trabajadores;
                 }
                 
                 if (poblacionObjetivo === 0) {
@@ -918,6 +916,36 @@
                 console.error('❌ Error calculando tasa de respuesta:', error);
                 return null;
             }
+        }
+        
+        // ==========================================
+        // HELPERS DE CONTEO DE POBLACIÓN OBJETIVO
+        // ==========================================
+        // Estos helpers usan select + length en lugar de select=count con embed,
+        // porque la combinación count + embed anidado genera un error 42803 en PostgREST.
+        
+        async function contarEstudiantesActivos() {
+            const data = await supabaseRequest(
+                '/students?select=student_id,student_status!inner(status_code)&student_status.status_code=eq.1'
+            );
+            return data?.length || 0;
+        }
+        
+        async function contarFamiliasConEstudiantesActivos() {
+            // Traer family_id de cada estudiante activo y deduplicar en JS
+            const data = await supabaseRequest(
+                '/students?select=family_id,student_status!inner(status_code)&student_status.status_code=eq.1'
+            );
+            if (!data || data.length === 0) return 0;
+            const familiasUnicas = new Set(data.map(s => s.family_id));
+            return familiasUnicas.size;
+        }
+        
+        async function contarTrabajadoresActivos() {
+            const data = await supabaseRequest(
+                '/workers?select=worker_id&worker_status=eq.active'
+            );
+            return data?.length || 0;
         }
         
         // ==========================================
