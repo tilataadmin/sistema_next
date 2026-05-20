@@ -169,6 +169,71 @@
                             <i class="bi bi-check-lg me-1"></i>Crear Solicitud
                         </button>
                     </div>
+               </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- MODAL MARCAR COMO ENTREGADA (con edición) -->
+    <!-- ================================================================= -->
+    <div class="modal fade" id="modal-entrega" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-check-circle me-2" style="color: #0d9488;"></i>Marcar como Entregada</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="form-entrega" onsubmit="confirmarEntrega(event)">
+                    <div class="modal-body">
+                        <input type="hidden" id="entrega-service-id">
+                        <div class="alert alert-info py-2 mb-3">
+                            <small><i class="bi bi-info-circle me-1"></i>Ajuste cantidades y descripción si lo que se entregó difiere de lo solicitado. El presupuesto se reajustará automáticamente.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Fecha de atención</label>
+                            <input type="text" class="form-control" id="entrega-fecha" disabled>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Descripción</label>
+                            <textarea class="form-control" id="entrega-descripcion" rows="3" required></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Refrigerios entregados</label>
+                                <input type="number" class="form-control" id="entrega-cant-refrigerios" min="0" value="0">
+                                <div class="form-text">Unitario: <span id="entrega-precio-refrigerio">$0</span></div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Almuerzos entregados</label>
+                                <input type="number" class="form-control" id="entrega-cant-almuerzos" min="0" value="0">
+                                <div class="form-text">Unitario: <span id="entrega-precio-almuerzo">$0</span></div>
+                            </div>
+                        </div>
+                        <div class="form-text mb-3"><i class="bi bi-info-circle me-1"></i>Debe haber al menos un producto entregado.</div>
+                        <div class="card summary-card bg-light">
+                            <div class="card-body py-2">
+                                <div class="d-flex justify-content-between">
+                                    <span>Total original:</span>
+                                    <span id="entrega-total-original">$0</span>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1">
+                                    <span>Total ajustado:</span>
+                                    <strong id="entrega-total-ajustado" class="text-success">$0</strong>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1">
+                                    <span>Diferencia presupuestal:</span>
+                                    <strong id="entrega-diferencia">$0</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-module" id="btn-confirmar-entrega">
+                            <i class="bi bi-check-lg me-1"></i>Confirmar Entrega
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -187,7 +252,8 @@
         let currentWorkerEmail = null;
         let cacheSolicitudes = [];
         let modalNuevo;
-
+        let modalEntrega;
+        
         // Modo de acceso
         let hasPermission = false;   // Tiene permiso → crea, ve propias, cancela
         let isNotified = false;      // Está en notificaciones → ve todas, entrega
@@ -298,6 +364,7 @@
         // ==========================================
         async function inicializarPagina() {
             modalNuevo = new bootstrap.Modal(document.getElementById('modal-nuevo'));
+            modalEntrega = new bootstrap.Modal(document.getElementById('modal-entrega'));
 
             // Obtener worker_id del usuario actual
             await obtenerDatosWorker();
@@ -317,9 +384,13 @@
             // Configurar fecha mínima del formulario
             configurarFechaMinima();
 
-            // Listeners para calcular total en tiempo real
+            // Listeners para calcular total en tiempo real (modal nuevo)
             document.getElementById('nuevo-cant-refrigerios').addEventListener('input', actualizarResumen);
             document.getElementById('nuevo-cant-almuerzos').addEventListener('input', actualizarResumen);
+
+            // Listeners para calcular total en tiempo real (modal entrega)
+            document.getElementById('entrega-cant-refrigerios').addEventListener('input', actualizarResumenEntrega);
+            document.getElementById('entrega-cant-almuerzos').addEventListener('input', actualizarResumenEntrega);
 
             // Cargar solicitudes
             await cargarSolicitudes();
@@ -697,36 +768,192 @@
         }
 
         // ==========================================
-        // ENTREGAR SOLICITUD (SOLO NOTIFICADOS)
+        // ABRIR MODAL DE ENTREGA (con edición)
         // ==========================================
-        async function entregarSolicitud(serviceId) {
-            if (!confirm('¿Confirma que los refrigerios fueron entregados?')) return;
+        function abrirModalEntrega(serviceId) {
+            const servicio = cacheSolicitudes.find(s => s.service_id === serviceId);
+            if (!servicio) {
+                showMessage('Solicitud no encontrada', 'danger');
+                return;
+            }
+            if (servicio.service_status !== 'requested') {
+                showMessage('Esta solicitud ya no está en estado Solicitado', 'warning');
+                return;
+            }
 
-            try {
-                mostrarLoading();
-                const ahora = new Date().toISOString();
+            // Llenar el modal con los datos actuales
+            document.getElementById('entrega-service-id').value = servicio.service_id;
 
-                await supabaseRequest(`/svc_admissions_family_services?service_id=eq.${serviceId}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                        service_status: 'delivered',
-                        delivered_by: currentUser.user_id,
-                        delivered_at: ahora,
-                        updated_at: ahora
-                    })
-                });
+            const fechaObj = new Date(servicio.service_date + 'T00:00:00');
+            document.getElementById('entrega-fecha').value = fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-                showMessage('Solicitud marcada como entregada', 'success');
-                await cargarSolicitudes();
+            document.getElementById('entrega-descripcion').value = servicio.description || '';
+            document.getElementById('entrega-cant-refrigerios').value = servicio.snack_quantity || 0;
+            document.getElementById('entrega-cant-almuerzos').value = servicio.lunch_quantity || 0;
 
-            } catch (error) {
-                console.error('❌ Error entregando:', error);
-                showMessage('Error al marcar como entregado: ' + error.message, 'danger');
-            } finally {
-                ocultarLoading();
+            // Precios unitarios: usar los snapshot del servicio si existen, sino los actuales
+            const precioRef = servicio.snack_unit_price || configSnackPrice;
+            const precioAlm = servicio.lunch_unit_price || configLunchPrice;
+            document.getElementById('entrega-precio-refrigerio').textContent = fmtCOP(precioRef);
+            document.getElementById('entrega-precio-almuerzo').textContent = fmtCOP(precioAlm);
+            document.getElementById('entrega-precio-refrigerio').dataset.precio = precioRef;
+            document.getElementById('entrega-precio-almuerzo').dataset.precio = precioAlm;
+
+            // Total original
+            document.getElementById('entrega-total-original').textContent = fmtCOP(servicio.total_value);
+            document.getElementById('entrega-total-original').dataset.total = servicio.total_value;
+
+            // Calcular total ajustado inicial (igual al original)
+            actualizarResumenEntrega();
+
+            modalEntrega.show();
+        }
+
+        // ==========================================
+        // ACTUALIZAR RESUMEN DEL MODAL DE ENTREGA
+        // ==========================================
+        function actualizarResumenEntrega() {
+            const cantRef = parseInt(document.getElementById('entrega-cant-refrigerios').value) || 0;
+            const cantAlm = parseInt(document.getElementById('entrega-cant-almuerzos').value) || 0;
+            const precioRef = parseFloat(document.getElementById('entrega-precio-refrigerio').dataset.precio) || 0;
+            const precioAlm = parseFloat(document.getElementById('entrega-precio-almuerzo').dataset.precio) || 0;
+            const totalOriginal = parseFloat(document.getElementById('entrega-total-original').dataset.total) || 0;
+
+            const totalAjustado = (cantRef * precioRef) + (cantAlm * precioAlm);
+            const diferencia = totalAjustado - totalOriginal;
+
+            document.getElementById('entrega-total-ajustado').textContent = fmtCOP(totalAjustado);
+
+            const difElement = document.getElementById('entrega-diferencia');
+            if (diferencia > 0) {
+                difElement.textContent = '+' + fmtCOP(diferencia);
+                difElement.className = 'text-warning';
+            } else if (diferencia < 0) {
+                difElement.textContent = fmtCOP(diferencia);
+                difElement.className = 'text-info';
+            } else {
+                difElement.textContent = fmtCOP(0);
+                difElement.className = 'text-muted';
             }
         }
 
+        // ==========================================
+        // CONFIRMAR ENTREGA (con ajustes)
+        // ==========================================
+        async function confirmarEntrega(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-confirmar-entrega');
+
+            try {
+                const serviceId = document.getElementById('entrega-service-id').value;
+                const descripcion = document.getElementById('entrega-descripcion').value.trim();
+                const cantRef = parseInt(document.getElementById('entrega-cant-refrigerios').value) || 0;
+                const cantAlm = parseInt(document.getElementById('entrega-cant-almuerzos').value) || 0;
+                const precioRef = parseFloat(document.getElementById('entrega-precio-refrigerio').dataset.precio) || 0;
+                const precioAlm = parseFloat(document.getElementById('entrega-precio-almuerzo').dataset.precio) || 0;
+
+                // Validaciones
+                if (!descripcion) {
+                    showMessage('La descripción no puede estar vacía', 'warning');
+                    return;
+                }
+                if (cantRef <= 0 && cantAlm <= 0) {
+                    showMessage('Debe haber al menos un refrigerio o un almuerzo entregado', 'warning');
+                    return;
+                }
+
+                const servicio = cacheSolicitudes.find(s => s.service_id === serviceId);
+                if (!servicio) throw new Error('Solicitud no encontrada en caché');
+
+                const totalOriginal = parseFloat(servicio.total_value) || 0;
+                const totalAjustado = (cantRef * precioRef) + (cantAlm * precioAlm);
+                const diferencia = totalAjustado - totalOriginal;
+                const diferenciaInt = Math.round(diferencia);
+
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Confirmando...';
+                mostrarLoading();
+
+                const ahora = new Date().toISOString();
+
+                // ----------------------------------------
+                // PASO 1: Actualizar servicio
+                // ----------------------------------------
+                const servicePayload = {
+                    description: descripcion,
+                    snack_quantity: cantRef > 0 ? cantRef : null,
+                    snack_unit_price: cantRef > 0 ? precioRef : null,
+                    lunch_quantity: cantAlm > 0 ? cantAlm : null,
+                    lunch_unit_price: cantAlm > 0 ? precioAlm : null,
+                    total_value: totalAjustado,
+                    service_status: 'delivered',
+                    delivered_by: currentUser.user_id,
+                    delivered_at: ahora,
+                    updated_at: ahora
+                };
+
+                await supabaseRequest(`/svc_admissions_family_services?service_id=eq.${serviceId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(servicePayload)
+                });
+
+                // ----------------------------------------
+                // PASO 2: Ajustar execution_request (si hay diferencia)
+                // ----------------------------------------
+                if (diferenciaInt !== 0 && servicio.execution_request_id) {
+                    const totalInt = Math.round(totalAjustado);
+                    const detallesProductos = [];
+                    if (cantRef > 0) detallesProductos.push(`${cantRef} refrigerios × ${fmtCOP(precioRef)}`);
+                    if (cantAlm > 0) detallesProductos.push(`${cantAlm} almuerzos × ${fmtCOP(precioAlm)}`);
+
+                    await supabaseRequest(`/execution_requests?request_id=eq.${servicio.execution_request_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            requested_value: totalInt,
+                            request_details: `Atención familias admisiones (ajustado en entrega): ${detallesProductos.join(' + ')} — ${descripcion}`,
+                            updated_at: ahora
+                        })
+                    });
+                }
+
+                // ----------------------------------------
+                // PASO 3: Ajustar executed_value del assignment
+                // ----------------------------------------
+                if (diferenciaInt !== 0 && assignmentData) {
+                    const currentExecuted = assignmentData.executed_value || 0;
+                    const nuevoValor = Math.max(0, currentExecuted + diferenciaInt);
+                    await supabaseRequest(`/budget_assignments?assignment_id=eq.${assignmentData.assignment_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ executed_value: nuevoValor })
+                    });
+                    assignmentData.executed_value = nuevoValor;
+                }
+
+                modalEntrega.hide();
+                ocultarLoading();
+
+                if (diferenciaInt === 0) {
+                    showMessage('Solicitud marcada como entregada', 'success');
+                } else if (diferenciaInt > 0) {
+                    showMessage(`Solicitud entregada. Presupuesto ampliado en ${fmtCOP(diferenciaInt)}`, 'success');
+                } else {
+                    showMessage(`Solicitud entregada. Presupuesto reversado en ${fmtCOP(Math.abs(diferenciaInt))}`, 'success');
+                }
+
+                await cargarSolicitudes();
+
+            } catch (error) {
+                console.error('❌ Error confirmando entrega:', error);
+                showMessage('Error al confirmar entrega: ' + error.message, 'danger');
+                ocultarLoading();
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Confirmar Entrega';
+            }
+        }
+
+
+            
         // ==========================================
         // NOTIFICACIONES POR CORREO
         // ==========================================
