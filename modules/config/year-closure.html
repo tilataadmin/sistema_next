@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.3">
+    <meta name="page-version" content="26.5.20.4">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1495,11 +1495,188 @@
             container.innerHTML = `
                 <div class="mensaje-inicial">
                     <i class="bi bi-hourglass-split"></i>
-                    <p>Función pendiente de implementar en Etapa 3.4</p>
+                    <p>Cargando años académicos disponibles...</p>
                 </div>
             `;
             marcarPasoValido(3, false);
+            
+            try {
+                // Cargar candidatos a ser el año entrante
+                const candidatos = await supabaseRequest(
+                    '/academic_years?select=year_id,year_name,start_of_classes,end_of_classes,start_year,start_month,end_year,end_month' +
+                    '&is_current=eq.false&closed_at=is.null&year_status=eq.active' +
+                    '&order=start_year.asc,start_month.asc'
+                );
+                
+                if (!candidatos || candidatos.length === 0) {
+                    container.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-x-circle-fill me-2"></i>
+                            No hay años académicos disponibles para ser el entrante.
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Determinar el año recomendado: el más cercano por year_name al año vigente
+                const yearRecomendado = sugerirAnoEntrante(candidatos, yearToCloseData.year_name);
+                
+                // Si ya había una selección previa (regreso al paso), preservarla
+                let yearSeleccionadoId = wizardData.newCurrentYearId || yearRecomendado?.year_id || candidatos[0].year_id;
+                
+                renderizarPaso3(candidatos, yearSeleccionadoId);
+                
+            } catch (error) {
+                console.error('❌ Error en Paso 3:', error);
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Error al cargar años: ${escapeHtml(error.message)}
+                    </div>
+                `;
+            }
         }
+        
+        // ==========================================
+        // SUGERIR AÑO ENTRANTE (el siguiente cronológico)
+        // ==========================================
+        function sugerirAnoEntrante(candidatos, yearNameActual) {
+            // year_name suele tener formato "2025-2026". Sacamos el segundo número.
+            // El año entrante esperado tendrá ese número como primero. Ej: "2026-2027".
+            const match = yearNameActual.match(/(\d{4})-(\d{4})/);
+            if (!match) return candidatos[0] || null;
+            
+            const inicioEsperado = match[2]; // "2026"
+            const yearEsperadoNombre = `${inicioEsperado}-${parseInt(inicioEsperado) + 1}`;
+            
+            return candidatos.find(c => c.year_name === yearEsperadoNombre) || candidatos[0] || null;
+        }
+        
+        // ==========================================
+        // RENDERIZAR PASO 3
+        // ==========================================
+        function renderizarPaso3(candidatos, yearSeleccionadoId) {
+            const container = document.getElementById('step3Content');
+            
+            let html = `
+                <div class="alert alert-light border">
+                    <p class="mb-1 small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        El año seleccionado será marcado como vigente (<code>is_current = true</code>) inmediatamente después de cerrar 
+                        el año actual.
+                    </p>
+                    <p class="mb-0 small text-muted">
+                        Las fechas son opcionales en este paso, pero conviene completarlas. Después pueden editarse desde Años Académicos.
+                    </p>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-calendar-check me-1"></i>Año académico entrante
+                        </label>
+                        <select class="form-select" id="selectYearEntrante" onchange="cambiarYearEntrante()">
+            `;
+            
+            candidatos.forEach(c => {
+                const selected = c.year_id === yearSeleccionadoId ? 'selected' : '';
+                html += `<option value="${c.year_id}" ${selected}>${escapeHtml(c.year_name)}</option>`;
+            });
+            
+            html += `
+                        </select>
+                        <small class="text-muted">${candidatos.length} año(s) disponible(s)</small>
+                    </div>
+                </div>
+                
+                <div id="infoYearSeleccionado" class="mt-4">
+                    <!-- Se llena dinámicamente -->
+                </div>
+            `;
+            
+            container.innerHTML = html;
+            
+            // Guardar candidatos en estado para usarlos en cambios
+            wizardData._candidatosAnoEntrante = candidatos;
+            
+            // Renderizar info del año inicialmente seleccionado
+            cambiarYearEntrante();
+        }
+        
+        // ==========================================
+        // CAMBIAR AÑO ENTRANTE SELECCIONADO
+        // ==========================================
+        function cambiarYearEntrante() {
+            const select = document.getElementById('selectYearEntrante');
+            if (!select) return;
+            
+            const yearId = select.value;
+            const candidatos = wizardData._candidatosAnoEntrante || [];
+            const year = candidatos.find(c => c.year_id === yearId);
+            
+            if (!year) {
+                marcarPasoValido(3, false);
+                return;
+            }
+            
+            // Guardar selección en wizardData
+            wizardData.newCurrentYearId = year.year_id;
+            wizardData.newCurrentYearData = year;
+            
+            // Renderizar info detallada
+            const infoDiv = document.getElementById('infoYearSeleccionado');
+            
+            const fechaInicio = year.start_of_classes || '';
+            const fechaFin = year.end_of_classes || '';
+            
+            infoDiv.innerHTML = `
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <strong>${escapeHtml(year.year_name)}</strong>
+                        <span class="text-muted small ms-2">
+                            ${getMonthShort(year.start_month)} ${year.start_year} - ${getMonthShort(year.end_month)} ${year.end_year}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-3">
+                            Fechas de inicio y fin de clases (opcionales). Si las editas, se guardarán al ejecutar el cierre.
+                        </p>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label small">Inicio de clases</label>
+                                <input type="date" class="form-control form-control-sm" 
+                                       id="inputStartOfClasses" value="${escapeHtml(fechaInicio)}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">Fin de clases</label>
+                                <input type="date" class="form-control form-control-sm" 
+                                       id="inputEndOfClasses" value="${escapeHtml(fechaFin)}">
+                            </div>
+                        </div>
+                        ${!fechaInicio || !fechaFin ? `
+                            <div class="alert alert-warning mt-3 mb-0 small">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Este año no tiene fechas de clases configuradas. Considera completarlas.
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            
+            // Marcar paso válido (con un año seleccionado basta)
+            marcarPasoValido(3, true);
+        }
+        
+        // ==========================================
+        // HELPER: Mes corto
+        // ==========================================
+        function getMonthShort(monthNumber) {
+            const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+            return meses[monthNumber - 1] || '';
+        }
+        
+        // Exponer funciones globales
+        window.cambiarYearEntrante = cambiarYearEntrante;
         
         // ==========================================
         // PASO 4: CONFIRMACIÓN Y EJECUCIÓN
