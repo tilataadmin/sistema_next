@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.6">
+    <meta name="page-version" content="26.5.20.7">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -662,7 +662,7 @@
                 const mapping = construirMapeoCursos(courses, grades, conteoEstudiantes);
                 wizardData.coursesMapping = mapping;
                 
-                // 6. Detectar faltantes (solo entre cursos con estudiantes activos y que no son graduación)
+               // 6. Detectar faltantes (solo entre cursos con estudiantes activos y que no son graduación)
                 const faltantes = [];
                 mapping.forEach(m => {
                     if (!m.isGraduation && m.studentsCount > 0 && !m.destinationCourse) {
@@ -676,7 +676,10 @@
                 });
                 wizardData.missingCourses = faltantes;
                 
-                // 7. Renderizar resultado
+                // 7. Validar undécimos (documento + duplicados en alumni)
+                await validarUndecimos(mapping);
+                
+                // 8. Renderizar resultado
                 renderizarResultadoPaso1();
                 
             } catch (error) {
@@ -687,6 +690,75 @@
                         Error al validar estructura: ${escapeHtml(error.message)}
                     </div>
                 `;
+            }
+        }
+
+        // ==========================================
+        // VALIDAR UNDÉCIMOS (documento + duplicados)
+        // ==========================================
+        async function validarUndecimos(mapping) {
+            wizardData.undecimoIssues = {
+                sinDocumento: [],
+                yaEnAlumni: []
+            };
+            
+            // Obtener IDs de cursos de undécimo
+            const cursosUndecimo = mapping.filter(m => m.isGraduation);
+            if (cursosUndecimo.length === 0) return;
+            
+            const idsCursosUndecimo = cursosUndecimo.map(m => m.sourceCourse.course_id);
+            const idsFiltro = '(' + idsCursosUndecimo.join(',') + ')';
+            
+            // Traer estudiantes activos de undécimo con su documento
+            const undecimoStudents = await supabaseRequest(
+                '/students?select=student_id,student_code,student_id_document,student_first_name,student_last_name_1,student_last_name_2,course_id,student_status!inner(status_code)' +
+                '&student_status.status_code=eq.1' +
+                '&course_id=in.' + idsFiltro
+            );
+            
+            if (!undecimoStudents || undecimoStudents.length === 0) return;
+            
+            // Validación 1: sin documento
+            undecimoStudents.forEach(est => {
+                if (!est.student_id_document || !est.student_id_document.trim()) {
+                    wizardData.undecimoIssues.sinDocumento.push({
+                        student_id: est.student_id,
+                        student_code: est.student_code,
+                        student_name: formatStudentName(est)
+                    });
+                }
+            });
+            
+            // Validación 2: duplicados en alumni
+            const documentos = undecimoStudents
+                .map(s => s.student_id_document)
+                .filter(d => d && d.trim());
+            
+            if (documentos.length > 0) {
+                const docsFiltro = '(' + documentos.map(d => '"' + d + '"').join(',') + ')';
+                
+                try {
+                    const existentes = await supabaseRequest(
+                        '/alumni?select=alumni_id_document&alumni_id_document=in.' + docsFiltro + '&deleted_at=is.null'
+                    );
+                    
+                    if (existentes && existentes.length > 0) {
+                        const docsExistentes = new Set(existentes.map(a => a.alumni_id_document));
+                        
+                        undecimoStudents.forEach(est => {
+                            if (est.student_id_document && docsExistentes.has(est.student_id_document)) {
+                                wizardData.undecimoIssues.yaEnAlumni.push({
+                                    student_id: est.student_id,
+                                    student_code: est.student_code,
+                                    student_name: formatStudentName(est),
+                                    document: est.student_id_document
+                                });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn('No se pudieron verificar duplicados en alumni:', e.message);
+                }
             }
         }
         
@@ -838,6 +910,56 @@
                 </div>
             `;
             
+            // Mostrar advertencias de undécimos (sin documento o ya en alumni)
+            const issues = wizardData.undecimoIssues || { sinDocumento: [], yaEnAlumni: [] };
+            const tieneIssuesUndecimo = issues.sinDocumento.length > 0 || issues.yaEnAlumni.length > 0;
+            
+            if (tieneIssuesUndecimo) {
+                html += `
+                    <div class="alert alert-danger">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-x-octagon-fill me-2"></i>
+                            Problemas con estudiantes de Undécimo
+                        </h6>
+                `;
+                
+                if (issues.sinDocumento.length > 0) {
+                    html += `
+                        <p class="mb-2 small">
+                            <strong>${issues.sinDocumento.length} estudiante(s) sin documento de identidad:</strong>
+                        </p>
+                        <ul class="small mb-3">
+                    `;
+                    issues.sinDocumento.forEach(s => {
+                        html += `<li>${escapeHtml(s.student_name)} (código ${escapeHtml(String(s.student_code || ''))})</li>`;
+                    });
+                    html += `</ul>`;
+                }
+                
+                if (issues.yaEnAlumni.length > 0) {
+                    html += `
+                        <p class="mb-2 small">
+                            <strong>${issues.yaEnAlumni.length} estudiante(s) ya existen en Egresados:</strong>
+                        </p>
+                        <ul class="small mb-3">
+                    `;
+                    issues.yaEnAlumni.forEach(s => {
+                        html += `<li>${escapeHtml(s.student_name)} (código ${escapeHtml(String(s.student_code || ''))}, documento ${escapeHtml(s.document)})</li>`;
+                    });
+                    html += `</ul>`;
+                }
+                
+                html += `
+                        <p class="mb-0 small">
+                            Estos casos deben resolverse antes de ejecutar el cierre. Corrige los documentos o revisa los registros de alumni y vuelve a revalidar.
+                        </p>
+                        <button class="btn btn-sm btn-outline-secondary mt-2" onclick="ejecutarPaso1()">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Revalidar
+                        </button>
+                    </div>
+                `;
+            }
+            
             // Si hay faltantes, mostrar alerta amarilla con acción
             if (totalFaltantes > 0) {
                 html += `
@@ -959,8 +1081,12 @@
             
             container.innerHTML = html;
             
-            // ⚠️ MODO PRUEBA DEV - quitar antes de pasar a PROD
-            marcarPasoValido(1, true);
+            // El paso es válido solo si:
+            //  - No hay cursos faltantes
+            //  - No hay undécimos sin documento ni ya existentes en alumni
+            const tieneIssuesUndecimo = (wizardData.undecimoIssues?.sinDocumento?.length || 0) > 0
+                || (wizardData.undecimoIssues?.yaEnAlumni?.length || 0) > 0;
+            marcarPasoValido(1, totalFaltantes === 0 && !tieneIssuesUndecimo);
         }
         
         // ==========================================
@@ -1112,7 +1238,7 @@
             const idsFiltro = '(' + courseIds.join(',') + ')';
             
             const students = await supabaseRequest(
-                '/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,course_id,student_status!inner(status_code)' +
+                '/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_id_document,student_birthday,gender_id,course_id,student_status!inner(status_code)' +
                 '&student_status.status_code=eq.1' +
                 '&course_id=in.' + idsFiltro +
                 '&order=student_last_name_1.asc,student_last_name_2.asc,student_first_name.asc'
@@ -1991,14 +2117,16 @@
                     }
                     
                     try {
-                        // Insertar en alumni
+                        // Insertar en alumni (sin alumni_email - decisión: no trasladar correo corporativo)
                         await supabaseRequest('/alumni', {
                             method: 'POST',
                             body: JSON.stringify({
-                                alumni_id_document: est.student_id_document || ('PENDIENTE_' + est.student_code),
+                                alumni_id_document: est.student_id_document,
                                 alumni_first_name: est.student_first_name,
                                 alumni_last_name_1: est.student_last_name_1,
                                 alumni_last_name_2: est.student_last_name_2 || null,
+                                alumni_birthday: est.student_birthday || null,
+                                gender_id: est.gender_id || null,
                                 graduation_year: graduationYear,
                                 original_student_id: est.student_id,
                                 original_student_code: est.student_code,

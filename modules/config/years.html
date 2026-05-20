@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.1">
+    <meta name="page-version" content="26.5.20.2">
     <title>Años Académicos</title>
     
     <!-- Bootstrap CSS -->
@@ -499,6 +499,10 @@
             try {
                 const years = await supabaseRequest('/academic_years?select=*&order=year_order.asc.nullslast,start_year.desc');
                 allYears = years || [];
+                
+                // Cargar closures recientes para detectar cuáles son reversables
+                await cargarClosuresParaYears();
+                
                 filteredYears = [...allYears];
                 renderYearsGrid();
                 loadStats();
@@ -519,6 +523,49 @@
                 `;
             }
         }
+
+        // ==========================================
+        // CARGAR CLOSURES PARA DETECTAR REVERSAS DISPONIBLES
+        // ==========================================
+        async function cargarClosuresParaYears() {
+            try {
+                // Cargar closures no reversados (independiente de fecha; el cálculo de 24h se hace en JS)
+                const closures = await supabaseRequest(
+                    '/academic_year_closures?select=closure_id,year_id,closed_at,reversed_at&reversed_at=is.null&order=closed_at.desc'
+                );
+                
+                // Indexar el closure más reciente por year_id
+                const closuresPorYear = {};
+                (closures || []).forEach(c => {
+                    if (!closuresPorYear[c.year_id]) {
+                        closuresPorYear[c.year_id] = c;
+                    }
+                });
+                
+                // Adjuntar info de closure a cada año
+                const ahora = new Date();
+                const VENTANA_MS = 24 * 60 * 60 * 1000; // 24 horas
+                
+                allYears.forEach(year => {
+                    const closure = closuresPorYear[year.year_id];
+                    if (closure) {
+                        const closedAt = new Date(closure.closed_at);
+                        const diffMs = ahora - closedAt;
+                        year._closure = {
+                            closure_id: closure.closure_id,
+                            closed_at: closure.closed_at,
+                            is_reversible: diffMs < VENTANA_MS,
+                            horas_restantes: Math.max(0, (VENTANA_MS - diffMs) / (60 * 60 * 1000))
+                        };
+                    }
+                });
+                
+            } catch (error) {
+                console.warn('No se pudieron cargar closures:', error.message);
+                // No es fatal — el botón de reversa simplemente no aparecerá
+            }
+        }
+        
         function renderYearsGrid() {
             const container = document.getElementById('yearsContainer');
             
@@ -610,6 +657,13 @@
                                                 onclick="iniciarCierreAnoAcademico('${year.year_id}', '${escapeHtml(year.year_name)}')" 
                                                 title="Cerrar año académico">
                                             <i class="bi bi-box-arrow-in-down"></i>
+                                        </button>
+                                        ` : ''}
+                                        ${year.closed_at && year._closure && year._closure.is_reversible ? `
+                                        <button class="btn btn-outline-warning" 
+                                                onclick="iniciarReversaCierre('${year._closure.closure_id}', '${escapeHtml(year.year_name)}', ${year._closure.horas_restantes.toFixed(1)})" 
+                                                title="Reversar cierre (quedan ${year._closure.horas_restantes.toFixed(1)} h)">
+                                            <i class="bi bi-arrow-counterclockwise"></i>
                                         </button>
                                         ` : ''}
                                         ${year.closed_at ? `
@@ -973,6 +1027,16 @@
             // Redirigir al wizard
             window.location.href = 'year-closure.html?year_id=' + encodeURIComponent(yearId);
         }
+
+        function iniciarReversaCierre(closureId, yearName, horasRestantes) {
+            const mensaje = '¿Iniciar la reversa del cierre del año "' + yearName + '"?\n\n' +
+                'Quedan aproximadamente ' + horasRestantes + ' horas para reversar.\n' +
+                'Se abrirá una página con validaciones previas. La reversa solo se ejecuta tras confirmación explícita.';
+            
+            if (!confirm(mensaje)) return;
+            
+            window.location.href = 'year-closure-reversal.html?closure_id=' + encodeURIComponent(closureId);
+        }
         
         window.loadYears = loadYears;
         window.showCreateForm = showCreateForm;
@@ -983,6 +1047,7 @@
         window.filterYears = filterYears;
         window.clearFilters = clearFilters;
         window.iniciarCierreAnoAcademico = iniciarCierreAnoAcademico;
+        window.iniciarReversaCierre = iniciarReversaCierre;
         
         console.log('🎉 Gestión de Años Académicos cargada correctamente');
     </script>
