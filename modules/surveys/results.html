@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.15.6.20">
+    <meta name="page-version" content="26.5.20.1">
     <title>Resultados de Encuesta - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -837,12 +837,12 @@
                 </div>
             </div>
             
-            <!-- Aviso de resultados parciales (solo cuando la aplicación está abierta) -->
+            <!-- Aviso de aplicación abierta (solo se muestra el conteo) -->
             <div class="alert alert-warning d-flex align-items-center mb-4" id="partialResultsAlert" style="display: none;" role="alert">
                 <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
                 <div>
                     <strong>Esta aplicación está abierta.</strong>
-                    Los resultados son parciales y pueden cambiar a medida que se reciben respuestas.
+                    Los resultados detallados estarán disponibles una vez se cierre. Por ahora solo se muestra el conteo de respuestas recibidas.
                 </div>
             </div>
 
@@ -1088,10 +1088,10 @@
             try {
                 console.log('📡 Cargando aplicaciones abiertas y cerradas...');
                 
-                // Solo traemos aplicaciones cerradas. Los resultados de aplicaciones
-                // abiertas no se muestran hasta que la encuesta deje de recibir respuestas.
+                // Traemos aplicaciones abiertas y cerradas. Para las abiertas solo se mostrará
+                // el conteo de respuestas; para las cerradas se muestra el análisis completo.
                 const applications = await supabaseRequest(
-                    '/survey_applications?select=*,survey_masters(survey_name,created_by,users!survey_masters_created_by_fkey(user_display_name))&status=eq.closed&order=created_at.desc'
+                    '/survey_applications?select=*,survey_masters(survey_name,created_by,users!survey_masters_created_by_fkey(user_display_name))&status=in.(open,closed)&order=created_at.desc'
                 );
                 
                 const select = document.getElementById('applicationSelect');
@@ -1153,7 +1153,7 @@
                 const selectedOption = select.options[select.selectedIndex];
                 selectedApplication = JSON.parse(selectedOption.dataset.appData);
                 
-                console.log('📊 Cargando resultados para:', selectedApplication.application_name);
+                console.log('📊 Cargando resultados para:', selectedApplication.application_name, '(estado:', selectedApplication.status + ')');
                 
                 // Limpiar estado previo
                 activeFilters = {};
@@ -1161,25 +1161,12 @@
                 selectedSections = new Set();
                 document.getElementById('viewGlobal').checked = true;
                 
-                // 1. Cargar estructura de la encuesta
-                await loadSurveyStructure();
-                
-                // 2. Cargar todos los perfiles con respuestas
-                await loadAllProfiles();
-                
-                // 3. Analizar segmentos disponibles
-                await analyzeAvailableSegments();
-                
-                // 4. NUEVO: Inicializar secciones seleccionadas (todas por defecto)
-                initializeSelectedSections();
-                
-                // 5. Renderizar interfaz
-                renderApplicationHeader();
-                renderFilters();
-                renderSectionsFilter(); // NUEVO
-                renderStats();
-                renderSectionsSummary(); // NUEVO
-                renderResults();
+                // Bifurcar flujo según estado de la aplicación
+                if (selectedApplication.status === 'open') {
+                    await loadResultsOpenMode();
+                } else {
+                    await loadResultsClosedMode();
+                }
                 
                 // Mostrar área de resultados
                 document.getElementById('resultsArea').style.display = 'block';
@@ -1195,6 +1182,127 @@
                 showMessage('Error al cargar resultados: ' + error.message, 'danger');
                 ocultarLoading();
             }
+        }
+        
+        // ==========================================
+        // FLUJO PARA APLICACIONES CERRADAS (análisis completo)
+        // ==========================================
+        async function loadResultsClosedMode() {
+            // Restaurar visibilidad de todos los contenedores
+            showFullAnalysisContainers();
+            
+            // 1. Cargar estructura de la encuesta
+            await loadSurveyStructure();
+            
+            // 2. Cargar todos los perfiles con respuestas
+            await loadAllProfiles();
+            
+            // 3. Analizar segmentos disponibles
+            await analyzeAvailableSegments();
+            
+            // 4. Inicializar secciones seleccionadas (todas por defecto)
+            initializeSelectedSections();
+            
+            // 5. Renderizar interfaz completa
+            renderApplicationHeader();
+            renderFilters();
+            renderSectionsFilter();
+            renderStats();
+            renderSectionsSummary();
+            renderResults();
+        }
+        
+        // ==========================================
+        // FLUJO PARA APLICACIONES ABIERTAS (solo conteo)
+        // ==========================================
+        async function loadResultsOpenMode() {
+            // Ocultar todos los contenedores de análisis
+            hideFullAnalysisContainers();
+            
+            // Query liviano: solo contar perfiles para esta aplicación
+            console.log('📡 Obteniendo conteo de respuestas (modo aplicación abierta)...');
+            
+            const profiles = await supabaseRequest(
+                `/survey_respondent_profile?select=profile_id&application_id=eq.${selectedApplication.application_id}`
+            );
+            
+            const responseCount = profiles ? profiles.length : 0;
+            console.log(`✅ ${responseCount} respuestas registradas hasta el momento`);
+            
+            // Cargar solo el nombre de la encuesta (para el encabezado)
+            const masterData = await supabaseRequest(
+                `/survey_masters?select=survey_name&survey_master_id=eq.${selectedApplication.survey_master_id}`
+            );
+            
+            surveyMaster = masterData && masterData.length > 0 ? masterData[0] : { survey_name: 'Encuesta' };
+            
+            // Renderizar solo encabezado + contador + alert
+            renderApplicationHeaderMinimal(responseCount);
+        }
+        
+        // ==========================================
+        // OCULTAR CONTENEDORES DE ANÁLISIS COMPLETO
+        // ==========================================
+        function hideFullAnalysisContainers() {
+            const containers = [
+                'filterSection',
+                'sectionsFilter',
+                'viewModeSelector',
+                'sectionsSummary',
+                'resultsContainer'
+            ];
+            
+            containers.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            
+            // Ocultar las 4 tarjetas de estadísticas generales (su contenedor row)
+            const statsRow = document.getElementById('filteredResponsesCount')?.closest('.row.mb-4');
+            if (statsRow) statsRow.style.display = 'none';
+            
+            // Ocultar el botón de exportación consolidada (su contenedor row)
+            const exportBtn = document.getElementById('exportAllOpenBtn');
+            const exportRow = exportBtn?.closest('.row.mb-4');
+            if (exportRow) exportRow.style.display = 'none';
+        }
+        
+        // ==========================================
+        // RESTAURAR CONTENEDORES DE ANÁLISIS COMPLETO
+        // ==========================================
+        function showFullAnalysisContainers() {
+            // Las visibilidades específicas se manejan dentro de cada render*().
+            // Aquí solo restauramos los contenedores que ocultamos en modo abierto.
+            const statsRow = document.getElementById('filteredResponsesCount')?.closest('.row.mb-4');
+            if (statsRow) statsRow.style.display = '';
+            
+            const exportBtn = document.getElementById('exportAllOpenBtn');
+            const exportRow = exportBtn?.closest('.row.mb-4');
+            if (exportRow) exportRow.style.display = '';
+            
+            const resultsContainer = document.getElementById('resultsContainer');
+            if (resultsContainer) resultsContainer.style.display = '';
+        }
+        
+        // ==========================================
+        // RENDERIZAR ENCABEZADO MÍNIMO (aplicación abierta)
+        // ==========================================
+        function renderApplicationHeaderMinimal(responseCount) {
+            // Título con badge "Abierta"
+            const titleEl = document.getElementById('surveyTitle');
+            titleEl.innerHTML = `${escapeHtml(surveyMaster.survey_name)} <span class="status-badge status-open">Abierta</span>`;
+            
+            document.getElementById('applicationName').textContent = selectedApplication.application_name;
+            
+            const startDate = formatDate(selectedApplication.start_date);
+            const endDate = formatDate(selectedApplication.end_date);
+            document.getElementById('dateRange').textContent = `Período: ${startDate} - ${endDate}`;
+            
+            document.getElementById('totalResponses').textContent = responseCount;
+            
+            // Mostrar alert de aplicación abierta
+            const partialAlert = document.getElementById('partialResultsAlert');
+            if (partialAlert) partialAlert.style.display = 'flex';
         }
 
         // ==========================================
