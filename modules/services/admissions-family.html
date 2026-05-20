@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.26.12.40">
+    <meta name="page-version" content="26.5.20.1">
     <title>Atención a Familias por Admisiones - SchoolNet</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -93,8 +93,8 @@
                                 <th>Fecha atención</th>
                                 <th id="col-solicitante" class="d-none">Solicitante</th>
                                 <th>Descripción</th>
-                                <th class="text-center">Cantidad</th>
-                                <th class="text-end">Valor unitario</th>
+                                <th class="text-center">Refrigerios</th>
+                                <th class="text-center">Almuerzos</th>
                                 <th class="text-end">Total</th>
                                 <th class="text-center">Estado</th>
                                 <th class="text-end">Acciones</th>
@@ -131,19 +131,33 @@
                             <label class="form-label">Descripción <span class="text-danger">*</span></label>
                             <textarea class="form-control" id="nuevo-descripcion" rows="3" required placeholder="Describa el motivo de la atención, nombres de las familias, etc."></textarea>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Cantidad de refrigerios <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" id="nuevo-cantidad" min="1" required>
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Cantidad de refrigerios</label>
+                                <input type="number" class="form-control" id="nuevo-cant-refrigerios" min="0" value="0">
+                                <div class="form-text">Unitario: <span id="precio-unit-refrigerio">$0</span></div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label">Cantidad de almuerzos</label>
+                                <input type="number" class="form-control" id="nuevo-cant-almuerzos" min="0" value="0">
+                                <div class="form-text">Unitario: <span id="precio-unit-almuerzo">$0</span></div>
+                            </div>
                         </div>
+                        <div class="form-text mb-3"><i class="bi bi-info-circle me-1"></i>Debe ingresar al menos un producto (refrigerio o almuerzo).</div>
                         <!-- Resumen de costo -->
                         <div class="card summary-card bg-light">
                             <div class="card-body py-2">
                                 <div class="d-flex justify-content-between">
-                                    <span>Valor unitario:</span>
-                                    <strong id="resumen-unitario">$0</strong>
+                                    <span>Subtotal refrigerios:</span>
+                                    <strong id="resumen-sub-refrigerios">$0</strong>
                                 </div>
                                 <div class="d-flex justify-content-between mt-1">
-                                    <span>Total estimado:</span>
+                                    <span>Subtotal almuerzos:</span>
+                                    <strong id="resumen-sub-almuerzos">$0</strong>
+                                </div>
+                                <hr class="my-1">
+                                <div class="d-flex justify-content-between mt-1">
+                                    <span><strong>Total estimado:</strong></span>
                                     <strong id="resumen-total" class="text-success">$0</strong>
                                 </div>
                             </div>
@@ -180,6 +194,7 @@
 
         // Configuración presupuestal
         let configSnackPrice = 0;
+        let configLunchPrice = 0;
         let configBudgetItemId = null;
         let assignmentData = null;   // { assignment_id, worker_email_legacy, executed_value }
         let currentBudgetYearId = null;
@@ -302,8 +317,9 @@
             // Configurar fecha mínima del formulario
             configurarFechaMinima();
 
-            // Listener para calcular total en tiempo real
-            document.getElementById('nuevo-cantidad').addEventListener('input', actualizarResumen);
+            // Listeners para calcular total en tiempo real
+            document.getElementById('nuevo-cant-refrigerios').addEventListener('input', actualizarResumen);
+            document.getElementById('nuevo-cant-almuerzos').addEventListener('input', actualizarResumen);
 
             // Cargar solicitudes
             await cargarSolicitudes();
@@ -330,15 +346,17 @@
         // ==========================================
         async function cargarConfiguracion() {
             try {
-                // Precio y item_id desde svc_module_config
-                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value&config_key=in.(admissions_family_snack_price,admissions_family_budget_item_id)');
+                // Precios e item_id desde svc_module_config
+                const configs = await supabaseRequest('/svc_module_config?select=config_key,config_value&config_key=in.(admissions_family_snack_price,admissions_family_lunch_price,admissions_family_budget_item_id)');
                 configs.forEach(c => {
                     if (c.config_key === 'admissions_family_snack_price') configSnackPrice = parseFloat(c.config_value) || 0;
+                    if (c.config_key === 'admissions_family_lunch_price') configLunchPrice = parseFloat(c.config_value) || 0;
                     if (c.config_key === 'admissions_family_budget_item_id') configBudgetItemId = c.config_value;
                 });
 
-                // Actualizar resumen en el modal
-                document.getElementById('resumen-unitario').textContent = fmtCOP(configSnackPrice);
+                // Actualizar precios unitarios en el modal
+                document.getElementById('precio-unit-refrigerio').textContent = fmtCOP(configSnackPrice);
+                document.getElementById('precio-unit-almuerzo').textContent = fmtCOP(configLunchPrice);
 
                 // Año presupuestal activo
                 const sysConfig = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
@@ -374,11 +392,16 @@
         // ACTUALIZAR RESUMEN EN MODAL
         // ==========================================
         function actualizarResumen() {
-            const cantidad = parseInt(document.getElementById('nuevo-cantidad').value) || 0;
-            const total = cantidad * configSnackPrice;
+            const cantRefrigerios = parseInt(document.getElementById('nuevo-cant-refrigerios').value) || 0;
+            const cantAlmuerzos = parseInt(document.getElementById('nuevo-cant-almuerzos').value) || 0;
+            const subRefrigerios = cantRefrigerios * configSnackPrice;
+            const subAlmuerzos = cantAlmuerzos * configLunchPrice;
+            const total = subRefrigerios + subAlmuerzos;
+            document.getElementById('resumen-sub-refrigerios').textContent = fmtCOP(subRefrigerios);
+            document.getElementById('resumen-sub-almuerzos').textContent = fmtCOP(subAlmuerzos);
             document.getElementById('resumen-total').textContent = fmtCOP(total);
         }
-
+        
         // ==========================================
         // CARGAR SOLICITUDES
         // ==========================================
@@ -428,7 +451,7 @@
                     acciones += `<button class="btn btn-sm btn-outline-danger me-1" onclick="cancelarSolicitud('${s.service_id}')" title="Cancelar"><i class="bi bi-x-circle"></i></button>`;
                 }
                 if (puedeEntregar) {
-                    acciones += `<button class="btn btn-sm btn-outline-success" onclick="entregarSolicitud('${s.service_id}')" title="Marcar como entregado"><i class="bi bi-check-circle"></i></button>`;
+                    acciones += `<button class="btn btn-sm btn-outline-success" onclick="abrirModalEntrega('${s.service_id}')" title="Marcar como entregado"><i class="bi bi-check-circle"></i></button>`;
                 }
                 if (!acciones) {
                     acciones = '<span class="text-muted"><i class="bi bi-lock"></i></span>';
@@ -438,13 +461,16 @@
                     ? `<td>${s.creador?.user_display_name || '—'}</td>` 
                     : '';
 
+                const cantRef = s.snack_quantity || 0;
+                const cantAlm = s.lunch_quantity || 0;
+
                 return `
                     <tr>
                         <td>${fechaFmt}</td>
                         ${colSolicitante}
                         <td class="detail-cell" title="${escapeHtml(s.description)}">${escapeHtml(s.description)}</td>
-                        <td class="text-center">${s.snack_quantity}</td>
-                        <td class="text-end">${fmtCOP(s.unit_price)}</td>
+                        <td class="text-center">${cantRef > 0 ? cantRef : '<span class="text-muted">—</span>'}</td>
+                        <td class="text-center">${cantAlm > 0 ? cantAlm : '<span class="text-muted">—</span>'}</td>
                         <td class="text-end"><strong>${fmtCOP(s.total_value)}</strong></td>
                         <td class="text-center">${estadoBadge}</td>
                         <td class="text-end">${acciones}</td>
@@ -467,8 +493,8 @@
         // ABRIR MODAL NUEVA SOLICITUD
         // ==========================================
         function abrirModalNuevo() {
-            if (configSnackPrice <= 0) {
-                showMessage('El precio del refrigerio no está configurado. Configure el valor en Parámetros del módulo.', 'warning');
+            if (configSnackPrice <= 0 && configLunchPrice <= 0) {
+                showMessage('Los precios de refrigerios y almuerzos no están configurados. Configure al menos uno en Parámetros del módulo.', 'warning');
                 return;
             }
             if (!assignmentData) {
@@ -477,6 +503,10 @@
             }
 
             document.getElementById('form-nuevo').reset();
+            document.getElementById('nuevo-cant-refrigerios').value = 0;
+            document.getElementById('nuevo-cant-almuerzos').value = 0;
+            document.getElementById('resumen-sub-refrigerios').textContent = '$0';
+            document.getElementById('resumen-sub-almuerzos').textContent = '$0';
             document.getElementById('resumen-total').textContent = '$0';
             configurarFechaMinima();
             modalNuevo.show();
@@ -489,14 +519,27 @@
             e.preventDefault();
             const btnGuardar = document.getElementById('btn-guardar');
 
-            try {
+           try {
                 const fecha = document.getElementById('nuevo-fecha').value;
                 const descripcion = document.getElementById('nuevo-descripcion').value.trim();
-                const cantidad = parseInt(document.getElementById('nuevo-cantidad').value);
+                const cantRefrigerios = parseInt(document.getElementById('nuevo-cant-refrigerios').value) || 0;
+                const cantAlmuerzos = parseInt(document.getElementById('nuevo-cant-almuerzos').value) || 0;
 
                 // Validaciones
-                if (!fecha || !descripcion || !cantidad || cantidad < 1) {
+                if (!fecha || !descripcion) {
                     showMessage('Complete todos los campos obligatorios', 'warning');
+                    return;
+                }
+                if (cantRefrigerios <= 0 && cantAlmuerzos <= 0) {
+                    showMessage('Debe ingresar al menos un refrigerio o un almuerzo', 'warning');
+                    return;
+                }
+                if (cantRefrigerios > 0 && configSnackPrice <= 0) {
+                    showMessage('El precio del refrigerio no está configurado', 'warning');
+                    return;
+                }
+                if (cantAlmuerzos > 0 && configLunchPrice <= 0) {
+                    showMessage('El precio del almuerzo no está configurado', 'warning');
                     return;
                 }
 
@@ -506,7 +549,9 @@
                     return;
                 }
 
-                const totalValue = cantidad * configSnackPrice;
+                const subRefrigerios = cantRefrigerios * configSnackPrice;
+                const subAlmuerzos = cantAlmuerzos * configLunchPrice;
+                const totalValue = subRefrigerios + subAlmuerzos;
                 const totalInt = Math.round(totalValue); // execution_requests usa integer
 
                 btnGuardar.disabled = true;
@@ -518,12 +563,15 @@
                 const ahora = new Date();
                 const fechaBogota = new Date(ahora.toLocaleString("en-US", { timeZone: "America/Bogota" }));
 
+                const detallesProductos = [];
+                if (cantRefrigerios > 0) detallesProductos.push(`${cantRefrigerios} refrigerios × ${fmtCOP(configSnackPrice)}`);
+                if (cantAlmuerzos > 0) detallesProductos.push(`${cantAlmuerzos} almuerzos × ${fmtCOP(configLunchPrice)}`);
                 const execPayload = {
                     assignment_id: assignmentData.assignment_id,
                     worker_id: currentWorkerId,
                     worker_email: assignmentData.worker_email_legacy || currentWorkerEmail,
                     requested_value: totalInt,
-                    request_details: `Refrigerios admisiones: ${cantidad} uds × ${fmtCOP(configSnackPrice)} — ${descripcion}`,
+                    request_details: `Atención familias admisiones: ${detallesProductos.join(' + ')} — ${descripcion}`,
                     request_status: 'approved',
                     requested_at: fechaBogota.toISOString(),
                     responded_at: fechaBogota.toISOString(),
@@ -555,8 +603,10 @@
                 const servicePayload = {
                     service_date: fecha,
                     description: descripcion,
-                    snack_quantity: cantidad,
-                    unit_price: configSnackPrice,
+                    snack_quantity: cantRefrigerios > 0 ? cantRefrigerios : null,
+                    snack_unit_price: cantRefrigerios > 0 ? configSnackPrice : null,
+                    lunch_quantity: cantAlmuerzos > 0 ? cantAlmuerzos : null,
+                    lunch_unit_price: cantAlmuerzos > 0 ? configLunchPrice : null,
                     total_value: totalValue,
                     service_status: 'requested',
                     created_by: currentUser.user_id,
@@ -571,7 +621,7 @@
                 // ----------------------------------------
                 // PASO 4: Notificar a los configurados
                 // ----------------------------------------
-                await enviarNotificaciones(fecha, descripcion, cantidad, totalValue);
+                await enviarNotificaciones(fecha, descripcion, cantRefrigerios, cantAlmuerzos, totalValue);
 
                 modalNuevo.hide();
                 showMessage('Solicitud creada exitosamente', 'success');
@@ -680,7 +730,7 @@
         // ==========================================
         // NOTIFICACIONES POR CORREO
         // ==========================================
-        async function enviarNotificaciones(fecha, descripcion, cantidad, totalValue) {
+        async function enviarNotificaciones(fecha, descripcion, cantRefrigerios, cantAlmuerzos, totalValue) {
             try {
                 // Obtener destinatarios
                 const notifData = await supabaseRequest('/svc_service_type_notifications?select=trabajador:workers!svc_service_type_notifications_worker_fkey(email)&service_type=eq.admissions_family&is_active=eq.true');
@@ -688,19 +738,27 @@
 
                 const fechaFmt = new Date(fecha + 'T00:00:00').toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
                 const solicitante = currentUser.user_display_name || 'Usuario';
-                const asunto = 'SchoolNet - Nueva solicitud de refrigerios para familias (Admisiones)';
+                const asunto = 'SchoolNet - Nueva solicitud para atención a familias (Admisiones)';
+
+                const filasProductos = [];
+                if (cantRefrigerios > 0) {
+                    filasProductos.push(`<tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Refrigerios:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${cantRefrigerios}</td></tr>`);
+                }
+                if (cantAlmuerzos > 0) {
+                    filasProductos.push(`<tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Almuerzos:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${cantAlmuerzos}</td></tr>`);
+                }
 
                 const cuerpoHtml = `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
                         <div style="background-color: #ccfbf1; border-left: 4px solid #0d9488; padding: 15px; margin-bottom: 20px;">
-                            <h2 style="color: #0f766e; margin: 0 0 10px;">🍽️ Solicitud de Refrigerios — Admisiones</h2>
+                            <h2 style="color: #0f766e; margin: 0 0 10px;">🍽️ Solicitud para Atención a Familias — Admisiones</h2>
                             <p style="margin: 0; color: #0f766e;">SchoolNet - Módulo de Servicios</p>
                         </div>
                         <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                            <p><strong>${escapeHtml(solicitante)}</strong> ha solicitado refrigerios para atención a familias.</p>
+                            <p><strong>${escapeHtml(solicitante)}</strong> ha registrado una solicitud para atención a familias.</p>
                             <table style="width: 100%; border-collapse: collapse; margin: 15px 0; border: 1px solid #dee2e6;">
                                 <tr style="background: #f8f9fa;"><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Fecha de atención:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${fechaFmt}</td></tr>
-                                <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Cantidad:</td><td style="padding: 10px; border: 1px solid #dee2e6;">${cantidad} refrigerios</td></tr>
+                                ${filasProductos.join('')}
                                 <tr><td style="padding: 10px; border: 1px solid #dee2e6; font-weight: bold;">Valor total:</td><td style="padding: 10px; border: 1px solid #dee2e6; font-family: monospace; font-weight: bold;">${fmtCOP(totalValue)}</td></tr>
                             </table>
                             <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 12px; margin-top: 15px;">
