@@ -133,19 +133,19 @@ async function generarReportePeriodoPrueba() {
     const subareasMap = {};
     if (subareaIds.length > 0) {
         const subareas = await supabaseGet(
-            `/organizational_subareas?select=organizational_subarea_id,subarea_name&organizational_subarea_id=in.(${subareaIds.join(',')})`
+            `/organizational_subareas?select=subarea_id,subarea_name&subarea_id=in.(${subareaIds.join(',')})`
         );
-        subareas.forEach(s => { subareasMap[s.organizational_subarea_id] = s.subarea_name; });
+        subareas.forEach(s => { subareasMap[s.subarea_id] = s.subarea_name; });
     }
 
     const areasMap = {};
     if (areaIds.length > 0) {
         const areas = await supabaseGet(
-            `/organizational_areas?select=organizational_area_id,area_name&organizational_area_id=in.(${areaIds.join(',')})`
+            `/organizational_areas?select=area_id,area_name&area_id=in.(${areaIds.join(',')})`
         );
-        areas.forEach(a => { areasMap[a.organizational_area_id] = a.area_name; });
+        areas.forEach(a => { areasMap[a.area_id] = a.area_name; });
     }
-
+    
     // 3. Clasificar por grupos
     const vencidos = [];
     const venceEsteMes = [];
