@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.1">
+    <meta name="page-version" content="26.5.20.2">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -593,12 +593,474 @@
             container.innerHTML = `
                 <div class="mensaje-inicial">
                     <i class="bi bi-hourglass-split"></i>
-                    <p>Función pendiente de implementar en Etapa 3.2</p>
+                    <p>Validando estructura de cursos...</p>
                 </div>
             `;
-            // Por ahora marcamos como válido para poder navegar al probar
             marcarPasoValido(1, false);
+            
+            try {
+                // 1. Verificar que exista al menos un año académico candidato para ser el entrante
+                const aniosCandidatos = await supabaseRequest(
+                    '/academic_years?select=year_id,year_name&is_current=eq.false&closed_at=is.null&year_status=eq.active'
+                );
+                
+                if (!aniosCandidatos || aniosCandidatos.length === 0) {
+                    container.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h6 class="alert-heading">
+                                <i class="bi bi-x-circle-fill me-2"></i>No hay año entrante disponible
+                            </h6>
+                            <p class="mb-2">
+                                Para cerrar el año académico se requiere al menos un año académico que:
+                            </p>
+                            <ul class="mb-2">
+                                <li>No esté marcado como vigente</li>
+                                <li>No esté cerrado</li>
+                                <li>Tenga estado "active"</li>
+                            </ul>
+                            <p class="mb-0">
+                                <a href="years.html" class="btn btn-sm btn-danger mt-2">
+                                    <i class="bi bi-arrow-left me-1"></i>Crear el año entrante en Años Académicos
+                                </a>
+                            </p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // 2. Cargar grados activos ordenados
+                const grades = await supabaseRequest(
+                    '/grades?select=grade_id,grade_name,grade_order&grade_status=eq.active&order=grade_order.asc'
+                );
+                
+                if (!grades || grades.length === 0) {
+                    throw new Error('No hay grados activos configurados');
+                }
+                
+                // 3. Cargar cursos activos con info del grado
+                const courses = await supabaseRequest(
+                    '/courses?select=course_id,course_name,grade_id,course_order,grades!courses_grade_fkey(grade_id,grade_name,grade_order)&course_status=eq.active'
+                );
+                
+                if (!courses || courses.length === 0) {
+                    throw new Error('No hay cursos activos configurados');
+                }
+                
+                // 4. Cargar conteo de estudiantes activos por curso
+                // Trae solo estudiantes con status_code = 1 (Activo)
+                const studentsActivos = await supabaseRequest(
+                    '/students?select=student_id,course_id,student_status!inner(status_code)&student_status.status_code=eq.1'
+                );
+                
+                // Construir mapa course_id → cantidad de estudiantes activos
+                const conteoEstudiantes = {};
+                (studentsActivos || []).forEach(s => {
+                    conteoEstudiantes[s.course_id] = (conteoEstudiantes[s.course_id] || 0) + 1;
+                });
+                
+                // 5. Construir el mapeo origen → destino
+                const mapping = construirMapeoCursos(courses, grades, conteoEstudiantes);
+                wizardData.coursesMapping = mapping;
+                
+                // 6. Detectar faltantes (solo entre cursos con estudiantes activos y que no son graduación)
+                const faltantes = [];
+                mapping.forEach(m => {
+                    if (!m.isGraduation && m.studentsCount > 0 && !m.destinationCourse) {
+                        faltantes.push({
+                            sourceCourse: m.sourceCourse,
+                            expectedGradeName: m.expectedDestinationGradeName,
+                            expectedSuffix: m.suffix,
+                            expectedDestinationGradeId: m.expectedDestinationGradeId
+                        });
+                    }
+                });
+                wizardData.missingCourses = faltantes;
+                
+                // 7. Renderizar resultado
+                renderizarResultadoPaso1();
+                
+            } catch (error) {
+                console.error('❌ Error en validación del Paso 1:', error);
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Error al validar estructura: ${escapeHtml(error.message)}
+                    </div>
+                `;
+            }
         }
+        
+        // ==========================================
+        // HELPER: Construir mapeo de cursos origen → destino
+        // ==========================================
+        function construirMapeoCursos(courses, grades, conteoEstudiantes) {
+            // Indexar grados por grade_order para búsqueda rápida del siguiente
+            const gradesByOrder = {};
+            grades.forEach(g => { gradesByOrder[g.grade_order] = g; });
+            
+            // Indexar cursos por grade_id
+            const coursesByGrade = {};
+            courses.forEach(c => {
+                if (!coursesByGrade[c.grade_id]) coursesByGrade[c.grade_id] = [];
+                coursesByGrade[c.grade_id].push(c);
+            });
+            
+            // Ordenar cursos dentro de cada grado por course_name para consistencia visual
+            Object.keys(coursesByGrade).forEach(gid => {
+                coursesByGrade[gid].sort((a, b) => a.course_name.localeCompare(b.course_name));
+            });
+            
+            // Construir mapeo
+            const mapping = [];
+            
+            // Recorrer cursos ordenados por grado y nombre
+            const cursosOrdenados = [...courses].sort((a, b) => {
+                const gradeA = a.grades?.grade_order ?? 999;
+                const gradeB = b.grades?.grade_order ?? 999;
+                if (gradeA !== gradeB) return gradeA - gradeB;
+                return a.course_name.localeCompare(b.course_name);
+            });
+            
+            cursosOrdenados.forEach(course => {
+                const grade = course.grades;
+                if (!grade) return;
+                
+                const studentsCount = conteoEstudiantes[course.course_id] || 0;
+                const suffix = extraerSufijo(course.course_name);
+                
+                const item = {
+                    sourceCourse: {
+                        course_id: course.course_id,
+                        course_name: course.course_name,
+                        grade_id: grade.grade_id,
+                        grade_name: grade.grade_name,
+                        grade_order: grade.grade_order
+                    },
+                    suffix: suffix,
+                    studentsCount: studentsCount,
+                    destinationCourse: null,
+                    expectedDestinationGradeId: null,
+                    expectedDestinationGradeName: null,
+                    isGraduation: false
+                };
+                
+                // Caso 1: Undécimo (grade_order = 11) → graduación
+                if (grade.grade_order === 11) {
+                    item.isGraduation = true;
+                    mapping.push(item);
+                    return;
+                }
+                
+                // Caso 2: Resto → buscar curso destino en grado siguiente
+                const nextGrade = gradesByOrder[grade.grade_order + 1];
+                if (!nextGrade) {
+                    // No existe grado siguiente (caso atípico, ej. configuración rota)
+                    mapping.push(item);
+                    return;
+                }
+                
+                item.expectedDestinationGradeId = nextGrade.grade_id;
+                item.expectedDestinationGradeName = nextGrade.grade_name;
+                
+                // Buscar curso en el grado siguiente con el mismo sufijo
+                const cursosDestino = coursesByGrade[nextGrade.grade_id] || [];
+                const cursoDestino = cursosDestino.find(c => extraerSufijo(c.course_name) === suffix);
+                
+                if (cursoDestino) {
+                    item.destinationCourse = {
+                        course_id: cursoDestino.course_id,
+                        course_name: cursoDestino.course_name,
+                        grade_id: nextGrade.grade_id,
+                        grade_name: nextGrade.grade_name
+                    };
+                }
+                
+                mapping.push(item);
+            });
+            
+            return mapping;
+        }
+        
+        // ==========================================
+        // HELPER: Extraer sufijo de course_name
+        // ==========================================
+        function extraerSufijo(courseName) {
+            if (!courseName) return '';
+            const partes = courseName.trim().split(/\s+/);
+            return partes[partes.length - 1];
+        }
+        
+        // ==========================================
+        // RENDERIZAR RESULTADO PASO 1
+        // ==========================================
+        function renderizarResultadoPaso1() {
+            const container = document.getElementById('step1Content');
+            const mapping = wizardData.coursesMapping;
+            const faltantes = wizardData.missingCourses;
+            
+            const totalCursos = mapping.length;
+            const totalGraduacion = mapping.filter(m => m.isGraduation).length;
+            const totalConDestino = mapping.filter(m => !m.isGraduation && m.destinationCourse).length;
+            const totalSinEstudiantes = mapping.filter(m => m.studentsCount === 0 && !m.isGraduation).length;
+            const totalFaltantes = faltantes.length;
+            const totalEstudiantes = mapping.reduce((sum, m) => sum + m.studentsCount, 0);
+            
+            // Construir HTML
+            let html = '';
+            
+            // Resumen superior
+            html += `
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded text-center">
+                            <h4 class="mb-0 text-primary">${totalCursos}</h4>
+                            <small class="text-muted">Cursos del año</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded text-center">
+                            <h4 class="mb-0 text-success">${totalEstudiantes}</h4>
+                            <small class="text-muted">Estudiantes activos</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded text-center">
+                            <h4 class="mb-0 text-info">${totalGraduacion}</h4>
+                            <small class="text-muted">Cursos de Undécimo (graduación)</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 ${totalFaltantes > 0 ? 'bg-warning bg-opacity-25' : 'bg-light'} rounded text-center">
+                            <h4 class="mb-0 ${totalFaltantes > 0 ? 'text-warning' : 'text-success'}">${totalFaltantes}</h4>
+                            <small class="text-muted">Cursos faltantes</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Si hay faltantes, mostrar alerta amarilla con acción
+            if (totalFaltantes > 0) {
+                html += `
+                    <div class="alert alert-warning">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            Faltan ${totalFaltantes} curso(s) destino
+                        </h6>
+                        <p class="mb-2 small">
+                            Antes de continuar es necesario crear los cursos destino para que los estudiantes puedan ser promovidos.
+                        </p>
+                        <table class="table table-sm table-bordered mb-3 bg-white">
+                            <thead>
+                                <tr>
+                                    <th>Curso origen</th>
+                                    <th>Estudiantes</th>
+                                    <th>Curso a crear</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                faltantes.forEach((f, idx) => {
+                    const nuevoNombre = `${f.expectedGradeName} ${f.expectedSuffix}`;
+                    html += `
+                        <tr id="row-faltante-${idx}">
+                            <td>${escapeHtml(f.sourceCourse.course_name)}</td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">${conteoEstudiantesEnCurso(f.sourceCourse.course_id)}</span>
+                            </td>
+                            <td><strong>${escapeHtml(nuevoNombre)}</strong></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-success" 
+                                        onclick="crearCursoFaltante(${idx})"
+                                        id="btn-crear-${idx}">
+                                    <i class="bi bi-plus-circle me-1"></i>Crear
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                            </tbody>
+                        </table>
+                        <button class="btn btn-warning" onclick="crearTodosCursosFaltantes()">
+                            <i class="bi bi-plus-circle-fill me-1"></i>Crear todos los cursos faltantes
+                        </button>
+                        <button class="btn btn-outline-secondary ms-2" onclick="ejecutarPaso1()">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Revalidar
+                        </button>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="alert alert-success">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-check-circle-fill me-2"></i>
+                            Estructura de cursos validada
+                        </h6>
+                        <p class="mb-0 small">
+                            Todos los cursos con estudiantes tienen un destino válido o están marcados para graduación.
+                            ${totalSinEstudiantes > 0 ? `(${totalSinEstudiantes} curso(s) sin estudiantes activos no requieren destino.)` : ''}
+                        </p>
+                    </div>
+                `;
+            }
+            
+            // Tabla de mapeo completo
+            html += `
+                <h6 class="mt-4 mb-2">Mapeo de cursos</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Curso actual</th>
+                                <th class="text-center">Estudiantes</th>
+                                <th><i class="bi bi-arrow-right"></i></th>
+                                <th>Destino</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            mapping.forEach(m => {
+                let destinoHtml = '';
+                let rowClass = '';
+                
+                if (m.isGraduation) {
+                    destinoHtml = '<span class="badge bg-info"><i class="bi bi-mortarboard me-1"></i>Graduación → Egresados</span>';
+                } else if (m.destinationCourse) {
+                    destinoHtml = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>${escapeHtml(m.destinationCourse.course_name)}</span>`;
+                } else if (m.studentsCount === 0) {
+                    destinoHtml = '<span class="text-muted small"><em>Sin estudiantes — no requiere destino</em></span>';
+                    rowClass = 'table-secondary';
+                } else {
+                    destinoHtml = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Falta crear: ${escapeHtml(m.expectedDestinationGradeName)} ${escapeHtml(m.suffix)}</span>`;
+                    rowClass = 'table-warning';
+                }
+                
+                html += `
+                    <tr class="${rowClass}">
+                        <td>${escapeHtml(m.sourceCourse.course_name)}</td>
+                        <td class="text-center">
+                            ${m.studentsCount > 0 ? `<span class="badge bg-primary">${m.studentsCount}</span>` : '<span class="text-muted">0</span>'}
+                        </td>
+                        <td><i class="bi bi-arrow-right text-muted"></i></td>
+                        <td>${destinoHtml}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+            
+            // Marcar paso como válido solo si no hay faltantes
+            marcarPasoValido(1, totalFaltantes === 0);
+        }
+        
+        // ==========================================
+        // HELPER: Conteo de estudiantes en un curso específico
+        // ==========================================
+        function conteoEstudiantesEnCurso(courseId) {
+            const item = wizardData.coursesMapping.find(m => m.sourceCourse.course_id === courseId);
+            return item ? item.studentsCount : 0;
+        }
+        
+        // ==========================================
+        // CREAR CURSO FALTANTE INDIVIDUAL
+        // ==========================================
+        async function crearCursoFaltante(idx) {
+            const faltante = wizardData.missingCourses[idx];
+            if (!faltante) return;
+            
+            const btn = document.getElementById(`btn-crear-${idx}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creando...';
+            }
+            
+            try {
+                const nuevoNombre = `${faltante.expectedGradeName} ${faltante.expectedSuffix}`;
+                
+                await supabaseRequest('/courses', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        course_name: nuevoNombre,
+                        grade_id: faltante.expectedDestinationGradeId,
+                        course_status: 'active'
+                    })
+                });
+                
+                showMessage(`Curso "${nuevoNombre}" creado exitosamente`, 'success');
+                
+                // Revalidar para refrescar el mapeo
+                await ejecutarPaso1();
+                
+            } catch (error) {
+                console.error('❌ Error creando curso:', error);
+                showMessage('Error al crear curso: ' + error.message, 'danger');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Crear';
+                }
+            }
+        }
+        
+        // ==========================================
+        // CREAR TODOS LOS CURSOS FALTANTES
+        // ==========================================
+        async function crearTodosCursosFaltantes() {
+            const faltantes = [...wizardData.missingCourses];
+            if (faltantes.length === 0) return;
+            
+            if (!confirm(`¿Crear ${faltantes.length} curso(s) faltante(s) con los nombres mostrados en la tabla?`)) return;
+            
+            mostrarLoading('Creando cursos...');
+            
+            let creados = 0;
+            let fallidos = 0;
+            const errores = [];
+            
+            for (const f of faltantes) {
+                try {
+                    const nuevoNombre = `${f.expectedGradeName} ${f.expectedSuffix}`;
+                    await supabaseRequest('/courses', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            course_name: nuevoNombre,
+                            grade_id: f.expectedDestinationGradeId,
+                            course_status: 'active'
+                        })
+                    });
+                    creados++;
+                } catch (error) {
+                    fallidos++;
+                    errores.push(`${f.expectedGradeName} ${f.expectedSuffix}: ${error.message}`);
+                }
+            }
+            
+            ocultarLoading();
+            
+            if (fallidos === 0) {
+                showMessage(`${creados} curso(s) creado(s) exitosamente`, 'success');
+            } else {
+                showMessage(`${creados} creado(s), ${fallidos} falló(aron). Detalles en consola.`, 'warning');
+                console.error('Errores al crear cursos:', errores);
+            }
+            
+            // Revalidar
+            await ejecutarPaso1();
+        }
+        
+        // Exponer funciones globales necesarias para los onclick
+        window.crearCursoFaltante = crearCursoFaltante;
+        window.crearTodosCursosFaltantes = crearTodosCursosFaltantes;
+        window.ejecutarPaso1 = ejecutarPaso1;
         
         // ==========================================
         // PASO 2: EXCEPCIONES
