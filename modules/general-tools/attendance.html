@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA -->
-    <meta name="page-version" content="26.04.08.09.55"
+    <meta name="page-version" content="26.5.20.1"
     
     <title>Registro de Asistencia - SchoolNet</title>
     
@@ -2669,6 +2669,123 @@
         window.reintentarSyncIndividual = reintentarSyncIndividual;
         window.descargarErroresPhidiasCSV = descargarErroresPhidiasCSV;
 
+       /**
+         * Versión instrumentada de phidiasRequest que captura request/response
+         * completos en la tabla phidias_sync_logs para auditoría
+         */
+        async function phidiasRequestConLog(endpoint, options = {}, contextoLog = {}) {
+            const startTime = Date.now();
+            
+            // Preparar datos del request
+            const url = `${PHIDIAS_CONFIG.baseUrl}${endpoint}`;
+            const method = options.method || 'GET';
+            const requestHeaders = {
+                'Authorization': `Bearer ${PHIDIAS_CONFIG.token}`,
+                'Content-Type': 'application/json',
+                ...(options.headers || {})
+            };
+            const requestBody = options.body || null;
+            
+            // Objeto que se insertará en phidias_sync_logs
+            const logData = {
+                attendance_id: contextoLog.attendanceId || null,
+                person_id_document: contextoLog.documento || null,
+                student_code: contextoLog.studentCode || null,
+                request_method: method,
+                request_url: url,
+                request_headers: requestHeaders,
+                request_body: requestBody ? JSON.parse(requestBody) : null,
+                response_status: null,
+                response_headers: null,
+                response_body: null,
+                response_raw_text: null,
+                sync_result: null,
+                error_message: null,
+                request_duration_ms: null
+            };
+            
+            try {
+                // Validaciones previas (replica de phidiasRequest)
+                if (!PHIDIAS_CONFIG.loaded) {
+                    await loadPhidiasConfig();
+                }
+                if (!PHIDIAS_CONFIG.baseUrl || !PHIDIAS_CONFIG.token) {
+                    throw new Error('Configuración de PHIDIAS no disponible.');
+                }
+                if (!isPhidiasTokenValid()) {
+                    throw new Error('Token de PHIDIAS expirado.');
+                }
+                
+                // Ejecutar fetch
+                const fetchConfig = { method, headers: requestHeaders };
+                if (requestBody) fetchConfig.body = requestBody;
+                
+                console.log(`📡 PHIDIAS (con log): ${method} ${endpoint}`);
+                const response = await fetch(url, fetchConfig);
+                
+                // Capturar response crudo
+                logData.response_status = response.status;
+                
+                // Headers de respuesta a objeto plano
+                const respHeaders = {};
+                response.headers.forEach((value, key) => { respHeaders[key] = value; });
+                logData.response_headers = respHeaders;
+                
+                // Texto crudo de la respuesta
+                const rawText = await response.text();
+                logData.response_raw_text = rawText;
+                
+                logData.request_duration_ms = Date.now() - startTime;
+                
+                // Intentar parsear como JSON
+                let parsedData = null;
+                try {
+                    parsedData = rawText ? JSON.parse(rawText) : null;
+                    logData.response_body = parsedData;
+                } catch (parseError) {
+                    logData.sync_result = 'parse_error';
+                    logData.error_message = `Respuesta no es JSON válido: ${parseError.message}`;
+                    insertarLogPhidias(logData);
+                    throw new Error(`PHIDIAS HTTP ${response.status}: respuesta no es JSON`);
+                }
+                
+                if (!response.ok) {
+                    logData.sync_result = 'error';
+                    logData.error_message = `HTTP ${response.status}`;
+                    insertarLogPhidias(logData);
+                    throw new Error(`PHIDIAS HTTP ${response.status}: ${rawText}`);
+                }
+                
+                // Éxito a nivel HTTP (la lógica de negocio se evalúa afuera)
+                logData.sync_result = 'success';
+                insertarLogPhidias(logData);
+                
+                return parsedData;
+                
+            } catch (error) {
+                if (!logData.sync_result) {
+                    logData.sync_result = 'network_error';
+                    logData.error_message = error.message;
+                    logData.request_duration_ms = Date.now() - startTime;
+                    insertarLogPhidias(logData);
+                }
+                throw error;
+            }
+        }
+        
+        /**
+         * Inserta el log en phidias_sync_logs sin bloquear el flujo principal
+         * (fire-and-forget, no se hace await desde el llamador)
+         */
+        function insertarLogPhidias(logData) {
+            supabaseRequest('/phidias_sync_logs', {
+                method: 'POST',
+                body: JSON.stringify(logData)
+            }).catch(err => {
+                console.error('⚠️ Error guardando log Phidias (no crítico):', err);
+            });
+        }
+
         /**
          * Sincroniza UN registro individual con Phidias (post 8:20)
          * Se llama automáticamente al registrar asistencia de un estudiante
@@ -2703,13 +2820,17 @@
                     timestamp: unixTimestamp
                 }];
 
-                console.log(`📡 Phidias individual: enviando código ${studentCode}...`);
+               console.log(`📡 Phidias individual: enviando código ${studentCode}...`);
 
-                const respuesta = await phidiasRequest('/attendance/absence/register', {
+                const respuesta = await phidiasRequestConLog('/attendance/absence/register', {
                     method: 'POST',
                     body: JSON.stringify(payload)
+                }, {
+                    attendanceId: attendanceId,
+                    documento: documento,
+                    studentCode: String(studentCode)
                 });
-
+                
                 console.log('📡 Phidias individual respuesta:', respuesta);
 
                 if (Array.isArray(respuesta) && respuesta.length > 0) {
