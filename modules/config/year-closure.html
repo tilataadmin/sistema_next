@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.2">
+    <meta name="page-version" content="26.5.20.3">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1062,8 +1062,8 @@
         window.crearTodosCursosFaltantes = crearTodosCursosFaltantes;
         window.ejecutarPaso1 = ejecutarPaso1;
         
-        // ==========================================
-        // PASO 2: EXCEPCIONES
+       // ==========================================
+        // PASO 2: EXCEPCIONES (no promovidos)
         // ==========================================
         
         async function ejecutarPaso2() {
@@ -1071,11 +1071,420 @@
             container.innerHTML = `
                 <div class="mensaje-inicial">
                     <i class="bi bi-hourglass-split"></i>
-                    <p>Función pendiente de implementar en Etapa 3.3</p>
+                    <p>Cargando estudiantes...</p>
                 </div>
             `;
             marcarPasoValido(2, false);
+            
+            try {
+                // Si ya cargamos estudiantes antes (al regresar al paso), no recargar
+                if (!wizardData.studentsToProcess || wizardData.studentsToProcess.length === 0) {
+                    await cargarEstudiantesParaPaso2();
+                }
+                
+                renderizarPaso2();
+                marcarPasoValido(2, true);
+                
+            } catch (error) {
+                console.error('❌ Error en Paso 2:', error);
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Error al cargar estudiantes: ${escapeHtml(error.message)}
+                    </div>
+                `;
+            }
         }
+        
+        // ==========================================
+        // CARGAR ESTUDIANTES ACTIVOS DEL AÑO
+        // ==========================================
+        async function cargarEstudiantesParaPaso2() {
+            // Obtener IDs de cursos del año vigente desde el mapeo del Paso 1
+            const courseIds = wizardData.coursesMapping.map(m => m.sourceCourse.course_id);
+            
+            if (courseIds.length === 0) {
+                wizardData.studentsToProcess = [];
+                return;
+            }
+            
+            // Traer estudiantes activos de esos cursos
+            const idsFiltro = '(' + courseIds.join(',') + ')';
+            
+            const students = await supabaseRequest(
+                '/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,course_id,student_status!inner(status_code)' +
+                '&student_status.status_code=eq.1' +
+                '&course_id=in.' + idsFiltro +
+                '&order=student_last_name_1.asc,student_last_name_2.asc,student_first_name.asc'
+            );
+            
+            wizardData.studentsToProcess = students || [];
+            
+            // Por defecto: nadie excluido
+            wizardData.excludedStudentIds = new Set();
+            
+            console.log(`✅ ${wizardData.studentsToProcess.length} estudiantes activos cargados`);
+        }
+        
+        // ==========================================
+        // FORMATEAR NOMBRE DEL ESTUDIANTE (Formato A)
+        // ==========================================
+        function formatStudentName(student) {
+            if (!student) return '';
+            const apellido1 = student.student_last_name_1 || '';
+            const apellido2 = student.student_last_name_2 || '';
+            const nombre = student.student_first_name || '';
+            
+            const apellidos = [apellido1, apellido2].filter(a => a && a.trim()).join(' ');
+            return apellidos ? `${apellidos}, ${nombre}` : nombre;
+        }
+        
+        // ==========================================
+        // RENDERIZAR PASO 2
+        // ==========================================
+        function renderizarPaso2() {
+            const container = document.getElementById('step2Content');
+            const mapping = wizardData.coursesMapping;
+            
+            // Filtrar solo cursos con estudiantes activos
+            const cursosConEstudiantes = mapping.filter(m => m.studentsCount > 0);
+            
+            if (cursosConEstudiantes.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        No hay estudiantes activos para procesar en este año.
+                    </div>
+                `;
+                return;
+            }
+            
+            // Construir HTML
+            let html = '';
+            
+            // Resumen dinámico
+            html += `
+                <div class="row mb-3" id="resumenPaso2">
+                    <!-- Se llena con actualizarResumenPaso2() -->
+                </div>
+            `;
+            
+            // Filtros y acciones
+            html += `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-md-5">
+                                <input type="text" class="form-control form-control-sm" 
+                                       id="buscadorEstudiantes" 
+                                       placeholder="Buscar por nombre o código..."
+                                       onkeyup="filtrarEstudiantesPaso2()">
+                            </div>
+                            <div class="col-md-4">
+                                <select class="form-select form-select-sm" id="filtroCursoPaso2" onchange="filtrarEstudiantesPaso2()">
+                                    <option value="">Todos los cursos</option>
+                                    ${cursosConEstudiantes.map(c => 
+                                        `<option value="${c.sourceCourse.course_id}">${escapeHtml(c.sourceCourse.course_name)} (${c.studentsCount})</option>`
+                                    ).join('')}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="btn-group btn-group-sm w-100">
+                                    <button class="btn btn-outline-secondary" onclick="restaurarTodosPaso2()" title="Marcar todos como se promueven">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar
+                                    </button>
+                                    <button class="btn btn-outline-warning" onclick="excluirTodosPaso2()" title="Marcar todos como NO promovidos">
+                                        <i class="bi bi-x-circle me-1"></i>Ninguno
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Acordeón de cursos
+            html += `<div class="accordion" id="accordionCursosPaso2">`;
+            
+            cursosConEstudiantes.forEach((curso, idx) => {
+                const courseId = curso.sourceCourse.course_id;
+                const courseName = curso.sourceCourse.course_name;
+                const isGrad = curso.isGraduation;
+                const destinoTexto = isGrad 
+                    ? '<i class="bi bi-mortarboard me-1"></i>Egresados (alumni)'
+                    : `<i class="bi bi-arrow-right me-1"></i>${escapeHtml(curso.destinationCourse?.course_name || '?')}`;
+                const accionLabel = isGrad ? 'se gradúan' : 'se promueven';
+                
+                // Estudiantes de este curso
+                const estudiantesCurso = wizardData.studentsToProcess.filter(s => s.course_id === courseId);
+                
+                html += `
+                    <div class="accordion-item" data-curso-acordeon="${courseId}">
+                        <h2 class="accordion-header" id="heading-${idx}">
+                            <button class="accordion-button collapsed" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#collapse-${idx}" 
+                                    aria-expanded="false" aria-controls="collapse-${idx}">
+                                <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                                    <div>
+                                        <strong>${escapeHtml(courseName)}</strong>
+                                        <span class="ms-2 text-muted small">${destinoTexto}</span>
+                                    </div>
+                                    <div>
+                                        <span class="badge bg-success" id="contador-curso-${courseId}">
+                                            ${estudiantesCurso.length} de ${estudiantesCurso.length} ${accionLabel}
+                                        </span>
+                                    </div>
+                                </div>
+                            </button>
+                        </h2>
+                        <div id="collapse-${idx}" class="accordion-collapse collapse" 
+                             aria-labelledby="heading-${idx}" data-bs-parent="#accordionCursosPaso2">
+                            <div class="accordion-body p-0">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width: 60px;" class="text-center">
+                                                ${isGrad ? 'Gradúa' : 'Promueve'}
+                                            </th>
+                                            <th style="width: 100px;">Código</th>
+                                            <th>Nombre</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                `;
+                
+                estudiantesCurso.forEach(est => {
+                    const isExcluded = wizardData.excludedStudentIds.has(est.student_id);
+                    html += `
+                        <tr class="estudiante-row" 
+                            data-curso="${courseId}" 
+                            data-student-id="${est.student_id}"
+                            data-search="${escapeHtml((est.student_code + ' ' + formatStudentName(est)).toLowerCase())}">
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input estudiante-check" 
+                                       data-student-id="${est.student_id}"
+                                       data-curso-id="${courseId}"
+                                       ${!isExcluded ? 'checked' : ''}
+                                       onchange="toggleEstudiantePaso2(${est.student_id}, '${courseId}', this.checked)">
+                            </td>
+                            <td><small class="text-muted">${escapeHtml(String(est.student_code || ''))}</small></td>
+                            <td>${escapeHtml(formatStudentName(est))}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `</div>`;
+            
+            container.innerHTML = html;
+            
+            // Calcular y mostrar resumen
+            actualizarResumenPaso2();
+        }
+        
+        // ==========================================
+        // ACTUALIZAR RESUMEN PASO 2
+        // ==========================================
+        function actualizarResumenPaso2() {
+            const total = wizardData.studentsToProcess.length;
+            const excluidos = wizardData.excludedStudentIds.size;
+            const procesados = total - excluidos;
+            
+            // Separar por graduación vs promoción
+            const idsUndecimo = new Set();
+            wizardData.coursesMapping.forEach(m => {
+                if (m.isGraduation) {
+                    wizardData.studentsToProcess
+                        .filter(s => s.course_id === m.sourceCourse.course_id)
+                        .forEach(s => idsUndecimo.add(s.student_id));
+                }
+            });
+            
+            let seGraduan = 0;
+            let sePromueven = 0;
+            wizardData.studentsToProcess.forEach(s => {
+                if (wizardData.excludedStudentIds.has(s.student_id)) return;
+                if (idsUndecimo.has(s.student_id)) {
+                    seGraduan++;
+                } else {
+                    sePromueven++;
+                }
+            });
+            
+            const resumen = document.getElementById('resumenPaso2');
+            if (!resumen) return;
+            
+            resumen.innerHTML = `
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded text-center">
+                        <h4 class="mb-0 text-primary">${total}</h4>
+                        <small class="text-muted">Estudiantes activos</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded text-center">
+                        <h4 class="mb-0 text-success">${sePromueven}</h4>
+                        <small class="text-muted">Se promueven</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 bg-light rounded text-center">
+                        <h4 class="mb-0 text-info">${seGraduan}</h4>
+                        <small class="text-muted">Se gradúan</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 ${excluidos > 0 ? 'bg-warning bg-opacity-25' : 'bg-light'} rounded text-center">
+                        <h4 class="mb-0 ${excluidos > 0 ? 'text-warning' : 'text-muted'}">${excluidos}</h4>
+                        <small class="text-muted">Se quedan (no avanzan)</small>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // ==========================================
+        // TOGGLE EXCLUSIÓN DE UN ESTUDIANTE
+        // ==========================================
+        function toggleEstudiantePaso2(studentId, courseId, isChecked) {
+            if (isChecked) {
+                wizardData.excludedStudentIds.delete(studentId);
+            } else {
+                wizardData.excludedStudentIds.add(studentId);
+            }
+            
+            // Actualizar contador del curso
+            actualizarContadorCurso(courseId);
+            
+            // Actualizar resumen general
+            actualizarResumenPaso2();
+        }
+        
+        // ==========================================
+        // ACTUALIZAR CONTADOR DE UN CURSO
+        // ==========================================
+        function actualizarContadorCurso(courseId) {
+            const estudiantesCurso = wizardData.studentsToProcess.filter(s => s.course_id === courseId);
+            const total = estudiantesCurso.length;
+            const excluidos = estudiantesCurso.filter(s => wizardData.excludedStudentIds.has(s.student_id)).length;
+            const procesados = total - excluidos;
+            
+            const item = wizardData.coursesMapping.find(m => m.sourceCourse.course_id === courseId);
+            const label = item && item.isGraduation ? 'se gradúan' : 'se promueven';
+            
+            const badge = document.getElementById('contador-curso-' + courseId);
+            if (badge) {
+                badge.textContent = `${procesados} de ${total} ${label}`;
+                badge.className = excluidos > 0 
+                    ? 'badge bg-warning text-dark' 
+                    : 'badge bg-success';
+            }
+        }
+        
+        // ==========================================
+        // FILTRAR ESTUDIANTES (búsqueda + curso)
+        // ==========================================
+        function filtrarEstudiantesPaso2() {
+            const buscador = document.getElementById('buscadorEstudiantes');
+            const filtroCurso = document.getElementById('filtroCursoPaso2');
+            
+            const textoBusqueda = (buscador?.value || '').trim().toLowerCase();
+            const cursoSeleccionado = filtroCurso?.value || '';
+            
+            // Aplicar filtros a cada fila
+            document.querySelectorAll('.estudiante-row').forEach(row => {
+                const dataSearch = row.dataset.search || '';
+                const dataCurso = row.dataset.curso || '';
+                
+                const matchBusqueda = !textoBusqueda || dataSearch.includes(textoBusqueda);
+                const matchCurso = !cursoSeleccionado || dataCurso === cursoSeleccionado;
+                
+                row.style.display = (matchBusqueda && matchCurso) ? '' : 'none';
+            });
+            
+            // Mostrar/ocultar acordeones según si tienen filas visibles, y abrir los que tengan coincidencias en búsqueda
+            document.querySelectorAll('[data-curso-acordeon]').forEach(acc => {
+                const courseId = acc.dataset.cursoAcordeon;
+                const filasVisibles = acc.querySelectorAll('.estudiante-row:not([style*="display: none"])').length;
+                
+                // Filtro de curso: ocultar todo el acordeón si no coincide
+                if (cursoSeleccionado && cursoSeleccionado !== courseId) {
+                    acc.style.display = 'none';
+                    return;
+                }
+                acc.style.display = '';
+                
+                // Si hay búsqueda activa y este acordeón tiene matches, abrirlo
+                if (textoBusqueda && filasVisibles > 0) {
+                    const collapse = acc.querySelector('.accordion-collapse');
+                    if (collapse && !collapse.classList.contains('show')) {
+                        const bsCollapse = new bootstrap.Collapse(collapse, { show: true, toggle: false });
+                    }
+                }
+            });
+        }
+        
+        // ==========================================
+        // RESTAURAR TODOS (todos se promueven)
+        // ==========================================
+        function restaurarTodosPaso2() {
+            wizardData.excludedStudentIds.clear();
+            
+            // Marcar todos los checkboxes
+            document.querySelectorAll('.estudiante-check').forEach(cb => {
+                cb.checked = true;
+            });
+            
+            // Actualizar todos los contadores
+            wizardData.coursesMapping.forEach(m => {
+                if (m.studentsCount > 0) {
+                    actualizarContadorCurso(m.sourceCourse.course_id);
+                }
+            });
+            
+            actualizarResumenPaso2();
+            showMessage('Todos los estudiantes marcados para promoción/graduación', 'info');
+        }
+        
+        // ==========================================
+        // EXCLUIR TODOS (nadie se promueve)
+        // ==========================================
+        function excluirTodosPaso2() {
+            if (!confirm('¿Marcar TODOS los estudiantes como NO promovidos? Es un caso atípico.')) return;
+            
+            wizardData.excludedStudentIds.clear();
+            wizardData.studentsToProcess.forEach(s => {
+                wizardData.excludedStudentIds.add(s.student_id);
+            });
+            
+            // Desmarcar todos los checkboxes
+            document.querySelectorAll('.estudiante-check').forEach(cb => {
+                cb.checked = false;
+            });
+            
+            // Actualizar contadores
+            wizardData.coursesMapping.forEach(m => {
+                if (m.studentsCount > 0) {
+                    actualizarContadorCurso(m.sourceCourse.course_id);
+                }
+            });
+            
+            actualizarResumenPaso2();
+            showMessage('Todos los estudiantes marcados como NO promovidos', 'warning');
+        }
+        
+        // Exponer funciones globales necesarias para los onclick
+        window.toggleEstudiantePaso2 = toggleEstudiantePaso2;
+        window.filtrarEstudiantesPaso2 = filtrarEstudiantesPaso2;
+        window.restaurarTodosPaso2 = restaurarTodosPaso2;
+        window.excluirTodosPaso2 = excluirTodosPaso2;
         
         // ==========================================
         // PASO 3: AÑO ENTRANTE
