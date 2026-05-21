@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.25.12.50">
+    <meta name="page-version" content="26.5.21.1">
     <title>Aplicaciones de Encuestas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -333,6 +333,34 @@
                             </div>
                         </div>
 
+                        <!-- Universo esperado -->
+                        <div class="mb-3">
+                            <label for="expected_universe" class="form-label">
+                                Universo esperado <span id="universe-required-asterisk" class="text-danger" style="display: none;">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="expected_universe" 
+                                   name="expected_universe" min="1" 
+                                   placeholder="Ej: 250">
+                            <div class="form-text">
+                                Número total de personas que se espera respondan esta encuesta. 
+                                <strong>Obligatorio si el estado es "Abierta"</strong>. 
+                                Se usa para calcular tasa de respuesta y márgenes de error en los resultados.
+                            </div>
+                        </div>
+
+                        <!-- Notas del universo -->
+                        <div class="mb-3">
+                            <label for="expected_universe_notes" class="form-label">
+                                Notas sobre el universo <small class="text-muted fw-normal">(opcional)</small>
+                            </label>
+                            <textarea class="form-control" id="expected_universe_notes" 
+                                      name="expected_universe_notes" rows="2"
+                                      placeholder="Ej: Total de estudiantes de bachillerato según matrícula activa al 1 de marzo de 2026"></textarea>
+                            <div class="form-text">
+                                Justifica cómo calculaste el universo. Útil para auditoría posterior.
+                            </div>
+                        </div>
+
                         <!-- Info de número de aplicación -->
                         <div class="alert alert-info" id="app-number-info" style="display: none;">
                             <i class="bi bi-info-circle me-2"></i>
@@ -438,6 +466,7 @@
                 // Configurar event listeners
                 document.getElementById('formulario-application').addEventListener('submit', manejarSubmitFormulario);
                 document.getElementById('survey_master_id').addEventListener('change', calcularNumeroAplicacion);
+                document.getElementById('status').addEventListener('change', actualizarObligatoriedadUniverso);
                 
                 // Cargar datos iniciales
                 await cargarMaestros();
@@ -485,7 +514,26 @@
             selectMaster.innerHTML = '<option value="">Selecciona un maestro...</option>' +
                 mastersCache.map(m => `<option value="${m.survey_master_id}">${escapeHtml(m.survey_name)}</option>`).join('');
         }
+
+        
       // ==========================================
+        // ACTUALIZAR OBLIGATORIEDAD DEL UNIVERSO SEGÚN ESTADO
+        // ==========================================
+        function actualizarObligatoriedadUniverso() {
+            const status = document.getElementById('status').value;
+            const asterisk = document.getElementById('universe-required-asterisk');
+            const input = document.getElementById('expected_universe');
+            
+            if (status === 'open') {
+                asterisk.style.display = 'inline';
+                input.setAttribute('required', 'required');
+            } else {
+                asterisk.style.display = 'none';
+                input.removeAttribute('required');
+            }
+        }
+        
+        // ==========================================
         // CALCULAR NÚMERO DE APLICACIÓN
         // ==========================================
         async function calcularNumeroAplicacion() {
@@ -685,6 +733,36 @@
                     </button>
                 `;
                 
+                // Construir badge de respuestas, incluyendo universo y tasa si está definido
+                let responsesBadge = '';
+                if (app.expected_universe && app.expected_universe > 0) {
+                    const rate = (app.responses_count / app.expected_universe) * 100;
+                    const rateStr = rate.toFixed(1);
+                    let rateColor = 'bg-info';
+                    if (rate >= 80) rateColor = 'bg-success';
+                    else if (rate >= 50) rateColor = 'bg-primary';
+                    else if (rate >= 25) rateColor = 'bg-warning text-dark';
+                    else rateColor = 'bg-secondary';
+                    
+                    const tooltip = app.expected_universe_notes 
+                        ? `Universo: ${app.expected_universe} — ${escapeHtml(app.expected_universe_notes)}`
+                        : `Universo esperado: ${app.expected_universe}`;
+                    
+                    responsesBadge = `
+                        <span class="badge ${rateColor}" title="${tooltip}">
+                            ${app.responses_count} / ${app.expected_universe}
+                        </span>
+                        <div class="text-muted" style="font-size: 0.7rem; margin-top: 2px;">${rateStr}%</div>
+                    `;
+                } else {
+                    responsesBadge = `
+                        <span class="badge bg-info" title="Universo no definido">
+                            ${app.responses_count}
+                        </span>
+                        <div class="text-muted" style="font-size: 0.7rem; margin-top: 2px;">sin universo</div>
+                    `;
+                }
+                
                 return `
                     <tr class="${rowClass}">
                         <td class="text-center">
@@ -698,7 +776,7 @@
                         <td>${dateRange}</td>
                         <td>${statusBadge}</td>
                         <td class="text-center">
-                            <span class="badge bg-info">${app.responses_count}</span>
+                            ${responsesBadge}
                         </td>
                         <td>
                             <div class="url-container">
@@ -853,6 +931,9 @@
             document.getElementById('modalLabel').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Nueva Aplicación';
             document.getElementById('app-number-info').style.display = 'none';
             
+            // Reiniciar estado del asterisco de universo
+            actualizarObligatoriedadUniverso();
+            
             poblarSelectMaestros();
             
             // Establecer fecha de hoy como mínimo
@@ -885,7 +966,12 @@
                 document.getElementById('start_date').value = app.start_date;
                 document.getElementById('end_date').value = app.end_date;
                 document.getElementById('status').value = app.status;
+                document.getElementById('expected_universe').value = app.expected_universe || '';
+                document.getElementById('expected_universe_notes').value = app.expected_universe_notes || '';
                 document.getElementById('app-number-info').style.display = 'none';
+                
+                // Actualizar asterisco de obligatoriedad según el estado cargado
+                actualizarObligatoriedadUniverso();
                 
                 // Deshabilitar cambio de maestro si tiene respuestas
                 if (app.responses_count > 0) {
@@ -1044,11 +1130,26 @@
                     }
                 }
                 
+                // Validación 3: Universo obligatorio si estado es "open"
+                const statusValue = formData.get('status');
+                const universeRaw = formData.get('expected_universe');
+                const universeValue = universeRaw ? parseInt(universeRaw, 10) : null;
+                
+                if (statusValue === 'open') {
+                    if (!universeValue || universeValue < 1) {
+                        showMessage('El universo esperado es obligatorio cuando la aplicación está en estado "Abierta". Debe ser un número mayor a cero.', 'warning');
+                        ocultarLoading();
+                        return;
+                    }
+                }
+                
                 const datos = {
                     application_name: formData.get('application_name'),
                     start_date: formData.get('start_date'),
                     end_date: formData.get('end_date'),
-                    status: formData.get('status')
+                    status: statusValue,
+                    expected_universe: universeValue,
+                    expected_universe_notes: formData.get('expected_universe_notes')?.trim() || null
                 };
                 
                 // CRÍTICO: Solo incluir survey_master_id si NO está deshabilitado
