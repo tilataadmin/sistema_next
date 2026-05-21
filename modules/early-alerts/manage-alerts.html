@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.09.12.25">
+    <meta name="page-version" content="26.5.21.1">
     <title>Gestión de Alertas Tempranas</title>
     
     <!-- Bootstrap CSS -->
@@ -83,13 +83,14 @@
                         </select>
                     </div>
                     
-                    <div class="col-md-3">
+                   <div class="col-md-3">
                         <label for="filtro-estado" class="form-label">Filtrar por color:</label>
                         <select id="filtro-estado" class="form-select">
                             <option value="todos">Todos los colores</option>
                             <option value="red">🔴 Rojo</option>
                             <option value="yellow">🟡 Amarillo</option>
                             <option value="green">🟢 Verde</option>
+                            <option value="black">⚫ Negro (Retiro)</option>
                         </select>
                     </div>
                     
@@ -506,6 +507,12 @@
         .estado-select.green {
             background-color: #198754;
             color: white;
+        }
+
+        .estado-select.black {
+            background-color: #212529;
+            color: white;
+            cursor: not-allowed;
         }
 
         .estado-select option {
@@ -1262,18 +1269,27 @@
          * Generar select de estado
          */
         function generarSelectEstado(logId, estadoActual, isClosed) {
-            const disabled = isClosed ? 'disabled' : '';
+            const esNegro = estadoActual === 'black';
+            // El negro siempre queda bloqueado (estado terminal). Las cerradas también se bloquean como ya estaba.
+            const disabled = (isClosed || esNegro) ? 'disabled' : '';
             const estadoClass = estadoActual || 'red';
+            
+            // La opción negra solo se muestra cuando el estado actual ya es negro (no es seleccionable manualmente)
+            const opcionNegra = esNegro 
+                ? '<option value="black" selected>⚫ Negro (Retiro)</option>'
+                : '';
             
             return `
                 <select class="estado-select ${estadoClass}" 
                         id="estado-${logId}" 
                         data-estado-anterior="${estadoActual || 'red'}"
                         onchange="cambiarEstadoAlerta('${logId}', this.value)"
-                        ${disabled}>
+                        ${disabled}
+                        title="${esNegro ? 'Alerta cerrada por retiro — estado no modificable' : ''}">
                     <option value="red" ${estadoActual === 'red' ? 'selected' : ''}>🔴 Rojo</option>
                     <option value="yellow" ${estadoActual === 'yellow' ? 'selected' : ''}>🟡 Amarillo</option>
                     <option value="green" ${estadoActual === 'green' ? 'selected' : ''}>🟢 Verde</option>
+                    ${opcionNegra}
                 </select>
             `;
         }
@@ -1355,23 +1371,33 @@
             try {
                 const ahora = new Date().toISOString();
                 const reasonText = closeNote ? `${closeReason} — ${closeNote}` : closeReason;
+                
+                // Si el motivo es retiro, el color del semáforo pasa a negro (estado terminal)
+                const esRetiro = closeReason === 'Retiro del estudiante / familia';
+                
+                const payload = {
+                    is_closed: true,
+                    closed_at: ahora,
+                    close_reason: reasonText
+                };
+                if (esRetiro) {
+                    payload.alert_status = 'black';
+                }
 
                 await supabaseRequest(`/early_alert_logs?log_id=eq.${logId}`, {
                     method: 'PATCH',
-                    body: JSON.stringify({
-                        is_closed: true,
-                        closed_at: ahora,
-                        close_reason: reasonText
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 // Cerrar modal
                 bootstrap.Modal.getInstance(document.getElementById('modal-cerrar-alerta')).hide();
 
                 // Actualizar interfaz
-                actualizarAlertaCerrada(logId, ahora);
+                actualizarAlertaCerrada(logId, ahora, esRetiro);
 
-                mostrarMensaje('Alerta cerrada exitosamente', 'success');
+                mostrarMensaje(esRetiro 
+                    ? 'Alerta cerrada por retiro. El semáforo quedó en negro.' 
+                    : 'Alerta cerrada exitosamente', 'success');
 
             } catch (error) {
                 console.error('Error cerrando alerta:', error);
@@ -1710,7 +1736,7 @@
             select.classList.add(estado);
         }
 
-        function actualizarAlertaCerrada(logId, fechaCierre) {
+        function actualizarAlertaCerrada(logId, fechaCierre, esRetiro = false) {
             const alertaElement = document.querySelector(`[data-log-id="${logId}"]`);
             if (alertaElement) {
                 alertaElement.classList.add('alerta-cerrada');
@@ -1726,6 +1752,25 @@
                 if (select) {
                     select.disabled = true;
                     select.classList.remove('estado-loading');
+                    
+                    // Si fue cierre por retiro, cambiar visualmente a negro
+                    if (esRetiro) {
+                        // Quitar las clases de color anteriores y aplicar la negra
+                        select.classList.remove('red', 'yellow', 'green');
+                        select.classList.add('black');
+                        select.setAttribute('data-estado-anterior', 'black');
+                        select.setAttribute('title', 'Alerta cerrada por retiro — estado no modificable');
+                        
+                        // Si la opción "black" no existe, agregarla; en cualquier caso, seleccionarla
+                        let optionBlack = select.querySelector('option[value="black"]');
+                        if (!optionBlack) {
+                            optionBlack = document.createElement('option');
+                            optionBlack.value = 'black';
+                            optionBlack.textContent = '⚫ Negro (Retiro)';
+                            select.appendChild(optionBlack);
+                        }
+                        optionBlack.selected = true;
+                    }
                 }
             }
         }
