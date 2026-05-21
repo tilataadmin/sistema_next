@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.21.1">
-    <title>Resultados de Encuesta - SchoolNet</title>
+    <meta name="page-version" content="26.5.21.2">
+    <title>Resultados de Encuesta</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -845,6 +845,20 @@
                     Los resultados detallados estarán disponibles una vez se cierre. Por ahora solo se muestra el conteo de respuestas recibidas.
                 </div>
             </div>
+            
+            <!-- Panel de validación estadística -->
+            <div class="card mb-4 border-0 shadow-sm" id="statisticalPanel" style="display: none;">
+                <div class="card-header bg-light border-bottom">
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up-arrow me-2" style="color: #667eea;"></i>
+                        Validación estadística de la muestra
+                    </h5>
+                    <small class="text-muted">Nivel de confianza fijo: 95% · Margen de error objetivo: 5% · Proporción conservadora (p=0.5)</small>
+                </div>
+                <div class="card-body" id="statisticalPanelBody">
+                    <!-- Se renderiza dinámicamente -->
+                </div>
+            </div>
 
             <!-- Sección de filtros -->
             <div class="filter-section" id="filterSection" style="display: none;">
@@ -1205,6 +1219,7 @@
             
             // 5. Renderizar interfaz completa
             renderApplicationHeader();
+            renderStatisticalPanel(allProfiles.length);
             renderFilters();
             renderSectionsFilter();
             renderStats();
@@ -1236,8 +1251,9 @@
             
             surveyMaster = masterData && masterData.length > 0 ? masterData[0] : { survey_name: 'Encuesta' };
             
-            // Renderizar solo encabezado + contador + alert
+            // Renderizar solo encabezado + contador + alert + panel estadístico
             renderApplicationHeaderMinimal(responseCount);
+            renderStatisticalPanel(responseCount);
         }
         
         // ==========================================
@@ -1742,6 +1758,123 @@
                 col.appendChild(select);
                 filtersContainer.appendChild(col);
             });
+        }
+        
+       // ==========================================
+        // RENDERIZAR PANEL DE VALIDACIÓN ESTADÍSTICA
+        // ==========================================
+        function renderStatisticalPanel(responseCount) {
+            const panel = document.getElementById('statisticalPanel');
+            const body = document.getElementById('statisticalPanelBody');
+            
+            if (!panel || !body) return;
+            
+            const N = selectedApplication.expected_universe;
+            const n = responseCount;
+            
+            // Caso 1: No hay universo configurado
+            if (!N || N < 1) {
+                panel.style.display = 'block';
+                body.innerHTML = `
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>El universo no fue configurado para esta aplicación.</strong>
+                        Para habilitar el análisis estadístico (tasa de respuesta, margen de error y nivel de representatividad),
+                        edita esta aplicación en el módulo <a href="applications.html" class="alert-link">Aplicaciones</a> 
+                        y define el número de personas que se espera respondan la encuesta.
+                    </div>
+                `;
+                return;
+            }
+            
+            panel.style.display = 'block';
+            
+            const responseRate = (n / N) * 100;
+            const moe = calcMarginOfError(N, n);
+            const moePct = moe !== null ? moe * 100 : null;
+            const requiredN = calcRequiredSampleSize(N, STAT_TARGET_MOE);
+            const quality = getSampleQualityLabel(moe);
+            
+            // Nota sobre el universo (si tiene)
+            const universeNote = selectedApplication.expected_universe_notes
+                ? `<small class="text-muted d-block mt-2"><i class="bi bi-bookmark me-1"></i>${escapeHtml(selectedApplication.expected_universe_notes)}</small>`
+                : '';
+            
+            // Mensaje accionable según situación
+            let actionMessage = '';
+            if (moe === null) {
+                actionMessage = `Aún no hay respuestas suficientes para calcular el margen de error.`;
+            } else if (n >= requiredN) {
+                actionMessage = `<i class="bi bi-check2-circle text-success me-1"></i>La muestra ya supera el mínimo requerido (${requiredN}) para un margen de error del 5%.`;
+            } else {
+                const faltan = requiredN - n;
+                actionMessage = `Para alcanzar un margen de error del 5% se requieren <strong>${requiredN}</strong> respuestas. Faltan <strong>${faltan}</strong>.`;
+            }
+            
+            // Alerta si las respuestas exceden el universo
+            const exceedsUniverse = n > N;
+            const exceedsAlert = exceedsUniverse
+                ? `<div class="alert alert-warning py-2 mb-3"><i class="bi bi-exclamation-triangle me-2"></i>
+                   El número de respuestas (<strong>${n}</strong>) supera el universo declarado (<strong>${N}</strong>). 
+                   Revisa si el universo fue correctamente estimado.</div>`
+                : '';
+            
+            body.innerHTML = `
+                ${exceedsAlert}
+                <div class="row g-3">
+                    <!-- Tasa de respuesta -->
+                    <div class="col-md-3 col-6">
+                        <div class="text-center p-3 rounded" style="background: #f8f9fa;">
+                            <div style="font-size: 1.75rem; font-weight: 700; color: #667eea;">
+                                ${responseRate.toFixed(1)}%
+                            </div>
+                            <div class="text-muted small">Tasa de respuesta</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">${n} de ${N}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Margen de error -->
+                    <div class="col-md-3 col-6">
+                        <div class="text-center p-3 rounded" style="background: #f8f9fa;">
+                            <div style="font-size: 1.75rem; font-weight: 700; color: #667eea;">
+                                ${moePct !== null ? '±' + moePct.toFixed(2) + '%' : '—'}
+                            </div>
+                            <div class="text-muted small">Margen de error</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">al 95% de confianza</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Muestra requerida -->
+                    <div class="col-md-3 col-6">
+                        <div class="text-center p-3 rounded" style="background: #f8f9fa;">
+                            <div style="font-size: 1.75rem; font-weight: 700; color: #667eea;">
+                                ${requiredN}
+                            </div>
+                            <div class="text-muted small">Muestra mínima</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">para ±5% de error</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Calidad de la muestra -->
+                    <div class="col-md-3 col-6">
+                        <div class="text-center p-3 rounded d-flex flex-column justify-content-center" 
+                             style="background: #f8f9fa; min-height: 100%;">
+                            <div>
+                                <span class="badge ${quality.class}" style="font-size: 0.85rem; padding: 0.5rem 0.85rem;">
+                                    <i class="bi bi-${quality.icon} me-1"></i>${quality.label}
+                                </span>
+                            </div>
+                            <div class="text-muted small mt-2">Calidad de la muestra</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3 p-3 rounded" style="background: #f0f4ff; border-left: 3px solid #667eea;">
+                    <div class="small">${actionMessage}</div>
+                    <div class="small text-muted mt-1">${quality.description}</div>
+                    ${universeNote}
+                </div>
+            `;
         }
         
         // ==========================================
@@ -3154,6 +3287,101 @@
         }
 
         console.log('✅ Funciones de análisis de texto cargadas');
+        
+        // ==========================================
+        // CÁLCULOS ESTADÍSTICOS DE LA MUESTRA
+        // ==========================================
+        
+        // Constantes fijas (decisión de diseño: no configurables en v1)
+        const STAT_Z_95 = 1.96;        // Valor z para 95% de confianza
+        const STAT_P = 0.5;            // Proporción más conservadora
+        const STAT_TARGET_MOE = 0.05;  // Margen de error objetivo: 5%
+        
+        /**
+         * Calcula el margen de error con corrección por población finita.
+         * Fórmula: MoE = z × √( (p(1-p)/n) × ((N-n)/(N-1)) )
+         * @param {number} N - Tamaño del universo
+         * @param {number} n - Tamaño de la muestra
+         * @returns {number|null} MoE como decimal (0.05 = 5%), o null si no calculable
+         */
+        function calcMarginOfError(N, n) {
+            if (!N || !n || n < 1 || N < 2) return null;
+            if (n > N) n = N; // si las respuestas exceden el universo, capear
+            
+            const variance = (STAT_P * (1 - STAT_P)) / n;
+            const finitePopCorrection = (N - n) / (N - 1);
+            const moe = STAT_Z_95 * Math.sqrt(variance * finitePopCorrection);
+            
+            return moe;
+        }
+        
+        /**
+         * Calcula el tamaño de muestra requerido para alcanzar un margen de error objetivo.
+         * Fórmula: n = (N × z² × p × (1-p)) / ((N-1) × E² + z² × p × (1-p))
+         * @param {number} N - Tamaño del universo
+         * @param {number} targetMoE - Margen de error objetivo (0.05 = 5%)
+         * @returns {number|null} n requerido (entero), o null si no calculable
+         */
+        function calcRequiredSampleSize(N, targetMoE = STAT_TARGET_MOE) {
+            if (!N || N < 2) return null;
+            
+            const z2pq = STAT_Z_95 * STAT_Z_95 * STAT_P * (1 - STAT_P);
+            const numerator = N * z2pq;
+            const denominator = (N - 1) * targetMoE * targetMoE + z2pq;
+            const n = numerator / denominator;
+            
+            return Math.ceil(n);
+        }
+        
+        /**
+         * Clasifica la calidad de la muestra según el margen de error alcanzado.
+         * @param {number} moe - Margen de error (decimal)
+         * @returns {Object} { label, class, icon, description }
+         */
+        function getSampleQualityLabel(moe) {
+            if (moe === null || moe === undefined) {
+                return {
+                    label: 'Sin datos',
+                    class: 'bg-secondary',
+                    icon: 'question-circle',
+                    description: 'Aún no hay respuestas suficientes para calcular el margen de error.'
+                };
+            }
+            
+            const moePct = moe * 100;
+            
+            if (moePct <= 5) {
+                return {
+                    label: 'Muestra confiable',
+                    class: 'bg-success',
+                    icon: 'check-circle-fill',
+                    description: 'La muestra alcanzó la representatividad estadística estándar (±5% o menos).'
+                };
+            } else if (moePct <= 7) {
+                return {
+                    label: 'Muestra aceptable',
+                    class: 'bg-primary',
+                    icon: 'check-circle',
+                    description: 'Margen de error aceptable para análisis exploratorio. Idealmente, sumar más respuestas para llegar a ±5%.'
+                };
+            } else if (moePct <= 10) {
+                return {
+                    label: 'Muestra mínima',
+                    class: 'bg-warning text-dark',
+                    icon: 'exclamation-triangle',
+                    description: 'El margen de error es alto. Los resultados deben interpretarse con cautela.'
+                };
+            } else {
+                return {
+                    label: 'Muestra insuficiente',
+                    class: 'bg-danger',
+                    icon: 'x-circle-fill',
+                    description: 'No hay suficientes respuestas para sacar conclusiones estadísticamente válidas.'
+                };
+            }
+        }
+        
+        console.log('✅ Funciones de cálculo estadístico cargadas');
         console.log('✅ Módulo de resultados con análisis por secciones cargado correctamente');
     </script>
 </body>
