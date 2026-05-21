@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.21.2">
+    <meta name="page-version" content="26.5.21.3">
     <title>Resultados de Encuesta</title>
     
     <!-- Bootstrap CSS -->
@@ -1937,9 +1937,13 @@
             }
             
             const average = allValues.reduce((a, b) => a + b, 0) / allValues.length;
+            const maxValue = getSectionMaxValue(section);
+            const percentage = averageToPercentage(average, maxValue);
             
             return {
                 average: parseFloat(average.toFixed(2)),
+                maxValue: maxValue,
+                percentage: percentage,
                 totalResponses: totalResponses,
                 scaleQuestionsCount: scaleQuestions.length,
                 averageResponsesPerQuestion: (totalResponses / scaleQuestions.length).toFixed(1)
@@ -1989,7 +1993,7 @@
                     return; // Skip si no hay preguntas tipo escala
                 }
                 
-                const badge = getPerformanceBadge(stats.average);
+                const badge = getPerformanceBadge(stats.average, stats.maxValue);
                 
                 const card = document.createElement('div');
                 card.className = 'section-summary-card';
@@ -2004,8 +2008,9 @@
                                 ${section.section_description ? `<p>${escapeHtml(section.section_description)}</p>` : ''}
                             </div>
                             <div class="section-metric">
-                                <div class="section-metric-value">${stats.average}</div>
+                                <div class="section-metric-value">${stats.percentage}%</div>
                                 <div class="section-metric-label">Promedio</div>
+                                <div class="text-muted" style="font-size: 0.7rem; margin-top: 2px;">${stats.average} / ${stats.maxValue}</div>
                             </div>
                             <div class="section-metric">
                                 <div class="section-metric-value">${stats.scaleQuestionsCount}</div>
@@ -2167,6 +2172,8 @@
         // CALCULAR RESUMEN DE SECCIÓN
         // ==========================================
         function calculateSectionSummary(scaleQuestions, section) {
+            const maxValue = getSectionMaxValue(section);
+            
             const allValues = [];
             let totalResponses = 0;
             
@@ -2180,13 +2187,15 @@
                 });
             });
             
-            const average = allValues.length > 0 ? 
-                (allValues.reduce((a, b) => a + b, 0) / allValues.length).toFixed(2) : 0;
+            const averageNum = allValues.length > 0 ? 
+                (allValues.reduce((a, b) => a + b, 0) / allValues.length) : 0;
+            const average = averageNum.toFixed(2);
+            const overallPercentage = averageToPercentage(averageNum, maxValue);
             
             let bestQuestion = null;
             let worstQuestion = null;
             let bestAvg = -1;
-            let worstAvg = 999;
+            let worstAvg = Infinity;
             
             scaleQuestions.forEach(question => {
                 const questionValues = [];
@@ -2217,10 +2226,14 @@
                 totalResponses: totalResponses,
                 averageResponses: totalResponses > 0 ? (totalResponses / scaleQuestions.length).toFixed(1) : 0,
                 overallAverage: average,
+                overallPercentage: overallPercentage,
+                maxValue: maxValue,
                 bestQuestion: bestQuestion,
-                bestAverage: bestAvg.toFixed(2),
+                bestAverage: bestAvg !== -1 ? bestAvg.toFixed(2) : '0.00',
+                bestPercentage: bestAvg !== -1 ? averageToPercentage(bestAvg, maxValue) : 0,
                 worstQuestion: worstQuestion,
-                worstAverage: worstAvg.toFixed(2)
+                worstAverage: worstAvg !== Infinity ? worstAvg.toFixed(2) : '0.00',
+                worstPercentage: worstAvg !== Infinity ? averageToPercentage(worstAvg, maxValue) : 0
             };
         }
         
@@ -2246,6 +2259,13 @@
                     <span class="metric-label">Promedio de respuestas por pregunta:</span>
                     <span class="metric-value">${summary.averageResponses}</span>
                 </div>
+                <div class="summary-metric">
+                    <span class="metric-label">Promedio general de la sección:</span>
+                    <span class="metric-value">
+                        ${summary.overallPercentage}%
+                        <small class="text-muted ms-1">(${summary.overallAverage} / ${summary.maxValue})</small>
+                    </span>
+                </div>
                 ${summary.bestQuestion ? `
                 <div class="mt-3 pt-3" style="border-top: 1px solid #dee2e6;">
                     <div class="d-flex justify-content-between align-items-start mb-2">
@@ -2255,7 +2275,10 @@
                             </small>
                             <div class="small mt-1">${escapeHtml(summary.bestQuestion.question_text)}</div>
                         </div>
-                        <span class="badge bg-success ms-2">${summary.bestAverage}</span>
+                        <div class="ms-2 text-end">
+                            <span class="badge bg-success">${summary.bestPercentage}%</span>
+                            <div class="text-muted" style="font-size: 0.7rem; margin-top: 2px;">${summary.bestAverage} / ${summary.maxValue}</div>
+                        </div>
                     </div>
                     <div class="d-flex justify-content-between align-items-start">
                         <div style="flex: 1;">
@@ -2264,7 +2287,10 @@
                             </small>
                             <div class="small mt-1">${escapeHtml(summary.worstQuestion.question_text)}</div>
                         </div>
-                        <span class="badge bg-danger ms-2">${summary.worstAverage}</span>
+                        <div class="ms-2 text-end">
+                            <span class="badge bg-danger">${summary.worstPercentage}%</span>
+                            <div class="text-muted" style="font-size: 0.7rem; margin-top: 2px;">${summary.worstAverage} / ${summary.maxValue}</div>
+                        </div>
                     </div>
                 </div>
                 ` : ''}
@@ -2421,6 +2447,7 @@
             }
             
             const segmentValues = availableSegments[segmentField].options.map(opt => opt.option_value);
+            const maxValue = getSectionMaxValue(section);
             
             const segmentData = {};
             
@@ -2448,13 +2475,16 @@
                 });
                 
                 if (responses.length > 0) {
-                    const average = (responses.reduce((a, b) => a + b, 0) / responses.length).toFixed(2);
+                    const averageNum = responses.reduce((a, b) => a + b, 0) / responses.length;
+                    const average = averageNum.toFixed(2);
+                    const percentage = averageToPercentage(averageNum, maxValue);
                     
                     const optionName = availableSegments[segmentField].options.find(opt => opt.option_value === value)?.option_name || value;
                     
                     segmentData[optionName] = {
                         count: responses.length,
                         average: average,
+                        percentage: percentage,
                         distribution: distribution
                     };
                 }
@@ -2490,7 +2520,10 @@
                 segmentDiv.innerHTML = `
                     <div class="segment-name">${escapeHtml(segmentName)}</div>
                     <div class="segment-stats">
-                        <div class="segment-average">${data.average}</div>
+                        <div>
+                            <div class="segment-average">${data.percentage}%</div>
+                            <div class="text-muted" style="font-size: 0.7rem;">${data.average} / ${maxValue}</div>
+                        </div>
                         <div class="segment-count">${data.count} resp.</div>
                     </div>
                     <div class="segment-distribution mt-2">
@@ -3291,6 +3324,33 @@
         // ==========================================
         // CÁLCULOS ESTADÍSTICOS DE LA MUESTRA
         // ==========================================
+        
+        // ==========================================
+        // HELPER: PORCENTAJE DE ESCALA
+        // ==========================================
+        
+        /**
+         * Convierte un promedio en su porcentaje respecto al máximo de la escala.
+         * Asume que las escalas empiezan en 1.
+         * @param {number} average - Promedio crudo
+         * @param {number} maxValue - Valor máximo de la escala (ej: 4, 5, 10)
+         * @returns {number} Porcentaje (0-100), con 1 decimal
+         */
+        function averageToPercentage(average, maxValue) {
+            if (!average || !maxValue || maxValue <= 0) return 0;
+            return parseFloat(((average / maxValue) * 100).toFixed(1));
+        }
+        
+        /**
+         * Obtiene el valor máximo de la escala de una sección.
+         * @param {Object} section - Sección con survey_scales
+         * @returns {number} Valor máximo (default 5 si no se puede determinar)
+         */
+        function getSectionMaxValue(section) {
+            return section.survey_scales?.survey_scale_options?.reduce(
+                (max, opt) => Math.max(max, opt.option_value), 0
+            ) || 5;
+        }
         
         // Constantes fijas (decisión de diseño: no configurables en v1)
         const STAT_Z_95 = 1.96;        // Valor z para 95% de confianza
