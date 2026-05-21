@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.04.24.09.15">
+    <meta name="page-version" content="26.5.21.1">
     
     <title>Formularios</title>
     
@@ -673,8 +673,10 @@
         // VARIABLES GLOBALES
         // ==========================================
         
-        let currentUser = null;
+       let currentUser = null;
         let isSuperAdmin = false;
+        let currentWorkerId = null;
+        let currentFormRole = 'owner'; // 'owner' o 'editor' — rol sobre el formulario actualmente abierto
         let allForms = [];
         let currentForm = null;
         let currentFields = [];
@@ -789,17 +791,53 @@
             try {
                 console.log('📡 Cargando formularios...');
                 
-                let query = '/forms?select=*,form_fields(count)';
-                
-                if (!isSuperAdmin) {
-                    query += `&created_by=eq.${currentUser.user_id}`;
+                if (isSuperAdmin) {
+                    // Super admin: todos los formularios
+                    allForms = await supabaseRequest(
+                        '/forms?select=*,form_fields(count)&order=created_at.desc'
+                    ) || [];
+                } else {
+                    // 1. Resolver el worker_id del usuario actual (por email) si aún no se conoce
+                    if (!currentWorkerId) {
+                        const userEmail = currentUser.user_mail || currentUser.email;
+                        if (userEmail) {
+                            const workerData = await supabaseRequest(
+                                `/workers?email=eq.${encodeURIComponent(userEmail)}&select=worker_id&limit=1`
+                            );
+                            if (workerData && workerData.length > 0) {
+                                currentWorkerId = workerData[0].worker_id;
+                            }
+                        }
+                    }
+                    
+                    // 2. Consultas en paralelo: formularios propios + formularios donde es editor
+                    const [ownedForms, editorAccess] = await Promise.all([
+                        supabaseRequest(
+                            `/forms?select=*,form_fields(count)&created_by=eq.${currentUser.user_id}&order=created_at.desc`
+                        ),
+                        currentWorkerId
+                            ? supabaseRequest(
+                                `/form_access_workers?worker_id=eq.${currentWorkerId}&can_edit=eq.true&select=form_id,forms(*,form_fields(count))`
+                            )
+                            : Promise.resolve([])
+                    ]);
+                    
+                    // 3. Unificar resultados, evitando duplicados (puede ser creador Y editor en teoría)
+                    const formsMap = new Map();
+                    (ownedForms || []).forEach(f => formsMap.set(f.form_id, f));
+                    (editorAccess || []).forEach(a => {
+                        if (a.forms && !formsMap.has(a.forms.form_id)) {
+                            formsMap.set(a.forms.form_id, a.forms);
+                        }
+                    });
+                    
+                    // 4. Ordenar por created_at desc
+                    allForms = Array.from(formsMap.values()).sort((a, b) => 
+                        new Date(b.created_at) - new Date(a.created_at)
+                    );
                 }
                 
-                query += '&order=created_at.desc';
-                
-                allForms = await supabaseRequest(query);
                 console.log(`✅ ${allForms.length} formularios cargados`);
-                
                 renderForms();
                 
             } catch (error) {
@@ -811,9 +849,65 @@
             }
         }
 
+        
         // ==========================================
         // RENDERIZAR FORMULARIOS
         // ==========================================
+        
+        // Devuelve 'owner' (creador o super admin), 'editor', o null
+        function getUserRoleOnForm(form) {
+            if (isSuperAdmin) return 'owner';
+            if (form.created_by === currentUser.user_id) return 'owner';
+            // Editor: aparece en form_access_workers con can_edit=true
+            // En el listado solo llegan formularios donde el usuario es owner o editor (ver loadForms)
+            return 'editor';
+        }
+        
+        // Aplica restricciones de UI si el usuario es editor (no owner)
+        function applyEditorRestrictions() {
+            const isEditor = currentFormRole === 'editor';
+            
+            // Aviso visual en la cabecera del modal
+            let warningBox = document.getElementById('editorWarningBox');
+            if (isEditor) {
+                if (!warningBox) {
+                    warningBox = document.createElement('div');
+                    warningBox.id = 'editorWarningBox';
+                    warningBox.className = 'alert alert-info';
+                    warningBox.innerHTML = '<i class="bi bi-info-circle me-2"></i><strong>Modo editor:</strong> Puedes modificar el nombre, descripción, banner, estado y campos del formulario. El modo de uso y los workers con acceso solo puede cambiarlos el creador.';
+                    const modalBody = document.querySelector('#formModal .modal-body');
+                    modalBody.insertBefore(warningBox, modalBody.firstChild);
+                }
+            } else if (warningBox) {
+                warningBox.remove();
+            }
+            
+            // Bloquear modo de uso (radios)
+            document.querySelectorAll('input[name="formMode"]').forEach(el => {
+                el.disabled = isEditor;
+            });
+            
+            // Bloquear opciones standalone
+            document.querySelectorAll('input[name="standalonePublic"]').forEach(el => {
+                el.disabled = isEditor;
+            });
+            const notifyEmail = document.getElementById('standaloneNotifyEmail');
+            if (notifyEmail) notifyEmail.disabled = isEditor;
+            
+            // Bloquear sección de Acceso a Resultados
+            const accessSelect = document.getElementById('accessWorkerSelect');
+            if (accessSelect) accessSelect.disabled = isEditor;
+            const addBtn = accessSelect?.parentElement?.querySelector('button');
+            if (addBtn) addBtn.disabled = isEditor;
+            
+            // Bloquear toggles y botones de eliminar en la lista de workers con acceso
+            document.querySelectorAll('#accessWorkersList input[type="checkbox"]').forEach(el => {
+                el.disabled = isEditor;
+            });
+            document.querySelectorAll('#accessWorkersList button').forEach(el => {
+                el.disabled = isEditor;
+            });
+        }
         
         function renderForms() {
             const container = document.getElementById('formsList');
@@ -878,9 +972,13 @@
                             <button type="button" class="btn btn-sm btn-outline-success" onclick="showShareModal('${form.form_id}', '${form.form_mode}', ${form.standalone_is_public || false})" title="Compartir enlace">
                                 <i class="bi bi-share"></i>
                             </button>` : ''}
+                            ${getUserRoleOnForm(form) === 'owner' ? `
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDelete('${form.form_id}')" title="Eliminar">
                                 <i class="bi bi-trash"></i>
-                            </button>
+                            </button>` : `
+                            <span class="badge bg-light text-muted ms-1" title="Tienes permiso de edición pero no de eliminación">
+                                <i class="bi bi-pencil-square"></i> Editor
+                            </span>`}
                         </div>
                     </div>
                 `;
@@ -908,6 +1006,15 @@
         function openFormModal(formId = null) {
             currentForm = formId;
             currentFields = [];
+            
+            // Determinar rol del usuario sobre este formulario
+            if (formId) {
+                const form = allForms.find(f => String(f.form_id) === String(formId));
+                currentFormRole = form ? getUserRoleOnForm(form) : 'owner';
+            } else {
+                // Formulario nuevo: el creador es siempre owner
+                currentFormRole = 'owner';
+            }
             
             if (formId) {
                 document.getElementById('formModalTitle').textContent = 'Editar Formulario';
@@ -938,6 +1045,7 @@
                 renderAccessWorkersList();
             }
             
+            applyEditorRestrictions();
             formModalInstance.show();
         }
         
@@ -1024,15 +1132,18 @@
 
                 // Cargar workers con acceso
                 const accessData = await supabaseRequest(
-                    `/form_access_workers?form_id=eq.${formId}&select=worker_id,workers(worker_first_name,worker_last_name_1,email)`
+                    `/form_access_workers?form_id=eq.${formId}&select=worker_id,can_edit,workers(worker_first_name,worker_last_name_1,email)`
                 );
                 selectedAccessWorkers = (accessData || []).map(a => ({
                     worker_id: a.worker_id,
                     name: `${a.workers.worker_last_name_1} ${a.workers.worker_first_name}`,
-                    email: a.workers.email
+                    email: a.workers.email,
+                    can_edit: a.can_edit === true
                 }));
                 populateAccessWorkerSelect();
                 renderAccessWorkersList();
+                
+                applyEditorRestrictions();
                 
             } catch (error) {
                 console.error('❌ Error cargando formulario:', error);
@@ -1092,17 +1203,24 @@
                 const descBgColor = /^#[0-9A-Fa-f]{6}$/.test(descBgText) ? descBgText : null;
                 const descTextColor = /^#[0-9A-Fa-f]{6}$/.test(descTextText) ? descTextText : null;
                 
+                const isEditorMode = (currentForm && currentFormRole === 'editor');
+                
+                // Datos siempre permitidos (nombre, descripción, colores, estado, banner via bloque separado)
                 const formData = {
                     form_name: formName,
                     form_description: formDescription || null,
                     form_description_bg_color: descBgColor,
                     form_description_text_color: descTextColor,
                     form_status: formStatus,
-                    form_mode: formMode,
-                    standalone_is_public: standaloneIsPublic,
-                    standalone_notify_email: standaloneNotifyEmail,
                     updated_at: new Date().toISOString()
                 };
+                
+                // Solo el owner puede modificar configuración estructural
+                if (!isEditorMode) {
+                    formData.form_mode = formMode;
+                    formData.standalone_is_public = standaloneIsPublic;
+                    formData.standalone_notify_email = standaloneNotifyEmail;
+                }
                 
                 let formId;
                 
@@ -1123,20 +1241,23 @@
                     formId = result[0].form_id;
                 }
                 
-                // Guardar campos
+                // Guardar campos (permitido tanto a owner como a editor)
                 await saveFields(formId);
 
-                // Guardar acceso a resultados
-                await supabaseRequest(`/form_access_workers?form_id=eq.${formId}`, { method: 'DELETE' });
-                if (selectedAccessWorkers.length > 0) {
-                    const accessPayload = selectedAccessWorkers.map(w => ({
-                        form_id: formId,
-                        worker_id: w.worker_id
-                    }));
-                    await supabaseRequest('/form_access_workers', {
-                        method: 'POST',
-                        body: JSON.stringify(accessPayload)
-                    });
+                // Guardar acceso a resultados (solo owner)
+                if (!isEditorMode) {
+                    await supabaseRequest(`/form_access_workers?form_id=eq.${formId}`, { method: 'DELETE' });
+                    if (selectedAccessWorkers.length > 0) {
+                        const accessPayload = selectedAccessWorkers.map(w => ({
+                            form_id: formId,
+                            worker_id: w.worker_id,
+                            can_edit: w.can_edit === true
+                        }));
+                        await supabaseRequest('/form_access_workers', {
+                            method: 'POST',
+                            body: JSON.stringify(accessPayload)
+                        });
+                    }
                 }
                 
                 // ===== BANNER =====
@@ -1897,7 +2018,8 @@
             selectedAccessWorkers.push({
                 worker_id: worker.worker_id,
                 name: `${worker.worker_last_name_1} ${worker.worker_first_name}`,
-                email: worker.email
+                email: worker.email,
+                can_edit: false
             });
 
             renderAccessWorkersList();
@@ -1917,14 +2039,39 @@
                 return;
             }
             container.innerHTML = selectedAccessWorkers.map(w => `
-                <div class="d-flex justify-content-between align-items-center py-1 px-2 mb-1 rounded" style="background:#f8f9fa;">
-                    <small><strong>${escapeHtml(w.name)}</strong> · ${escapeHtml(w.email)}</small>
-                    <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeAccessWorker('${w.worker_id}')">
+                <div class="d-flex justify-content-between align-items-center py-2 px-2 mb-1 rounded gap-2" style="background:#f8f9fa;">
+                    <small class="flex-grow-1"><strong>${escapeHtml(w.name)}</strong> · ${escapeHtml(w.email)}</small>
+                    <div class="form-check form-switch mb-0" title="Si está activo, este worker también podrá editar la configuración del formulario">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                               id="canEdit_${w.worker_id}"
+                               ${w.can_edit ? 'checked' : ''}
+                               onchange="toggleWorkerCanEdit('${w.worker_id}', this.checked)">
+                        <label class="form-check-label small" for="canEdit_${w.worker_id}">
+                            <i class="bi bi-pencil-square me-1"></i>Puede editar
+                        </label>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeAccessWorker('${w.worker_id}')" title="Quitar acceso">
                         <i class="bi bi-x"></i>
                     </button>
                 </div>
             `).join('');
         }
+
+        function toggleWorkerCanEdit(workerId, canEdit) {
+            const worker = selectedAccessWorkers.find(w => w.worker_id === workerId);
+            if (worker) {
+                worker.can_edit = canEdit;
+            }
+        }
+        
+        // Re-aplicar restricciones después de redibujar la lista
+        const _originalRenderAccessWorkersList = renderAccessWorkersList;
+        renderAccessWorkersList = function() {
+            _originalRenderAccessWorkersList.apply(this, arguments);
+            if (typeof applyEditorRestrictions === 'function') {
+                applyEditorRestrictions();
+            }
+        };
 
         // ==========================================
         // LÓGICA CONDICIONAL
@@ -2040,6 +2187,13 @@
         // ==========================================
         
         async function confirmDelete(formId) {
+            // Validación defensiva: solo owner (super admin o creador) puede eliminar
+            const form = allForms.find(f => String(f.form_id) === String(formId));
+            if (form && getUserRoleOnForm(form) !== 'owner') {
+                showAlert('No tienes permiso para eliminar este formulario. Solo el creador o un administrador pueden hacerlo.', 'danger');
+                return;
+            }
+            
             if (!confirm('¿Estás seguro de eliminar este formulario?\n\nEsta acción no se puede deshacer.')) return;
             
             try {
