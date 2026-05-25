@@ -38,8 +38,12 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 2.1 | SQL correctivo — eliminar permiso huérfano 'Planeación' (índice) | ✅ Cerrado |
 | 3 | `catalogs.html` — gestión de catálogos | ✅ Cerrado |
 | 3.1 | SQL correctivo — DISABLE RLS en las 29 tablas del módulo | 🔵 Aplicado en DEV, pendiente PROD |
-| 4 | `unit-form.html` — formulario de Unidad de Indagación | ⏸️ Pausado — pendiente decisiones de coordinación |
-| 4.1 | Estructura base + Información general | ⏸️ Archivo construido, NO aplicado en DEV (en espera) |
+| 4 | `unit-form.html` — formulario de Unidad de Indagación | ⏸️ Reformulado tras hallazgos de coordinación |
+| 4.0 | SQL — ampliación de esquema (grades.program_id, academic_areas.coordinator_worker_id) | 🔵 SQL entregado, pendiente aplicar en DEV |
+| 4.0a | Ampliar interfaz de gestión de grados para asignar programa | Pendiente — se hará para poblar `grades.program_id` por UI |
+| 4.0b | Ampliar interfaz de áreas (`academic-areas.html`) para asignar coordinador | Pendiente — se hará para poblar `academic_areas.coordinator_worker_id` por UI |
+| 4.0c | Poblar datos vía las interfaces ampliadas | Pendiente — depende de 4.0a y 4.0b |
+| 4.1 | Refactor `unit-form.html` con modelo definitivo (control de acceso + selector de grado + pre-carga colaboradores) | Archivo previo descartado — se reescribe sobre el modelo nuevo |
 | 4.2 | Gestión de ciclos | Pendiente |
 | 4.3 | Cierre + planeadores vinculados + comentarios | Pendiente |
 | 5 | `units.html` — listado de UIs | Pendiente |
@@ -293,78 +297,156 @@ END $$;
 
 ---
 
-### Paso 4 — `unit-form.html` ⏸️ PAUSADO
+### Paso 4 — `unit-form.html` ⏸️ Reformulado
 
-**Fecha de inicio:** 25 de mayo de 2026
+**Fecha de inicio original:** 25 de mayo de 2026
 **Fecha de pausa:** 25 de mayo de 2026
-**Estado:** Pausado — esperando decisiones de coordinación de programa
+**Fecha de reformulación:** 25 de mayo de 2026
 
-**Razón de la pausa:**
-
-Durante el diseño funcional de la página, el usuario detectó dos hallazgos importantes que requieren confirmación de coordinación antes de continuar:
-
-1. **`academic_assignments` ya modela "Unit of Inquiry" como una asignatura asignada por curso.** En el módulo `Config > Asignación Académica`, cada curso (Cuarto A, Cuarto B, etc.) tiene un docente específico asignado a la asignatura "Unit of Inquiry". Esto sugiere que el **autor/dueño** de cada UI no es un colaborador cualquiera, sino el docente asignado a "Unit of Inquiry" para ese curso.
-
-2. **El modelo de "docentes colaboradores" puede no ser ad-hoc.** Los demás docentes del mismo curso (Science, Social Studies, Lenguaje, etc., también en `academic_assignments`) podrían preseleccionarse automáticamente como colaboradores, no agregarse manualmente desde un chip selector.
-
-**Implicaciones de diseño:**
-
-Si los hallazgos se confirman, el modelo de creación de UI cambia:
-
-| Modelo actual (SPEC v1.0) | Modelo refinado (probable) |
-|---|---|
-| Cualquier worker con permiso `Crear unidad de indagación` crea UIs | Solo el docente con asignación a "Unit of Inquiry" del curso |
-| `created_by` se setea al usuario actual sin validación | `created_by` se valida contra `academic_assignments` |
-| Grado de la UI lo elige el docente vía multi-select | Grado/curso derivado de la asignación |
-| Colaboradores se agregan vía chip selector | Colaboradores preseleccionados automáticamente desde `academic_assignments` (otros docentes del mismo curso) |
-| UI vinculada a `grade_id` | UI posiblemente vinculada a `course_id` o ambos |
-
-**Estado del archivo construido (sub-paso 4.1):**
-
-- Archivo `unit-form.html` con 1.423 líneas / ~65 KB generado.
-- Construido sobre el modelo del SPEC v1.0 original (cualquier worker con permiso crea, colaboradores ad-hoc).
-- **Funcionalmente correcto y técnicamente sin errores conocidos.**
-- **NO aplicado en DEV.** Se mantiene en pausa hasta que coordinación confirme el modelo.
-
-**Posibles escenarios tras la respuesta de coordinación:**
-
-- **Escenario A — confirman el modelo del SPEC v1.0:** se aplica el archivo tal cual está, sin cambios.
-- **Escenario B — refinan el modelo de autoría:** se ajustan ~50-100 líneas del archivo (función `crearNuevaUI`, validación al cargar, prerellenado de colaboradores). No requiere rehacer estructura.
-- **Escenario C — cambio mayor (ej: UI por `course_id` en lugar de `grade_id`):** requiere ajustes al SQL del módulo (agregar `course_id` a `pln_units` o cambiar `pln_unit_grades` por `pln_unit_courses`). El archivo se ajusta en consecuencia.
+**Estado:** El sub-paso 4.1 que se construyó originalmente (archivo `unit-form.html` de 1423 líneas) queda **descartado** como base. Se reescribe sobre el modelo definitivo definido tras la conversación con coordinación de programa.
 
 ---
 
-### Preguntas formuladas a coordinación de programa
+#### Modelo definitivo de control de acceso a UIs
 
-Para que la conversación con coordinación sea productiva, estos son los puntos a llevar:
+**Confirmaciones de coordinación de programa (25 de mayo de 2026):**
 
-1. **¿Una UI pertenece a un curso específico (Cuarto A) o a un grado (Cuarto, ambos cursos juntos)?**
+1. **Granularidad:** una UI pertenece al **grado**, no al curso individual. Cuarto A y Cuarto B comparten **una sola UI** del grado Cuarto.
+2. **Quién crea:** workers que tienen asignación de la asignatura "Unit of Inquiry" en algún curso del grado (vía `academic_assignments` con `subject_id` = `1912f6fb-479a-42b3-a6ce-7e8328f33b09`).
+3. **Quién edita una UI existente** (cualquiera de las siguientes condiciones):
+   - El autor (`pln_units.created_by`)
+   - Cualquier worker en `pln_unit_collaborators` de la UI
+   - Cualquier worker con asignaciones académicas activas en alguno de los cursos del grado de la UI (en el año académico vigente)
+   - El coordinador de área académica de al menos una de las materias vinculadas a la UI
+   - El director del programa al que pertenece el grado de la UI
+4. **Pre-carga automática de colaboradores al crear:** todos los workers con asignaciones académicas en el grado se agregan automáticamente como `pln_unit_collaborators`. El creador es `is_lead = true`, los demás `is_lead = false`. El creador puede quitar manualmente a quienes no apliquen.
 
-   En `academic_assignments` la asignación es por curso individual. ¿Cada curso hace su propia UI o trabajan en una sola UI compartida del grado?
+---
 
-2. **¿Quién puede crear una UI?**
+#### Hallazgos técnicos durante la verificación
 
-   - Opción 1: Solo el docente asignado a "Unit of Inquiry" del curso (según `academic_assignments`).
-   - Opción 2: Cualquier docente con asignación académica en el grado.
-   - Opción 3: Cualquier worker con el permiso del módulo (lo más laxo).
+Consultas a la BD revelaron dos huecos en el modelo de datos que **deben resolverse antes** de codificar el formulario:
 
-3. **¿Los colaboradores se preseleccionan automáticamente?**
+1. **No hay relación nativa entre `grades` y `programs`.** `grades` no tiene `program_id`. Sin esa columna, no podemos saber qué director de programa puede editar una UI.
 
-   Cuando el docente de UI crea la unidad, ¿los otros docentes del mismo curso (Science, Social Studies, etc.) se agregan automáticamente como colaboradores, o cada uno decide unirse manualmente?
+2. **No hay relación nativa entre `academic_areas` y un coordinador.** `academic_areas` no tiene `coordinator_worker_id`. Sin esa columna, no podemos saber qué coordinador de área puede editar una UI.
 
-4. **¿Qué pasa con UIs transdisciplinarias entre cursos paralelos?**
+---
 
-   Si Cuarto A y Cuarto B comparten una UI ("¿Cómo nos expresamos?"), ¿son dos UIs paralelas con el mismo título o una UI única que ambos docentes co-editan?
+### Paso 4.0 — SQL: ampliación de esquema 🔵
 
-5. **¿El docente de "Unit of Inquiry" puede crear varias UIs al año o solo una por trimestre/ciclo?**
+**Estado:** SQL entregado al usuario el 25 de mayo de 2026, pendiente de aplicar en DEV.
 
-6. **¿El modelo de coordinación de PAI/PD es similar? ¿Hay una asignatura equivalente a "Unit of Inquiry" en PAI?**
+**Decisiones de diseño:**
 
-7. **Decisión D7 original (quién edita una UI existente):** además del autor y colaboradores, ¿el coordinador de área y/o el coordinador de programa pueden editar el contenido o solo dejar comentarios? Esta pregunta ya estaba abierta antes de los hallazgos de hoy.
+- `grades.program_id` es **1:1** (un grado pertenece a un solo programa: PEP, PAI o PD). Campo directo en la tabla.
+- `academic_areas.coordinator_worker_id` es **1:N** (un área tiene UN solo coordinador, pero un worker puede coordinar varias áreas). Confirmado por el usuario explícitamente. Campo directo en la tabla, sin restricción UNIQUE sobre `coordinator_worker_id`.
+
+**SQL a ejecutar (DEV primero, luego PROD):**
+
+```sql
+-- 1. Agregar program_id a grades
+ALTER TABLE public.grades
+ADD COLUMN program_id uuid REFERENCES public.programs(program_id);
+
+-- 2. Agregar coordinator_worker_id a academic_areas
+ALTER TABLE public.academic_areas
+ADD COLUMN coordinator_worker_id uuid REFERENCES public.workers(worker_id);
+
+-- 3. Índices para queries de control de acceso
+CREATE INDEX idx_grades_program ON public.grades(program_id);
+CREATE INDEX idx_academic_areas_coordinator ON public.academic_areas(coordinator_worker_id);
+```
+
+**Verificación esperada:** 2 columnas nuevas (ambas nullable inicialmente), 2 índices nuevos.
+
+**Aplicado en DEV:** pendiente
+**Aplicado en PROD:** pendiente
+
+---
+
+### Paso 4.0a — Ampliar UI de gestión de grados Pendiente
+
+**Objetivo:** Permitir a un administrador asignar el programa a cada grado desde la interfaz, **sin necesidad de ejecutar SQL manualmente**.
+
+**Decisión explícita del usuario:** *"Después tendremos que modificar las interfaces actuales para no tener que poblar por consulta... necesito dejar el sistema listo."*
+
+**Alcance:**
+- Identificar la página actual de gestión de grados en SchoolNet (probablemente algo como `/modules/config/grades.html`).
+- Agregar un campo select de "Programa" en el modal de crear/editar grado.
+- Validación: el campo es opcional al crear, pero los programas que existan deben listarse desde `programs`.
+
+**Pendiente de iniciar.**
+
+---
+
+### Paso 4.0b — Ampliar `academic-areas.html` para asignar coordinador Pendiente
+
+**Objetivo:** Permitir a un administrador asignar un coordinador a cada área académica desde la interfaz.
+
+**Alcance:**
+- Modificar el modal de crear/editar área en `/modules/config/academic-areas.html` (ya existe).
+- Agregar un campo select de "Coordinador de área" que lista workers activos.
+- Guardar `coordinator_worker_id` en la tabla `academic_areas`.
+
+**Pendiente de iniciar.**
+
+---
+
+### Paso 4.0c — Poblar datos vía las interfaces Pendiente
+
+**Depende de:** 4.0a y 4.0b cerrados.
+
+**Acciones del usuario:**
+1. Asignar programa a cada uno de los grados desde la UI ampliada.
+2. Asignar coordinador a cada área académica que tenga uno designado.
+
+---
+
+### Paso 4.1 — Refactor de `unit-form.html` (sobre el modelo nuevo) Pendiente
+
+**Depende de:** 4.0, 4.0a, 4.0b, 4.0c cerrados.
+
+**Diferencias con el archivo descartado:**
+
+| Concepto | Archivo descartado (v0) | Archivo nuevo (v1) |
+|---|---|---|
+| Quién puede entrar | Cualquier worker con permiso | Solo workers con relación pedagógica con el grado (creador, colaboradores, docentes del grado, coord. área, director programa) |
+| Selector de grado | Multi-select libre | Single-select restringido a grados donde el creador tiene asignación de "Unit of Inquiry" |
+| Colaboradores | Lista vacía, se agregan ad-hoc | Pre-cargados automáticamente desde `academic_assignments` del grado |
+| Modo solo lectura | No implementado | Sí, para workers que tienen permiso pero no relación pedagógica con la UI |
+| Lógica de coordinadores | Inexistente | Funciones `canEdit()` evalúan coord. de área (vía materias de la UI) y director de programa (vía `grades.program_id`) |
+
+**Archivo previo:** `unit-form.html` v0 (1423 líneas) — se conserva como referencia histórica pero no se aplica.
 
 ---
 
 ## Decisiones de implementación
+
+### 25 de mayo de 2026 — Respuestas de coordinación de programa al modelo de UIs
+
+**Confirmaciones recibidas:**
+
+1. **Una UI por grado** (no por curso). Cuarto A y Cuarto B comparten una sola UI.
+2. **Quién crea:** cualquier docente con asignación de "Unit of Inquiry" en algún curso del grado. En el ejemplo de Cuarto: Sánchez Ramírez Carlos Andrés (Cuarto A) **o** Leguizamón Russi Juan Nicolás (Cuarto B). Cualquiera de los dos.
+3. **Quién edita:** además del creador y colaboradores, todos los docentes del grado (en cualquier asignatura), los coordinadores de área de las materias vinculadas, y el director del programa al que pertenece el grado.
+4. **Un worker puede coordinar varias áreas, pero un área tiene un solo coordinador.** Esta confirmación específica del usuario descartó la propuesta de tabla M:N para coordinadores y validó el uso de un campo directo `coordinator_worker_id` en `academic_areas`.
+
+---
+
+### 25 de mayo de 2026 — Decisión: poblar nuevas relaciones por UI, no por SQL
+
+**Decisión explícita del usuario:**
+
+> *"Después tendremos que modificar las interfaces actuales para no tener que poblar por consulta... necesito dejar el sistema listo."*
+
+**Implicación:** se crearon los sub-pasos 4.0a y 4.0b para ampliar las interfaces existentes:
+- Gestión de grados → agregar selector de programa.
+- `academic-areas.html` → agregar selector de coordinador en el modal de edición.
+
+Esto asegura que cualquier cambio futuro en programas o coordinadores se haga vía la UI, sin necesidad de SQL ad-hoc.
+
+---
 
 ### 25 de mayo de 2026 — Hallazgo: `academic_assignments` ya modela "Unit of Inquiry"
 
@@ -444,17 +526,15 @@ Los demás docentes (Science, Social Studies, Lenguaje, etc.) son **colaboradore
 
 ## Pendientes y bloqueos
 
-### 🔴 Bloqueante para paso 4 — Decisiones de coordinación de programa
+### 🟢 Sin bloqueantes — Listo para continuar cuando se retome
 
-El sub-paso 4.1 está construido pero **NO aplicado en DEV** a la espera de las siguientes confirmaciones:
+Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2026. El modelo de control de acceso a UIs está definido. Cuando se retome el trabajo, los próximos pasos son inmediatos:
 
-1. ¿Una UI pertenece a un curso o a un grado?
-2. ¿Quién puede crear una UI? (docente con asignación a "Unit of Inquiry" vs. cualquier docente con permiso)
-3. ¿Los colaboradores se preseleccionan automáticamente desde `academic_assignments`?
-4. ¿UIs entre cursos paralelos: una sola UI compartida o dos UIs paralelas?
-5. ¿Cuántas UIs puede crear un docente por año/trimestre?
-6. ¿El modelo PAI/PD es equivalente?
-7. **D7 original:** ¿coordinadores de área y programa editan o solo comentan?
+1. **Aplicar SQL del paso 4.0** en DEV (y luego PROD). SQL listo en la sección "Paso 4.0" de esta bitácora.
+2. **Construir paso 4.0a** (ampliar UI de gestión de grados con selector de programa).
+3. **Construir paso 4.0b** (ampliar `academic-areas.html` con selector de coordinador).
+4. **Poblar datos** (paso 4.0c) vía las interfaces ampliadas: asignar programa a cada grado y coordinador a cada área que tenga uno.
+5. **Reescribir `unit-form.html`** (paso 4.1) sobre el modelo definitivo.
 
 ### 🟡 Pendientes operativos (no bloqueantes)
 
@@ -467,9 +547,9 @@ El sub-paso 4.1 está construido pero **NO aplicado en DEV** a la espera de las 
 
 3. **Asignación manual de permisos a roles** vía la UI de SchoolNet. Los 7 permisos del módulo están en BD pero aún no asignados a ningún rol específico (acordamos hacerlo manualmente).
 
-4. **Actualización del SPEC v1.0** con las decisiones que tome coordinación de programa. Especialmente secciones 3.2 (`permission_module = 'planning'`), 6.5 (modelo de `pln_units`), 8.1 (formulario información general), y eliminación de la sección de `index.html` (10.1 y 10.2).
+4. **Actualización del SPEC v1.0** con las decisiones tomadas tras la conversación con coordinación. Especialmente secciones 3.2 (`permission_module = 'planning'`), 6.5 (modelo de `pln_units` y control de acceso), 8.1 (formulario información general — colaboradores precargados), y eliminación de la sección de `index.html` (10.1 y 10.2).
 
-5. **Catálogo Tilatá:** poblar los atributos institucionales propios desde la interfaz de `catalogs.html` (acordado que el usuario lo hace cuando tenga el material del PEI y sitio web).
+5. **Catálogo Tilatá:** poblar los atributos institucionales propios desde la interfaz de `catalogs.html` cuando el usuario tenga el material del PEI y sitio web.
 
 ---
 
@@ -486,7 +566,9 @@ El sub-paso 4.1 está construido pero **NO aplicado en DEV** a la espera de las 
 - **25 de mayo de 2026** — Paso 3 cerrado: `catalogs.html` desplegado en DEV con CRUD funcional para los 9 catálogos del módulo. Patrón visual de tabs Bootstrap replicado de `services-config.html`.
 - **25 de mayo de 2026** — Hallazgo y corrección: las 29 tablas del módulo tenían RLS activado pese a los `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` originales. Corrección aplicada vía DO block (paso 3.1).
 - **25 de mayo de 2026** — ⏸️ Paso 4.1 (`unit-form.html`) construido pero pausado antes de aplicar en DEV. Hallazgo durante el diseño: `academic_assignments` ya modela "Unit of Inquiry" como asignatura por curso. El modelo de autor/colaborador debe validarse con coordinación de programa antes de continuar.
+- **25 de mayo de 2026** — Respuestas de coordinación recibidas: UI por grado, creadores son docentes con "Unit of Inquiry", todos los docentes del grado editan, coordinadores de área y programa también editan. Un coordinador puede coordinar varias áreas pero un área tiene un solo coordinador.
+- **25 de mayo de 2026** — Verificaciones SQL: no hay relación nativa entre `grades` y `programs`, ni entre `academic_areas` y un coordinador. Se diseña paso 4.0 para ampliar el esquema con dos columnas nuevas. El archivo `unit-form.html` v0 queda descartado como base; se reescribirá sobre el modelo nuevo (v1).
 
 ---
 
-*Última actualización: 25 de mayo de 2026 — Paso 4 pausado a la espera de decisiones de coordinación de programa. Sub-paso 4.1 (`unit-form.html`) construido pero NO aplicado en DEV. Resumen de pendientes operativos disponibles en la sección "Pendientes y bloqueos".*
+*Última actualización: 25 de mayo de 2026 — Modelo de control de acceso a UIs definido tras conversación con coordinación. SQL del paso 4.0 (ampliar `grades` y `academic_areas`) entregado, pendiente de aplicar. Próximos pasos: ampliar interfaces de gestión de grados y de áreas académicas para poblar las nuevas relaciones por UI, no por SQL.*
