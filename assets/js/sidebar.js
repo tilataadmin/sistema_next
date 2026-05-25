@@ -302,9 +302,17 @@ const MODULE_ITEM_ORDER = {
         'Gestión de carnets',
         'Consulta de seguridad',
         'Logs de auditoría'
+    ],
+    'planning': [
+        'Crear unidad de indagación',
+        'Gestionar unidades de indagación',
+        'Crear planeador de área',
+        'Gestionar planeadores de área',
+        'Coordinar planeación de área',
+        'Coordinar planeación de programa',
+        'Administrar catálogos de planeación'
     ]
 };
-
         
 const SIDEBAR_CACHE_KEY = 'schoolnet_sidebar_permissions';
 const SIDEBAR_STATE_KEY = 'schoolnet_sidebar_state';
