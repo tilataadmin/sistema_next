@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="26.5.25.1">
     <title>Categorías TTE - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -483,14 +484,54 @@
         }
         
         // ==========================================
-        // ELIMINAR CATEGORÍA
+        // ELIMINAR CATEGORÍA (con verificación de uso)
         // ==========================================
         async function eliminarCategoria(categoryId, categoryName) {
-            if (!confirm(`¿Estás seguro de eliminar la categoría "${categoryName}"?\n\nEsta acción no se puede deshacer.`)) {
-                return;
-            }
-            
             try {
+                mostrarLoading();
+                
+                // 1. Verificar si la categoría tiene PQR o fragmentos asociados
+                const [requests, fragments] = await Promise.all([
+                    supabaseRequest(`/tte_requests?select=request_id&category_id=eq.${categoryId}&limit=1`),
+                    supabaseRequest(`/tte_request_fragments?select=fragment_id&category_id=eq.${categoryId}&limit=1`)
+                ]);
+                
+                const tieneReferencias = (requests && requests.length > 0) || (fragments && fragments.length > 0);
+                
+                // 2. Si tiene referencias: inactivar en lugar de eliminar
+                if (tieneReferencias) {
+                    ocultarLoading();
+                    
+                    const confirmarInactivar = confirm(
+                        `La categoría "${categoryName}" no se puede eliminar porque tiene PQR asociadas.\n\n` +
+                        `Para preservar el historial, se cambiará su estado a "Inactiva" (dejará de aparecer en los formularios pero se conservará en los registros existentes).\n\n` +
+                        `¿Deseas continuar?`
+                    );
+                    
+                    if (!confirmarInactivar) return;
+                    
+                    mostrarLoading();
+                    
+                    await supabaseRequest(`/tte_categories?category_id=eq.${categoryId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ category_status: 'inactive' })
+                    });
+                    
+                    showMessage(`Categoría "${categoryName}" marcada como inactiva`, 'success');
+                    await cargarCategorias();
+                    return;
+                }
+                
+                // 3. Si no tiene referencias: confirmar y eliminar
+                ocultarLoading();
+                
+                const confirmarEliminar = confirm(
+                    `¿Estás seguro de eliminar la categoría "${categoryName}"?\n\n` +
+                    `Esta acción no se puede deshacer.`
+                );
+                
+                if (!confirmarEliminar) return;
+                
                 mostrarLoading();
                 
                 await supabaseRequest(`/tte_categories?category_id=eq.${categoryId}`, {
@@ -501,12 +542,15 @@
                 await cargarCategorias();
                 
             } catch (error) {
-                console.error('❌ Error eliminando categoría:', error);
-                showMessage('Error al eliminar: ' + error.message, 'danger');
+                console.error('❌ Error procesando categoría:', error);
+                showMessage('Error al procesar: ' + error.message, 'danger');
             } finally {
                 ocultarLoading();
             }
         }
+        
+
+        
       // ==========================================
         // FUNCIONES DE UTILIDAD
         // ==========================================
