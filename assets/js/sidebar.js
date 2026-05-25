@@ -21,7 +21,12 @@ const SIDEBAR_MODULE_ORDER = [
     // Personas y desarrollo
     { id: 'hr', name: 'Talento Humano', icon: 'bi-person-badge', color: '#D85A30' },
     { id: 'training', name: 'Formación', icon: 'bi-mortarboard', color: '#BA7517' },
-    { id: 'teacher-eval', name: 'Evaluación de Desempeño', icon: 'bi-clipboard2-pulse', color: '#993556' },
+
+   { id: 'teacher-eval', name: 'Evaluación de Desempeño', icon: 'bi-clipboard2-pulse', color: '#993556' },
+    // Académico
+    { id: 'planning', name: 'Planeación', icon: 'bi-journal-bookmark', color: '#2C5F9B' },
+    // Sistema de gestión
+    { id: 'indicators', name: 'Indicadores', icon: 'bi-graph-up', color: '#1D9E75' },
     // Sistema de gestión
     { id: 'indicators', name: 'Indicadores', icon: 'bi-graph-up', color: '#1D9E75' },
     { id: 'tte', name: 'Tilatá te Escucha', icon: 'bi-chat-heart', color: '#7F77DD' },
