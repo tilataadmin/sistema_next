@@ -27,8 +27,6 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'planning', name: 'Planeación', icon: 'bi-journal-bookmark', color: '#2C5F9B' },
     // Sistema de gestión
     { id: 'indicators', name: 'Indicadores', icon: 'bi-graph-up', color: '#1D9E75' },
-    // Sistema de gestión
-    { id: 'indicators', name: 'Indicadores', icon: 'bi-graph-up', color: '#1D9E75' },
     { id: 'tte', name: 'Tilatá te Escucha', icon: 'bi-chat-heart', color: '#7F77DD' },
     { id: 'surveys', name: 'Encuestas', icon: 'bi-clipboard-data', color: '#639922' },
     { id: 'procedures', name: 'Procedimientos', icon: 'bi-diagram-3', color: '#534AB7' },
