@@ -384,6 +384,15 @@ const APP_CONFIG = {
             icon: 'bi-building-check',
             path: '/modules/institutional-eval/',
             status: 'active'
+        },
+        {
+            id: 'planning',
+            moduleId: 'planning',
+            name: 'Planeación',
+            description: 'Planeación curricular institucional: Unidades de Indagación PEP y planeadores de área',
+            icon: 'bi-journal-bookmark',
+            path: '/modules/planning/',
+            status: 'active'
         }
         
     ],
