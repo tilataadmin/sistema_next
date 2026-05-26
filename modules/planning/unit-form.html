@@ -799,14 +799,38 @@
         // CREAR / CARGAR UI
         // ============================================================
         async function crearNuevaUI() {
+            // Validación 1: Año académico
             if (!academicYearId) {
-                throw new Error('No hay año académico activo configurado');
+                throw new Error('No hay año académico activo configurado.');
             }
 
+            // Validación 2: El worker debe tener asignación UI en exactamente 1 grado
+            if (myUIAssignedGrades.length === 0) {
+                throw new Error('No tiene asignación de "Unit of Inquiry" en el año académico vigente. No puede crear unidades de indagación. Contacte al administrador.');
+            }
+            if (myUIAssignedGrades.length > 1) {
+                const gradeNames = myUIAssignedGrades.map(g => g.grade_name).join(', ');
+                throw new Error(`Tiene asignación de "Unit of Inquiry" en varios grados (${gradeNames}). Esto no es esperado en el modelo institucional. Contacte al administrador.`);
+            }
+
+            // El grado del worker UI
+            const myGrade = myUIAssignedGrades[0];
+
+            // Validación 3: El grado debe tener programa asignado
+            if (!myGrade.program_id) {
+                throw new Error(`El grado "${myGrade.grade_name}" no tiene programa asignado. Pida al administrador que configure el programa en "Gestión de Grados".`);
+            }
+
+            // Cachear referencias del grado para canEdit() y otros usos posteriores
+            unitGradeId = myGrade.grade_id;
+            unitProgramId = myGrade.program_id;
+            unitSectionId = myGrade.section_id;
+
+            // Crear la unidad
             const payload = {
                 unit_title: 'Sin título',
                 academic_year_id: academicYearId,
-                program_id: programIdDefault,
+                program_id: unitProgramId,
                 created_by: currentWorkerId,
                 unit_status: 'active'
             };
@@ -817,28 +841,76 @@
             });
 
             if (!result || result.length === 0) {
-                throw new Error('No se pudo crear la unidad');
+                throw new Error('No se pudo crear la unidad en la base de datos.');
             }
 
             unitData = result[0];
             unitId = unitData.unit_id;
 
-            // Agregar al autor como colaborador líder
-            await supabaseRequest('/pln_unit_collaborators', {
+            // Vincular la UI con el grado en pln_unit_grades
+            await supabaseRequest('/pln_unit_grades', {
                 method: 'POST',
                 body: JSON.stringify({
                     unit_id: unitId,
-                    worker_id: currentWorkerId,
-                    is_lead: true
+                    grade_id: unitGradeId
                 })
             });
+
+            // Pre-cargar colaboradores: TODOS los workers con asignación activa en cualquier curso del grado
+            await precargarColaboradores();
 
             // Actualizar URL sin recargar
             const newUrl = `unit-form.html?unit_id=${unitId}`;
             history.replaceState({}, '', newUrl);
 
+            // Actualizar metadata visible
+            actualizarMetadataUI();
+
             // Cargar relaciones para que el render esté completo
             await cargarRelaciones();
+
+            console.log(`✅ UI creada: ${unitId} en grado ${myGrade.grade_name}`);
+        }
+
+        // ============================================================
+        // PRE-CARGA AUTOMÁTICA DE COLABORADORES
+        // ============================================================
+        async function precargarColaboradores() {
+            // Buscar todos los workers con asignaciones activas en cualquier curso del grado
+            // en el año académico vigente. Devuelve worker_ids únicos.
+            const assignmentsRes = await supabaseRequest(
+                `/academic_assignments?select=worker_id,courses!inner(grade_id)&courses.grade_id=eq.${unitGradeId}&academic_year_id=eq.${academicYearId}&assignment_status=eq.active`
+            );
+
+            // Extraer worker_ids únicos
+            const uniqueWorkerIds = new Set();
+            (assignmentsRes || []).forEach(a => uniqueWorkerIds.add(a.worker_id));
+
+            // Asegurar que el creador esté incluido (debería estarlo, pero por si acaso)
+            uniqueWorkerIds.add(currentWorkerId);
+
+            // Construir el batch de inserts para pln_unit_collaborators
+            const inserts = Array.from(uniqueWorkerIds).map(wId => ({
+                unit_id: unitId,
+                worker_id: wId,
+                is_lead: wId === currentWorkerId
+            }));
+
+            await supabaseRequest('/pln_unit_collaborators', {
+                method: 'POST',
+                body: JSON.stringify(inserts)
+            });
+
+            console.log(`✅ ${inserts.length} colaboradores pre-cargados (1 líder + ${inserts.length - 1} colaboradores)`);
+        }
+
+        // ============================================================
+        // ACTUALIZAR METADATA VISIBLE DE LA UI
+        // ============================================================
+        function actualizarMetadataUI() {
+            // Mostrar el programa derivado del grado
+            const program = allPrograms.find(p => p.program_id === unitProgramId);
+            document.getElementById('meta-program').textContent = program ? program.program_name : '—';
         }
 
         async function cargarUI() {
