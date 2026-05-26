@@ -589,11 +589,24 @@
         // ============================================================
         let currentUser = null;
         let currentWorkerId = null;       // worker_id del usuario actual
+        let currentWorkerEmail = null;    // email del worker (para coincidir con director_email)
         let unitId = null;                // UUID de la UI actual
         let unitData = null;              // registro completo de pln_units
         let academicYearId = null;        // año académico actual del usuario
-        let programIdDefault = null;      // programa default (PEP)
-        let isReadOnly = false;           // modo solo lectura (D7 pendiente, por ahora todos editan)
+        let isReadOnly = false;           // modo solo lectura cuando no se cumple canEdit()
+
+        // Datos para control de acceso (los 6 caminos)
+        let myUIAssignedGrades = [];      // grados donde tengo asignación de "Unit of Inquiry" (vigente)
+        let workersOfGrade = [];          // workers del grado de la UI (camino 3) — se llena al cargar UI
+        let unitGradeId = null;           // grade_id del grado de la UI actual (cacheado)
+        let unitProgramId = null;         // program_id del grado de la UI actual (cacheado)
+        let unitSectionId = null;         // section_id del grado de la UI actual (cacheado)
+        let allSections = [];             // tabla sections completa
+        let allAreas = [];                // tabla academic_areas (con coordinator_worker_id)
+        let allPrograms = [];             // tabla programs (con program_director_email)
+
+        // Constante: ID de la asignatura "Unit of Inquiry" (verificado en PROD)
+        const SUBJECT_UI_ID = '1912f6fb-479a-42b3-a6ce-7e8328f33b09';
 
         // Catálogos
         let catalogThemes = [];
@@ -697,9 +710,10 @@
         // ============================================================
         async function loadCurrentWorker() {
             try {
-                const data = await supabaseRequest(`/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2&user_id=eq.${currentUser.user_id}&limit=1`);
+                const data = await supabaseRequest(`/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&user_id=eq.${currentUser.user_id}&limit=1`);
                 if (data && data.length > 0) {
                     currentWorkerId = data[0].worker_id;
+                    currentWorkerEmail = data[0].email;
                     const w = data[0];
                     document.getElementById('meta-author').textContent =
                         `${w.worker_first_name} ${w.worker_last_name_1}${w.worker_last_name_2 ? ' ' + w.worker_last_name_2 : ''}`;
@@ -710,9 +724,17 @@
         }
 
         async function loadContext() {
-            // Cargar en paralelo todos los catálogos y recursos
+            // PRIMERO: Cargar año académico actual (lo necesitamos para las queries dependientes)
+            const yearsRes = await supabaseRequest('/academic_years?select=year_id,year_name&is_current=eq.true&limit=1');
+            if (yearsRes && yearsRes.length > 0) {
+                academicYearId = yearsRes[0].year_id;
+                document.getElementById('meta-academic-year').textContent = yearsRes[0].year_name;
+            } else {
+                throw new Error('No hay año académico activo configurado');
+            }
+
+            // SEGUNDO: Cargar en paralelo todos los catálogos y recursos
             const [
-                yearsRes,
                 programsRes,
                 themesRes,
                 kcRes,
@@ -723,10 +745,12 @@
                 asRes,
                 gradesRes,
                 subjectsRes,
-                workersRes
+                workersRes,
+                sectionsRes,
+                areasRes,
+                myUIAssignmentsRes
             ] = await Promise.all([
-                supabaseRequest('/academic_years?select=year_id,year_name,is_current,year_status&is_current=eq.true&limit=1'),
-                supabaseRequest('/programs?select=program_id,program_name&order=program_name.asc'),
+                supabaseRequest('/programs?select=program_id,program_name,program_director_email&order=program_name.asc'),
                 supabaseRequest('/pln_ib_themes?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/pln_ib_key_concepts?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/pln_ib_atl_skills?select=*&active=eq.true&order=sort_order.asc'),
@@ -734,24 +758,15 @@
                 supabaseRequest('/pln_tilata_attributes?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/pln_action_types?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/pln_action_scope?select=*&active=eq.true&order=sort_order.asc'),
-                supabaseRequest('/grades?select=grade_id,grade_name,program_id&order=grade_name.asc'),
-                supabaseRequest('/academic_subjects?select=subject_id,subject_name&order=subject_name.asc'),
-                supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email&worker_status=eq.active&order=worker_first_name.asc')
+                supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id&order=grade_name.asc'),
+                supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id&order=subject_name.asc'),
+                supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,worker_status&worker_status=eq.active&order=worker_first_name.asc'),
+                supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active'),
+                supabaseRequest('/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active'),
+                supabaseRequest(`/academic_assignments?select=course_id,courses(grade_id,grades(grade_id,grade_name,program_id,section_id))&worker_id=eq.${currentWorkerId}&subject_id=eq.${SUBJECT_UI_ID}&academic_year_id=eq.${academicYearId}&assignment_status=eq.active`)
             ]);
 
-            // Año académico actual
-            if (yearsRes && yearsRes.length > 0) {
-                academicYearId = yearsRes[0].year_id;
-                document.getElementById('meta-academic-year').textContent = yearsRes[0].year_name;
-            }
-
-            // Programas: por defecto buscar PEP. Si no existe, tomar el primero.
-            currentPrograms = programsRes || [];
-            const pep = currentPrograms.find(p => /pep|primaria|primary/i.test(p.program_name));
-            programIdDefault = pep ? pep.program_id : (currentPrograms[0]?.program_id || null);
-            const programName = pep ? pep.program_name : (currentPrograms[0]?.program_name || '—');
-            document.getElementById('meta-program').textContent = programName;
-
+            allPrograms = programsRes || [];
             catalogThemes = themesRes || [];
             catalogKeyConcepts = kcRes || [];
             catalogAtl = atlRes || [];
@@ -762,8 +777,24 @@
             allGrades = gradesRes || [];
             allSubjects = subjectsRes || [];
             allWorkers = workersRes || [];
-        }
+            allSections = sectionsRes || [];
+            allAreas = areasRes || [];
 
+            // Procesar las asignaciones UI del worker actual:
+            // Cada fila trae assignment.courses.grades — extraer grados únicos
+            const uniqueGrades = new Map();
+            (myUIAssignmentsRes || []).forEach(a => {
+                const g = a.courses?.grades;
+                if (g && !uniqueGrades.has(g.grade_id)) {
+                    uniqueGrades.set(g.grade_id, g);
+                }
+            });
+            myUIAssignedGrades = Array.from(uniqueGrades.values());
+
+            console.log(`📊 Worker actual tiene asignación UI en ${myUIAssignedGrades.length} grado(s):`,
+                myUIAssignedGrades.map(g => g.grade_name).join(', '));
+        }
+        
         // ============================================================
         // CREAR / CARGAR UI
         // ============================================================
