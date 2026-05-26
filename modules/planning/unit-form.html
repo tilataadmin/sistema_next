@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.25.7">
+    <meta name="page-version" content="26.5.25.8">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -302,6 +302,60 @@
             background: #f8f9fa;
             border-radius: 4px;
         }
+
+        /* ====================================================
+           BLOQUE INFORMATIVO DE COORDINACIONES (read-only)
+           ==================================================== */
+        .coordinations-info-block {
+            margin-top: 1rem;
+            background: #fdf8e8;
+            border: 1px solid #f0e0a8;
+            border-radius: 6px;
+            padding: 0.85rem 1rem;
+            font-size: 0.85rem;
+        }
+        .coordinations-info-header {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-weight: 600;
+            color: #6c4400;
+            margin-bottom: 0.5rem;
+        }
+        .coordinations-info-header i {
+            color: #b88a00;
+            font-size: 1rem;
+        }
+        .coordinations-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .coordinations-list li {
+            padding: 0.2rem 0 0.2rem 1.5rem;
+            color: #5a4500;
+            line-height: 1.45;
+            position: relative;
+        }
+        .coordinations-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0.5rem;
+            color: #b88a00;
+            font-weight: bold;
+        }
+        .coordinations-list .role-tag {
+            font-weight: 600;
+            color: #4a3700;
+        }
+        .coordinations-list .person-name {
+            color: #6c4400;
+        }
+        .coordinations-list li.empty-state {
+            font-style: italic;
+            color: #9a8050;
+        }
+        
     </style>
 </head>
 <body>
@@ -504,6 +558,15 @@
                             <div class="chip-dropdown" id="chip-collaborators-dropdown"></div>
                         </div>
                         <div class="field-hint">El autor está marcado como líder de la unidad. Agregue colaboradores adicionales.</div>
+                    </div>
+
+                    <!-- Bloque informativo: coordinaciones con acceso por rol -->
+                    <div class="coordinations-info-block" id="coordinations-info-block" style="display:none;">
+                        <div class="coordinations-info-header">
+                            <i class="bi bi-info-circle"></i>
+                            <span>Esta unidad también puede ser revisada y editada por:</span>
+                        </div>
+                        <ul class="coordinations-list" id="coordinations-list"></ul>
                     </div>
                 </div>
 
@@ -1087,6 +1150,7 @@
             renderSubjectsSelect();
             renderSubjectsDescriptions();
             renderCollaborators();
+            renderCoordinationsInfoBlock();
         }
 
         function renderThemeSelect() {
@@ -1243,6 +1307,7 @@
                     }
                 }
                 renderSubjectsDescriptions();
+                renderCoordinationsInfoBlock();
             });
         }
 
@@ -1574,6 +1639,111 @@
         });
 
         console.log('✅ unit-form.html — sub-paso 4.1 (estructura + información general)');
+
+        // ============================================================
+        // RENDER DEL BLOQUE INFORMATIVO DE COORDINACIONES
+        // ============================================================
+        function renderCoordinationsInfoBlock() {
+            const container = document.getElementById('coordinations-info-block');
+            const list = document.getElementById('coordinations-list');
+            if (!container || !list) return;
+
+            // Acumular roles por worker_id, para luego mostrar a cada persona una sola vez
+            // con todos sus roles concatenados.
+            const peopleRoles = new Map(); // worker_id → { name, roles: Set<string> }
+
+            const addPersonRole = (worker, roleLabel) => {
+                if (!worker) return;
+                const fullName = `${worker.worker_last_name_1 || ''} ${worker.worker_last_name_2 || ''} ${worker.worker_first_name || ''}`
+                    .trim().replace(/\s+/g, ' ');
+                if (!peopleRoles.has(worker.worker_id)) {
+                    peopleRoles.set(worker.worker_id, { name: fullName, roles: new Set() });
+                }
+                peopleRoles.get(worker.worker_id).roles.add(roleLabel);
+            };
+
+            const addPersonByEmailRole = (email, roleLabel) => {
+                if (!email) return;
+                const emailLower = email.toLowerCase().trim();
+                const worker = allWorkers.find(w => (w.email || '').toLowerCase().trim() === emailLower);
+                if (worker) {
+                    addPersonRole(worker, roleLabel);
+                } else {
+                    // No hay worker registrado con ese email — mostramos el rol con el email como fallback
+                    if (!peopleRoles.has(`email:${emailLower}`)) {
+                        peopleRoles.set(`email:${emailLower}`, { name: email, roles: new Set() });
+                    }
+                    peopleRoles.get(`email:${emailLower}`).roles.add(roleLabel);
+                }
+            };
+
+            // ───────────────────────────────────────────────────────
+            // Coordinadores de área (basados en las materias actuales de la UI)
+            // ───────────────────────────────────────────────────────
+            const unitSubjectIds = Array.from(selectedSubjects.keys());
+            const areaIdsOfUnit = new Set();
+            unitSubjectIds.forEach(sId => {
+                const subj = allSubjects.find(s => s.subject_id === sId);
+                if (subj && subj.area_id) areaIdsOfUnit.add(subj.area_id);
+            });
+
+            areaIdsOfUnit.forEach(aId => {
+                const area = allAreas.find(a => a.area_id === aId);
+                if (area && area.coordinator_worker_id) {
+                    const coordWorker = allWorkers.find(w => w.worker_id === area.coordinator_worker_id);
+                    if (coordWorker) {
+                        addPersonRole(coordWorker, `Coordinador de ${area.area_name}`);
+                    }
+                }
+            });
+
+            // ───────────────────────────────────────────────────────
+            // Director del programa
+            // ───────────────────────────────────────────────────────
+            if (unitProgramId) {
+                const program = allPrograms.find(p => p.program_id === unitProgramId);
+                if (program && program.program_director_email) {
+                    addPersonByEmailRole(program.program_director_email, `Director de ${program.program_name}`);
+                }
+            }
+
+            // ───────────────────────────────────────────────────────
+            // Director de la sección
+            // ───────────────────────────────────────────────────────
+            if (unitSectionId) {
+                const section = allSections.find(s => s.section_id === unitSectionId);
+                if (section && section.director_email) {
+                    addPersonByEmailRole(section.director_email, `Director de ${section.section_name}`);
+                }
+            }
+
+            // ───────────────────────────────────────────────────────
+            // Render
+            // ───────────────────────────────────────────────────────
+            if (peopleRoles.size === 0) {
+                container.style.display = 'block';
+                list.innerHTML = `
+                    <li class="empty-state">
+                        Aún no hay coordinaciones con acceso automático a esta unidad.
+                        Vincule materias para que aparezcan los coordinadores de área correspondientes.
+                    </li>
+                `;
+                return;
+            }
+
+            const items = Array.from(peopleRoles.values()).map(p => {
+                const rolesText = Array.from(p.roles).join(' · ');
+                return `
+                    <li>
+                        <span class="role-tag">${escapeHtml(rolesText)}:</span>
+                        <span class="person-name">${escapeHtml(p.name)}</span>
+                    </li>
+                `;
+            }).join('');
+
+            container.style.display = 'block';
+            list.innerHTML = items;
+        }
 
         // ============================================================
         // HELPER: Cargar HTML en un editor Quill correctamente
