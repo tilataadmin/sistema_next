@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.5.26.1">
     <title>Gestión de Grados - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -164,13 +165,18 @@
             <!-- Filtros -->
             <div class="card-body border-bottom">
                 <div class="row">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <input type="text" class="form-control" id="searchGrades" 
                                placeholder="Buscar grados..." onkeyup="filterGrades()">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <select class="form-select" id="filterSection" onchange="filterGrades()">
                             <option value="">Todas las secciones</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="filterProgram" onchange="filterGrades()">
+                            <option value="">Todos los programas</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -274,11 +280,19 @@
                             </div>
                         </div>
                         
-                        <div class="mb-3">
+                       <div class="mb-3">
                             <label for="gradePromotion" class="form-label">Año de Promoción <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="gradePromotion" required 
                                    placeholder="Ej: 2024-2025, 2025-2026">
                             <small class="form-text text-muted">Año académico en que se graduarán (formato: año1-año2)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="gradeProgram" class="form-label">Programa</label>
+                            <select class="form-select" id="gradeProgram">
+                                <option value="">Sin programa asignado</option>
+                            </select>
+                            <small class="form-text text-muted">Programa académico al que pertenece el grado (PEP, PAI, PD)</small>
                         </div>
                         
                         <div class="mb-3">
@@ -315,6 +329,7 @@
         let allGrades = [];
         let allSections = [];
         let filteredGrades = [];
+        let allPrograms = [];
         let isEditMode = false;
         let currentGradeId = null;
         let modalInstance = null;
@@ -362,7 +377,7 @@
                 configurarEventos();
                 
                 // Cargar datos
-                await Promise.all([loadGrades(), loadSections()]);
+                await Promise.all([loadGrades(), loadSections(), loadPrograms()]);
                 await loadStats();
                 
                 ocultarLoading();
@@ -443,6 +458,46 @@
                 allSections = [];
             }
         }
+
+        async function loadPrograms() {
+            try {
+                const programs = await supabaseRequest('/programs?select=program_id,program_name&program_status=eq.active&order=program_name.asc');
+                allPrograms = programs || [];
+                populateProgramSelects();
+                
+                console.log(`✅ ${allPrograms.length} programas cargados`);
+                
+            } catch (error) {
+                console.error('❌ Error cargando programas:', error);
+                allPrograms = [];
+            }
+        }
+        
+        function populateProgramSelects() {
+            const selects = ['gradeProgram', 'filterProgram'];
+            
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                if (!select) return;
+                
+                // Conservar la primera opción (placeholder)
+                const firstOption = select.querySelector('option');
+                select.innerHTML = '';
+                if (firstOption) {
+                    select.appendChild(firstOption);
+                }
+                
+                allPrograms.forEach(program => {
+                    const option = document.createElement('option');
+                    option.value = program.program_id;
+                    option.textContent = program.program_name;
+                    select.appendChild(option);
+                });
+            });
+            
+            console.log('✅ Selectores de programas poblados');
+        }
+        
         function populateSectionSelects() {
             const selects = ['gradeSection', 'filterSection'];
             
@@ -498,6 +553,10 @@
                 const section = allSections.find(s => s.section_id === grade.section_id);
                 const sectionName = section ? section.section_name : 'Sin sección';
                 
+                // Buscar el nombre del programa
+                const program = allPrograms.find(p => p.program_id === grade.program_id);
+                const programName = program ? program.program_name : null;
+                
                 gridHtml += `
                     <div class="col-md-6 col-lg-4 mb-3">
                         <div class="card grade-card h-100">
@@ -512,6 +571,13 @@
                                 <div class="mb-2">
                                     <small class="text-muted d-block">Sección:</small>
                                     <strong>${escapeHtml(sectionName)}</strong>
+                                </div>
+                                
+                                <div class="mb-2">
+                                    <small class="text-muted d-block">Programa:</small>
+                                    ${programName 
+                                        ? `<strong>${escapeHtml(programName)}</strong>` 
+                                        : `<span class="text-muted fst-italic">Sin programa</span>`}
                                 </div>
                                 
                                 <div class="mb-3">
@@ -553,6 +619,7 @@
         function filterGrades() {
             const searchTerm = document.getElementById('searchGrades').value.toLowerCase();
             const sectionFilter = document.getElementById('filterSection').value;
+            const programFilter = document.getElementById('filterProgram').value;
             
             filteredGrades = allGrades.filter(grade => {
                 const matchesSearch = !searchTerm || 
@@ -561,7 +628,9 @@
                 
                 const matchesSection = !sectionFilter || grade.section_id === sectionFilter;
                 
-                return matchesSearch && matchesSection;
+                const matchesProgram = !programFilter || grade.program_id === programFilter;
+                
+                return matchesSearch && matchesSection && matchesProgram;
             });
             
             renderGradesGrid();
@@ -570,6 +639,7 @@
         function clearFilters() {
             document.getElementById('searchGrades').value = '';
             document.getElementById('filterSection').value = '';
+            document.getElementById('filterProgram').value = '';
             filteredGrades = [...allGrades];
             renderGradesGrid();
         }
@@ -627,6 +697,7 @@
                     grade_order: parseInt(document.getElementById('gradeOrder').value),
                     section_id: document.getElementById('gradeSection').value,
                     promotion_code: document.getElementById('gradePromotion').value.trim(),
+                    program_id: document.getElementById('gradeProgram').value || null,
                     grade_status: document.getElementById('gradeStatus').value
                 };
                 
@@ -688,6 +759,7 @@
                 document.getElementById('gradeOrder').value = grade.grade_order;
                 document.getElementById('gradeSection').value = grade.section_id;
                 document.getElementById('gradePromotion').value = grade.promotion_code || '';
+                document.getElementById('gradeProgram').value = grade.program_id || '';
                 document.getElementById('gradeStatus').value = grade.grade_status;
                 
                 // Mostrar modal
@@ -714,6 +786,7 @@
                     grade_order: parseInt(document.getElementById('gradeOrder').value),
                     section_id: document.getElementById('gradeSection').value,
                     promotion_code: document.getElementById('gradePromotion').value.trim(),
+                    program_id: document.getElementById('gradeProgram').value || null,
                     grade_status: document.getElementById('gradeStatus').value
                 };
                 
