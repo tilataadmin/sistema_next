@@ -876,6 +876,66 @@
         // PRE-CARGA AUTOMÁTICA DE COLABORADORES
         // ============================================================
         async function precargarColaboradores() {
+            // PASO 1: Obtener todos los course_id del grado
+            const coursesRes = await supabaseRequest(
+                `/courses?select=course_id&grade_id=eq.${unitGradeId}`
+            );
+
+            const courseIds = (coursesRes || []).map(c => c.course_id);
+
+            if (courseIds.length === 0) {
+                console.warn(`⚠️ El grado ${unitGradeId} no tiene cursos. Solo el creador queda como colaborador.`);
+                await supabaseRequest('/pln_unit_collaborators', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        unit_id: unitId,
+                        worker_id: currentWorkerId,
+                        is_lead: true
+                    })
+                });
+                return;
+            }
+
+            // PASO 2: Buscar todas las assignments activas en cualquiera de esos cursos, año vigente
+            const assignmentsRes = await supabaseRequest(
+                `/academic_assignments?select=worker_id&course_id=in.(${courseIds.join(',')})&academic_year_id=eq.${academicYearId}&assignment_status=eq.active`
+            );
+
+            // PASO 3: Extraer worker_ids únicos
+            const uniqueWorkerIds = new Set();
+            (assignmentsRes || []).forEach(a => uniqueWorkerIds.add(a.worker_id));
+
+            // Asegurar que el creador esté incluido (debería estarlo si tiene asignación UI, pero por seguridad)
+            uniqueWorkerIds.add(currentWorkerId);
+
+            // PASO 4: Construir el batch de inserts para pln_unit_collaborators
+            const inserts = Array.from(uniqueWorkerIds).map(wId => ({
+                unit_id: unitId,
+                worker_id: wId,
+                is_lead: wId === currentWorkerId
+            }));
+
+            await supabaseRequest('/pln_unit_collaborators', {
+                method: 'POST',
+                body: JSON.stringify(inserts)
+            });
+
+            console.log(`✅ ${inserts.length} colaboradores pre-cargados (1 líder + ${inserts.length - 1} colaboradores)`);
+        }
+
+        // ============================================================
+        // ACTUALIZAR METADATA VISIBLE DE LA UI
+        // ============================================================
+        function actualizarMetadataUI() {
+            // Mostrar el programa derivado del grado
+            const program = allPrograms.find(p => p.program_id === unitProgramId);
+            document.getElementById('meta-program').textContent = program ? program.program_name : '—';
+        }
+
+        // ============================================================
+        // PRE-CARGA AUTOMÁTICA DE COLABORADORES
+        // ============================================================
+        async function precargarColaboradores() {
             // Buscar todos los workers con asignaciones activas en cualquier curso del grado
             // en el año académico vigente. Devuelve worker_ids únicos.
             const assignmentsRes = await supabaseRequest(
@@ -913,19 +973,40 @@
             document.getElementById('meta-program').textContent = program ? program.program_name : '—';
         }
 
-        async function cargarUI() {
+       async function cargarUI() {
+            // 1. Cargar la unidad
             const data = await supabaseRequest(`/pln_units?select=*&unit_id=eq.${unitId}&limit=1`);
             if (!data || data.length === 0) {
                 throw new Error('Unidad no encontrada');
             }
             unitData = data[0];
 
-            // Verificar permisos de edición (D7 pendiente, por ahora todos los workers con permiso editan)
-            // El autor y los colaboradores son los "editores naturales"
-            const collabRes = await supabaseRequest(`/pln_unit_collaborators?select=worker_id,is_lead&unit_id=eq.${unitId}`);
+            // 2. Obtener el grado de la UI (vía pln_unit_grades)
+            // Cacheamos también program_id y section_id para canEdit()
+            const gradeLinkRes = await supabaseRequest(`/pln_unit_grades?select=grade_id&unit_id=eq.${unitId}&limit=1`);
+            if (gradeLinkRes && gradeLinkRes.length > 0) {
+                unitGradeId = gradeLinkRes[0].grade_id;
+                const g = allGrades.find(x => x.grade_id === unitGradeId);
+                if (g) {
+                    unitProgramId = g.program_id;
+                    unitSectionId = g.section_id;
+                }
+            } else {
+                console.warn('⚠️ La unidad no tiene grado vinculado en pln_unit_grades');
+            }
 
-            // Cargar relaciones M:N
+            // 3. Cargar colaboradores y relaciones M:N
+            const collabRes = await supabaseRequest(`/pln_unit_collaborators?select=worker_id,is_lead&unit_id=eq.${unitId}`);
             await cargarRelaciones(collabRes);
+
+            // 4. Actualizar metadata visible (programa, etc.)
+            actualizarMetadataUI();
+
+            // 5. Evaluar permisos: ¿puede editar o solo leer?
+            const editable = await canEdit();
+            if (!editable) {
+                aplicarModoSoloLectura();
+            }
         }
 
         async function cargarRelaciones(collabPreloaded) {
@@ -1521,6 +1602,165 @@
         });
 
         console.log('✅ unit-form.html — sub-paso 4.1 (estructura + información general)');
+
+        // ============================================================
+        // CONTROL DE ACCESO: LOS 6 CAMINOS DE EDICIÓN
+        // ============================================================
+        async function canEdit() {
+            // Validación previa: necesitamos saber el grado de la UI
+            if (!unitGradeId || !unitData) {
+                console.warn('canEdit() llamado sin grado/UI cargados');
+                return false;
+            }
+
+            const currentWorkerEmailLower = (currentWorkerEmail || '').toLowerCase().trim();
+
+            // ───────────────────────────────────────────────────────
+            // CAMINO 1: ¿Es el creador?
+            // ───────────────────────────────────────────────────────
+            if (unitData.created_by === currentWorkerId) {
+                console.log('✅ canEdit: creador');
+                return true;
+            }
+
+            // ───────────────────────────────────────────────────────
+            // CAMINO 2: ¿Es colaborador activo?
+            // Validamos contra los datos ya cargados en selectedCollaborators,
+            // y verificamos que el worker esté activo
+            // ───────────────────────────────────────────────────────
+            const myCollab = selectedCollaborators.get(currentWorkerId);
+            if (myCollab) {
+                const w = myCollab.worker_data;
+                if (w && w.worker_status === 'active') {
+                    console.log('✅ canEdit: colaborador activo');
+                    return true;
+                }
+            }
+
+            // ───────────────────────────────────────────────────────
+            // CAMINO 3: ¿Es docente del grado en el año vigente?
+            // Buscar si tiene alguna asignación activa en algún curso del grado
+            // ───────────────────────────────────────────────────────
+            const coursesOfGrade = await supabaseRequest(
+                `/courses?select=course_id&grade_id=eq.${unitGradeId}`
+            );
+            const courseIds = (coursesOfGrade || []).map(c => c.course_id);
+            if (courseIds.length > 0) {
+                const myAssignments = await supabaseRequest(
+                    `/academic_assignments?select=assignment_id&worker_id=eq.${currentWorkerId}&course_id=in.(${courseIds.join(',')})&academic_year_id=eq.${academicYearId}&assignment_status=eq.active&limit=1`
+                );
+                if (myAssignments && myAssignments.length > 0) {
+                    console.log('✅ canEdit: docente del grado');
+                    return true;
+                }
+            }
+
+            // ───────────────────────────────────────────────────────
+            // CAMINO 4: ¿Es coordinador del área de alguna materia de la UI?
+            // selectedSubjects es Map<subject_id, description> con las materias de la UI
+            // ───────────────────────────────────────────────────────
+            const unitSubjectIds = Array.from(selectedSubjects.keys());
+            if (unitSubjectIds.length > 0) {
+                // Obtener las area_id de esas materias
+                const areaIdsOfUnit = new Set();
+                unitSubjectIds.forEach(sId => {
+                    const subj = allSubjects.find(s => s.subject_id === sId);
+                    if (subj && subj.area_id) areaIdsOfUnit.add(subj.area_id);
+                });
+
+                // ¿Soy coordinador de alguna de esas áreas?
+                const myAreas = allAreas.filter(
+                    a => areaIdsOfUnit.has(a.area_id) && a.coordinator_worker_id === currentWorkerId
+                );
+                if (myAreas.length > 0) {
+                    console.log('✅ canEdit: coordinador de área');
+                    return true;
+                }
+            }
+
+            // ───────────────────────────────────────────────────────
+            // CAMINO 5: ¿Soy director del programa del grado?
+            // ───────────────────────────────────────────────────────
+            if (unitProgramId) {
+                const program = allPrograms.find(p => p.program_id === unitProgramId);
+                if (program && program.program_director_email) {
+                    const programDirectorEmailLower = program.program_director_email.toLowerCase().trim();
+                    if (programDirectorEmailLower === currentWorkerEmailLower) {
+                        console.log('✅ canEdit: director del programa');
+                        return true;
+                    }
+                }
+            }
+
+            // ───────────────────────────────────────────────────────
+            // CAMINO 6: ¿Soy director de la sección del grado?
+            // ───────────────────────────────────────────────────────
+            if (unitSectionId) {
+                const section = allSections.find(s => s.section_id === unitSectionId);
+                if (section && section.director_email) {
+                    const sectionDirectorEmailLower = section.director_email.toLowerCase().trim();
+                    if (sectionDirectorEmailLower === currentWorkerEmailLower) {
+                        console.log('✅ canEdit: director de sección');
+                        return true;
+                    }
+                }
+            }
+
+            // Ningún camino se cumple
+            console.log('⛔ canEdit: ninguno de los 6 caminos se cumple → modo solo lectura');
+            return false;
+        }
+
+        // ============================================================
+        // APLICAR MODO SOLO LECTURA
+        // ============================================================
+        function aplicarModoSoloLectura() {
+            isReadOnly = true;
+
+            // Banner amarillo arriba del formulario
+            const banner = document.createElement('div');
+            banner.className = 'alert alert-warning d-flex align-items-center';
+            banner.style.cssText = 'margin: 1rem 0; border-radius: 6px;';
+            banner.innerHTML = `
+                <i class="bi bi-eye me-2" style="font-size: 1.25rem;"></i>
+                <div>
+                    <strong>Modo solo lectura</strong><br>
+                    <small>Está viendo esta unidad pero no puede editarla. Si necesita hacer cambios, contacte al docente responsable o al coordinador del área.</small>
+                </div>
+            `;
+
+            const pageContent = document.getElementById('page-content');
+            if (pageContent) {
+                pageContent.insertBefore(banner, pageContent.firstChild);
+            }
+
+            // Deshabilitar TODOS los inputs/textareas/selects del formulario
+            const allInputs = document.querySelectorAll(
+                '#page-content input, #page-content textarea, #page-content select, #page-content button'
+            );
+            allInputs.forEach(el => {
+                // Excepción: dejar habilitados los botones de toggle de bloques (acordeón)
+                // y los breadcrumbs/navegación
+                if (el.closest('.block-header') || el.closest('nav') || el.closest('.breadcrumb')) {
+                    return;
+                }
+                el.disabled = true;
+            });
+
+            // Deshabilitar editores Quill (poniéndolos en read-only)
+            if (typeof quillCentralIdea !== 'undefined' && quillCentralIdea) {
+                quillCentralIdea.enable(false);
+            }
+            if (typeof quillLinesOfInquiry !== 'undefined' && quillLinesOfInquiry) {
+                quillLinesOfInquiry.enable(false);
+            }
+            if (typeof quillDifferentiation !== 'undefined' && quillDifferentiation) {
+                quillDifferentiation.enable(false);
+            }
+
+            console.log('🔒 Modo solo lectura aplicado');
+        }
+        
     </script>
 </body>
 </html>
