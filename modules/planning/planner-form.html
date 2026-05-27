@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.5.27.3">
+    <title>Planeador de Área - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <!-- Quill 2.0 — editor rich text liviano -->
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --planning-primary: #2C5F9B;
+            --planning-primary-dark: #1F4775;
+            --planning-light: #E8EFF7;
+            --planning-border: #D0DCEC;
+        }
+
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+        .loading-overlay.hidden { display: none; }
+        .loading-content { background: white; padding: 2rem; border-radius: 8px; text-align: center; }
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid var(--planning-primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* ====================================================
+           INDICADOR DE AUTOGUARDADO
+           ==================================================== */
+        #autosave-indicator {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: white;
+            border: 1px solid var(--planning-border);
+            padding: 0.4rem 0.9rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            z-index: 1020;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #6c757d;
+            transition: all 0.3s;
+        }
+        #autosave-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #adb5bd;
+        }
+        #autosave-indicator.saving { color: var(--planning-primary); }
+        #autosave-indicator.saving .dot { background: var(--planning-primary); animation: pulse 1s infinite; }
+        #autosave-indicator.saved { color: #198754; }
+        #autosave-indicator.saved .dot { background: #198754; }
+        #autosave-indicator.error { color: #dc3545; }
+        #autosave-indicator.error .dot { background: #dc3545; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ====================================================
+           HEADER INFORMATIVO DEL PLANEADOR
+           ==================================================== */
+        .planner-header {
+            background: var(--planning-light);
+            border: 1px solid var(--planning-border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .planner-title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .planner-subject-badge {
+            background: var(--planning-primary);
+            color: white;
+            font-weight: 600;
+            font-size: 1.1rem;
+            padding: 0.45rem 0.95rem;
+            border-radius: 6px;
+        }
+        .planner-grade-badge {
+            background: white;
+            color: var(--planning-primary-dark);
+            font-weight: 600;
+            font-size: 1rem;
+            padding: 0.4rem 0.85rem;
+            border-radius: 6px;
+            border: 1px solid var(--planning-border);
+        }
+        .planner-trimester-badge {
+            background: white;
+            color: #555;
+            font-weight: 500;
+            font-size: 0.9rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 14px;
+            border: 1px solid #d0d7e0;
+        }
+        .planner-program-badge {
+            background: #fff3cd;
+            color: #6c4400;
+            font-weight: 500;
+            font-size: 0.85rem;
+            padding: 0.3rem 0.7rem;
+            border-radius: 12px;
+            border: 1px solid #ffe69c;
+        }
+        .planner-meta {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: #555;
+            margin-top: 0.5rem;
+        }
+        .planner-meta .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .planner-meta .meta-label { color: #6c757d; }
+        .planner-meta .meta-value { font-weight: 500; color: #333; }
+
+        /* ====================================================
+           BLOQUES DE LA PÁGINA (placeholders por ahora)
+           ==================================================== */
+        .block-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+        .block-header {
+            padding: 1rem 1.25rem;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .block-header:hover { background: #f1f3f5; }
+        .block-header h5 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .block-header h5 i { color: var(--planning-primary); }
+        .block-header .toggle-icon {
+            color: #6c757d;
+            transition: transform 0.2s;
+        }
+        .block-card.collapsed .toggle-icon { transform: rotate(-90deg); }
+        .block-card.collapsed .block-body { display: none; }
+        .block-body { padding: 1.25rem; }
+
+        .placeholder-block {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
+            font-style: italic;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        /* ====================================================
+           BANNER DE CONFLICTO DE EDICIÓN CONCURRENTE
+           ==================================================== */
+        .concurrent-edit-banner {
+            position: sticky;
+            top: 0;
+            z-index: 1019;
+            margin: 0 0 1rem 0;
+            padding: 0.75rem 1.25rem;
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            border-radius: 6px;
+            color: #6c4400;
+            font-size: 0.9rem;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+        .concurrent-edit-banner.show { display: flex; }
+        .concurrent-edit-banner .banner-content {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex: 1;
+        }
+        .concurrent-edit-banner .banner-content i {
+            font-size: 1.1rem;
+            color: #b88a00;
+            flex-shrink: 0;
+        }
+        .concurrent-edit-banner .btn-reload {
+            background: #856404;
+            color: white;
+            border: none;
+            padding: 0.4rem 0.95rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .concurrent-edit-banner .btn-reload:hover { background: #6c4400; }
+
+        /* ====================================================
+           BLOQUE 1 — VINCULACIÓN CON UI
+           ==================================================== */
+        .uilink-form-label {
+            font-weight: 500;
+            font-size: 0.88rem;
+            color: #333;
+            margin-bottom: 0.3rem;
+        }
+        .uilink-hint {
+            font-size: 0.78rem;
+            color: #6c757d;
+            margin-top: 0.25rem;
+        }
+        .uilink-non-pep {
+            padding: 1rem;
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 0.88rem;
+        }
+        .connections-section {
+            margin-top: 1.25rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e8ecef;
+        }
+        .connections-section.hidden {
+            display: none;
+        }
+        .connections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 0.5rem 1rem;
+            margin-top: 0.5rem;
+        }
+        .connection-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 0.88rem;
+        }
+        .connection-item:hover { background: var(--planning-light); }
+        .connection-item input { margin: 0; }
+        .connection-item.checked {
+            background: var(--planning-light);
+            border-color: var(--planning-primary);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0">Cargando planeador...</p>
+        </div>
+    </div>
+
+    <!-- Indicador de autoguardado fijo -->
+    <div id="autosave-indicator">
+        <span class="dot"></span>
+        <span class="text">Todos los cambios guardados</span>
+    </div>
+
+    <div class="container-fluid" id="page-content" style="display:none;">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="my-planners.html">Mis planeadores</a></li>
+                <li class="breadcrumb-item active" aria-current="page" id="bc-current">Planeador</li>
+            </ol>
+        </nav>
+
+        <div id="alertContainer"></div>
+
+        <!-- BANNER DE CONFLICTO DE EDICIÓN CONCURRENTE -->
+        <div class="concurrent-edit-banner" id="concurrent-edit-banner">
+            <div class="banner-content">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span>Otra persona acaba de editar este planeador. Recargue para ver los cambios más recientes y evitar sobrescribirlos.</span>
+            </div>
+            <button type="button" class="btn-reload" onclick="window.location.reload()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Recargar
+            </button>
+        </div>
+
+        <!-- HEADER INFORMATIVO DEL PLANEADOR -->
+        <div class="planner-header">
+            <div class="planner-title-row">
+                <span class="planner-subject-badge" id="header-subject">—</span>
+                <span class="planner-grade-badge" id="header-grade">—</span>
+                <span class="planner-trimester-badge" id="header-trimester">—</span>
+                <span class="planner-program-badge" id="header-program">—</span>
+            </div>
+            <div class="planner-meta">
+                <div class="meta-item">
+                    <i class="bi bi-calendar3"></i>
+                    <span class="meta-label">Año académico:</span>
+                    <span class="meta-value" id="meta-academic-year">—</span>
+                </div>
+                <div class="meta-item">
+                    <i class="bi bi-person"></i>
+                    <span class="meta-label">Creado por:</span>
+                    <span class="meta-value" id="meta-creator">—</span>
+                </div>
+                <div class="meta-item" id="meta-status-wrapper">
+                    <i class="bi bi-check2-circle"></i>
+                    <span class="meta-label">Estado:</span>
+                    <span class="meta-value" id="meta-status">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- BLOQUE 1: VINCULACIÓN CON UI                                  -->
+        <!-- ============================================================ -->
+        <div class="block-card" id="block-header-editable">
+            <div class="block-header" onclick="toggleBlock('block-header-editable')">
+                <h5><i class="bi bi-link-45deg"></i>Vinculación con Unidad de Indagación</h5>
+                <i class="bi bi-chevron-down toggle-icon"></i>
+            </div>
+            <div class="block-body" id="uilink-body">
+                <!-- Contenido dinámico según programa del grado -->
+            </div>
+        </div>
+        
+        <!-- ============================================================ -->
+        <!-- BLOQUE 2: MARCO CURRICULAR (placeholder)                      -->
+        <!-- ============================================================ -->
+        <div class="block-card collapsed" id="block-curricular">
+            <div class="block-header" onclick="toggleBlock('block-curricular')">
+                <h5><i class="bi bi-book"></i>Marco curricular</h5>
+                <i class="bi bi-chevron-down toggle-icon"></i>
+            </div>
+            <div class="block-body">
+                <div class="placeholder-block">
+                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
+                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.C.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- BLOQUE 3: CRITERIOS DE EVALUACIÓN (placeholder)               -->
+        <!-- ============================================================ -->
+        <div class="block-card collapsed" id="block-criteria">
+            <div class="block-header" onclick="toggleBlock('block-criteria')">
+                <h5><i class="bi bi-list-check"></i>Criterios de evaluación</h5>
+                <i class="bi bi-chevron-down toggle-icon"></i>
+            </div>
+            <div class="block-body">
+                <div class="placeholder-block">
+                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
+                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.D.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- BLOQUE 4: REFLEXIÓN DEL TRIMESTRE (placeholder)               -->
+        <!-- ============================================================ -->
+        <div class="block-card collapsed" id="block-reflection">
+            <div class="block-header" onclick="toggleBlock('block-reflection')">
+                <h5><i class="bi bi-chat-square-text"></i>Reflexión del trimestre</h5>
+                <i class="bi bi-chevron-down toggle-icon"></i>
+            </div>
+            <div class="block-body">
+                <div class="placeholder-block">
+                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
+                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.E.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- BLOQUE 5: CICLOS DEL PLANEADOR (placeholder)                  -->
+        <!-- ============================================================ -->
+        <div class="block-card collapsed" id="block-cycles">
+            <div class="block-header" onclick="toggleBlock('block-cycles')">
+                <h5><i class="bi bi-arrow-repeat"></i>Ciclos del planeador</h5>
+                <i class="bi bi-chevron-down toggle-icon"></i>
+            </div>
+            <div class="block-body">
+                <div class="placeholder-block">
+                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
+                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.F.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- BLOQUE 6: COMENTARIOS (placeholder)                           -->
+        <!-- ============================================================ -->
+        <div class="block-card collapsed" id="block-comments">
+            <div class="block-header" onclick="toggleBlock('block-comments')">
+                <h5><i class="bi bi-chat-left-text"></i>Comentarios sobre el planeador</h5>
+                <i class="bi bi-chevron-down toggle-icon"></i>
+            </div>
+            <div class="block-body">
+                <div class="placeholder-block">
+                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
+                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.G.</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ============================================================
+        // ESTADO GLOBAL
+        // ============================================================
+        let currentUser = null;
+        let currentWorkerId = null;
+        let currentWorkerEmail = null;
+        let plannerId = null;
+        let plannerData = null;
+        let academicYearId = null;
+        let isReadOnly = false;
+
+        // Datos del contexto del planeador
+        let plannerSubjectName = null;
+        let plannerGradeName = null;
+        let plannerProgramName = null;
+        let plannerCreatorName = null;
+
+        // Vinculación con UI
+        let availableUIs = [];                   // UIs activas del mismo grado y año
+        let catalogConnectionTypes = [];         // catálogo de tipos de conexión IB
+        let selectedConnections = new Set();     // connection_type_id activos para este planeador
+
+        // Polling de cambios concurrentes
+        let lastKnownUpdatedAt = null;
+        
+        let pollingIntervalId = null;        // referencia al setInterval
+        let concurrentEditDetected = false;  // una vez detectado, no spamear el log
+
+        // Recursos académicos (caches)
+        let allGrades = [];
+        let allSubjects = [];
+        let allPrograms = [];
+        let allWorkers = [];
+        let allAreas = [];
+        let allSections = [];
+
+        // ============================================================
+        // INICIALIZACIÓN
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const hasAccess = await validatePageAccess('Crear planeador de área')
+                                  || await validatePageAccess('Gestionar planeadores de área');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    window.location.href = '../../login.html';
+                    return;
+                }
+                currentUser = session.user;
+
+                // Obtener planner_id de la URL
+                const urlParams = new URLSearchParams(window.location.search);
+                plannerId = urlParams.get('planner_id');
+                if (!plannerId) {
+                    mostrarPantallaError(
+                        'No se especificó qué planeador abrir. Para crear un planeador nuevo, use "Crear planeador de área" en el menú lateral.',
+                        'warning'
+                    );
+                    return;
+                }
+
+                // Cargar worker actual
+                await loadCurrentWorker();
+                if (!currentWorkerId) {
+                    mostrarPantallaError('No se encontró un trabajador vinculado a tu usuario.', 'warning');
+                    return;
+                }
+
+                // Cargar contexto base (catálogos compartidos)
+                await loadContext();
+
+                // Cargar el planeador
+                await cargarPlaneador();
+
+                // Cargar UIs disponibles + conexiones existentes
+                await cargarUILinkData();
+
+                // Evaluar permisos (los 4 caminos)
+                const editable = await canEdit();
+                if (!editable) {
+                    aplicarModoSoloLectura();
+                }
+
+                // Renderizar header informativo
+                renderHeaderInformativo();
+
+                // Renderizar Bloque 1 (vinculación con UI)
+                renderUILinkBlock();
+
+                // Iniciar polling de cambios concurrentes (solo si puede editar)
+                if (!isReadOnly) {
+                    lastKnownUpdatedAt = plannerData.updated_at;
+                    iniciarPollingConcurrencia();
+                }
+
+                ocultarLoading();
+                document.getElementById('page-content').style.display = 'block';
+                console.log('✅ planner-form.html cargado (sub-bloque 6.2.A)');
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                mostrarPantallaError(error.message, 'warning');
+            }
+        });
+
+        // ============================================================
+        // POLLING DE EDICIÓN CONCURRENTE
+        // ============================================================
+        // Cada 15 segundos consulta updated_at del planeador en BD.
+        // Si cambió respecto al último valor conocido (y no fui yo), muestra banner.
+        // Una vez mostrado, deja de avisar (el usuario ya sabe).
+        function iniciarPollingConcurrencia() {
+            const POLL_INTERVAL_MS = 15000;  // 15 segundos
+
+            pollingIntervalId = setInterval(async () => {
+                if (concurrentEditDetected) return;  // ya avisamos, no spamear
+                if (document.hidden) return;          // ahorrar si la pestaña no está visible
+
+                try {
+                    const res = await supabaseRequest(
+                        `/pln_planners?select=updated_at&planner_id=eq.${plannerId}&limit=1`
+                    );
+                    if (!res || res.length === 0) return;
+
+                    const remoteUpdatedAt = res[0].updated_at;
+
+                    if (remoteUpdatedAt && remoteUpdatedAt !== lastKnownUpdatedAt) {
+                        // Hubo cambio externo. Mostrar banner.
+                        // Nota: cuando autosave se implemente (sub-bloques siguientes),
+                        // cada PATCH local actualizará lastKnownUpdatedAt para distinguir
+                        // ediciones propias de externas.
+                        concurrentEditDetected = true;
+                        const banner = document.getElementById('concurrent-edit-banner');
+                        if (banner) banner.classList.add('show');
+                        console.warn('⚠️ Edición concurrente detectada. Banner mostrado.');
+                    }
+                } catch (err) {
+                    // Silencio: errores transitorios de red no deben molestar al usuario
+                    console.debug('Polling concurrencia: error transitorio', err);
+                }
+            }, POLL_INTERVAL_MS);
+        }
+
+        // Limpiar polling al cerrar la página
+        window.addEventListener('beforeunload', () => {
+            if (pollingIntervalId) clearInterval(pollingIntervalId);
+        });
+
+        // ============================================================
+        // CARGA DE CONTEXTO
+        // ============================================================
+        async function loadCurrentWorker() {
+            const userMail = currentUser.user_mail;
+            if (!userMail) return;
+
+            const data = await supabaseRequest(
+                `/workers?select=worker_id,worker_first_name,worker_last_name_1,email&email=eq.${encodeURIComponent(userMail)}&limit=1`
+            );
+
+            if (data && data.length > 0) {
+                currentWorkerId = data[0].worker_id;
+                currentWorkerEmail = data[0].email;
+            }
+        }
+
+        async function loadContext() {
+            // Cargar todos los catálogos base que necesitamos (incluyendo workers y áreas/secciones para los caminos)
+            const [gradesRes, subjectsRes, programsRes, workersRes, areasRes, sectionsRes, connectionTypesRes] = await Promise.all([
+                supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id'),
+                supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id'),
+                supabaseRequest('/programs?select=program_id,program_name,program_director_email'),
+                supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,email,worker_status&worker_status=eq.active'),
+                supabaseRequest('/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active'),
+                supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active'),
+                supabaseRequest('/pln_connection_types?select=*&active=eq.true&order=sort_order.asc')
+            ]);
+
+            allGrades = gradesRes || [];
+            allSubjects = subjectsRes || [];
+            allPrograms = programsRes || [];
+            allWorkers = workersRes || [];
+            allAreas = areasRes || [];
+            allSections = sectionsRes || [];
+            catalogConnectionTypes = connectionTypesRes || [];
+        }
+
+        // ============================================================
+        // CARGA DE UIs DISPONIBLES + CONEXIONES EXISTENTES
+        // ============================================================
+        async function cargarUILinkData() {
+            // 1. Cargar UIs activas del mismo grado y año del planeador.
+            //    Filtro vía pln_unit_grades + status activo.
+            const uiGradesRes = await supabaseRequest(
+                `/pln_unit_grades?select=unit_id&grade_id=eq.${plannerData.grade_id}`
+            );
+            const unitIds = (uiGradesRes || []).map(r => r.unit_id);
+
+            if (unitIds.length > 0) {
+                const uisRes = await supabaseRequest(
+                    `/pln_units?select=unit_id,unit_title,academic_year_id,unit_status&unit_id=in.(${unitIds.join(',')})&academic_year_id=eq.${academicYearId}&unit_status=eq.active&order=unit_title.asc`
+                );
+                availableUIs = uisRes || [];
+            } else {
+                availableUIs = [];
+            }
+
+            // 2. Cargar conexiones IB ya marcadas para este planeador
+            const connsRes = await supabaseRequest(
+                `/pln_planner_connections?select=connection_type_id&planner_id=eq.${plannerId}`
+            );
+            selectedConnections = new Set((connsRes || []).map(r => r.connection_type_id));
+        }
+
+        async function cargarPlaneador() {
+            const data = await supabaseRequest(
+                `/pln_planners?select=*&planner_id=eq.${plannerId}&limit=1`
+            );
+            if (!data || data.length === 0) {
+                throw new Error('Planeador no encontrado. Es posible que haya sido eliminado.');
+            }
+            plannerData = data[0];
+            academicYearId = plannerData.academic_year_id;
+
+            // Resolver nombres para el header
+            const subject = allSubjects.find(s => s.subject_id === plannerData.subject_id);
+            const grade = allGrades.find(g => g.grade_id === plannerData.grade_id);
+            const program = allPrograms.find(p => p.program_id === plannerData.program_id);
+            const creator = allWorkers.find(w => w.worker_id === plannerData.teacher_id);
+
+            plannerSubjectName = subject ? subject.subject_name : 'Sin asignatura';
+            plannerGradeName = grade ? grade.grade_name : 'Sin grado';
+            plannerProgramName = program ? program.program_name : null;
+            plannerCreatorName = creator
+                ? `${creator.worker_first_name} ${creator.worker_last_name_1}`
+                : 'Desconocido';
+
+            // Cargar el año académico para mostrar el nombre
+            const yearRes = await supabaseRequest(
+                `/academic_years?select=year_name&year_id=eq.${academicYearId}&limit=1`
+            );
+            if (yearRes && yearRes.length > 0) {
+                plannerData._year_name = yearRes[0].year_name;
+            }
+        }
+
+        // ============================================================
+        // CONTROL DE ACCESO: LOS 4 CAMINOS
+        // ============================================================
+        async function canEdit() {
+            if (!plannerData) {
+                console.warn('canEdit() llamado sin plannerData cargado');
+                return false;
+            }
+
+            const currentWorkerEmailLower = (currentWorkerEmail || '').toLowerCase().trim();
+
+            // CAMINO 1: ¿Tengo assignment activa de esta (subject, grade) en este año?
+            const coursesOfGrade = await supabaseRequest(
+                `/courses?select=course_id&grade_id=eq.${plannerData.grade_id}`
+            );
+            const courseIds = (coursesOfGrade || []).map(c => c.course_id);
+            if (courseIds.length > 0) {
+                const myAssignments = await supabaseRequest(
+                    `/academic_assignments?select=assignment_id&worker_id=eq.${currentWorkerId}&subject_id=eq.${plannerData.subject_id}&course_id=in.(${courseIds.join(',')})&academic_year_id=eq.${academicYearId}&assignment_status=eq.active&limit=1`
+                );
+                if (myAssignments && myAssignments.length > 0) {
+                    console.log('✅ canEdit: docente con assignment activa');
+                    return true;
+                }
+            }
+
+            // CAMINO 2: ¿Soy coordinador del área de la asignatura del planeador?
+            const subject = allSubjects.find(s => s.subject_id === plannerData.subject_id);
+            if (subject && subject.area_id) {
+                const area = allAreas.find(a => a.area_id === subject.area_id);
+                if (area && area.coordinator_worker_id === currentWorkerId) {
+                    console.log('✅ canEdit: coordinador de área');
+                    return true;
+                }
+            }
+
+            // CAMINO 3: ¿Soy director del programa del grado?
+            if (plannerData.program_id) {
+                const program = allPrograms.find(p => p.program_id === plannerData.program_id);
+                if (program && program.program_director_email) {
+                    const programDirectorEmailLower = program.program_director_email.toLowerCase().trim();
+                    if (programDirectorEmailLower === currentWorkerEmailLower) {
+                        console.log('✅ canEdit: director de programa');
+                        return true;
+                    }
+                }
+            }
+
+            // CAMINO 4: ¿Soy director de la sección del grado?
+            const grade = allGrades.find(g => g.grade_id === plannerData.grade_id);
+            if (grade && grade.section_id) {
+                const section = allSections.find(s => s.section_id === grade.section_id);
+                if (section && section.director_email) {
+                    const sectionDirectorEmailLower = section.director_email.toLowerCase().trim();
+                    if (sectionDirectorEmailLower === currentWorkerEmailLower) {
+                        console.log('✅ canEdit: director de sección');
+                        return true;
+                    }
+                }
+            }
+
+            console.log('⛔ canEdit: ninguno de los 4 caminos se cumple → modo solo lectura');
+            return false;
+        }
+
+        // ============================================================
+        // RENDER DEL HEADER INFORMATIVO
+        // ============================================================
+        function renderHeaderInformativo() {
+            // Breadcrumb
+            document.getElementById('bc-current').textContent =
+                `${plannerSubjectName} · ${plannerGradeName} · T${plannerData.trimester}`;
+
+            // Badges
+            document.getElementById('header-subject').textContent = plannerSubjectName;
+            document.getElementById('header-grade').textContent = plannerGradeName;
+            document.getElementById('header-trimester').textContent = `Trimestre ${plannerData.trimester}`;
+
+            const programBadge = document.getElementById('header-program');
+            if (plannerProgramName) {
+                programBadge.textContent = plannerProgramName;
+                programBadge.style.display = '';
+            } else {
+                programBadge.style.display = 'none';
+            }
+
+            // Meta
+            document.getElementById('meta-academic-year').textContent = plannerData._year_name || '—';
+            document.getElementById('meta-creator').textContent = plannerCreatorName;
+
+            const statusLabels = {
+                'active': 'Activo',
+                'archived': 'Archivado',
+                'deleted': 'Eliminado'
+            };
+            document.getElementById('meta-status').textContent =
+                statusLabels[plannerData.planner_status] || plannerData.planner_status || '—';
+        }
+
+        // ============================================================
+        // BLOQUE 1 — RENDER DE VINCULACIÓN CON UI
+        // ============================================================
+        // Decide qué mostrar según el programa del grado:
+        // - Si es PEP (las UIs son del marco PEP): muestra select de UIs + (si hay UI) checkboxes de conexión IB.
+        // - Si NO es PEP: muestra mensaje informativo (PAI/PD no tienen UIs).
+        function renderUILinkBlock() {
+            const container = document.getElementById('uilink-body');
+            if (!container) return;
+
+            // Determinar si el programa es PEP. Convención: el program_name de PEP empieza con "PEP".
+            // (Alternativa más robusta: agregar un campo program.short_code, fuera del alcance ahora.)
+            const isPEP = (plannerProgramName || '').toUpperCase().startsWith('PEP');
+
+            if (!isPEP) {
+                container.innerHTML = `
+                    <div class="uilink-non-pep">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Este programa (${escapeHtml(plannerProgramName || 'sin programa')}) no contempla Unidades de Indagación.
+                        La vinculación está disponible solo para planeadores del programa PEP.
+                    </div>
+                `;
+                return;
+            }
+
+            // Es PEP: mostrar selector de UI + sección de conexiones
+            const currentUnitId = plannerData.unit_id || '';
+            const uiOptions = availableUIs.map(u =>
+                `<option value="${u.unit_id}" ${u.unit_id === currentUnitId ? 'selected' : ''}>${escapeHtml(u.unit_title || 'Sin título')}</option>`
+            ).join('');
+
+            const hint = availableUIs.length === 0
+                ? 'No hay Unidades de Indagación activas en este grado y año académico.'
+                : 'Vincule este planeador con una UI para declarar cómo contribuye al marco transdisciplinario.';
+
+            container.innerHTML = `
+                <div class="mb-3">
+                    <label class="uilink-form-label" for="select-unit-link">Unidad de Indagación vinculada</label>
+                    <select class="form-select" id="select-unit-link" ${isReadOnly ? 'disabled' : ''}>
+                        <option value="">Sin vincular</option>
+                        ${uiOptions}
+                    </select>
+                    <div class="uilink-hint">${escapeHtml(hint)}</div>
+                </div>
+
+                <div class="connections-section ${currentUnitId ? '' : 'hidden'}" id="connections-section">
+                    <label class="uilink-form-label">Tipos de conexión con la UI</label>
+                    <div class="uilink-hint">Marque las dimensiones IB en las que este planeador conecta con la UI vinculada.</div>
+                    <div class="connections-grid" id="connections-grid">
+                        ${renderConnectionsGrid()}
+                    </div>
+                </div>
+            `;
+
+            // Listeners
+            document.getElementById('select-unit-link').addEventListener('change', onUnitLinkChange);
+            attachConnectionListeners();
+        }
+
+        // Construye el HTML de los checkboxes de conexión a partir del catálogo
+        function renderConnectionsGrid() {
+            return catalogConnectionTypes.map(ct => {
+                const checked = selectedConnections.has(ct.connection_type_id);
+                return `
+                    <label class="connection-item ${checked ? 'checked' : ''}">
+                        <input type="checkbox"
+                            data-connection-id="${ct.connection_type_id}"
+                            ${checked ? 'checked' : ''}
+                            ${isReadOnly ? 'disabled' : ''}>
+                        <span>${escapeHtml(ct.name_es)}</span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function attachConnectionListeners() {
+            const grid = document.getElementById('connections-grid');
+            if (!grid) return;
+            grid.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.addEventListener('change', () => onConnectionToggle(cb));
+            });
+        }
+
+        // ============================================================
+        // BLOQUE 1 — AUTOSAVE
+        // ============================================================
+        async function onUnitLinkChange(e) {
+            const newUnitId = e.target.value || null;
+            const prevUnitId = plannerData.unit_id || null;
+
+            // Si no cambia nada, salir
+            if (newUnitId === prevUnitId) return;
+
+            try {
+                setIndicator('saving', 'Guardando...');
+
+                // 1. PATCH al planeador con el nuevo unit_id
+                await supabaseRequest(`/pln_planners?planner_id=eq.${plannerId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        unit_id: newUnitId,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                plannerData.unit_id = newUnitId;
+
+                // 2. Si se DESVINCULÓ (pasó a null), borrar todas las conexiones IB del planeador
+                if (!newUnitId && selectedConnections.size > 0) {
+                    await supabaseRequest(
+                        `/pln_planner_connections?planner_id=eq.${plannerId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedConnections.clear();
+                }
+
+                // 3. Mostrar u ocultar la sección de conexiones según haya UI o no
+                const connSection = document.getElementById('connections-section');
+                if (connSection) {
+                    connSection.classList.toggle('hidden', !newUnitId);
+                    // Re-render del grid para reflejar el estado limpio o existente
+                    const grid = document.getElementById('connections-grid');
+                    if (grid) {
+                        grid.innerHTML = renderConnectionsGrid();
+                        attachConnectionListeners();
+                    }
+                }
+
+                // 4. Actualizar referencia local de updated_at para no disparar el banner de concurrencia
+                lastKnownUpdatedAt = new Date().toISOString();
+
+                setIndicator('saved', 'Guardado ✓');
+                setTimeout(() => setIndicator('', 'Todos los cambios guardados'), 2000);
+            } catch (err) {
+                setIndicator('error', 'Error al guardar');
+                console.error('Error guardando vínculo con UI:', err);
+                // Revertir visualmente el select al valor anterior
+                e.target.value = prevUnitId || '';
+            }
+        }
+
+        async function onConnectionToggle(checkbox) {
+            const connectionTypeId = checkbox.dataset.connectionId;
+            const checked = checkbox.checked;
+
+            // Actualizar visual del item contenedor
+            checkbox.closest('.connection-item').classList.toggle('checked', checked);
+
+            // Deshabilitar mientras procesa
+            checkbox.disabled = true;
+
+            try {
+                setIndicator('saving', 'Guardando...');
+
+                if (checked) {
+                    await supabaseRequest('/pln_planner_connections', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            planner_id: plannerId,
+                            connection_type_id: connectionTypeId
+                        })
+                    });
+                    selectedConnections.add(connectionTypeId);
+                } else {
+                    await supabaseRequest(
+                        `/pln_planner_connections?planner_id=eq.${plannerId}&connection_type_id=eq.${connectionTypeId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedConnections.delete(connectionTypeId);
+                }
+
+                setIndicator('saved', 'Guardado ✓');
+                setTimeout(() => setIndicator('', 'Todos los cambios guardados'), 2000);
+            } catch (err) {
+                // Revertir visual
+                checkbox.checked = !checked;
+                checkbox.closest('.connection-item').classList.toggle('checked', !checked);
+                setIndicator('error', 'Error al guardar');
+                console.error('Error toggle conexión:', err);
+            } finally {
+                checkbox.disabled = isReadOnly;
+            }
+        }
+
+        // ============================================================
+        // MODO SOLO LECTURA
+        // ============================================================
+        function aplicarModoSoloLectura() {
+            isReadOnly = true;
+
+            const banner = document.createElement('div');
+            banner.className = 'alert alert-warning d-flex align-items-center';
+            banner.style.cssText = 'margin: 1rem 0; border-radius: 6px;';
+            banner.innerHTML = `
+                <i class="bi bi-eye me-2" style="font-size: 1.25rem;"></i>
+                <div>
+                    <strong>Modo solo lectura</strong><br>
+                    <small>Está viendo este planeador pero no puede editarlo. Para hacer cambios, debe tener asignación académica activa de esta asignatura en este grado, o ser coordinador del área, director del programa o director de la sección.</small>
+                </div>
+            `;
+
+            const pageContent = document.getElementById('page-content');
+            if (pageContent) {
+                pageContent.insertBefore(banner, pageContent.firstChild);
+            }
+
+            console.log('🔒 Modo solo lectura aplicado');
+        }
+
+        // ============================================================
+        // UTILIDADES
+        // ============================================================
+        function toggleBlock(id) {
+            document.getElementById(id).classList.toggle('collapsed');
+        }
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        function mostrarLoading() {
+            document.getElementById('loading-overlay')?.classList.remove('hidden');
+        }
+        function ocultarLoading() {
+            document.getElementById('loading-overlay')?.classList.add('hidden');
+        }
+
+        // Indicador de autoguardado (placeholder funcional, se usará desde sub-bloques siguientes)
+        function setIndicator(state, text) {
+            const ind = document.getElementById('autosave-indicator');
+            ind.className = state;
+            ind.querySelector('.text').textContent = text;
+        }
+
+        function mostrarPantallaError(mensaje, tipo = 'warning') {
+            ocultarLoading();
+
+            const iconColor = tipo === 'error' ? '#dc3545' : '#f59e0b';
+            const iconName = tipo === 'error' ? 'bi-x-octagon' : 'bi-exclamation-triangle';
+
+            const pageContent = document.getElementById('page-content');
+            if (pageContent) {
+                pageContent.style.display = 'block';
+                pageContent.innerHTML = `
+                    <div style="max-width: 600px; margin: 4rem auto; text-align: center; padding: 2rem;">
+                        <i class="bi ${iconName}" style="font-size: 4rem; color: ${iconColor};"></i>
+                        <h3 class="mt-3" style="color: #333;">No es posible continuar</h3>
+                        <p class="text-muted mt-3" style="font-size: 1rem; line-height: 1.6;">
+                            ${escapeHtml(mensaje)}
+                        </p>
+                        <div class="mt-4">
+                            <a href="my-planners.html" class="btn btn-primary me-2">
+                                <i class="bi bi-arrow-left me-1"></i>Volver a mis planeadores
+                            </a>
+                            <a href="../../dashboard.html" class="btn btn-outline-secondary">
+                                <i class="bi bi-house me-1"></i>Volver al inicio
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }
+
+            console.warn('⚠️ Pantalla de error mostrada:', mensaje);
+        }
+
+        console.log('✅ planner-form.html — sub-bloque 6.2.A (esqueleto + control de acceso + header informativo)');
+    </script>
+</body>
+</html>
