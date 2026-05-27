@@ -49,8 +49,9 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 4.3b | Comentarios polimórficos (`pln_comments`) | ✅ Cerrado en DEV |
 | 4.3c | Notificaciones por email de comentarios | Pendiente |
 | 5 | `units.html` — listado de UIs | Pendiente |
-| 6 | `planner-form.html` — formulario de Planeador de Área | Pendiente |
-| 7 | `planners.html` — listado de planeadores | Pendiente |
+| 6.1 | `my-planners.html` — listado y creación de planeadores (modelo planeador-por-grado) | ✅ Cerrado en DEV y PROD |
+| 6.2 | `planner-form.html` — formulario de Planeador de Área | Pendiente |
+| 7 | `planners.html` — listado general de planeadores (para coordinadores) | Pendiente |
 | 8 | Comentarios en ambos forms | Pendiente |
 | 9 | `coordinator-area.html` y `coordinator-program.html` | Pendiente |
 
@@ -725,6 +726,104 @@ Estos puntos no impiden el uso normal del archivo y se difieren a sesiones poste
 
 ---
 
+---
+
+## Decisión arquitectónica — Modelo "planeador-por-grado" (27 de mayo de 2026)
+
+Antes de cerrar el sub-paso 6.1 se identificó un problema fundamental del modelo original del SPEC v1.0 y se tomó una decisión que afecta a `pln_planners` y a `pln_unit_collaborators`.
+
+**Problema identificado:** la planificación académica del colegio se hace con anticipación. Es común planificar el trimestre del año siguiente durante el año vigente. Si entre la planificación y el inicio del año cambia el docente (renuncia, contratación), el SPEC original dejaba el planeador "huérfano" porque `pln_planners.teacher_id` y el UNIQUE incluyendo `teacher_id` ataban el planeador al docente original.
+
+**Decisión:** el planeador es un artefacto institucional del colegio (de la combinación asignatura+grado+trimestre+año), no del docente individual. El docente lo "ocupa" mientras tenga la asignación académica activa.
+
+**Implicaciones del modelo:**
+
+1. **Acceso al planeador** se calcula por `academic_assignments` activas, no por `teacher_id`. Cualquier docente con assignment activa en algún curso de (subject_id, grade_id) en el año del planeador puede verlo y editarlo. Si cambia el docente real, basta con actualizar `academic_assignments`; el sistema lo detecta automáticamente.
+
+2. **`teacher_id` se reinterpreta como "creador histórico"**: NO determina acceso, solo registra quién creó el planeador. La columna sigue existiendo (sin migración) pero pierde su rol funcional. En el listado se muestra "Creado por X" cuando el creador es distinto al usuario actual.
+
+3. **El UNIQUE constraint cambió**: era `(teacher_id, subject_id, grade_id, trimester, academic_year_id)`, ahora es `(subject_id, grade_id, trimester, academic_year_id)` sin teacher_id. Esto garantiza un único planeador por (asignatura+grado+trimestre+año) a nivel BD. Aplicado en DEV y PROD el 27 de mayo de 2026 vía `DROP CONSTRAINT pln_planners_unique` + `ADD CONSTRAINT pln_planners_unique UNIQUE (...)`.
+
+4. **No hay botón de "tomar control"** ni transferencia explícita. La transferencia es implícita y automática vía la actualización de `academic_assignments`.
+
+5. **Codocencia natural**: si dos docentes dictan la misma materia en cursos paralelos del mismo grado (caso real validado: Belzner en Español Tercero B + Cajigas en Español Tercero A), comparten el mismo planeador. No hay duplicación.
+
+**Hallazgo operativo durante las pruebas:** el sistema SchoolNet impone el constraint `academic_assignments_unique_per_year` sobre `(academic_year_id, subject_id, course_id)`, es decir, un curso tiene un solo docente por asignatura. Esto valida implícitamente el modelo "planeador-por-grado": la codocencia siempre ocurre a nivel de grado (cursos paralelos), nunca a nivel de curso.
+
+**Implicaciones para `pln_unit_collaborators` (decisión análoga para UIs):** se identificó la misma vulnerabilidad en UIs — la pre-carga de colaboradores ocurre solo al crear, pero si cambian las assignments después, la lista queda desactualizada. Se agregó un mecanismo de sincronización automática (ver sub-paso 6.1 detallado abajo).
+
+---
+
+### Paso 6.1 — `my-planners.html` + sincronización de colaboradores en UIs ✅
+
+**Fecha de cierre en DEV:** 27 de mayo de 2026.
+**Fecha de cierre en PROD:** 27 de mayo de 2026.
+
+**Cambio en BD (DEV y PROD):**
+
+- `pln_planners.pln_planners_unique` cambiado de `UNIQUE (teacher_id, subject_id, grade_id, trimester, academic_year_id)` a `UNIQUE (subject_id, grade_id, trimester, academic_year_id)`.
+- `permissions.url_path`: actualizado para "Crear planeador de área" y "Gestionar planeadores de área", ambos apuntan a `/modules/planning/my-planners.html` (coherente con el patrón de UIs donde `my-units.html` cubre listado + creación).
+
+**Archivo nuevo: `/modules/planning/my-planners.html` (~600 líneas).**
+
+Implementa el modelo planeador-por-grado:
+
+- **Cargado de contexto:** años académicos, grados, asignaturas, programas, workers (cache para mostrar nombres de creadores), `academic_assignments` activas del worker actual.
+- **Encabezado:** selector de año académico (default: vigente).
+- **Bloque "Crear planeador nuevo":**
+  - Select de Asignatura (limitado a las asignaturas donde el worker tiene assignment activa en el año seleccionado).
+  - Select de Grado (encadenado al subject, pre-selecciona si solo hay un grado disponible).
+  - Select de Trimestre (1/2/3).
+  - Validación antes de crear: busca si existe ya un planeador para esa combinación (subject_id, grade_id, trimester, academic_year_id). Si existe, muestra alert amarillo "Ya existe el planeador de X en Y, trimestre Z, creado por <nombre>" con botón "Abrir planeador" y deshabilita "Crear planeador". Esto previene intentos de duplicado y aprovecha el UNIQUE constraint.
+  - Si no existe, validación del program_id del grado (mismo patrón del paso 4.0). Si OK, crea registro con `teacher_id = currentWorkerId` (creador histórico, informativo) + redirige a `planner-form.html?planner_id=<nuevo>`.
+- **Bloque "Listado de planeadores":**
+  - Filtra planeadores donde el worker actual tiene assignment activa en `(subject_id, grade_id)` en el año seleccionado. Lo realiza con un query a `pln_planners` con `IN` sobre subject_ids y grade_ids del worker, y luego filtra localmente por la combinación exacta de pares (subject_id, grade_id) — más eficiente que un OR complejo en PostgREST.
+  - Para cada planeador en el listado: si el `teacher_id` (creador histórico) NO es el worker actual, muestra debajo del nombre de la asignatura "Creado por [nombre del creador]" en cursiva gris.
+  - Click en una fila → redirige a `planner-form.html?planner_id=<uuid>`.
+  - Estado vacío con mensaje guía.
+
+**Cambios en `unit-form.html` (sincronización de colaboradores):**
+
+Nueva función `sincronizarColaboradores(currentCollab)` invocada en `cargarUI()` justo después de cargar `pln_unit_collaborators`. Lo que hace:
+
+1. Obtiene los `course_id` del grado de la UI.
+2. Obtiene los `worker_id` con assignment activa en cualquiera de esos cursos en el año académico vigente.
+3. Compara con los colaboradores actuales:
+   - **A agregar:** workers en assignments pero NO en colaboradores → INSERT en lote con `is_lead = false`.
+   - **A eliminar:** workers en colaboradores pero NO en assignments y `is_lead = false` → DELETE individual.
+   - **Excepción crítica:** los workers con `is_lead = true` (creadores históricos) NUNCA se eliminan, aunque ya no tengan assignment activa.
+4. Devuelve la lista actualizada para que `cargarRelaciones()` use el estado más reciente.
+5. Si no hay cambios, no imprime log ni hace requests adicionales (idempotente).
+
+**Decisiones de implementación durante este sub-paso:**
+
+- **`teacher_id` se preserva en BD para todos los planeadores existentes**, sin backfill ni migración. La columna conserva su valor original (NOT NULL en el esquema) y solo cambia su interpretación funcional. Esto evita migraciones de datos.
+- **Validación del planeador existente** consulta primero la lista en memoria (`visiblePlanners`) y, si no encuentra, hace una consulta directa a BD (cubriendo el caso donde otro docente del grado tenga ya creado el planeador pero el actual no lo vea por timing). Esto es defensivo y elimina el riesgo de violar el UNIQUE constraint con un error de BD.
+- **Logs ricos** en consola en la sincronización (`🔄 Colaboradores sincronizados: +N agregados, -N eliminados`) para facilitar diagnóstico, pero solo cuando hay cambios reales.
+
+**Tests realizados en DEV:**
+
+- ✅ Listado de planeadores del worker actual (Belzner) muestra solo los que coinciden con sus assignments activas.
+- ✅ Formulario de creación: dropdown de asignatura filtrado a las del worker, grado encadenado, validación de program_id.
+- ✅ Creación exitosa de un planeador nuevo (Español, Tercero, T1). Redirección a `planner-form.html?planner_id=<uuid>` (404 esperado en este sub-paso, archivo aún no existe).
+- ✅ Validación de duplicados: intentar crear "Español, Tercero, T1" como Belzner cuando ya existe → muestra alert amarillo con botón "Abrir planeador". Botón "Crear planeador" deshabilitado.
+- ✅ **Test crítico de codocencia:** una segunda docente (Cajigas) con assignment activa en "Español, Tercero A" entró al sistema, vio el planeador creado por Belzner (Tercero B) con etiqueta "Creado por Margaret Emmily Belzner", y al intentar crear duplicado recibió el mismo alert con redirección al planeador existente.
+- ✅ **Test crítico de retiro de docente:** inactivamos la assignment de Belzner en "Español, Tercero B" — Belzner ya no ve el planeador en su listado, Cajigas sigue viéndolo normalmente. Después inactivamos TODAS las assignments de Belzner en Tercero — Belzner queda bloqueada en `my-units.html` (validación de Unit of Inquiry activa, correcto), pero al acceder a la UI directamente por URL (Camino 1: creadora) entra y dispara `sincronizarColaboradores()`. Belzner se preserva como colaboradora con `is_lead = true` aunque ya no tenga assignment, los demás colaboradores se alinean exactamente con los workers con assignment activa.
+
+**Tests realizados en PROD:**
+
+- ✅ Cambio de UNIQUE constraint aplicado y verificado.
+- ✅ URLs de permisos actualizadas.
+- ⏸️ Verificación funcional del archivo pospuesta hasta que existan workers con assignments en grados con programa configurado en PROD (depende de la tarea operativa pendiente).
+
+**Pendientes operativos relacionados al sub-paso 6.1 (no bloqueantes para el desarrollo, dependen de terceros):**
+
+- Los permisos del módulo siguen sin estar asignados a roles en PROD.
+- `grades.program_id` solo está poblado en 1 de 14 grados.
+- Sin estos dos puntos, un docente real en PROD no puede usar `my-planners.html` aún.
+
+---
+
 ### Paso 4.3c — Notificaciones por email de comentarios — PENDIENTE
 
 Por implementar en sesión propia (cuando se decida):
@@ -1033,4 +1132,4 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 
 ---
 
-*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2, 4.3a y 4.3b cerrados en DEV. Paso 4.2 sincronizado a PROD (queda pendiente sincronizar 4.3a y 4.3b). Paso 3.1 (DISABLE RLS) verificado como ya aplicado en PROD. **Próximo paso al retomar: sincronizar 4.3a + 4.3b a PROD (un único PR `developmen` → `main`), luego paso 5 (`units.html` — listado para coordinadores) o paso 4.3c (notificaciones por email de comentarios).** Tareas operativas pendientes (dependen de terceros, no de desarrollo): asignar 7 permisos del módulo a roles en PROD, poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
+*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2, 4.3a, 4.3b y 6.1 cerrados en DEV. Pasos 4.2 y 6.1 cerrados en PROD (BD + URLs de permisos). Decisión arquitectónica importante: modelo "planeador-por-grado" adoptado para `pln_planners` y mecanismo de sincronización automática agregado a `pln_unit_collaborators`. UNIQUE de `pln_planners` cambió a `(subject_id, grade_id, trimester, academic_year_id)` en DEV y PROD. **Próximo paso al retomar: sincronizar a PROD el código de 4.3a + 4.3b + 6.1 (PR `developmen` → `main` único), luego paso 6.2 (`planner-form.html`).** Tareas operativas pendientes (dependen de terceros): asignar 9 permisos del módulo a roles en PROD (los 7 originales + 2 actualizados), poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
