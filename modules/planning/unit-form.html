@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.9">
+    <meta name="page-version" content="26.5.27.10">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1487,6 +1487,91 @@
         }
 
         // ============================================================
+        // SINCRONIZACIÓN DE COLABORADORES CON ASSIGNMENTS ACTUALES
+        // ============================================================
+        // Compara la lista guardada en pln_unit_collaborators con los workers que
+        // realmente tienen assignment activa en algún curso del grado de la UI
+        // en el año académico. Agrega los que faltan (como no-líder) y elimina
+        // los que ya no tienen asignación. El creador (is_lead=true) NUNCA se elimina.
+        // Devuelve la lista actualizada de colaboradores.
+        async function sincronizarColaboradores(currentCollab) {
+            if (!unitGradeId || !academicYearId) {
+                console.warn('sincronizarColaboradores: faltan unitGradeId o academicYearId');
+                return currentCollab;
+            }
+
+            try {
+                // 1. Obtener todos los course_id del grado
+                const coursesRes = await supabaseRequest(
+                    `/courses?select=course_id&grade_id=eq.${unitGradeId}`
+                );
+                const courseIds = (coursesRes || []).map(c => c.course_id);
+                if (courseIds.length === 0) {
+                    return currentCollab;  // grado sin cursos: no hay nada que sincronizar
+                }
+
+                // 2. Workers con assignment activa en cualquier curso del grado, año vigente
+                const assignmentsRes = await supabaseRequest(
+                    `/academic_assignments?select=worker_id&course_id=in.(${courseIds.join(',')})&academic_year_id=eq.${academicYearId}&assignment_status=eq.active`
+                );
+                const expectedWorkerIds = new Set((assignmentsRes || []).map(a => a.worker_id));
+
+                // 3. Estado actual
+                const currentWorkerIds = new Set((currentCollab || []).map(c => c.worker_id));
+                const leadWorkerIds = new Set(
+                    (currentCollab || []).filter(c => c.is_lead).map(c => c.worker_id)
+                );
+
+                // 4. Calcular diffs
+                // A agregar: workers en expected pero no en current
+                const toAdd = Array.from(expectedWorkerIds).filter(wid => !currentWorkerIds.has(wid));
+                // A eliminar: workers en current pero no en expected, EXCEPTO los que son lead
+                const toRemove = Array.from(currentWorkerIds).filter(wid =>
+                    !expectedWorkerIds.has(wid) && !leadWorkerIds.has(wid)
+                );
+
+                if (toAdd.length === 0 && toRemove.length === 0) {
+                    return currentCollab;  // ya está sincronizado
+                }
+
+                // 5. Aplicar cambios en BD
+                if (toAdd.length > 0) {
+                    const inserts = toAdd.map(wid => ({
+                        unit_id: unitId,
+                        worker_id: wid,
+                        is_lead: false
+                    }));
+                    await supabaseRequest('/pln_unit_collaborators', {
+                        method: 'POST',
+                        body: JSON.stringify(inserts)
+                    });
+                }
+
+                if (toRemove.length > 0) {
+                    // Eliminar uno por uno (PostgREST no soporta DELETE con array IN sobre relación)
+                    await Promise.all(toRemove.map(wid =>
+                        supabaseRequest(
+                            `/pln_unit_collaborators?unit_id=eq.${unitId}&worker_id=eq.${wid}`,
+                            { method: 'DELETE' }
+                        )
+                    ));
+                }
+
+                console.log(`🔄 Colaboradores sincronizados: +${toAdd.length} agregados, -${toRemove.length} eliminados`);
+
+                // 6. Devolver lista actualizada
+                const updatedCollab = await supabaseRequest(
+                    `/pln_unit_collaborators?select=worker_id,is_lead&unit_id=eq.${unitId}`
+                );
+                return updatedCollab || [];
+            } catch (err) {
+                console.error('Error sincronizando colaboradores:', err);
+                // Si falla, devolver lo que teníamos para no romper la carga
+                return currentCollab;
+            }
+        }
+
+        // ============================================================
         // ACTUALIZAR METADATA VISIBLE DE LA UI
         // ============================================================
         function actualizarMetadataUI() {
@@ -1520,7 +1605,13 @@
 
             // 3. Cargar colaboradores y relaciones M:N
             const collabRes = await supabaseRequest(`/pln_unit_collaborators?select=worker_id,is_lead&unit_id=eq.${unitId}`);
-            await cargarRelaciones(collabRes);
+
+            // 3.1. Sincronizar colaboradores con las asignaciones académicas actuales del grado.
+            //      Modelo: el creador (is_lead=true) NUNCA se elimina. Los demás colaboradores
+            //      se mantienen alineados con los workers que tienen assignment activa en el grado.
+            const collabSincronizado = await sincronizarColaboradores(collabRes);
+
+            await cargarRelaciones(collabSincronizado);
 
             // 4. Actualizar metadata visible (programa, etc.)
             actualizarMetadataUI();
