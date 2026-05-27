@@ -46,7 +46,8 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 4.1 | Refactor `unit-form.html` con modelo definitivo (control de acceso + selector de grado + pre-carga colaboradores) | ✅ Cerrado en DEV |
 | 4.2 | Gestión de ciclos | ✅ Cerrado en DEV (Sub-bloques A y B completos). Pendiente sincronización a PROD. |
 | 4.3a | Cierre de la unidad (3 reflexiones finales) | ✅ Cerrado en DEV |
-| 4.3b | Comentarios polimórficos (`pln_comments`) | Pendiente |
+| 4.3b | Comentarios polimórficos (`pln_comments`) | ✅ Cerrado en DEV |
+| 4.3c | Notificaciones por email de comentarios | Pendiente |
 | 5 | `units.html` — listado de UIs | Pendiente |
 | 6 | `planner-form.html` — formulario de Planeador de Área | Pendiente |
 | 7 | `planners.html` — listado de planeadores | Pendiente |
@@ -630,6 +631,92 @@ Implementado en `unit-form.html`:
 
 ---
 
+### Paso 4.3b — Comentarios polimórficos ✅
+
+**Fecha de cierre en DEV:** 27 de mayo de 2026.
+
+Implementado en `unit-form.html`, sobre la tabla `pln_comments` (ya creada en paso 1.2). Implementación entregada en tres etapas validadas secuencialmente: A (estructura visual + carga), B (crear raíz y respuesta), C (soft-delete por el autor).
+
+**Decisiones de diseño tomadas para este paso (no en el SPEC v1.0):**
+
+1. **Múltiples hilos por UI**: un hilo a nivel de la UI completa (al final del formulario, después del cierre) y un hilo por cada ciclo (al final del cuerpo del ciclo, antes del botón "Eliminar ciclo"). `entity_type` se ajusta a `'unit'` o `'unit_cycle'` según el caso. El SPEC sección 8.9 dice "Hilo de comentarios al final de cualquiera de las vistas anteriores"; se interpretó "vista" tanto a nivel de UI como de ciclo, dado que el ciclo es la unidad de planificación pedagógica con vida propia.
+2. **Solo editores pueden comentar**: en modo solo lectura los compositores quedan ocultos (no solo deshabilitados). Coherente con el modelo de acceso del paso 4.1.
+3. **Soft-delete del raíz preserva las respuestas**: cuando se elimina un comentario raíz con respuestas, el raíz se muestra como placeholder ("Comentario eliminado") pero las respuestas siguen visibles. Patrón de Reddit/Twitter.
+4. **No hay edición de comentarios** en esta versión. Si el usuario se equivoca, debe eliminar y crear nuevamente. La columna `updated_at` existe para soportar edición si se requiere en el futuro sin migración.
+5. **Notificaciones por email diferidas** al sub-paso 4.3c (separado para mantener el alcance acotado).
+6. **`<textarea>` plano** (no Quill mini) para el cuerpo del comentario: coherente con tono conversacional, sin overhead de inicialización de editores ricos en cada comentario.
+
+**Implementación:**
+
+- **CSS**: clases `comments-thread`, `comments-list`, `comment-item` (variantes `is-reply` con margin-left y `is-deleted` en gris), `comment-avatar` (iniciales sobre fondo claro), `comment-header`, `comment-author`, `comment-date`, `comment-body` (con `white-space: pre-wrap` para respetar saltos de línea), `comment-actions`, `comment-action-btn` (variante `.danger` para el botón eliminar), `comment-composer` (variante `is-reply-composer` para respuestas), `btn-comment-submit`, `btn-comment-cancel`, `comments-empty`.
+
+- **HTML**: bloque colapsable "Comentarios sobre la unidad" como Bloque 4 al final del formulario, con `comments-list` + compositor. En `renderCycleBody()` se añadió una sección "Comentarios del ciclo" al final del cuerpo del ciclo (antes del botón rojo de eliminar), con el mismo patrón compositor + lista.
+
+- **JS — Variable global nueva**: `commentsByEntity` (`{'unit:<unit_id>': [...], 'unit_cycle:<cycle_id>': [...]}`).
+
+- **JS — Carga**: `cargarComentarios()` invocado al final de `cargarRelaciones()`. Una sola query con `entity_id=in.(<unit_id>, <cycle_id_1>, <cycle_id_2>, ...)` para todos los hilos de la UI en una llamada. Trae activos y eliminados (los eliminados son necesarios para mostrar el placeholder en respuestas huérfanas).
+
+- **JS — Render**: `renderUnitCommentsThread()` y `renderCycleCommentsThread(cycleId)` cuentan activos para el badge "(N)" en la cabecera y delegan a `renderCommentsList()` (compartida). Esta separa raíces de respuestas (`parent_comment_id` NULL o no), agrupa respuestas por padre, e itera renderizando cada raíz seguida de sus respuestas. `renderSingleComment(comment, isReply)` produce el HTML de cada item, con avatar de iniciales del autor, fecha vía `formatRelativeDate()` (helper nuevo, devuelve "hace un momento" / "hace N min" / "hace N h" / "ayer" / "hace N días" / fecha absoluta corta para más de una semana), cuerpo escapado, y bloques de acciones condicionales.
+
+- **JS — Visibilidad de acciones**:
+  - "Responder" solo en comentarios raíz activos (`!isReply && !isReadOnly`).
+  - "Eliminar" solo en comentarios donde `comment.author_id === currentWorkerId && !isReadOnly`.
+  - Comentarios eliminados no muestran ninguna acción (se renderizan en una rama temprana del `if (isDeleted) return ...`).
+
+- **JS — Crear**: `crearComentario(entityType, entityId, body, parentCommentId)` hace POST a `pln_comments` con `comment_status: 'active'`. Tras éxito, agrega el comentario al estado en memoria y re-renderiza solo el hilo afectado. Compositores conectados vía `setupUnitCommentComposer()` (UI) y `setupCycleCommentComposer(cycleId)` (ciclos, invocado al final de `initCycleQuills` igual que `setupCycleAutosave`). Botón de envío deshabilitado mientras el textarea esté vacío; se vuelve a habilitar al detectar contenido no-blanco.
+
+- **JS — Responder**: `setupReplyListeners(containerEl, entityType, entityId)` con delegación al contenedor (escucha clicks una sola vez en `unit-comments-list` y en cada `cycle-comments-list-<cid>`, marcando con `dataset.replyListenerAttached` para no duplicar). Al detectar click en `[data-role="reply"]` invoca `abrirComposerRespuesta()`, que crea un compositor secundario inyectado justo debajo del comentario raíz (vía `insertAdjacentElement('afterend', composer)`). Solo un compositor de respuesta abierto a la vez por hilo (si existe uno, se elimina antes de crear el nuevo). Botón "Cancelar" lo destruye sin guardar. Botón "Responder" llama a `crearComentario()` con `parent_comment_id` del raíz.
+
+- **JS — Eliminar (soft-delete)**: `eliminarComentario(commentId, entityType, entityId)` muestra `confirm()` nativo y al aceptar hace PATCH `comment_status='deleted'` + `updated_at=now`. Actualiza el estado en memoria (marca el comentario como deleted) y re-renderiza el hilo. El listener `[data-role="delete"]` se agregó al mismo handler delegado de `setupReplyListeners()`, ahora con dos ramas (reply / delete).
+
+**Tests realizados en DEV (Etapa A — carga y visual):**
+
+- ✅ Bloque "Comentarios sobre la unidad" al final del formulario, colapsable, contador "(N)" correcto contando solo activos.
+- ✅ Sección "Comentarios del ciclo" dentro del cuerpo del ciclo, contador independiente por ciclo.
+- ✅ Avatar con iniciales del autor, nombre completo, fecha relativa, cuerpo con saltos de línea respetados.
+- ✅ Respuestas indentadas con `margin-left` bajo el comentario raíz correspondiente.
+- ✅ Comentarios eliminados se renderizan en gris claro con ícono de basurero y texto "Comentario eliminado".
+
+**Tests realizados en DEV (Etapa B — crear):**
+
+- ✅ Botón "Comentar" se habilita/deshabilita según el contenido del textarea.
+- ✅ Crear comentario raíz en hilo de UI (POST con `entity_type='unit'`, `parent_comment_id=NULL`).
+- ✅ Crear comentario raíz en hilo de ciclo (POST con `entity_type='unit_cycle'`).
+- ✅ Responder a un comentario raíz: aparece compositor secundario debajo, foco automático, POST con `parent_comment_id`.
+- ✅ Cancelar respuesta cierra el compositor sin guardar.
+- ✅ Abrir respuesta en otro comentario cierra automáticamente el primero (regla "uno a la vez").
+- ✅ Comentarios que son respuesta no muestran botón "Responder" (regla 1 nivel de anidación).
+- ✅ Comentarios eliminados no muestran botones de acción.
+- ✅ Persistencia entre recargas.
+
+**Tests realizados en DEV (Etapa C — soft-delete):**
+
+- ✅ Botón "Eliminar" solo aparece en comentarios del autor actual.
+- ✅ Eliminar un raíz sin respuestas: se marca como deleted, contador baja en 1.
+- ✅ Eliminar un raíz con respuestas: el raíz queda como placeholder, las respuestas se preservan visibles.
+- ✅ Eliminar una respuesta: solo la respuesta se marca como deleted, padre intacto.
+- ✅ Cancelar confirmación no hace nada.
+- ✅ Funciona idénticamente en hilos de ciclo.
+- ✅ Persistencia entre recargas.
+- ✅ Tras eliminar, el comentario eliminado ya no muestra botones de acción.
+
+**Pendiente en este sub-paso (no bloqueante):**
+
+- Validación funcional de "compositores ocultos en modo solo lectura". Misma limitación que el resto del paso 4.3: no hay forma de probar el modo solo lectura en DEV hoy con un usuario externo a los 6 caminos. El código que oculta los compositores con `style.display = 'none'` cuando `isReadOnly === true` está escrito en `setupUnitCommentComposer()` y `setupCycleCommentComposer()`.
+
+---
+
+### Paso 4.3c — Notificaciones por email de comentarios — PENDIENTE
+
+Por implementar en sesión propia (cuando se decida):
+
+- Notificar al autor de la UI/ciclo cuando alguien le comenta (excepto si se comenta a sí mismo).
+- Opcional: notificar a todos los editores activos de la UI.
+- Usar `sendNotification()` (Google Apps Script) ya existente en SchoolNet.
+- Decisiones por tomar: alcance (solo autor o todos los editores), formato del email, opt-out por usuario, agregación (no spamear con un email por comentario).
+
+---
+
 ### Paso 4.3b — Comentarios polimórficos — PENDIENTE
 
 Por implementar (en sesión propia):
@@ -927,4 +1014,4 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 
 ---
 
-*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2 y 4.3a cerrados en DEV. Paso 4.2 sincronizado a PROD (queda pendiente sincronizar 4.3a). Paso 3.1 (DISABLE RLS) verificado como ya aplicado en PROD (bitácora actualizada). **Próximo paso al retomar: sincronizar 4.3a a PROD, luego paso 4.3b (comentarios polimórficos), o paso 5 (units.html — listado para coordinadores).** Tareas operativas pendientes (dependen de terceros, no de desarrollo): asignar 7 permisos del módulo a roles en PROD, poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
+*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2, 4.3a y 4.3b cerrados en DEV. Paso 4.2 sincronizado a PROD (queda pendiente sincronizar 4.3a y 4.3b). Paso 3.1 (DISABLE RLS) verificado como ya aplicado en PROD. **Próximo paso al retomar: sincronizar 4.3a + 4.3b a PROD (un único PR `developmen` → `main`), luego paso 5 (`units.html` — listado para coordinadores) o paso 4.3c (notificaciones por email de comentarios).** Tareas operativas pendientes (dependen de terceros, no de desarrollo): asignar 7 permisos del módulo a roles en PROD, poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
