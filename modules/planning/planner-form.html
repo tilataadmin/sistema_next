@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.2">
+    <meta name="page-version" content="26.5.27.3">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -222,6 +222,61 @@
             white-space: nowrap;
         }
         .concurrent-edit-banner .btn-reload:hover { background: #6c4400; }
+
+        /* ====================================================
+           BLOQUE 1 — VINCULACIÓN CON UI
+           ==================================================== */
+        .uilink-form-label {
+            font-weight: 500;
+            font-size: 0.88rem;
+            color: #333;
+            margin-bottom: 0.3rem;
+        }
+        .uilink-hint {
+            font-size: 0.78rem;
+            color: #6c757d;
+            margin-top: 0.25rem;
+        }
+        .uilink-non-pep {
+            padding: 1rem;
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 0.88rem;
+        }
+        .connections-section {
+            margin-top: 1.25rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e8ecef;
+        }
+        .connections-section.hidden {
+            display: none;
+        }
+        .connections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 0.5rem 1rem;
+            margin-top: 0.5rem;
+        }
+        .connection-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 0.88rem;
+        }
+        .connection-item:hover { background: var(--planning-light); }
+        .connection-item input { margin: 0; }
+        .connection-item.checked {
+            background: var(--planning-light);
+            border-color: var(--planning-primary);
+        }
     </style>
 </head>
 <body>
@@ -291,21 +346,18 @@
         </div>
 
         <!-- ============================================================ -->
-        <!-- BLOQUE 1: ENCABEZADO EDITABLE (placeholder)                   -->
+        <!-- BLOQUE 1: VINCULACIÓN CON UI                                  -->
         <!-- ============================================================ -->
         <div class="block-card" id="block-header-editable">
             <div class="block-header" onclick="toggleBlock('block-header-editable')">
                 <h5><i class="bi bi-link-45deg"></i>Vinculación con Unidad de Indagación</h5>
                 <i class="bi bi-chevron-down toggle-icon"></i>
             </div>
-            <div class="block-body">
-                <div class="placeholder-block">
-                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
-                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.B.</p>
-                </div>
+            <div class="block-body" id="uilink-body">
+                <!-- Contenido dinámico según programa del grado -->
             </div>
         </div>
-
+        
         <!-- ============================================================ -->
         <!-- BLOQUE 2: MARCO CURRICULAR (placeholder)                      -->
         <!-- ============================================================ -->
@@ -411,8 +463,14 @@
         let plannerProgramName = null;
         let plannerCreatorName = null;
 
+        // Vinculación con UI
+        let availableUIs = [];                   // UIs activas del mismo grado y año
+        let catalogConnectionTypes = [];         // catálogo de tipos de conexión IB
+        let selectedConnections = new Set();     // connection_type_id activos para este planeador
+
         // Polling de cambios concurrentes
-        let lastKnownUpdatedAt = null;       // updated_at del planeador en el último fetch
+        let lastKnownUpdatedAt = null;
+        
         let pollingIntervalId = null;        // referencia al setInterval
         let concurrentEditDetected = false;  // una vez detectado, no spamear el log
 
@@ -464,6 +522,9 @@
                 // Cargar el planeador
                 await cargarPlaneador();
 
+                // Cargar UIs disponibles + conexiones existentes
+                await cargarUILinkData();
+
                 // Evaluar permisos (los 4 caminos)
                 const editable = await canEdit();
                 if (!editable) {
@@ -472,6 +533,9 @@
 
                 // Renderizar header informativo
                 renderHeaderInformativo();
+
+                // Renderizar Bloque 1 (vinculación con UI)
+                renderUILinkBlock();
 
                 // Iniciar polling de cambios concurrentes (solo si puede editar)
                 if (!isReadOnly) {
@@ -550,13 +614,14 @@
 
         async function loadContext() {
             // Cargar todos los catálogos base que necesitamos (incluyendo workers y áreas/secciones para los caminos)
-            const [gradesRes, subjectsRes, programsRes, workersRes, areasRes, sectionsRes] = await Promise.all([
+            const [gradesRes, subjectsRes, programsRes, workersRes, areasRes, sectionsRes, connectionTypesRes] = await Promise.all([
                 supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id'),
                 supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id'),
                 supabaseRequest('/programs?select=program_id,program_name,program_director_email'),
                 supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,email,worker_status&worker_status=eq.active'),
                 supabaseRequest('/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active'),
-                supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active')
+                supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active'),
+                supabaseRequest('/pln_connection_types?select=*&active=eq.true&order=sort_order.asc')
             ]);
 
             allGrades = gradesRes || [];
@@ -565,6 +630,34 @@
             allWorkers = workersRes || [];
             allAreas = areasRes || [];
             allSections = sectionsRes || [];
+            catalogConnectionTypes = connectionTypesRes || [];
+        }
+
+        // ============================================================
+        // CARGA DE UIs DISPONIBLES + CONEXIONES EXISTENTES
+        // ============================================================
+        async function cargarUILinkData() {
+            // 1. Cargar UIs activas del mismo grado y año del planeador.
+            //    Filtro vía pln_unit_grades + status activo.
+            const uiGradesRes = await supabaseRequest(
+                `/pln_unit_grades?select=unit_id&grade_id=eq.${plannerData.grade_id}`
+            );
+            const unitIds = (uiGradesRes || []).map(r => r.unit_id);
+
+            if (unitIds.length > 0) {
+                const uisRes = await supabaseRequest(
+                    `/pln_units?select=unit_id,unit_title,academic_year_id,unit_status&unit_id=in.(${unitIds.join(',')})&academic_year_id=eq.${academicYearId}&unit_status=eq.active&order=unit_title.asc`
+                );
+                availableUIs = uisRes || [];
+            } else {
+                availableUIs = [];
+            }
+
+            // 2. Cargar conexiones IB ya marcadas para este planeador
+            const connsRes = await supabaseRequest(
+                `/pln_planner_connections?select=connection_type_id&planner_id=eq.${plannerId}`
+            );
+            selectedConnections = new Set((connsRes || []).map(r => r.connection_type_id));
         }
 
         async function cargarPlaneador() {
@@ -696,6 +789,189 @@
             };
             document.getElementById('meta-status').textContent =
                 statusLabels[plannerData.planner_status] || plannerData.planner_status || '—';
+        }
+
+        // ============================================================
+        // BLOQUE 1 — RENDER DE VINCULACIÓN CON UI
+        // ============================================================
+        // Decide qué mostrar según el programa del grado:
+        // - Si es PEP (las UIs son del marco PEP): muestra select de UIs + (si hay UI) checkboxes de conexión IB.
+        // - Si NO es PEP: muestra mensaje informativo (PAI/PD no tienen UIs).
+        function renderUILinkBlock() {
+            const container = document.getElementById('uilink-body');
+            if (!container) return;
+
+            // Determinar si el programa es PEP. Convención: el program_name de PEP empieza con "PEP".
+            // (Alternativa más robusta: agregar un campo program.short_code, fuera del alcance ahora.)
+            const isPEP = (plannerProgramName || '').toUpperCase().startsWith('PEP');
+
+            if (!isPEP) {
+                container.innerHTML = `
+                    <div class="uilink-non-pep">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Este programa (${escapeHtml(plannerProgramName || 'sin programa')}) no contempla Unidades de Indagación.
+                        La vinculación está disponible solo para planeadores del programa PEP.
+                    </div>
+                `;
+                return;
+            }
+
+            // Es PEP: mostrar selector de UI + sección de conexiones
+            const currentUnitId = plannerData.unit_id || '';
+            const uiOptions = availableUIs.map(u =>
+                `<option value="${u.unit_id}" ${u.unit_id === currentUnitId ? 'selected' : ''}>${escapeHtml(u.unit_title || 'Sin título')}</option>`
+            ).join('');
+
+            const hint = availableUIs.length === 0
+                ? 'No hay Unidades de Indagación activas en este grado y año académico.'
+                : 'Vincule este planeador con una UI para declarar cómo contribuye al marco transdisciplinario.';
+
+            container.innerHTML = `
+                <div class="mb-3">
+                    <label class="uilink-form-label" for="select-unit-link">Unidad de Indagación vinculada</label>
+                    <select class="form-select" id="select-unit-link" ${isReadOnly ? 'disabled' : ''}>
+                        <option value="">Sin vincular</option>
+                        ${uiOptions}
+                    </select>
+                    <div class="uilink-hint">${escapeHtml(hint)}</div>
+                </div>
+
+                <div class="connections-section ${currentUnitId ? '' : 'hidden'}" id="connections-section">
+                    <label class="uilink-form-label">Tipos de conexión con la UI</label>
+                    <div class="uilink-hint">Marque las dimensiones IB en las que este planeador conecta con la UI vinculada.</div>
+                    <div class="connections-grid" id="connections-grid">
+                        ${renderConnectionsGrid()}
+                    </div>
+                </div>
+            `;
+
+            // Listeners
+            document.getElementById('select-unit-link').addEventListener('change', onUnitLinkChange);
+            attachConnectionListeners();
+        }
+
+        // Construye el HTML de los checkboxes de conexión a partir del catálogo
+        function renderConnectionsGrid() {
+            return catalogConnectionTypes.map(ct => {
+                const checked = selectedConnections.has(ct.connection_type_id);
+                return `
+                    <label class="connection-item ${checked ? 'checked' : ''}">
+                        <input type="checkbox"
+                            data-connection-id="${ct.connection_type_id}"
+                            ${checked ? 'checked' : ''}
+                            ${isReadOnly ? 'disabled' : ''}>
+                        <span>${escapeHtml(ct.name_es)}</span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function attachConnectionListeners() {
+            const grid = document.getElementById('connections-grid');
+            if (!grid) return;
+            grid.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.addEventListener('change', () => onConnectionToggle(cb));
+            });
+        }
+
+        // ============================================================
+        // BLOQUE 1 — AUTOSAVE
+        // ============================================================
+        async function onUnitLinkChange(e) {
+            const newUnitId = e.target.value || null;
+            const prevUnitId = plannerData.unit_id || null;
+
+            // Si no cambia nada, salir
+            if (newUnitId === prevUnitId) return;
+
+            try {
+                setIndicator('saving', 'Guardando...');
+
+                // 1. PATCH al planeador con el nuevo unit_id
+                await supabaseRequest(`/pln_planners?planner_id=eq.${plannerId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        unit_id: newUnitId,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                plannerData.unit_id = newUnitId;
+
+                // 2. Si se DESVINCULÓ (pasó a null), borrar todas las conexiones IB del planeador
+                if (!newUnitId && selectedConnections.size > 0) {
+                    await supabaseRequest(
+                        `/pln_planner_connections?planner_id=eq.${plannerId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedConnections.clear();
+                }
+
+                // 3. Mostrar u ocultar la sección de conexiones según haya UI o no
+                const connSection = document.getElementById('connections-section');
+                if (connSection) {
+                    connSection.classList.toggle('hidden', !newUnitId);
+                    // Re-render del grid para reflejar el estado limpio o existente
+                    const grid = document.getElementById('connections-grid');
+                    if (grid) {
+                        grid.innerHTML = renderConnectionsGrid();
+                        attachConnectionListeners();
+                    }
+                }
+
+                // 4. Actualizar referencia local de updated_at para no disparar el banner de concurrencia
+                lastKnownUpdatedAt = new Date().toISOString();
+
+                setIndicator('saved', 'Guardado ✓');
+                setTimeout(() => setIndicator('', 'Todos los cambios guardados'), 2000);
+            } catch (err) {
+                setIndicator('error', 'Error al guardar');
+                console.error('Error guardando vínculo con UI:', err);
+                // Revertir visualmente el select al valor anterior
+                e.target.value = prevUnitId || '';
+            }
+        }
+
+        async function onConnectionToggle(checkbox) {
+            const connectionTypeId = checkbox.dataset.connectionId;
+            const checked = checkbox.checked;
+
+            // Actualizar visual del item contenedor
+            checkbox.closest('.connection-item').classList.toggle('checked', checked);
+
+            // Deshabilitar mientras procesa
+            checkbox.disabled = true;
+
+            try {
+                setIndicator('saving', 'Guardando...');
+
+                if (checked) {
+                    await supabaseRequest('/pln_planner_connections', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            planner_id: plannerId,
+                            connection_type_id: connectionTypeId
+                        })
+                    });
+                    selectedConnections.add(connectionTypeId);
+                } else {
+                    await supabaseRequest(
+                        `/pln_planner_connections?planner_id=eq.${plannerId}&connection_type_id=eq.${connectionTypeId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedConnections.delete(connectionTypeId);
+                }
+
+                setIndicator('saved', 'Guardado ✓');
+                setTimeout(() => setIndicator('', 'Todos los cambios guardados'), 2000);
+            } catch (err) {
+                // Revertir visual
+                checkbox.checked = !checked;
+                checkbox.closest('.connection-item').classList.toggle('checked', !checked);
+                setIndicator('error', 'Error al guardar');
+                console.error('Error toggle conexión:', err);
+            } finally {
+                checkbox.disabled = isReadOnly;
+            }
         }
 
         // ============================================================
