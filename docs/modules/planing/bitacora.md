@@ -706,6 +706,25 @@ Implementado en `unit-form.html`, sobre la tabla `pln_comments` (ya creada en pa
 
 ---
 
+## Estado del archivo `unit-form.html` al cierre del paso 4.3b
+
+**Funcionalmente completo para uso pedagógico.** Un docente UI puede crear, editar y completar una UI de principio a fin: información general, ciclos con cuerpo completo + áreas + conexiones IB, cierre con tres reflexiones finales, y hilo de comentarios polimórfico tanto a nivel de UI como por ciclo. El control de acceso por los 6 caminos está implementado y el modo solo lectura aplica a todos los elementos editables (pendiente validación funcional cuando haya datos para ejercitarlo).
+
+### Pendientes conocidos en `unit-form.html` (no bloquean uso real)
+
+Estos puntos no impiden el uso normal del archivo y se difieren a sesiones posteriores. Quedan listados aquí para no perderlos del radar.
+
+| # | Pendiente | Razón del aplazamiento | Cuándo abordar |
+|---|---|---|---|
+| 1 | **Notificaciones por email de comentarios** (paso 4.3c) | Alcance acotado al cierre de la sesión. La tabla `pln_comments` se llena correctamente pero el autor de la UI/ciclo no recibe email cuando alguien comenta. | Cuando se decida la política de notificación (solo autor / todos los editores / opt-out / agregación). |
+| 2 | **Sección "Planeadores vinculados"** en `unit-form.html` | El SPEC original del paso 4.3 contemplaba mostrar qué planeadores de área (tabla `pln_planners`) están enlazados a la UI vía `pln_planners.unit_id`. No tiene utilidad hasta que exista el módulo de planeadores de área. | Al cerrar el paso 6 (`planner-form.html`). |
+| 3 | **Validación funcional del modo solo lectura** | El código aplica `disabled` a inputs/selects/textareas, `enable(false)` a todos los Quill (UI + ciclos + cierre), y `display: none` a los compositores de comentarios. Está escrito y revisado, pero no se ha podido ejercitar porque no hay un worker en DEV cuyo acceso sea exclusivamente por caminos 3-6 (docente del grado, coordinador de área, director de programa o director de sección). | Cuando se pueblen `grades.program_id` y `academic_areas.coordinator_worker_id` en DEV y existan workers con esos roles. |
+| 4 | **Test formal de `subjects-descriptions`** (descripción por materia vinculada) | Funcionalidad heredada del paso 4.1 que guarda en `pln_unit_subjects.description`. Está implementada y aparentemente funciona, pero no se le hizo un test formal en esta línea de sub-pasos. | En la próxima sesión que toque ese archivo, antes de retomar nuevas features. |
+| 5 | **Auditoría de `pln_comments`, `pln_unit_cycle_areas` y `pln_unit_cycle_connections`** | En el paso 4.2 se agregaron triggers de auditoría a 10 tablas `pln_*`, pero quedaron sin trigger las tres tablas nuevas/usadas en los pasos 4.2-4.3. Esto significa que los comentarios, las áreas de ciclo y las conexiones IB no quedan auditadas. | Cuando se haga una sesión de mantenimiento general de auditoría del módulo, junto con la propagación de los triggers de paso 4.2 a PROD si aplica. |
+| 6 | **Decisión sobre limpieza de "áreas huérfanas"** en ciclos | Si el usuario quita una materia en Información General cuya área ya tenía registros en `pln_unit_cycle_areas`, los registros quedan en BD apuntando a un `area_id` ya no alcanzable desde la UI. Decisión actual: no se purgan automáticamente (preservar contribuciones del usuario). | Si en uso real esto resulta confuso, decidir entre purgar al desvincular materia o mantener el comportamiento actual. |
+
+---
+
 ### Paso 4.3c — Notificaciones por email de comentarios — PENDIENTE
 
 Por implementar en sesión propia (cuando se decida):
