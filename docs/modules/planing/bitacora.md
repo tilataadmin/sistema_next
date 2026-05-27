@@ -37,7 +37,7 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 2 | `config.js` + `sidebar.js` — registro del módulo | ✅ Cerrado |
 | 2.1 | SQL correctivo — eliminar permiso huérfano 'Planeación' (índice) | ✅ Cerrado |
 | 3 | `catalogs.html` — gestión de catálogos | ✅ Cerrado |
-| 3.1 | SQL correctivo — DISABLE RLS en las 29 tablas del módulo | 🔵 Aplicado en DEV, pendiente PROD |
+| 3.1 | SQL correctivo — DISABLE RLS en las 29 tablas del módulo | ✅ Cerrado (DEV y PROD) |
 | 4 | `unit-form.html` — formulario de Unidad de Indagación | ⏸️ Reformulado tras hallazgos de coordinación |
 | 4.0 | SQL — ampliación de esquema (grades.program_id, academic_areas.coordinator_worker_id) | ✅ Cerrado — aplicado en DEV y PROD |
 | 4.0a | Ampliar interfaz de gestión de grados para asignar programa | ✅ Cerrado |
@@ -827,7 +827,7 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 
 ### 🟡 Pendientes operativos (no bloqueantes)
 
-1. **Ejecutar el DO block del paso 3.1 (DISABLE RLS) en PROD.** El SQL está documentado en la sección del paso 3.1 de esta bitácora.
+1. ~~**Ejecutar el DO block del paso 3.1 (DISABLE RLS) en PROD.**~~ ✅ Verificado el 27/05/2026: las 29 tablas `pln_*` en PROD ya tienen RLS deshabilitado. Bitácora no estaba actualizada.
 
 2. **Hacer PR de `developmen` → `main`** para llevar a PROD:
    - `sidebar.js` (con entrada de Planeación en bloque "Académico")
