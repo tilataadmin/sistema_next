@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.7b">
+    <meta name="page-version" content="26.5.27.8">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1236,6 +1236,9 @@
                 // Listener del botón "Agregar ciclo"
                 document.getElementById('btn-add-cycle')?.addEventListener('click', agregarCiclo);
 
+                // Compositor de comentarios de la UI
+                setupUnitCommentComposer();
+
                 ocultarLoading();
                 document.getElementById('page-content').style.display = 'block';
 
@@ -1756,6 +1759,12 @@
             }
 
             list.innerHTML = renderCommentsList(comments);
+
+            // Conectar listeners de "Responder" (delegación al contenedor)
+            if (!list.dataset.replyListenerAttached) {
+                setupReplyListeners(list, 'unit', unitId);
+                list.dataset.replyListenerAttached = 'true';
+            }
         }
 
         // ============================================================
@@ -1774,6 +1783,12 @@
             }
 
             list.innerHTML = renderCommentsList(comments);
+
+            // Conectar listener de "Responder" (delegación, una sola vez por contenedor)
+            if (!list.dataset.replyListenerAttached) {
+                setupReplyListeners(list, 'unit_cycle', cycleId);
+                list.dataset.replyListenerAttached = 'true';
+            }
         }
 
         // ============================================================
@@ -1833,7 +1848,9 @@
                 `;
             }
 
-            // (Acciones — Responder/Eliminar — se conectan en Etapa B/C; aquí solo render)
+            // Solo los comentarios raíz pueden tener respuestas (anidación de 1 nivel)
+            const canReply = !isReply && !isReadOnly;
+
             return `
                 <div class="comment-item ${isReply ? 'is-reply' : ''}" data-comment-id="${comment.comment_id}">
                     <div class="comment-avatar">${escapeHtml(initials.toUpperCase())}</div>
@@ -1843,6 +1860,13 @@
                             <span class="comment-date">${formatRelativeDate(comment.created_at)}</span>
                         </div>
                         <div class="comment-body">${escapeHtml(comment.comment_body)}</div>
+                        ${canReply ? `
+                            <div class="comment-actions">
+                                <button type="button" class="comment-action-btn" data-role="reply" data-comment-id="${comment.comment_id}" data-entity-type="${comment.entity_type}" data-entity-id="${comment.entity_id}">
+                                    <i class="bi bi-reply me-1"></i>Responder
+                                </button>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -1868,6 +1892,190 @@
             return date.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
         }
 
+        // ============================================================
+        // COMENTARIOS — CREAR (raíz o respuesta)
+        // ============================================================
+        async function crearComentario(entityType, entityId, body, parentCommentId = null) {
+            const trimmed = (body || '').trim();
+            if (!trimmed) return;
+
+            try {
+                startSaving();
+                const payload = {
+                    entity_type: entityType,
+                    entity_id: entityId,
+                    author_id: currentWorkerId,
+                    comment_body: trimmed,
+                    parent_comment_id: parentCommentId,
+                    comment_status: 'active'
+                };
+                const result = await supabaseRequest('/pln_comments', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                if (!result || result.length === 0) {
+                    throw new Error('No se pudo guardar el comentario.');
+                }
+
+                // Agregar el nuevo comentario al estado en memoria
+                const key = `${entityType}:${entityId}`;
+                if (!commentsByEntity[key]) commentsByEntity[key] = [];
+                commentsByEntity[key].push(result[0]);
+
+                doneSaving();
+
+                // Re-renderizar el hilo correspondiente
+                if (entityType === 'unit') {
+                    renderUnitCommentsThread();
+                } else if (entityType === 'unit_cycle') {
+                    renderCycleCommentsThread(entityId);
+                }
+            } catch (err) {
+                errorSaving(err);
+                throw err;
+            }
+        }
+
+        // ============================================================
+        // COMENTARIOS — LISTENERS DEL COMPOSITOR DE LA UI
+        // ============================================================
+        function setupUnitCommentComposer() {
+            const textarea = document.getElementById('unit-comment-textarea');
+            const submitBtn = document.getElementById('btn-submit-unit-comment');
+            if (!textarea || !submitBtn) return;
+
+            // Habilitar/deshabilitar botón según contenido
+            textarea.addEventListener('input', () => {
+                submitBtn.disabled = textarea.value.trim().length === 0;
+            });
+
+            submitBtn.addEventListener('click', async () => {
+                const text = textarea.value;
+                if (!text.trim()) return;
+
+                submitBtn.disabled = true;
+                try {
+                    await crearComentario('unit', unitId, text, null);
+                    textarea.value = '';
+                } catch (e) {
+                    // El error ya fue reportado por crearComentario
+                } finally {
+                    submitBtn.disabled = textarea.value.trim().length === 0;
+                }
+            });
+
+            // En modo solo lectura, ocultar el compositor
+            if (isReadOnly) {
+                const composer = document.getElementById('unit-comment-composer');
+                if (composer) composer.style.display = 'none';
+            }
+        }
+
+        // ============================================================
+        // COMENTARIOS — LISTENERS DEL COMPOSITOR DE UN CICLO
+        // ============================================================
+        function setupCycleCommentComposer(cycleId) {
+            const textarea = document.getElementById(`cycle-comment-textarea-${cycleId}`);
+            const submitBtn = document.querySelector(`[data-role="cycle-comment-submit"][data-cycle-id="${cycleId}"]`);
+            if (!textarea || !submitBtn) return;
+
+            textarea.addEventListener('input', () => {
+                submitBtn.disabled = textarea.value.trim().length === 0;
+            });
+
+            submitBtn.addEventListener('click', async () => {
+                const text = textarea.value;
+                if (!text.trim()) return;
+
+                submitBtn.disabled = true;
+                try {
+                    await crearComentario('unit_cycle', cycleId, text, null);
+                    textarea.value = '';
+                } catch (e) {
+                    // El error ya fue reportado por crearComentario
+                } finally {
+                    submitBtn.disabled = textarea.value.trim().length === 0;
+                }
+            });
+
+            // En modo solo lectura, ocultar el compositor del ciclo
+            if (isReadOnly) {
+                const composer = textarea.closest('.comment-composer');
+                if (composer) composer.style.display = 'none';
+            }
+        }
+
+        // ============================================================
+        // COMENTARIOS — LISTENERS DE BOTONES "RESPONDER" DENTRO DE UN HILO
+        // ============================================================
+        // Se delega por contenedor: cualquier click en un botón data-role="reply"
+        // abre un compositor secundario debajo del comentario raíz.
+        function setupReplyListeners(containerEl, entityType, entityId) {
+            if (!containerEl) return;
+
+            containerEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-role="reply"]');
+                if (!btn) return;
+
+                const parentId = btn.dataset.commentId;
+                abrirComposerRespuesta(containerEl, btn, entityType, entityId, parentId);
+            });
+        }
+
+        function abrirComposerRespuesta(containerEl, replyBtn, entityType, entityId, parentCommentId) {
+            // Si ya hay un composer abierto en este hilo, ciérralo primero
+            const existing = containerEl.querySelector('.is-reply-composer');
+            if (existing) existing.remove();
+
+            // Construir el composer de respuesta debajo del comentario raíz
+            const commentItem = replyBtn.closest('.comment-item');
+            if (!commentItem) return;
+
+            const composer = document.createElement('div');
+            composer.className = 'comment-composer is-reply-composer';
+            composer.innerHTML = `
+                <textarea class="form-control" placeholder="Escriba una respuesta..." rows="2"></textarea>
+                <div class="comment-composer-buttons">
+                    <button type="button" class="btn-comment-submit" disabled>
+                        <i class="bi bi-send me-1"></i>Responder
+                    </button>
+                    <button type="button" class="btn-comment-cancel">Cancelar</button>
+                </div>
+            `;
+
+            // Insertar después del comentario raíz (pero antes de sus respuestas existentes)
+            // Estrategia: insertar inmediatamente después del comentario raíz
+            commentItem.insertAdjacentElement('afterend', composer);
+
+            const textarea = composer.querySelector('textarea');
+            const submitBtn = composer.querySelector('.btn-comment-submit');
+            const cancelBtn = composer.querySelector('.btn-comment-cancel');
+
+            textarea.focus();
+
+            textarea.addEventListener('input', () => {
+                submitBtn.disabled = textarea.value.trim().length === 0;
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                composer.remove();
+            });
+
+            submitBtn.addEventListener('click', async () => {
+                const text = textarea.value;
+                if (!text.trim()) return;
+                submitBtn.disabled = true;
+                try {
+                    await crearComentario(entityType, entityId, text, parentCommentId);
+                    // El re-render ya ocurrió dentro de crearComentario; el composer se destruyó al renderizar la lista
+                } catch (e) {
+                    // Error ya reportado
+                    submitBtn.disabled = false;
+                }
+            });
+        }
+        
         function renderThemeSelect() {
             const select = document.getElementById('field-theme_id');
             select.innerHTML = '<option value="">Seleccionar...</option>' +
@@ -2650,6 +2858,9 @@
 
             // Conectar listeners de autoguardado para este ciclo
             setupCycleAutosave(cycle);
+
+            // Conectar compositor de comentarios del ciclo
+            setupCycleCommentComposer(cid);
         }
 
         // ============================================================
