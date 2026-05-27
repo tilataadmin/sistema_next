@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.1">
+    <meta name="page-version" content="26.5.27.2">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -178,6 +178,50 @@
             background: #f8f9fa;
             border-radius: 4px;
         }
+
+        /* ====================================================
+           BANNER DE CONFLICTO DE EDICIÓN CONCURRENTE
+           ==================================================== */
+        .concurrent-edit-banner {
+            position: sticky;
+            top: 0;
+            z-index: 1019;
+            margin: 0 0 1rem 0;
+            padding: 0.75rem 1.25rem;
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            border-radius: 6px;
+            color: #6c4400;
+            font-size: 0.9rem;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+        .concurrent-edit-banner.show { display: flex; }
+        .concurrent-edit-banner .banner-content {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex: 1;
+        }
+        .concurrent-edit-banner .banner-content i {
+            font-size: 1.1rem;
+            color: #b88a00;
+            flex-shrink: 0;
+        }
+        .concurrent-edit-banner .btn-reload {
+            background: #856404;
+            color: white;
+            border: none;
+            padding: 0.4rem 0.95rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .concurrent-edit-banner .btn-reload:hover { background: #6c4400; }
     </style>
 </head>
 <body>
@@ -207,6 +251,17 @@
         </nav>
 
         <div id="alertContainer"></div>
+
+        <!-- BANNER DE CONFLICTO DE EDICIÓN CONCURRENTE -->
+        <div class="concurrent-edit-banner" id="concurrent-edit-banner">
+            <div class="banner-content">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span>Otra persona acaba de editar este planeador. Recargue para ver los cambios más recientes y evitar sobrescribirlos.</span>
+            </div>
+            <button type="button" class="btn-reload" onclick="window.location.reload()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Recargar
+            </button>
+        </div>
 
         <!-- HEADER INFORMATIVO DEL PLANEADOR -->
         <div class="planner-header">
@@ -356,6 +411,11 @@
         let plannerProgramName = null;
         let plannerCreatorName = null;
 
+        // Polling de cambios concurrentes
+        let lastKnownUpdatedAt = null;       // updated_at del planeador en el último fetch
+        let pollingIntervalId = null;        // referencia al setInterval
+        let concurrentEditDetected = false;  // una vez detectado, no spamear el log
+
         // Recursos académicos (caches)
         let allGrades = [];
         let allSubjects = [];
@@ -413,6 +473,12 @@
                 // Renderizar header informativo
                 renderHeaderInformativo();
 
+                // Iniciar polling de cambios concurrentes (solo si puede editar)
+                if (!isReadOnly) {
+                    lastKnownUpdatedAt = plannerData.updated_at;
+                    iniciarPollingConcurrencia();
+                }
+
                 ocultarLoading();
                 document.getElementById('page-content').style.display = 'block';
                 console.log('✅ planner-form.html cargado (sub-bloque 6.2.A)');
@@ -420,6 +486,49 @@
                 console.error('❌ Error inicializando:', error);
                 mostrarPantallaError(error.message, 'warning');
             }
+        });
+
+        // ============================================================
+        // POLLING DE EDICIÓN CONCURRENTE
+        // ============================================================
+        // Cada 15 segundos consulta updated_at del planeador en BD.
+        // Si cambió respecto al último valor conocido (y no fui yo), muestra banner.
+        // Una vez mostrado, deja de avisar (el usuario ya sabe).
+        function iniciarPollingConcurrencia() {
+            const POLL_INTERVAL_MS = 15000;  // 15 segundos
+
+            pollingIntervalId = setInterval(async () => {
+                if (concurrentEditDetected) return;  // ya avisamos, no spamear
+                if (document.hidden) return;          // ahorrar si la pestaña no está visible
+
+                try {
+                    const res = await supabaseRequest(
+                        `/pln_planners?select=updated_at&planner_id=eq.${plannerId}&limit=1`
+                    );
+                    if (!res || res.length === 0) return;
+
+                    const remoteUpdatedAt = res[0].updated_at;
+
+                    if (remoteUpdatedAt && remoteUpdatedAt !== lastKnownUpdatedAt) {
+                        // Hubo cambio externo. Mostrar banner.
+                        // Nota: cuando autosave se implemente (sub-bloques siguientes),
+                        // cada PATCH local actualizará lastKnownUpdatedAt para distinguir
+                        // ediciones propias de externas.
+                        concurrentEditDetected = true;
+                        const banner = document.getElementById('concurrent-edit-banner');
+                        if (banner) banner.classList.add('show');
+                        console.warn('⚠️ Edición concurrente detectada. Banner mostrado.');
+                    }
+                } catch (err) {
+                    // Silencio: errores transitorios de red no deben molestar al usuario
+                    console.debug('Polling concurrencia: error transitorio', err);
+                }
+            }, POLL_INTERVAL_MS);
+        }
+
+        // Limpiar polling al cerrar la página
+        window.addEventListener('beforeunload', () => {
+            if (pollingIntervalId) clearInterval(pollingIntervalId);
         });
 
         // ============================================================
