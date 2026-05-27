@@ -45,7 +45,8 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 4.0c | Poblar datos vía las interfaces ampliadas | 🔵 Próximo paso |
 | 4.1 | Refactor `unit-form.html` con modelo definitivo (control de acceso + selector de grado + pre-carga colaboradores) | ✅ Cerrado en DEV |
 | 4.2 | Gestión de ciclos | ✅ Cerrado en DEV (Sub-bloques A y B completos). Pendiente sincronización a PROD. |
-| 4.3 | Cierre + planeadores vinculados + comentarios | Pendiente |
+| 4.3a | Cierre de la unidad (3 reflexiones finales) | ✅ Cerrado en DEV |
+| 4.3b | Comentarios polimórficos (`pln_comments`) | Pendiente |
 | 5 | `units.html` — listado de UIs | Pendiente |
 | 6 | `planner-form.html` — formulario de Planeador de Área | Pendiente |
 | 7 | `planners.html` — listado de planeadores | Pendiente |
@@ -602,6 +603,45 @@ Implementado en `unit-form.html`:
 
 ---
 
+### Paso 4.3a — Cierre de la unidad ✅
+
+**Fecha de cierre en DEV:** 27 de mayo de 2026.
+
+Implementado en `unit-form.html`:
+
+- **HTML:** reemplazado el placeholder del Bloque 3 por la sección "Reflexiones finales" con 3 editores Quill: Reflexión del maestro, Reflexión de los estudiantes, Reflexión sobre la evaluación. Cada uno con su hint orientador debajo.
+- **JS — Variables globales nuevas:** `quillTeacherReflection`, `quillStudentReflection`, `quillAssessmentReflection`.
+- **JS — Inicialización:** los 3 nuevos Quill se crean en `initQuillEditors()` con la misma toolbar mínima del resto del formulario.
+- **JS — Hidratación:** `renderUIData()` carga el contenido de las 3 columnas (`teacher_reflection`, `student_reflection`, `assessment_reflection` de `pln_units`) usando `setQuillHTML()` con `clipboard.dangerouslyPasteHTML`.
+- **JS — Autosave:** las 3 columnas se agregan al `quillMap` de `setupAutosaveListeners()` con el patrón estándar (debounce 2s, `patchUnit()` para PATCH a `pln_units`).
+
+**Corrección aprovechada (fuera del alcance estricto del paso 4.3a):**
+
+- **Filtro `source === 'user'` en `text-change` de los Quill de la UI**: el handler original disparaba un PATCH por cada Quill durante la hidratación inicial, porque `setQuillHTML()` emite el evento con source 'api'. No se notaba antes porque el PATCH escribía el mismo valor que ya estaba en BD, pero generaba tráfico innecesario y PATCHs innecesarios. Ahora la condición `if (source !== 'user') return;` lo previene. Coherente con la misma lógica ya aplicada en los Quill de ciclos del paso 4.2.
+- **`enable(false)` extendido a los Quill de ciclos en modo solo lectura**: observación pendiente del paso 4.2 — los Quill de ciclos quedaban editables pese al banner amarillo. Corregido: `aplicarModoSoloLectura()` ahora recorre `cycleQuills` y deshabilita cada instancia.
+
+**Tests realizados en DEV:**
+
+- ✅ Estructura visible: los 3 Quill aparecen con toolbar y hints.
+- ✅ Autosave: escribir → esperar 2s → "Guardado ✓".
+- ✅ Persistencia entre recargas para los 3 campos.
+- ✅ Sin PATCH innecesarios al cargar (verificado en Network del navegador).
+- ⏸️ Modo solo lectura: validación funcional postpuesta. El código que deshabilita los Quill del cierre y los Quill de ciclos está escrito pero no se puede ejercitar en DEV hoy porque no hay usuarios cuyo único acceso sea por caminos 3-6 (docente del grado, coordinador de área, director de programa, director de sección). Se validará cuando se pueblen `grades.program_id` y `academic_areas.coordinator_worker_id` en DEV y existan workers con esos roles.
+
+---
+
+### Paso 4.3b — Comentarios polimórficos — PENDIENTE
+
+Por implementar (en sesión propia):
+- Hilo de comentarios en `pln_units` y `pln_unit_cycles` (entity_type polimórfico).
+- Render cronológico con avatar (`getWorkerPhotoUrl()`), nombre, fecha relativa.
+- Crear comentario al nivel del entity.
+- Responder (1 nivel de anidación, `parent_comment_id`).
+- Soft-delete (`comment_status = 'deleted'`, solo autor).
+- Notificación por email via `sendNotification()` al notificar al autor de la UI/ciclo.
+
+---
+
 ## Decisiones de implementación
 
 ### 26 de mayo de 2026 — Activación de auditoría para tablas `pln_*`
@@ -887,4 +927,4 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 
 ---
 
-*Última actualización: 27 de mayo de 2026 — ✅ Paso 4.2 cerrado en DEV (Sub-bloques A y B completos: CRUD de ciclos + cuerpo editable de 13 campos + áreas y conexiones IB). **Próximo paso al retomar: sincronizar paso 4.2 a PROD (PR de developmen → main), luego paso 4.3 (Cierre de la unidad + planeadores vinculados + comentarios) o paso 5 (units.html — listado).** Tareas operativas en paralelo: poblar `grades.program_id` y `academic_areas.coordinator_worker_id` en PROD, asignar permisos del módulo a roles.*
+*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2 y 4.3a cerrados en DEV. Paso 4.2 sincronizado a PROD (queda pendiente sincronizar 4.3a). Paso 3.1 (DISABLE RLS) verificado como ya aplicado en PROD (bitácora actualizada). **Próximo paso al retomar: sincronizar 4.3a a PROD, luego paso 4.3b (comentarios polimórficos), o paso 5 (units.html — listado para coordinadores).** Tareas operativas pendientes (dependen de terceros, no de desarrollo): asignar 7 permisos del módulo a roles en PROD, poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
