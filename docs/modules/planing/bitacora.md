@@ -50,7 +50,14 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 4.3c | Notificaciones por email de comentarios | Pendiente |
 | 5 | `units.html` — listado de UIs | Pendiente |
 | 6.1 | `my-planners.html` — listado y creación de planeadores (modelo planeador-por-grado) | ✅ Cerrado en DEV y PROD |
-| 6.2 | `planner-form.html` — formulario de Planeador de Área | Pendiente |
+| 6.2 | `planner-form.html` — formulario de Planeador de Área | 🔵 EN CURSO |
+| 6.2.A | Esqueleto + control de acceso (4 caminos) + polling de concurrencia + header informativo | ✅ Cerrado en DEV |
+| 6.2.B | Bloque 1 — Vinculación con UI + tipos de conexión IB | ✅ Cerrado en DEV |
+| 6.2.C | Bloque 2 — Marco curricular (Quill, ATL, campos simples) | Pendiente |
+| 6.2.D | Bloque 3 — Criterios de evaluación (tabla dinámica con atomicidad) | Pendiente |
+| 6.2.E | Bloque 4 — Reflexión del trimestre (4 Quill) | Pendiente |
+| 6.2.F | Bloque 5 — Ciclos del planeador (CRUD + cuerpo editable + atomicidad) | Pendiente |
+| 6.2.G | Bloque 6 — Comentarios polimórficos | Pendiente |
 | 7 | `planners.html` — listado general de planeadores (para coordinadores) | Pendiente |
 | 8 | Comentarios en ambos forms | Pendiente |
 | 9 | `coordinator-area.html` y `coordinator-program.html` | Pendiente |
@@ -824,6 +831,103 @@ Nueva función `sincronizarColaboradores(currentCollab)` invocada en `cargarUI()
 
 ---
 
+## Decisión arquitectónica — Concurrencia de edición (27 de mayo de 2026)
+
+Identificado durante la construcción del paso 6.2: dos docentes que comparten un planeador (codocencia legítima en el modelo planeador-por-grado) pueden editar simultáneamente. Sin mitigación, ocurre "last write wins" silencioso: el segundo PATCH sobrescribe al primero sin aviso al usuario.
+
+**Modelo de mitigación adoptado (Opción B + atomicidad de creación de hijos):**
+
+1. **Polling pasivo de `updated_at`** cada 15 segundos. Si el cliente detecta que el `updated_at` en BD ya no coincide con su valor cargado, muestra un banner amarillo sticky arriba: "Otra persona acaba de editar este planeador. Recargue para ver los cambios más recientes y evitar sobrescribirlos." con botón "Recargar". El usuario decide cuándo recargar. Una vez mostrado, no spamea (`concurrentEditDetected = true`).
+2. **Pausa de polling** cuando la pestaña no está visible (`document.hidden`), para ahorrar requests.
+3. **Cada PATCH local actualiza `lastKnownUpdatedAt`** para distinguir ediciones propias de externas.
+4. **Atomicidad para creación de ciclos y criterios**: en los sub-bloques 6.2.D (criterios) y 6.2.F (ciclos del planeador), en lugar de calcular `objective_number` o `cycle_number` con `Math.max(...) + 1` en cliente, llamar a una función PostgreSQL que use `SELECT MAX(...) + 1 FOR UPDATE` dentro de una transacción. Esto garantiza que dos clientes "simultáneos" no obtengan el mismo número.
+
+**Opciones descartadas:** "last write wins" puro (sin mitigación) y bloqueo optimista con `If-Match` (refactorización muy costosa para el nivel de simultaneidad esperado en un colegio).
+
+**Deuda técnica aplicable a archivos ya construidos:**
+
+- `unit-form.html` debe recibir el mismo mecanismo de polling como mejora retroactiva antes de uso masivo en producción.
+- Los ciclos de UI (paso 4.2) deben recibir la atomicidad SQL para `cycle_number` antes de uso masivo. Hoy calculan `cycle_number` con `Math.max(...) + 1` en cliente, lo que es vulnerable al mismo caso edge.
+
+---
+
+### Paso 6.2.A — Esqueleto + control de acceso + polling ✅
+
+**Fecha de cierre en DEV:** 27 de mayo de 2026.
+
+Archivo nuevo: `/modules/planning/planner-form.html` (~700 líneas).
+
+**Implementación:**
+
+- **HTML:** estructura completa con header informativo (badges: asignatura, grado, trimestre, programa; meta: año, creador histórico, estado) + 6 bloques colapsables (Vinculación con UI, Marco curricular, Criterios, Reflexión, Ciclos, Comentarios), todos con placeholder hasta sus sub-bloques.
+- **CSS:** estilos para badges del header, bloques colapsables (mismo patrón que `unit-form.html`), indicador de autoguardado, banner sticky de conflicto concurrente con botón "Recargar".
+- **JS — Variables globales:** `currentWorkerId`, `currentWorkerEmail`, `plannerId`, `plannerData`, `academicYearId`, `isReadOnly`. Caches de contexto (`allGrades`, `allSubjects`, `allPrograms`, `allWorkers`, `allAreas`, `allSections`). Polling (`lastKnownUpdatedAt`, `pollingIntervalId`, `concurrentEditDetected`).
+- **JS — Carga:** `loadCurrentWorker()` (unión por email a `workers`), `loadContext()` (todos los catálogos base en paralelo), `cargarPlaneador()` (FROM `pln_planners` + resolución de nombres de asignatura/grado/programa/creador + nombre del año).
+- **JS — Control de acceso `canEdit()`:** evalúa los 4 caminos en orden:
+  1. Assignment activa en algún curso de (grade_id, subject_id) en el año.
+  2. Coordinador del área de la asignatura (`academic_subjects.area_id → academic_areas.coordinator_worker_id`).
+  3. Director del programa del grado (`programs.program_director_email`).
+  4. Director de la sección del grado (`sections.director_email`).
+  El creador histórico (`teacher_id`) NO es un camino por sí solo. Si una creadora se fue y ya no tiene ningún rol vigente, pierde acceso.
+- **JS — Modo solo lectura `aplicarModoSoloLectura()`:** banner amarillo arriba con explicación de los 4 caminos. El bloqueo efectivo de inputs se aplica en los sub-bloques siguientes (los placeholders no necesitan disabled).
+- **JS — Polling `iniciarPollingConcurrencia()`:** setInterval cada 15s que consulta `pln_planners.updated_at`. Si difiere de `lastKnownUpdatedAt`, muestra el banner sticky y deja de avisar. Solo se inicia si `!isReadOnly`. Cleanup en `beforeunload`.
+- **JS — Pantalla de error amigable:** `mostrarPantallaError(mensaje, tipo)` con iconos según tipo (warning/error) y botones "Volver a mis planeadores" + "Volver al inicio".
+
+**Decisiones tomadas durante la implementación:**
+
+- **Detección de PEP por convención de nombre**: el código asume que el `program_name` de PEP empieza con "PEP". Alternativa más robusta sería agregar un campo `programs.short_code`, pero se considera fuera del alcance ahora. Si en el futuro se renombran programas, hay que revisar.
+- **`isReadOnly` se evalúa antes de iniciar polling**: por eficiencia, no contamina con requests adicionales a un usuario que solo lee.
+- **Polling se pausa con `document.hidden`**: pestañas no visibles no consultan.
+
+**Tests realizados en DEV:**
+
+- ✅ Acceso por Camino 1 (Belzner como docente con assignment): entrada sin banner, consola muestra "✅ canEdit: docente con assignment activa".
+- ✅ Acceso por Camino 1 (codocencia con Cajigas en Tercero A): entrada sin banner.
+- ✅ Acceso con planner_id inexistente: pantalla de error amigable.
+- ✅ Acceso sin planner_id en URL: pantalla de error amigable.
+- ✅ Header informativo muestra correctamente todos los datos del planeador.
+- ✅ Polling: UPDATE externo en BD dispara banner en menos de 15s.
+- ⏸️ Validación de Caminos 2-4: pospuesta (no hay datos poblados para ejercitarlos).
+
+---
+
+### Paso 6.2.B — Bloque 1: Vinculación con UI + conexiones IB ✅
+
+**Fecha de cierre en DEV:** 27 de mayo de 2026.
+
+**Implementación:**
+
+- **HTML:** reemplazado el placeholder del Bloque 1 por un contenedor `#uilink-body` cuyo contenido se genera dinámicamente.
+- **CSS:** estilos para selector de UI, hint, mensaje "no aplica a este programa", sección de conexiones (oculta cuando no hay UI vinculada), grid de checkboxes de conexión con variante `.checked`.
+- **JS — Variables nuevas:** `availableUIs`, `catalogConnectionTypes`, `selectedConnections` (Set de connection_type_id).
+- **JS — Carga:** `pln_connection_types` se agregó al `Promise.all` de `loadContext()`. Nueva función `cargarUILinkData()` invocada en la inicialización tras `cargarPlaneador()`: trae UIs activas del mismo grado y año vía `pln_unit_grades` (JOIN implícito por filtro IN), y trae las conexiones existentes del planeador.
+- **JS — Render `renderUILinkBlock()`:** detecta si el programa es PEP por convención de nombre. Si NO es PEP, muestra mensaje informativo y sale. Si es PEP, construye un select de UIs (con "Sin vincular" + opciones), y una sección de conexiones con 6 checkboxes (Contenido, Conceptos, ATL, Pedagogía, Perfil IB, Contexto) inicialmente oculta cuando no hay UI vinculada.
+- **JS — Autosave del select `onUnitLinkChange()`:**
+  1. PATCH a `pln_planners.unit_id` con el nuevo valor (o NULL).
+  2. Si se DESVINCULÓ (pasó a NULL), **borra todas las conexiones** del planeador con `DELETE pln_planner_connections WHERE planner_id=...` (decisión: las conexiones no tienen sentido sin UI vinculada).
+  3. Muestra/oculta la sección de conexiones según haya UI o no.
+  4. Actualiza `lastKnownUpdatedAt` para no disparar el banner de concurrencia con la propia edición.
+  5. Reverso visual si el PATCH falla.
+- **JS — Autosave de conexiones `onConnectionToggle()`:** INSERT/DELETE inmediato a `pln_planner_connections` según marcar/desmarcar. Mantiene `selectedConnections` sincronizado. Reverso visual si falla.
+
+**Decisiones tomadas durante la implementación:**
+
+- **Al desvincular UI se borran las conexiones IB del planeador**: decisión de UX (no de BD). Las conexiones IB representan "cómo este planeador se relaciona con su UI vinculada". Sin UI vinculada, pierden significado. Si el usuario re-vincula con otra UI después, debe marcar conexiones de nuevo desde cero.
+- **Programas no-PEP muestran mensaje informativo en lugar de ocultar el bloque entero**: deja explícito al usuario por qué no aparecen UIs (mejor que un bloque vacío sin explicación).
+
+**Tests realizados en DEV (todos exitosos):**
+
+- ✅ Bloque visible y placeholder reemplazado en planeador de Tercero (PEP).
+- ✅ UIs disponibles correctas (filtro por grado, año, status activo).
+- ✅ Vincular UI: PATCH guarda `unit_id`, aparece sección de conexiones.
+- ✅ Marcar conexiones: INSERT inmediato en `pln_planner_connections`.
+- ✅ Persistencia entre recargas.
+- ✅ Desvincular UI: PATCH `unit_id=NULL` + DELETE de todas las conexiones del planeador.
+- ⏸️ Modo solo lectura: no probado funcionalmente (mismo bloqueo que el resto del paso 4.3 y 6.2.A).
+- ⏸️ Sin UIs disponibles: no probado (no quisimos archivar la UI de prueba).
+
+---
+
 ### Paso 4.3c — Notificaciones por email de comentarios — PENDIENTE
 
 Por implementar en sesión propia (cuando se decida):
@@ -1132,4 +1236,4 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 
 ---
 
-*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2, 4.3a, 4.3b y 6.1 cerrados en DEV. Pasos 4.2 y 6.1 cerrados en PROD (BD + URLs de permisos). Decisión arquitectónica importante: modelo "planeador-por-grado" adoptado para `pln_planners` y mecanismo de sincronización automática agregado a `pln_unit_collaborators`. UNIQUE de `pln_planners` cambió a `(subject_id, grade_id, trimester, academic_year_id)` en DEV y PROD. **Próximo paso al retomar: sincronizar a PROD el código de 4.3a + 4.3b + 6.1 (PR `developmen` → `main` único), luego paso 6.2 (`planner-form.html`).** Tareas operativas pendientes (dependen de terceros): asignar 9 permisos del módulo a roles en PROD (los 7 originales + 2 actualizados), poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
+*Última actualización: 27 de mayo de 2026 — ✅ Pasos 4.2, 4.3a, 4.3b y 6.1 cerrados en DEV. Pasos 4.2 y 6.1 cerrados en PROD (BD + URLs de permisos). Paso 6.2 EN CURSO: sub-bloques 6.2.A (esqueleto + acceso + polling) y 6.2.B (vinculación con UI + conexiones IB) cerrados en DEV. Decisión arquitectónica importante: mecanismo de polling para edición concurrente adoptado para `planner-form.html`; aplicable retroactivamente a `unit-form.html` antes de uso masivo. **Próximo paso al retomar: sincronizar a PROD el código pendiente (4.3a + 4.3b + 6.1 + nuevo `planner-form.html`), luego continuar con paso 6.2.C (Marco curricular).** Tareas operativas pendientes (dependen de terceros): asignar 9 permisos del módulo a roles en PROD, poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD. Deuda técnica conocida: aplicar polling de concurrencia a `unit-form.html` + atomicidad SQL para `cycle_number` de UI antes de uso masivo en PROD.*
