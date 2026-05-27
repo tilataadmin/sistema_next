@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.1">
+    <meta name="page-version" content="26.5.27.2">
     <title>Mis planeadores de área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -60,9 +60,6 @@
             min-width: 160px;
         }
 
-        /* ====================================================
-           BLOQUES DE LA PÁGINA
-           ==================================================== */
         .block-card {
             background: white;
             border: 1px solid #e0e0e0;
@@ -90,9 +87,6 @@
         .block-header h5 i { color: var(--planning-primary); }
         .block-body { padding: 1.25rem; }
 
-        /* ====================================================
-           FORMULARIO DE CREACIÓN
-           ==================================================== */
         .create-form {
             display: grid;
             grid-template-columns: 2fr 2fr 1fr auto;
@@ -123,25 +117,16 @@
         }
 
         @media (max-width: 768px) {
-            .create-form {
-                grid-template-columns: 1fr;
-            }
-            .btn-create {
-                width: 100%;
-            }
+            .create-form { grid-template-columns: 1fr; }
+            .btn-create { width: 100%; }
         }
 
-        /* ====================================================
-           LISTADO DE PLANEADORES
-           ==================================================== */
         .planners-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.9rem;
         }
-        .planners-table thead {
-            background: #f8f9fa;
-        }
+        .planners-table thead { background: #f8f9fa; }
         .planners-table th {
             padding: 0.75rem 1rem;
             font-weight: 600;
@@ -161,12 +146,15 @@
             cursor: pointer;
             transition: background 0.15s;
         }
-        .planners-table tbody tr:hover {
-            background: var(--planning-light);
-        }
+        .planners-table tbody tr:hover { background: var(--planning-light); }
         .planner-subject {
             font-weight: 500;
             color: var(--planning-primary-dark);
+        }
+        .planner-creator {
+            font-size: 0.78rem;
+            color: #6c757d;
+            font-style: italic;
         }
         .trimester-badge {
             display: inline-block;
@@ -208,13 +196,8 @@
             margin-bottom: 0.75rem;
             display: block;
         }
-        .empty-state p {
-            margin-bottom: 0;
-        }
+        .empty-state p { margin-bottom: 0; }
 
-        /* ====================================================
-           MENSAJE DE PLANEADOR EXISTENTE
-           ==================================================== */
         .existing-planner-alert {
             display: flex;
             align-items: center;
@@ -239,9 +222,7 @@
             text-decoration: none;
             white-space: nowrap;
         }
-        .existing-planner-alert .btn-go:hover {
-            background: #6c4400;
-        }
+        .existing-planner-alert .btn-go:hover { background: #6c4400; }
     </style>
 </head>
 <body>
@@ -255,7 +236,6 @@
 
     <div class="container-fluid" id="page-content" style="display:none;">
 
-        <!-- BREADCRUMBS -->
         <nav aria-label="breadcrumb" class="mt-3">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Dashboard</a></li>
@@ -265,7 +245,6 @@
 
         <div id="alertContainer"></div>
 
-        <!-- HEADER -->
         <div class="page-header">
             <div>
                 <h1><i class="bi bi-journal-text me-2" style="color: var(--planning-primary);"></i>Mis planeadores de área</h1>
@@ -278,7 +257,6 @@
             </div>
         </div>
 
-        <!-- BLOQUE: CREAR PLANEADOR -->
         <div class="block-card" id="block-create">
             <div class="block-header">
                 <h5><i class="bi bi-plus-circle"></i>Crear planeador nuevo</h5>
@@ -314,7 +292,6 @@
             </div>
         </div>
 
-        <!-- BLOQUE: LISTADO DE PLANEADORES -->
         <div class="block-card" id="block-list">
             <div class="block-header">
                 <h5>
@@ -336,7 +313,6 @@
     </div>
 
 
-    <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
 
@@ -347,24 +323,26 @@
         let currentUser = null;
         let currentWorkerId = null;
         let allYears = [];
-        let selectedYearId = null;        // año seleccionado en el dropdown
+        let selectedYearId = null;
         let allGrades = [];
         let allSubjects = [];
         let allPrograms = [];
+        let allWorkers = [];
 
         // Asignaciones del worker actual en el año seleccionado:
-        // Map<subject_id, [{grade_id, grade_name, program_id}, ...]>
+        // Map<subject_id, Map<grade_id, {grade_id, grade_name, program_id, section_id}>>
         let myAssignmentsBySubject = new Map();
 
-        // Planeadores del worker actual en el año seleccionado
-        let myPlanners = [];
+        // Planeadores VISIBLES: el worker tiene assignment activa para
+        // (subject_id, grade_id) del planeador en el año seleccionado.
+        // teacher_id (creador histórico) NO determina visibilidad.
+        let visiblePlanners = [];
 
         // ============================================================
         // INICIALIZACIÓN
         // ============================================================
         document.addEventListener('DOMContentLoaded', async function() {
             try {
-                // Validar permiso
                 const hasAccess = await validatePageAccess('Crear planeador de área')
                                   || await validatePageAccess('Gestionar planeadores de área');
                 if (!hasAccess) return;
@@ -376,32 +354,26 @@
                 }
                 currentUser = session.user;
 
-                // Cargar worker_id
                 await loadCurrentWorker();
                 if (!currentWorkerId) {
                     mostrarError('No se encontró un trabajador vinculado a tu usuario.');
                     return;
                 }
 
-                // Cargar contexto base (años, grados, asignaturas, programas)
                 await loadContext();
-
-                // Inicializar selector de año (default: vigente)
                 renderYearSelector();
 
-                // Conectar listeners
                 document.getElementById('year-select').addEventListener('change', onYearChange);
                 document.getElementById('select-subject').addEventListener('change', onSubjectChange);
-                document.getElementById('select-grade').addEventListener('change', updateCreateButtonState);
+                document.getElementById('select-grade').addEventListener('change', validateExistingPlanner);
                 document.getElementById('select-trimester').addEventListener('change', validateExistingPlanner);
                 document.getElementById('btn-create-planner').addEventListener('click', crearPlaneador);
 
-                // Cargar datos del año actual
                 await refreshYearData();
 
                 ocultarLoading();
                 document.getElementById('page-content').style.display = 'block';
-                console.log('✅ my-planners.html cargado');
+                console.log('✅ my-planners.html cargado (modelo planeador-por-grado)');
             } catch (error) {
                 console.error('❌ Error inicializando:', error);
                 mostrarError(error.message);
@@ -425,19 +397,20 @@
         }
 
         async function loadContext() {
-            const [yearsRes, gradesRes, subjectsRes, programsRes] = await Promise.all([
+            const [yearsRes, gradesRes, subjectsRes, programsRes, workersRes] = await Promise.all([
                 supabaseRequest('/academic_years?select=year_id,year_name,is_current&order=year_name.desc'),
                 supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id&order=grade_name.asc'),
                 supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id&order=subject_name.asc'),
-                supabaseRequest('/programs?select=program_id,program_name&order=program_name.asc')
+                supabaseRequest('/programs?select=program_id,program_name&order=program_name.asc'),
+                supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1&worker_status=eq.active')
             ]);
 
             allYears = yearsRes || [];
             allGrades = gradesRes || [];
             allSubjects = subjectsRes || [];
             allPrograms = programsRes || [];
+            allWorkers = workersRes || [];
 
-            // Default al año vigente
             const currentYear = allYears.find(y => y.is_current);
             selectedYearId = currentYear ? currentYear.year_id : (allYears[0]?.year_id || null);
         }
@@ -463,12 +436,11 @@
         // CARGA DE DATOS DEL AÑO SELECCIONADO
         // ============================================================
         async function refreshYearData() {
-            // Cargar asignaciones del worker en el año seleccionado
+            // 1. Asignaciones del worker en este año
             const assignmentsRes = await supabaseRequest(
                 `/academic_assignments?select=subject_id,courses(grade_id,grades(grade_id,grade_name,program_id,section_id))&worker_id=eq.${currentWorkerId}&academic_year_id=eq.${selectedYearId}&assignment_status=eq.active`
             );
 
-            // Agrupar por subject_id → lista de grados únicos
             myAssignmentsBySubject = new Map();
             (assignmentsRes || []).forEach(a => {
                 const grade = a.courses?.grades;
@@ -487,17 +459,36 @@
                 }
             });
 
-            // Cargar planeadores del worker en el año seleccionado
-            const plannersRes = await supabaseRequest(
-                `/pln_planners?select=*&teacher_id=eq.${currentWorkerId}&academic_year_id=eq.${selectedYearId}&planner_status=neq.deleted&order=updated_at.desc`
-            );
-            myPlanners = plannersRes || [];
+            // 2. Pares (subject_id, grade_id) donde tengo assignment
+            const myPairs = [];
+            myAssignmentsBySubject.forEach((gradesMap, subjectId) => {
+                gradesMap.forEach((gradeInfo, gradeId) => {
+                    myPairs.push({ subject_id: subjectId, grade_id: gradeId });
+                });
+            });
 
-            // Refrescar UI
+            // 3. Planeadores visibles para mí en este año
+            visiblePlanners = [];
+            if (myPairs.length > 0) {
+                const subjectIds = [...new Set(myPairs.map(p => p.subject_id))];
+                const gradeIds = [...new Set(myPairs.map(p => p.grade_id))];
+
+                const plannersRes = await supabaseRequest(
+                    `/pln_planners?select=*&academic_year_id=eq.${selectedYearId}&subject_id=in.(${subjectIds.join(',')})&grade_id=in.(${gradeIds.join(',')})&planner_status=neq.deleted&order=updated_at.desc`
+                );
+
+                // Filtrar localmente: solo donde (subject_id, grade_id) coincida con mis pares
+                const pairKey = (s, g) => `${s}::${g}`;
+                const myPairsSet = new Set(myPairs.map(p => pairKey(p.subject_id, p.grade_id)));
+                visiblePlanners = (plannersRes || []).filter(p =>
+                    myPairsSet.has(pairKey(p.subject_id, p.grade_id))
+                );
+            }
+
+            // 4. Refrescar UI
             renderSubjectSelector();
             renderPlannersList();
 
-            // Reset del formulario de creación
             document.getElementById('select-subject').value = '';
             document.getElementById('select-grade').innerHTML = '<option value="">Primero elija asignatura</option>';
             document.getElementById('select-grade').disabled = true;
@@ -505,7 +496,6 @@
             document.getElementById('existing-planner-container').innerHTML = '';
             updateCreateButtonState();
 
-            // Header del año
             const yearObj = allYears.find(y => y.year_id === selectedYearId);
             document.getElementById('header-year-name').textContent = yearObj ? yearObj.year_name : '—';
         }
@@ -522,7 +512,6 @@
                 return;
             }
 
-            // Construir lista ordenada alfabéticamente
             const subjectIds = Array.from(myAssignmentsBySubject.keys());
             const subjectsOrdered = subjectIds
                 .map(sid => allSubjects.find(s => s.subject_id === sid))
@@ -557,7 +546,6 @@
             const grades = Array.from(gradesMap.values()).sort((a, b) => a.grade_name.localeCompare(b.grade_name));
             gradeSelect.disabled = false;
 
-            // Si hay solo 1 grado, pre-seleccionarlo
             if (grades.length === 1) {
                 gradeSelect.innerHTML = `<option value="${grades[0].grade_id}" selected>${escapeHtml(grades[0].grade_name)}</option>`;
             } else {
@@ -578,9 +566,11 @@
         }
 
         // ============================================================
-        // VALIDACIÓN: PLANEADOR EXISTENTE CON ESA COMBINACIÓN
+        // VALIDACIÓN: PLANEADOR EXISTENTE PARA ESA COMBINACIÓN
+        // El UNIQUE en BD es (subject_id, grade_id, trimester, academic_year_id),
+        // sin teacher_id. Si existe uno, lo mostramos para abrirlo en vez de duplicar.
         // ============================================================
-        function validateExistingPlanner() {
+        async function validateExistingPlanner() {
             updateCreateButtonState();
             const subjectId = document.getElementById('select-subject').value;
             const gradeId = document.getElementById('select-grade').value;
@@ -592,28 +582,43 @@
                 return;
             }
 
-            // Buscar coincidencia en los planeadores ya cargados
-            const existing = myPlanners.find(p =>
+            // Buscar primero en visibles (caso común)
+            let existing = visiblePlanners.find(p =>
                 p.subject_id === subjectId
                 && p.grade_id === gradeId
                 && p.trimester === parseInt(trimester, 10)
             );
 
+            // Si no está en visibles, podría existir uno creado por otro docente
+            // del grado. Lo buscamos directamente.
+            if (!existing) {
+                const directQuery = await supabaseRequest(
+                    `/pln_planners?select=*&subject_id=eq.${subjectId}&grade_id=eq.${gradeId}&trimester=eq.${trimester}&academic_year_id=eq.${selectedYearId}&planner_status=neq.deleted&limit=1`
+                );
+                if (directQuery && directQuery.length > 0) {
+                    existing = directQuery[0];
+                }
+            }
+
             if (existing) {
                 const subject = allSubjects.find(s => s.subject_id === subjectId);
                 const grade = allGrades.find(g => g.grade_id === gradeId);
+                const creator = allWorkers.find(w => w.worker_id === existing.teacher_id);
+                const creatorLabel = creator
+                    ? `creado por ${creator.worker_first_name} ${creator.worker_last_name_1}`
+                    : '';
+
                 container.innerHTML = `
                     <div class="existing-planner-alert">
                         <div>
-                            <i class="bi bi-exclamation-triangle me-1"></i>
-                            Ya tiene un planeador de <strong>${escapeHtml(subject?.subject_name || '')}</strong> en <strong>${escapeHtml(grade?.grade_name || '')}</strong>, trimestre <strong>${trimester}</strong>.
+                            <i class="bi bi-info-circle me-1"></i>
+                            Ya existe el planeador de <strong>${escapeHtml(subject?.subject_name || '')}</strong> en <strong>${escapeHtml(grade?.grade_name || '')}</strong>, trimestre <strong>${trimester}</strong>${creatorLabel ? ', ' + escapeHtml(creatorLabel) : ''}.
                         </div>
                         <a href="planner-form.html?planner_id=${existing.planner_id}" class="btn-go">
                             <i class="bi bi-arrow-right me-1"></i>Abrir planeador
                         </a>
                     </div>
                 `;
-                // Deshabilitar el botón de crear porque ya existe
                 document.getElementById('btn-create-planner').disabled = true;
             } else {
                 container.innerHTML = '';
@@ -634,14 +639,13 @@
                 const gradeId = document.getElementById('select-grade').value;
                 const trimester = parseInt(document.getElementById('select-trimester').value, 10);
 
-                // Validar que el grado tenga programa
                 const grade = allGrades.find(g => g.grade_id === gradeId);
                 if (!grade) throw new Error('Grado no encontrado.');
                 if (!grade.program_id) {
                     throw new Error(`El grado "${grade.grade_name}" no tiene programa asignado. Pida al administrador que configure el programa en "Gestión de Grados".`);
                 }
 
-                // Construir payload
+                // teacher_id = creador histórico (informativo, no controla acceso)
                 const payload = {
                     subject_id: subjectId,
                     grade_id: gradeId,
@@ -664,7 +668,6 @@
                 const newPlannerId = result[0].planner_id;
                 console.log(`✅ Planeador creado: ${newPlannerId}`);
 
-                // Redirigir al formulario
                 window.location.href = `planner-form.html?planner_id=${newPlannerId}`;
             } catch (error) {
                 console.error('❌ Error creando planeador:', error);
@@ -680,12 +683,12 @@
             const container = document.getElementById('planners-list-container');
             const countLabel = document.getElementById('planners-count-label');
 
-            if (myPlanners.length === 0) {
+            if (visiblePlanners.length === 0) {
                 if (countLabel) countLabel.textContent = '';
                 container.innerHTML = `
                     <div class="empty-state">
                         <i class="bi bi-journal-x"></i>
-                        <p>Aún no tiene planeadores de área para este año.</p>
+                        <p>Aún no hay planeadores para sus asignaciones de este año.</p>
                         <small class="text-muted">Use el formulario de arriba para crear uno.</small>
                     </div>
                 `;
@@ -693,19 +696,31 @@
             }
 
             if (countLabel) {
-                countLabel.textContent = `(${myPlanners.length})`;
+                countLabel.textContent = `(${visiblePlanners.length})`;
             }
 
-            const rows = myPlanners.map(p => {
+            const rows = visiblePlanners.map(p => {
                 const subject = allSubjects.find(s => s.subject_id === p.subject_id);
                 const grade = allGrades.find(g => g.grade_id === p.grade_id);
                 const statusClass = p.planner_status === 'active' ? 'active' : 'archived';
                 const statusLabel = p.planner_status === 'active' ? 'Activo' : 'Archivado';
                 const updatedAt = p.updated_at ? formatDate(p.updated_at) : '—';
 
+                // Mostrar creador histórico si no soy yo
+                let creatorBadge = '';
+                if (p.teacher_id !== currentWorkerId) {
+                    const creator = allWorkers.find(w => w.worker_id === p.teacher_id);
+                    if (creator) {
+                        creatorBadge = `<div class="planner-creator">Creado por ${escapeHtml(creator.worker_first_name)} ${escapeHtml(creator.worker_last_name_1)}</div>`;
+                    }
+                }
+
                 return `
                     <tr data-planner-id="${p.planner_id}">
-                        <td class="planner-subject">${escapeHtml(subject?.subject_name || 'Sin asignatura')}</td>
+                        <td>
+                            <div class="planner-subject">${escapeHtml(subject?.subject_name || 'Sin asignatura')}</div>
+                            ${creatorBadge}
+                        </td>
                         <td>${escapeHtml(grade?.grade_name || 'Sin grado')}</td>
                         <td><span class="trimester-badge">T${p.trimester}</span></td>
                         <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
@@ -731,7 +746,6 @@
                 </table>
             `;
 
-            // Click en fila → abrir planeador
             container.querySelectorAll('tbody tr').forEach(tr => {
                 tr.addEventListener('click', () => {
                     const pid = tr.dataset.plannerId;
