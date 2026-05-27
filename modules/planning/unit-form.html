@@ -1869,6 +1869,96 @@
         }
 
         // ============================================================
+        // CICLOS — AUTOGUARDADO DE CAMPOS DEL CUERPO
+        // ============================================================
+        function debouncedPatchCycle(cycleId, colName, value) {
+            const key = `cycle_${cycleId}_${colName}`;
+            if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+            debounceTimers[key] = setTimeout(() => {
+                patchCycle(cycleId, colName, value);
+            }, DEBOUNCE_MS);
+        }
+
+        async function patchCycle(cycleId, colName, value) {
+            try {
+                startSaving();
+                const payload = {};
+                payload[colName] = value === '' ? null : value;
+                payload.updated_at = new Date().toISOString();
+                await supabaseRequest(`/pln_unit_cycles?cycle_id=eq.${cycleId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload)
+                });
+
+                // Actualizar el ciclo en memoria
+                const cycle = unitCycles.find(c => c.cycle_id === cycleId);
+                if (cycle) {
+                    cycle[colName] = payload[colName];
+                }
+
+                // Si el campo afecta al header del ciclo (topic, etapa, fechas), refrescar header
+                if (['topic', 'inquiry_stage_id', 'start_date', 'end_date'].includes(colName)) {
+                    refrescarHeaderCiclo(cycleId);
+                }
+
+                doneSaving();
+            } catch (err) {
+                errorSaving(err);
+            }
+        }
+
+        // Refresca solo el header de una tarjeta de ciclo sin tocar el cuerpo
+        // (para no destruir los Quill ya inicializados)
+        function refrescarHeaderCiclo(cycleId) {
+            const cycle = unitCycles.find(c => c.cycle_id === cycleId);
+            if (!cycle) return;
+            const card = document.querySelector(`.cycle-card[data-cycle-id="${cycleId}"]`);
+            if (!card) return;
+            const headerInfo = card.querySelector('.cycle-header-info');
+            const datesEl = card.querySelector('.cycle-dates');
+
+            // Recalcular contenidos visibles del header
+            const stage = cycle.inquiry_stage_id
+                ? catalogInquiryStages.find(s => s.inquiry_stage_id === cycle.inquiry_stage_id)
+                : null;
+            const stageName = stage ? stage.name_es : null;
+            const topic = cycle.topic || null;
+
+            if (headerInfo) {
+                headerInfo.innerHTML = `
+                    <span class="cycle-number-badge">#${cycle.cycle_number}</span>
+                    <span class="cycle-stage-pill ${stageName ? '' : 'empty'}">
+                        ${stageName ? escapeHtml(stageName) : 'Sin etapa'}
+                    </span>
+                    <span class="cycle-topic ${topic ? '' : 'empty'}">
+                        ${topic ? escapeHtml(topic) : 'Sin tema'}
+                    </span>
+                `;
+            }
+
+            // Fechas en el header
+            let datesLabel = '';
+            if (cycle.start_date && cycle.end_date) {
+                datesLabel = `${formatShortDate(cycle.start_date)} → ${formatShortDate(cycle.end_date)}`;
+            } else if (cycle.start_date) {
+                datesLabel = `desde ${formatShortDate(cycle.start_date)}`;
+            } else if (cycle.end_date) {
+                datesLabel = `hasta ${formatShortDate(cycle.end_date)}`;
+            }
+
+            if (datesEl) {
+                datesEl.textContent = datesLabel;
+            } else if (datesLabel) {
+                // No existía el span de fechas (porque estaba vacío); crearlo
+                const toggle = card.querySelector('.cycle-header-toggle');
+                const newDates = document.createElement('span');
+                newDates.className = 'cycle-dates';
+                newDates.textContent = datesLabel;
+                card.querySelector('.cycle-header').insertBefore(newDates, toggle);
+            }
+        }
+
+        // ============================================================
         // INDICADOR DE AUTOGUARDADO
         // ============================================================
         function setIndicator(state, text) {
@@ -1997,6 +2087,14 @@
                 // Limpiar referencias a los Quill del ciclo eliminado
                 if (cycleQuills[cycleId]) delete cycleQuills[cycleId];
 
+                // Cancelar cualquier timer de debounce pendiente para este ciclo
+                Object.keys(debounceTimers).forEach(k => {
+                    if (k.startsWith(`cycle_${cycleId}_`)) {
+                        clearTimeout(debounceTimers[k]);
+                        delete debounceTimers[k];
+                    }
+                });
+
                 // Renumerar ciclos restantes para mantener secuencia
                 await renumerarCiclos();
 
@@ -2117,6 +2215,97 @@
                 });
                 cycleQuills[cid][field] = q;
             });
+
+            // Conectar listeners de autoguardado para este ciclo
+            setupCycleAutosave(cycle);
+        }
+
+        // ============================================================
+        // CICLOS — CONECTAR LISTENERS DE AUTOGUARDADO POR CICLO
+        // ============================================================
+        function setupCycleAutosave(cycle) {
+            const cid = cycle.cycle_id;
+
+            // Campos con debounce (texto plano)
+            const debouncedTextFields = [
+                'topic',
+                'student_questions_emerging',
+                'resources'
+            ];
+            debouncedTextFields.forEach(field => {
+                const el = document.querySelector(`[data-cycle-id="${cid}"][data-field="${field}"]`);
+                if (!el) return;
+                el.addEventListener('input', () => {
+                    debouncedPatchCycle(cid, field, el.value);
+                });
+                el.addEventListener('blur', () => {
+                    const key = `cycle_${cid}_${field}`;
+                    if (debounceTimers[key]) {
+                        clearTimeout(debounceTimers[key]);
+                        patchCycle(cid, field, el.value);
+                    }
+                });
+            });
+
+            // Campos con guardado inmediato (selects, fechas)
+            const immediateFields = ['inquiry_stage_id', 'start_date', 'end_date'];
+            immediateFields.forEach(field => {
+                const el = document.querySelector(`[data-cycle-id="${cid}"][data-field="${field}"]`);
+                if (!el) return;
+                el.addEventListener('change', () => {
+                    patchCycle(cid, field, el.value || null);
+                });
+            });
+
+            // Editores Quill (debounce)
+            const normalQuillFields = [
+                'guiding_questions',
+                'learning_outcomes',
+                'learning_experiences',
+                'formative_assessment',
+                'differentiation',
+                'teacher_reflection'
+            ];
+            normalQuillFields.forEach(field => {
+                const q = cycleQuills[cid] && cycleQuills[cid][field];
+                if (!q) return;
+                q.on('text-change', (delta, oldDelta, source) => {
+                    // Ignorar cambios programáticos (hidratación inicial vía dangerouslyPasteHTML)
+                    if (source !== 'user') return;
+                    const html = q.getSemanticHTML ? q.getSemanticHTML() : q.root.innerHTML;
+                    debouncedPatchCycle(cid, field, html);
+                });
+            });
+
+            // Evaluación sumativa: toggle del checkbox + editor con debounce
+            const sumativaCheckbox = document.getElementById(`cycle-summative-toggle-${cid}`);
+            const sumativaWrapper = document.getElementById(`cycle-summative-wrapper-${cid}`);
+            const qSumativa = cycleQuills[cid] && cycleQuills[cid]['summative_assessment'];
+
+            if (sumativaCheckbox) {
+                sumativaCheckbox.addEventListener('change', () => {
+                    const aplica = sumativaCheckbox.checked;
+                    if (sumativaWrapper) sumativaWrapper.classList.toggle('hidden', !aplica);
+
+                    if (!aplica) {
+                        // Al desmarcar: limpiar el editor y guardar NULL inmediatamente
+                        if (qSumativa) qSumativa.setText('');
+                        // Cancelar cualquier debounce pendiente del campo
+                        const key = `cycle_${cid}_summative_assessment`;
+                        if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+                        patchCycle(cid, 'summative_assessment', null);
+                    }
+                    // Al marcar: no guardar nada todavía; se guardará cuando el usuario escriba algo
+                });
+            }
+
+            if (qSumativa) {
+                qSumativa.on('text-change', (delta, oldDelta, source) => {
+                    if (source !== 'user') return;
+                    const html = qSumativa.getSemanticHTML ? qSumativa.getSemanticHTML() : qSumativa.root.innerHTML;
+                    debouncedPatchCycle(cid, 'summative_assessment', html);
+                });
+            }
         }
 
         // ============================================================
