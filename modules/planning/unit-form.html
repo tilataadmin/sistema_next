@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.4">
+    <meta name="page-version" content="26.5.27.5">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -965,6 +965,9 @@
         let expandedCycleId = null;             // ciclo actualmente expandido
         let catalogInquiryStages = [];          // catálogo de etapas de indagación
         let cycleQuills = {};                   // { cycleId: { fieldName: QuillInstance } }
+        let catalogConnectionTypes = [];        // catálogo de tipos de conexión IB
+        // Estado de áreas por ciclo: { cycleId: Map<area_id, { cycle_area_id, connections: Set<connection_type_id> }> }
+        let cycleAreasState = {};
 
         // Editores Quill
         let quillCentralIdea, quillLinesOfInquiry, quillDifferentiation;
@@ -1090,6 +1093,7 @@
                 atRes,
                 asRes,
                 inquiryStagesRes,
+                connectionTypesRes,
                 gradesRes,
                 subjectsRes,
                 workersRes,
@@ -1106,6 +1110,7 @@
                 supabaseRequest('/pln_action_types?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/pln_action_scope?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/pln_inquiry_stages?select=*&active=eq.true&order=sort_order.asc'),
+                supabaseRequest('/pln_connection_types?select=*&active=eq.true&order=sort_order.asc'),
                 supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id&order=grade_name.asc'),
                 supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id&order=subject_name.asc'),
                 supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,worker_last_name_2,email,worker_status&worker_status=eq.active&order=worker_first_name.asc'),
@@ -1113,7 +1118,7 @@
                 supabaseRequest('/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active'),
                 supabaseRequest(`/academic_assignments?select=course_id,courses(grade_id,grades(grade_id,grade_name,program_id,section_id))&worker_id=eq.${currentWorkerId}&subject_id=eq.${SUBJECT_UI_ID}&academic_year_id=eq.${academicYearId}&assignment_status=eq.active`)
             ]);
-
+            
             allPrograms = programsRes || [];
             catalogThemes = themesRes || [];
             catalogKeyConcepts = kcRes || [];
@@ -1128,7 +1133,8 @@
             allSections = sectionsRes || [];
             allAreas = areasRes || [];
             catalogInquiryStages = inquiryStagesRes || [];
-
+            catalogConnectionTypes = connectionTypesRes || [];
+            
             // Procesar las asignaciones UI del worker actual:
             // Cada fila trae assignment.courses.grades — extraer grados únicos
             const uniqueGrades = new Map();
@@ -1364,6 +1370,47 @@
                 `/pln_unit_cycles?select=*&unit_id=eq.${unitId}&order=cycle_number.asc`
             );
             unitCycles = data || [];
+
+            // Cargar áreas y conexiones de todos los ciclos (estado en memoria)
+            cycleAreasState = {};
+            if (unitCycles.length > 0) {
+                const cycleIds = unitCycles.map(c => c.cycle_id);
+
+                // Áreas que participan en cada ciclo
+                const areasRes = await supabaseRequest(
+                    `/pln_unit_cycle_areas?select=cycle_area_id,cycle_id,area_id&cycle_id=in.(${cycleIds.join(',')})`
+                );
+
+                // Conexiones de cada cycle_area
+                const cycleAreaIds = (areasRes || []).map(r => r.cycle_area_id);
+                let connectionsRes = [];
+                if (cycleAreaIds.length > 0) {
+                    connectionsRes = await supabaseRequest(
+                        `/pln_unit_cycle_connections?select=cycle_area_id,connection_type_id&cycle_area_id=in.(${cycleAreaIds.join(',')})`
+                    ) || [];
+                }
+
+                // Mapear cycle_area_id → Set de connection_type_id
+                const connsByCycleArea = new Map();
+                connectionsRes.forEach(c => {
+                    if (!connsByCycleArea.has(c.cycle_area_id)) {
+                        connsByCycleArea.set(c.cycle_area_id, new Set());
+                    }
+                    connsByCycleArea.get(c.cycle_area_id).add(c.connection_type_id);
+                });
+
+                // Construir cycleAreasState[cycleId] = Map<area_id, {cycle_area_id, connections}>
+                (areasRes || []).forEach(r => {
+                    if (!cycleAreasState[r.cycle_id]) {
+                        cycleAreasState[r.cycle_id] = new Map();
+                    }
+                    cycleAreasState[r.cycle_id].set(r.area_id, {
+                        cycle_area_id: r.cycle_area_id,
+                        connections: connsByCycleArea.get(r.cycle_area_id) || new Set()
+                    });
+                });
+            }
+
             console.log(`✅ ${unitCycles.length} ciclo(s) cargado(s)`);
         }
 
@@ -1598,6 +1645,8 @@
                 }
                 renderSubjectsDescriptions();
                 renderCoordinationsInfoBlock();
+                // Refrescar tablas de áreas en todos los ciclos: cambió el universo de áreas disponibles
+                unitCycles.forEach(c => renderCycleAreas(c.cycle_id));
             });
         }
 
@@ -2355,6 +2404,221 @@
             if (sumativaCheckbox) sumativaCheckbox.checked = hasSumativa;
             if (sumativaWrapper) sumativaWrapper.classList.toggle('hidden', !hasSumativa);
             if (qSumativa && hasSumativa) setQuillHTML(qSumativa, cycle.summative_assessment);
+
+            // Renderizar tabla de áreas y conexiones
+            renderCycleAreas(cid);
+        }
+
+        // ============================================================
+        // CICLOS — TABLA DE ÁREAS Y CONEXIONES
+        // ============================================================
+        // Calcula las áreas disponibles para los ciclos: las áreas vinculadas a
+        // la UI vía sus materias (pln_unit_subjects → academic_subjects.area_id)
+        function getAreasDisponiblesParaCiclos() {
+            const areaIds = new Set();
+            Array.from(selectedSubjects.keys()).forEach(sid => {
+                const subj = allSubjects.find(s => s.subject_id === sid);
+                if (subj && subj.area_id) areaIds.add(subj.area_id);
+            });
+            return allAreas
+                .filter(a => areaIds.has(a.area_id))
+                .sort((a, b) => (a.area_name || '').localeCompare(b.area_name || ''));
+        }
+
+        function renderCycleAreas(cycleId) {
+            const container = document.getElementById(`cycle-areas-container-${cycleId}`);
+            if (!container) return;
+
+            const availableAreas = getAreasDisponiblesParaCiclos();
+
+            // Sin áreas disponibles: mensaje guía
+            if (availableAreas.length === 0) {
+                container.innerHTML = `
+                    <div class="cycle-areas-empty">
+                        Vincule materias en la sección "Información general" para poder asignar áreas a este ciclo.
+                    </div>
+                `;
+                return;
+            }
+
+            const state = cycleAreasState[cycleId] || new Map();
+
+            // Cabecera de la tabla con los 6 tipos de conexión
+            const connectionHeaders = catalogConnectionTypes.map(ct =>
+                `<th title="${escapeHtml(ct.description_es || ct.name_es)}">${escapeHtml(ct.name_es)}</th>`
+            ).join('');
+
+            const rows = availableAreas.map(area => {
+                const areaState = state.get(area.area_id);
+                const participa = !!areaState;
+                const conns = areaState ? areaState.connections : new Set();
+
+                const connectionCells = catalogConnectionTypes.map(ct => {
+                    const checked = conns.has(ct.connection_type_id);
+                    const disabled = !participa;
+                    return `
+                        <td class="connection-cell">
+                            <input type="checkbox"
+                                ${checked ? 'checked' : ''}
+                                ${disabled ? 'disabled' : ''}
+                                data-cycle-id="${cycleId}"
+                                data-area-id="${area.area_id}"
+                                data-connection-id="${ct.connection_type_id}"
+                                data-role="connection">
+                        </td>
+                    `;
+                }).join('');
+
+                return `
+                    <tr class="area-row ${participa ? 'participates-row' : 'inactive'}" data-area-id="${area.area_id}">
+                        <td class="area-name">${escapeHtml(area.area_name)}</td>
+                        <td class="participates-cell">
+                            <input type="checkbox"
+                                ${participa ? 'checked' : ''}
+                                data-cycle-id="${cycleId}"
+                                data-area-id="${area.area_id}"
+                                data-role="participates">
+                        </td>
+                        ${connectionCells}
+                    </tr>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <table class="cycle-areas-table">
+                    <thead>
+                        <tr>
+                            <th class="area-col">Área</th>
+                            <th>Participa</th>
+                            ${connectionHeaders}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            `;
+
+            // Listeners de la tabla
+            container.querySelectorAll('input[data-role="participates"]').forEach(cb => {
+                cb.addEventListener('change', () => onToggleAreaParticipates(cb));
+            });
+            container.querySelectorAll('input[data-role="connection"]').forEach(cb => {
+                cb.addEventListener('change', () => onToggleConnection(cb));
+            });
+
+            // Si la UI está en modo solo lectura, deshabilitar todos los checkboxes recién creados
+            if (isReadOnly) {
+                container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.disabled = true;
+                });
+            }
+        }
+
+        async function onToggleAreaParticipates(checkbox) {
+            const cycleId = checkbox.dataset.cycleId;
+            const areaId = checkbox.dataset.areaId;
+            const checked = checkbox.checked;
+
+            // Deshabilitar mientras procesa para evitar dobles clics
+            checkbox.disabled = true;
+
+            try {
+                startSaving();
+
+                if (checked) {
+                    // INSERT en pln_unit_cycle_areas — pedimos representación completa para obtener el cycle_area_id
+                    const result = await supabaseRequest(
+                        '/pln_unit_cycle_areas',
+                        {
+                            method: 'POST',
+                            body: JSON.stringify({ cycle_id: cycleId, area_id: areaId })
+                        }
+                    );
+
+                    if (!result || result.length === 0) {
+                        throw new Error('No se pudo registrar el área en el ciclo.');
+                    }
+
+                    const newCycleAreaId = result[0].cycle_area_id;
+                    if (!cycleAreasState[cycleId]) cycleAreasState[cycleId] = new Map();
+                    cycleAreasState[cycleId].set(areaId, {
+                        cycle_area_id: newCycleAreaId,
+                        connections: new Set()
+                    });
+                } else {
+                    // DELETE: las conexiones se eliminan en cascada por la FK
+                    await supabaseRequest(
+                        `/pln_unit_cycle_areas?cycle_id=eq.${cycleId}&area_id=eq.${areaId}`,
+                        { method: 'DELETE' }
+                    );
+                    if (cycleAreasState[cycleId]) {
+                        cycleAreasState[cycleId].delete(areaId);
+                    }
+                }
+
+                doneSaving();
+            } catch (err) {
+                // Revertir el checkbox visualmente
+                checkbox.checked = !checked;
+                errorSaving(err);
+                return;
+            } finally {
+                checkbox.disabled = false;
+            }
+
+            // Refrescar la fila (habilitar/deshabilitar las conexiones según el nuevo estado)
+            renderCycleAreas(cycleId);
+        }
+
+        async function onToggleConnection(checkbox) {
+            const cycleId = checkbox.dataset.cycleId;
+            const areaId = checkbox.dataset.areaId;
+            const connectionTypeId = checkbox.dataset.connectionId;
+            const checked = checkbox.checked;
+
+            const areaState = cycleAreasState[cycleId] && cycleAreasState[cycleId].get(areaId);
+            if (!areaState) {
+                // No debería ocurrir: si esta conexión está habilitada, el área participa
+                console.warn('Conexión activada sin área participante');
+                checkbox.checked = !checked;
+                return;
+            }
+
+            const cycleAreaId = areaState.cycle_area_id;
+
+            checkbox.disabled = true;
+
+            try {
+                startSaving();
+
+                if (checked) {
+                    await supabaseRequest(
+                        '/pln_unit_cycle_connections',
+                        {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                cycle_area_id: cycleAreaId,
+                                connection_type_id: connectionTypeId
+                            })
+                        }
+                    );
+                    areaState.connections.add(connectionTypeId);
+                } else {
+                    await supabaseRequest(
+                        `/pln_unit_cycle_connections?cycle_area_id=eq.${cycleAreaId}&connection_type_id=eq.${connectionTypeId}`,
+                        { method: 'DELETE' }
+                    );
+                    areaState.connections.delete(connectionTypeId);
+                }
+
+                doneSaving();
+            } catch (err) {
+                checkbox.checked = !checked;
+                errorSaving(err);
+            } finally {
+                checkbox.disabled = false;
+            }
         }
 
         function renderCycleCard(cycle) {
