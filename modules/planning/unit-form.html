@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.8">
+    <meta name="page-version" content="26.5.27.9">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1850,6 +1850,10 @@
 
             // Solo los comentarios raíz pueden tener respuestas (anidación de 1 nivel)
             const canReply = !isReply && !isReadOnly;
+            // Solo el autor puede eliminar su propio comentario (y solo en modo edición)
+            const canDelete = !isReadOnly && comment.author_id === currentWorkerId;
+
+            const hasActions = canReply || canDelete;
 
             return `
                 <div class="comment-item ${isReply ? 'is-reply' : ''}" data-comment-id="${comment.comment_id}">
@@ -1860,11 +1864,18 @@
                             <span class="comment-date">${formatRelativeDate(comment.created_at)}</span>
                         </div>
                         <div class="comment-body">${escapeHtml(comment.comment_body)}</div>
-                        ${canReply ? `
+                        ${hasActions ? `
                             <div class="comment-actions">
-                                <button type="button" class="comment-action-btn" data-role="reply" data-comment-id="${comment.comment_id}" data-entity-type="${comment.entity_type}" data-entity-id="${comment.entity_id}">
-                                    <i class="bi bi-reply me-1"></i>Responder
-                                </button>
+                                ${canReply ? `
+                                    <button type="button" class="comment-action-btn" data-role="reply" data-comment-id="${comment.comment_id}" data-entity-type="${comment.entity_type}" data-entity-id="${comment.entity_id}">
+                                        <i class="bi bi-reply me-1"></i>Responder
+                                    </button>
+                                ` : ''}
+                                ${canDelete ? `
+                                    <button type="button" class="comment-action-btn danger" data-role="delete" data-comment-id="${comment.comment_id}" data-entity-type="${comment.entity_type}" data-entity-id="${comment.entity_id}">
+                                        <i class="bi bi-trash me-1"></i>Eliminar
+                                    </button>
+                                ` : ''}
                             </div>
                         ` : ''}
                     </div>
@@ -2015,14 +2026,24 @@
             if (!containerEl) return;
 
             containerEl.addEventListener('click', (e) => {
-                const btn = e.target.closest('[data-role="reply"]');
-                if (!btn) return;
+                // Botón Responder
+                const replyBtn = e.target.closest('[data-role="reply"]');
+                if (replyBtn) {
+                    const parentId = replyBtn.dataset.commentId;
+                    abrirComposerRespuesta(containerEl, replyBtn, entityType, entityId, parentId);
+                    return;
+                }
 
-                const parentId = btn.dataset.commentId;
-                abrirComposerRespuesta(containerEl, btn, entityType, entityId, parentId);
+                // Botón Eliminar
+                const deleteBtn = e.target.closest('[data-role="delete"]');
+                if (deleteBtn) {
+                    const commentId = deleteBtn.dataset.commentId;
+                    eliminarComentario(commentId, entityType, entityId);
+                    return;
+                }
             });
         }
-
+        
         function abrirComposerRespuesta(containerEl, replyBtn, entityType, entityId, parentCommentId) {
             // Si ya hay un composer abierto en este hilo, ciérralo primero
             const existing = containerEl.querySelector('.is-reply-composer');
@@ -2074,6 +2095,50 @@
                     submitBtn.disabled = false;
                 }
             });
+        }
+
+        // ============================================================
+        // COMENTARIOS — ELIMINAR (soft-delete, solo el autor)
+        // ============================================================
+        async function eliminarComentario(commentId, entityType, entityId) {
+            const confirma = confirm(
+                '¿Eliminar este comentario?\n\n' +
+                'No se podrá recuperar. Si tiene respuestas, las respuestas se conservarán.'
+            );
+            if (!confirma) return;
+
+            try {
+                startSaving();
+                await supabaseRequest(
+                    `/pln_comments?comment_id=eq.${commentId}`,
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            comment_status: 'deleted',
+                            updated_at: new Date().toISOString()
+                        })
+                    }
+                );
+
+                // Actualizar el estado en memoria
+                const key = `${entityType}:${entityId}`;
+                const comments = commentsByEntity[key] || [];
+                const target = comments.find(c => c.comment_id === commentId);
+                if (target) {
+                    target.comment_status = 'deleted';
+                }
+
+                doneSaving();
+
+                // Re-renderizar el hilo correspondiente
+                if (entityType === 'unit') {
+                    renderUnitCommentsThread();
+                } else if (entityType === 'unit_cycle') {
+                    renderCycleCommentsThread(entityId);
+                }
+            } catch (err) {
+                errorSaving(err);
+            }
         }
         
         function renderThemeSelect() {
