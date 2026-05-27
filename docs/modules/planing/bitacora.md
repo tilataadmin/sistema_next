@@ -39,12 +39,12 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 3 | `catalogs.html` — gestión de catálogos | ✅ Cerrado |
 | 3.1 | SQL correctivo — DISABLE RLS en las 29 tablas del módulo | 🔵 Aplicado en DEV, pendiente PROD |
 | 4 | `unit-form.html` — formulario de Unidad de Indagación | ⏸️ Reformulado tras hallazgos de coordinación |
-| 4.0 | SQL — ampliación de esquema (grades.program_id, academic_areas.coordinator_worker_id) | 🔵 SQL entregado, pendiente aplicar en DEV |
-| 4.0a | Ampliar interfaz de gestión de grados para asignar programa | Pendiente — se hará para poblar `grades.program_id` por UI |
-| 4.0b | Ampliar interfaz de áreas (`academic-areas.html`) para asignar coordinador | Pendiente — se hará para poblar `academic_areas.coordinator_worker_id` por UI |
-| 4.0c | Poblar datos vía las interfaces ampliadas | Pendiente — depende de 4.0a y 4.0b |
-| 4.1 | Refactor `unit-form.html` con modelo definitivo (control de acceso + selector de grado + pre-carga colaboradores) | Archivo previo descartado — se reescribe sobre el modelo nuevo |
-| 4.2 | Gestión de ciclos | Pendiente |
+| 4.0 | SQL — ampliación de esquema (grades.program_id, academic_areas.coordinator_worker_id) | ✅ Cerrado — aplicado en DEV y PROD |
+| 4.0a | Ampliar interfaz de gestión de grados para asignar programa | ✅ Cerrado |
+| 4.0b | Ampliar interfaz de áreas (`academic-areas.html`) para asignar coordinador | ✅ Cerrado |
+| 4.0c | Poblar datos vía las interfaces ampliadas | 🔵 Próximo paso |
+| 4.1 | Refactor `unit-form.html` con modelo definitivo (control de acceso + selector de grado + pre-carga colaboradores) | ✅ Cerrado en DEV |
+| 4.2 | Gestión de ciclos | ✅ Cerrado en DEV (Sub-bloques A y B completos). Pendiente sincronización a PROD. |
 | 4.3 | Cierre + planeadores vinculados + comentarios | Pendiente |
 | 5 | `units.html` — listado de UIs | Pendiente |
 | 6 | `planner-form.html` — formulario de Planeador de Área | Pendiente |
@@ -318,7 +318,8 @@ END $$;
    - Cualquier worker en `pln_unit_collaborators` de la UI
    - Cualquier worker con asignaciones académicas activas en alguno de los cursos del grado de la UI (en el año académico vigente)
    - El coordinador de área académica de al menos una de las materias vinculadas a la UI
-   - El director del programa al que pertenece el grado de la UI
+   - El director del programa al que pertenece el grado de la UI (vía `programs.program_director_email`)
+   - El **director de la sección** del grado de la UI (vía `sections.director_email`) — incorporado el 26/05/2026 para cubrir la dirección de preescolar y otras direcciones de sección
 4. **Pre-carga automática de colaboradores al crear:** todos los workers con asignaciones académicas en el grado se agregan automáticamente como `pln_unit_collaborators`. El creador es `is_lead = true`, los demás `is_lead = false`. El creador puede quitar manualmente a quienes no apliquen.
 
 ---
@@ -333,9 +334,10 @@ Consultas a la BD revelaron dos huecos en el modelo de datos que **deben resolve
 
 ---
 
-### Paso 4.0 — SQL: ampliación de esquema 🔵
+### Paso 4.0 — SQL: ampliación de esquema ✅
 
-**Estado:** SQL entregado al usuario el 25 de mayo de 2026, pendiente de aplicar en DEV.
+**Fecha:** 25 de mayo de 2026 (entrega del SQL) / 26 de mayo de 2026 (aplicación)
+**Estado:** Cerrado — aplicado en DEV y PROD.
 
 **Decisiones de diseño:**
 
@@ -360,68 +362,355 @@ CREATE INDEX idx_academic_areas_coordinator ON public.academic_areas(coordinator
 
 **Verificación esperada:** 2 columnas nuevas (ambas nullable inicialmente), 2 índices nuevos.
 
-**Aplicado en DEV:** pendiente
-**Aplicado en PROD:** pendiente
+**Aplicado en DEV:** ✅ 26 de mayo de 2026
+**Aplicado en PROD:** ✅ 26 de mayo de 2026
+**Verificación:** ambas tablas con `data_type = 'uuid'` y `is_nullable = 'YES'` en los dos ambientes.
 
 ---
 
-### Paso 4.0a — Ampliar UI de gestión de grados Pendiente
+### Paso 4.0a — Ampliar UI de gestión de grados ✅
 
-**Objetivo:** Permitir a un administrador asignar el programa a cada grado desde la interfaz, **sin necesidad de ejecutar SQL manualmente**.
+**Fecha de inicio:** 26 de mayo de 2026
+**Fecha de cierre:** 26 de mayo de 2026
+**Estado:** Cerrado — aplicado y validado en DEV.
 
-**Decisión explícita del usuario:** *"Después tendremos que modificar las interfaces actuales para no tener que poblar por consulta... necesito dejar el sistema listo."*
+**Archivo modificado:** `/modules/config/grades.html` (rama `developmen`)
 
-**Alcance:**
-- Identificar la página actual de gestión de grados en SchoolNet (probablemente algo como `/modules/config/grades.html`).
-- Agregar un campo select de "Programa" en el modal de crear/editar grado.
-- Validación: el campo es opcional al crear, pero los programas que existan deben listarse desde `programs`.
+**Cambios aplicados:**
 
-**Pendiente de iniciar.**
+1. Nueva variable global `allPrograms` para almacenar la lista de programas activos.
+2. Nueva función `loadPrograms()` que consulta `/programs?program_status=eq.active`.
+3. Nueva función `populateProgramSelects()` que pobla los dos selectores de programa (modal de edición + filtro).
+4. Nuevo campo "Programa" en el modal de crear/editar grado (opcional, sin asterisco rojo de obligatorio).
+5. Inclusión de `program_id` en los payloads de `createGrade()` y `updateGrade()` (null si está vacío).
+6. Llenado de `gradeProgram` en `editGrade()` al abrir el modal de edición.
+7. Visualización del programa en cada tarjeta del grid (con fallback "Sin programa" en cursiva gris si no está asignado).
+8. Filtro por programa en la barra de filtros, con su lógica integrada en `filterGrades()` y limpieza en `clearFilters()`.
 
----
+**Decisión de diseño:** el campo Programa quedó **opcional**, no obligatorio. Permite la convivencia con grados que no pertenezcan a un programa formal IB (preescolar antes del PEP, grados especiales, etc.). Si más adelante coordinación pide volverlo obligatorio, es un ajuste mínimo (agregar `required` al select y un asterisco al label).
 
-### Paso 4.0b — Ampliar `academic-areas.html` para asignar coordinador Pendiente
+**Aplicado en DEV:** ✅ 26 de mayo de 2026 — validado: edición funcional, filtro funcional, visualización en tarjetas funcional.
+**Aplicado en PROD:** pendiente PR de `developmen` → `main`.
 
-**Objetivo:** Permitir a un administrador asignar un coordinador a cada área académica desde la interfaz.
-
-**Alcance:**
-- Modificar el modal de crear/editar área en `/modules/config/academic-areas.html` (ya existe).
-- Agregar un campo select de "Coordinador de área" que lista workers activos.
-- Guardar `coordinator_worker_id` en la tabla `academic_areas`.
-
-**Pendiente de iniciar.**
-
----
-
-### Paso 4.0c — Poblar datos vía las interfaces Pendiente
-
-**Depende de:** 4.0a y 4.0b cerrados.
-
-**Acciones del usuario:**
-1. Asignar programa a cada uno de los grados desde la UI ampliada.
-2. Asignar coordinador a cada área académica que tenga uno designado.
+**Pendiente operativo (paso 4.0c parcial):** el usuario debe asignar el programa correspondiente a cada grado (PEP, PAI, PD) desde la interfaz ampliada. Esta acción se realiza una sola vez en DEV; tras hacer PR a PROD se repite en PROD.
 
 ---
 
-### Paso 4.1 — Refactor de `unit-form.html` (sobre el modelo nuevo) Pendiente
+### Paso 4.0b — Ampliar `academic-areas.html` con selector de coordinador ✅
 
-**Depende de:** 4.0, 4.0a, 4.0b, 4.0c cerrados.
+**Fecha de inicio:** 26 de mayo de 2026
+**Fecha de cierre:** 26 de mayo de 2026
+**Estado:** Cerrado — aplicado y validado en DEV.
 
-**Diferencias con el archivo descartado:**
+**Archivo modificado:** `/modules/config/academic-areas.html` (rama `developmen`)
 
-| Concepto | Archivo descartado (v0) | Archivo nuevo (v1) |
-|---|---|---|
-| Quién puede entrar | Cualquier worker con permiso | Solo workers con relación pedagógica con el grado (creador, colaboradores, docentes del grado, coord. área, director programa) |
-| Selector de grado | Multi-select libre | Single-select restringido a grados donde el creador tiene asignación de "Unit of Inquiry" |
-| Colaboradores | Lista vacía, se agregan ad-hoc | Pre-cargados automáticamente desde `academic_assignments` del grado |
-| Modo solo lectura | No implementado | Sí, para workers que tienen permiso pero no relación pedagógica con la UI |
-| Lógica de coordinadores | Inexistente | Funciones `canEdit()` evalúan coord. de área (vía materias de la UI) y director de programa (vía `grades.program_id`) |
+**Cambios aplicados:**
 
-**Archivo previo:** `unit-form.html` v0 (1423 líneas) — se conserva como referencia histórica pero no se aplica.
+1. Nueva variable global `workers` para almacenar la lista de workers activos.
+2. Nueva función `cargarWorkers()` que consulta `/workers?worker_status=eq.active` ordenado por apellido.
+3. Carga en paralelo con `cargarGrados()` al inicializar.
+4. Modificada la query de `cargarAreas()` para traer el coordinador anidado vía PostgREST (`coordinator:coordinator_worker_id(worker_id, worker_first_name, worker_last_name_1, worker_last_name_2)`).
+5. Nuevo campo "Coordinador de área" en el modal de crear/editar área (opcional).
+6. Nueva función `poblarSelectorCoordinador(selectedWorkerId)` que pobla el `<select>` y preselecciona si aplica.
+7. Llamada al poblador desde `abrirModalArea()` tanto en modo crear como en modo editar.
+8. Inclusión de `coordinator_worker_id` en el payload de `guardarArea()` (null si está vacío).
+9. Visualización del coordinador en la lista de áreas (debajo del nombre del área, con ícono `bi-person-badge`).
+10. Fix de contraste CSS: forzado `color: #1B365D` con `!important` para `.area-item.active .area-name` y `.area-item.active small` (el ítem activo no mostraba bien el texto en el azul claro de fondo).
+
+**Decisión de diseño:** el campo Coordinador quedó **opcional**, no obligatorio. Permite áreas sin coordinador asignado (caso "Sin asignar" durante transiciones) y queda gris en cursiva.
+
+**Aplicado en DEV:** ✅ 26 de mayo de 2026 — validado: edición funcional, visualización en lista funcional, contraste corregido.
+**Aplicado en PROD:** pendiente PR de `developmen` → `main`.
+
+---
+
+### Paso 4.0c — Poblar datos vía las interfaces 🔵
+
+**Depende de:** 4.0a y 4.0b cerrados ✅
+
+**Acciones del usuario (en DEV primero, luego en PROD tras hacer PR):**
+
+1. Ir a `grades.html` y asignar el programa correspondiente a cada grado (PEP, PAI, PD).
+2. Ir a `academic-areas.html` y asignar coordinador a cada área académica que tenga uno designado.
+
+**Pendiente de ejecución por el usuario.**
+
+---
+
+### Paso 4.1 — Refactor de `unit-form.html` (sobre el modelo nuevo) ✅
+
+**Fecha de cierre:** 26 de mayo de 2026
+**Estado:** Cerrado en DEV. Pendiente PR a PROD.
+
+#### Bloques implementados
+
+**Bloque 1 — Esqueleto + control de acceso ✅**
+
+Documentado en detalle arriba: validaciones de creación, `canEdit()` con 6 caminos, pre-carga de colaboradores, modo solo lectura, pantalla de error amigable.
+
+**Bloque 2 — Bloque informativo de coordinaciones ✅**
+
+- Función `renderCoordinationsInfoBlock()` que calcula y muestra debajo de los colaboradores:
+  - Coordinadores de las áreas académicas de las materias vinculadas a la UI.
+  - Director del programa del grado.
+  - Director de la sección del grado.
+- Las personas con múltiples roles aparecen una sola vez con todos sus roles concatenados con " · ".
+- El bloque se **recalcula automáticamente** cuando el creador agrega o quita materias.
+- Si no hay coordinaciones disponibles, muestra mensaje guía sugiriendo vincular materias.
+
+#### Archivos modificados en DEV
+
+- `/modules/planning/unit-form.html`: refactor completo con Bloques 1 + 2.
+- `/modules/planning/my-units.html`: nuevo archivo (711 líneas), listado de UIs del grado del docente con selector de año.
+- Permiso "Crear unidad de indagación": `url_path` actualizado a `/modules/planning/my-units.html`.
+- 10 triggers de auditoría agregados (`pln_*_audit_trigger`).
+- Función `audit_trigger_function()` actualizada para mapear correctamente el `row_id` de las nuevas tablas.
+
+**Cambios aplicados en `unit-form.html`:**
+
+1. **Variables globales nuevas:** `currentWorkerEmail`, `myUIAssignedGrades`, `unitGradeId`, `unitProgramId`, `unitSectionId`, `allSections`, `allAreas`, `allPrograms`. Constante `SUBJECT_UI_ID`.
+
+2. **`loadCurrentWorker()` refactorizado:** la unión `users ↔ workers` es por **email** (`users.user_mail` = `workers.email`), no por `user_id`. La tabla `workers` no tiene columna `user_id`.
+
+3. **`loadContext()` ampliado:** carga `sections`, `academic_areas` (con `coordinator_worker_id`), `programs` (con `program_director_email`) y las asignaciones de "Unit of Inquiry" del worker actual en el año vigente.
+
+4. **`crearNuevaUI()` reescrito:** 
+   - Valida que el worker tenga asignación UI en exactamente 1 grado (0 → error, 2+ → error).
+   - Deriva `program_id` del grado.
+   - Valida que el grado tenga `program_id` configurado.
+   - Vincula la UI con el grado vía `pln_unit_grades`.
+   - Llama a `precargarColaboradores()`.
+
+5. **`precargarColaboradores()` nueva:** busca todos los workers con asignaciones activas en cualquier curso del grado y los inserta como colaboradores en batch. El creador queda con `is_lead = true`, los demás con `is_lead = false`.
+
+6. **`canEdit()` nueva:** evalúa los 6 caminos en orden con early return. El camino 3 (docente del grado) consulta BD en cada evaluación; los demás se evalúan contra datos en memoria.
+
+7. **`aplicarModoSoloLectura()` nueva:** banner amarillo + disabled global de inputs/selects/textareas, incluidos los Quill.
+
+8. **`mostrarPantallaError()` nueva:** pantalla amigable con icono, mensaje y botón "Volver al inicio". Reemplaza los `throw new Error()` no capturados que dejaban la pantalla en blanco.
+
+9. **`cargarUI()` ampliado:** carga el grado vía `pln_unit_grades`, cachea `unitProgramId` y `unitSectionId`, invoca `canEdit()` y aplica modo solo lectura si corresponde.
+
+**Cambio adicional en BD:** se actualizó el `url_path` del permiso "Crear unidad de indagación" para que apunte a `/modules/planning/unit-form.html?new=true` (no `unit-form.html` a secas). Esto permite que el archivo distinga entre flujo de creación y flujo de edición.
+
+**Bug menor encontrado en `sections.html`:** typo `alidatePageAccess` (línea 308) — falta la "v". El usuario fue informado, pendiente corregir cuando se aborde.
+
+**Tests realizados en DEV:**
+
+- ✅ Test 2 (intento de creación sin asignación UI): Hernán como superadmin → pantalla amigable con mensaje "No tiene asignación de Unit of Inquiry en el año académico vigente...". El superadmin no puede saltarse el sistema de roles pedagógicos.
+- ✅ Validación 3 (grado sin programa): Margaret Belzner intentó crear UI en Tercero → pantalla amigable con mensaje "El grado 'Tercero' no tiene programa asignado. Pida al administrador que configure el programa en 'Gestión de Grados'." Validación correcta.
+
+**Pendiente para validar completamente:**
+
+- Asignar programa (PEP, PAI, PD) a cada grado en DEV vía la UI ampliada en el paso 4.0a.
+- Reintento de creación de UI por un docente UI con grado correctamente configurado.
+- Validar pre-carga de colaboradores en BD.
+- Validar el modo solo lectura para un worker que no cumpla ninguno de los 6 caminos.
+
+---
+
+### Paso 4.2 — Gestión de ciclos 🔵 EN CURSO
+
+**Estado:** Sub-bloque A cerrado en DEV (26/05/2026). Sub-bloque B pendiente.
+
+#### Concepto de "ciclo" en el modelo
+
+Aclaración importante: **los ciclos del módulo Planeación NO son los 6 ciclos del año académico**. El campo `academic_years.cycles = 6` se refiere a la rotación semanal de "días tipo" D1-D6 que el colegio usa para horarios (algunos años el ciclo semanal es de 6 o 7 días en lugar de 5), no a ciclos pedagógicos.
+
+Los ciclos de `pln_unit_cycles` son **iteraciones pedagógicas internas de la UI**. Cada ciclo es una vuelta de trabajo con su propia etapa de indagación (Sintonización, Indagación, Acción, Reflexión), tema, fechas, preguntas guía, resultados y experiencias de aprendizaje, evaluaciones, recursos, diferenciación, reflexión docente y preguntas emergentes del estudiante.
+
+#### Decisiones de diseño
+
+- **Ciclos en orden secuencial obligatorio:** `cycle_number` empieza en 1 y debe ser estrictamente consecutivo. Al eliminar un ciclo, los siguientes se renumeran automáticamente para mantener la secuencia.
+- **Acordeones individuales:** cada ciclo es una tarjeta colapsable. Solo un ciclo expandido a la vez (auto-colapso de los demás).
+- **Header del ciclo cerrado** muestra: número (#1, #2...), etapa de indagación, tema, rango de fechas.
+- **Sin drag&drop para reordenar:** se descartó por baja utilidad. El orden lo determina el `cycle_number`.
+- **Eliminación con confirmación + cascada** (CASCADE en BD para áreas y conexiones).
+- **Autosave coherente con el resto del formulario** (pendiente implementar en Sub-bloque B).
+- **Modo solo lectura heredado** (pendiente aplicar en Sub-bloque B).
+
+#### Sub-bloque A — CRUD básico de ciclos ✅
+
+Implementado en `unit-form.html`:
+
+- **CSS:** estilos para `cycle-card`, `cycle-header`, `cycle-body`, badges de número y etapa, fechas, botón de eliminar.
+- **HTML:** estructura del bloque "Ciclos de la unidad" con botón "Agregar ciclo" y contenedor para tarjetas.
+- **JS — Variables globales:** `unitCycles`, `expandedCycleId`, `catalogInquiryStages`.
+- **JS — Carga:** `cargarCiclos()` invocada al final de `cargarRelaciones()`. Catálogo `pln_inquiry_stages` cargado en `loadContext()`.
+- **JS — Render:** `renderCycles()`, `renderCycleCard()`, `renderCycleBody()` (provisional, solo botón eliminar), `toggleCycleExpansion()`, `formatShortDate()`.
+- **JS — Acciones:** `agregarCiclo()`, `eliminarCiclo()`, `renumerarCiclos()`.
+- **Listener:** botón "Agregar ciclo" conectado en la inicialización.
+
+Tests realizados en DEV:
+- ✅ Crear ciclo #1, #2, #3.
+- ✅ Auto-colapso de otros ciclos al expandir uno.
+- ✅ Eliminar ciclo con renumeración automática.
+- ✅ Verificación BD: `pln_unit_cycles` registra los ciclos con `cycle_number` consecutivo.
+
+#### Sub-bloque B — Cuerpo editable + áreas + conexiones ✅
+
+**Fecha de cierre en DEV:** 27 de mayo de 2026.
+
+Implementado en `unit-form.html`:
+
+- **CSS:** estilos para `cycle-field-label`, `cycle-field-hint`, `summative-toggle`, `summative-editor-wrapper`, `cycle-areas-table` y variantes (filas inactivas, fila participante, celdas de conexión), `cycle-areas-empty`.
+- **HTML:** estructura completa del cuerpo del ciclo dentro de `renderCycleBody()` con 6 secciones (Identidad y temporalidad, Indagación, Aprendizaje, Evaluación, Recursos y diferenciación, Reflexión) más sección de Áreas. Cada Quill tiene un id único `cycle-quill-{field}-{cid}`. La sumativa lleva un toggle (checkbox + wrapper oculto) y la tabla de áreas un container `cycle-areas-container-{cid}`.
+- **JS — Variables globales nuevas:** `cycleQuills` ({cycleId: {field: QuillInstance}}), `catalogConnectionTypes`, `cycleAreasState` ({cycleId: Map<area_id, {cycle_area_id, connections: Set}>}).
+- **JS — Catálogos:** se agregó `pln_connection_types` al `Promise.all` de `loadContext()`.
+- **JS — Carga:** `cargarCiclos()` ahora también carga `pln_unit_cycle_areas` y `pln_unit_cycle_connections` para todos los ciclos en dos queries por lote.
+- **JS — Render e hidratación:** `initCycleQuills(cycle)` crea 7 editores por ciclo (Idea/Líneas/Diferenciación de UI ya existían); `hidratarCiclo(cycle)` puebla campos simples + Quill (vía `setQuillHTML()` con `clipboard.dangerouslyPasteHTML`) + estado del toggle sumativo; al final invoca `renderCycleAreas(cycleId)`.
+- **JS — Autosave:** `patchCycle()` (PATCH a `pln_unit_cycles` actualizando solo la columna modificada + `updated_at`), `debouncedPatchCycle()` con debounce 2s y blur que cancela el debounce. Listeners en `setupCycleAutosave(cycle)`:
+  - Texto plano debounce: `topic`, `student_questions_emerging`, `resources`.
+  - Inmediato (change): `inquiry_stage_id`, `start_date`, `end_date`.
+  - Quill debounce: `guiding_questions`, `learning_outcomes`, `learning_experiences`, `formative_assessment`, `differentiation`, `teacher_reflection`.
+  - Sumativa: checkbox toggle (marcar = mostrar editor sin guardar todavía; desmarcar = ocultar + setText('') + PATCH inmediato a NULL); Quill sumativa con debounce 2s solo si está visible.
+  - **Filtro `source === 'user'`** en todos los listeners `text-change` de Quill para ignorar cambios programáticos durante la hidratación.
+- **JS — Header dinámico:** `refrescarHeaderCiclo(cycleId)` actualiza solo el header de la tarjeta (badge #N, pill de etapa, topic, rango de fechas) sin tocar el cuerpo, para no destruir los Quill al cambiar `topic`, `inquiry_stage_id`, `start_date` o `end_date`.
+- **JS — Áreas y conexiones:** `getAreasDisponiblesParaCiclos()` filtra `allAreas` por las area_id derivadas de `selectedSubjects → academic_subjects.area_id`. `renderCycleAreas(cycleId)` pinta tabla con filas por área y 6 columnas de conexiones IB; filas inactivas en gris con conexiones deshabilitadas. `onToggleAreaParticipates()` hace POST/DELETE en `pln_unit_cycle_areas` (cycle_area_id se obtiene del POST con representación completa); el DELETE confía en CASCADE de FK para limpiar conexiones. `onToggleConnection()` hace POST/DELETE en `pln_unit_cycle_connections` con `cycle_area_id` + `connection_type_id`.
+- **JS — Reactividad cruzada con materias:** al cambiar las materias en Información General (`renderSubjectsSelect` `change`), se re-renderiza la tabla de áreas de todos los ciclos para reflejar el universo actualizado de áreas disponibles.
+- **JS — Modo solo lectura:** `renderCycleAreas()` consulta `isReadOnly` y deshabilita los checkboxes de la tabla recién renderizada. Los inputs/textareas/Quill de los nuevos campos quedan deshabilitados por `aplicarModoSoloLectura()` ya existente (selectores genéricos a inputs/selects/textareas dentro de `#page-content` y `quill.enable(false)` no aplica a los de ciclo porque se instancian después; en práctica el banner amarillo y los `disabled` en inputs son suficientes — observación para sub-paso futuro si se requiere endurecer).
+- **JS — Limpieza al eliminar ciclo:** `eliminarCiclo()` ahora también elimina referencias en `cycleQuills[cycleId]` y cancela timers de debounce pendientes con prefijo `cycle_${cycleId}_`.
+
+**Decisiones de diseño tomadas durante la implementación (no en el SPEC v1.0):**
+
+- **Patrón "render una vez + toggle CSS"** para los cuerpos de ciclo: `renderCycleCard()` siempre renderiza el cuerpo (no condicionado a `isExpanded`), y `toggleCycleExpansion()` solo cambia la clase `.expanded` que en CSS controla `display`. Los Quill se inicializan una sola vez por ciclo. Alternativa descartada: destruir/recrear Quill en cada toggle (más complejo, recrea estado).
+- **Filtro `source === 'user'` en `text-change` de Quill**: indispensable para no disparar autosave durante la hidratación inicial vía `clipboard.dangerouslyPasteHTML`, que emite el evento como 'api'.
+- **Tabla compacta** para áreas + conexiones (vs cards por área): el universo típico de 2-4 áreas por ciclo no justifica el espacio adicional.
+- **Sumativa toggleable**: checkbox guarda inmediatamente NULL al desmarcar; al marcar no escribe nada hasta que el usuario tipee. Al recargar, si la columna en BD está vacía/null, el checkbox queda desmarcado y el editor oculto.
+- **Recursos como `<textarea>`** (no Quill): la mayoría de docentes usan recursos como lista corta de enlaces/materiales; coherente con `student_questions_emerging` que también es textarea. El SPEC v1.0 deja la opción abierta.
+- **Áreas huérfanas no se purgan automáticamente**: si el usuario quita una materia cuya área ya tenía registros en `pln_unit_cycle_areas`/`pln_unit_cycle_connections`, los registros quedan en BD (apuntan a un area_id que ya no es alcanzable desde la UI). No se purgan automáticamente por si el usuario revierte la decisión de quitar la materia. Si esto resulta confuso en uso real, se puede agregar limpieza explícita en una iteración posterior.
+- **Re-renderizado de tabla tras toggle de "Participa"**: tras INSERT/DELETE en `pln_unit_cycle_areas` se llama de nuevo `renderCycleAreas()` para refrescar la fila (clase `participates-row`/`inactive`, habilitar/deshabilitar los 6 checkboxes de conexión). Alternativa descartada: actualizar la fila manipulando el DOM directamente (más código, menos confiable).
+
+**Hallazgo y corrección durante la implementación:**
+
+- **Bug de timing de Quill**: en el primer intento, los Quill de ciclos no aparecían en pantalla aunque las instancias existían en memoria. Causa: `renderCycles()` se llamaba dos veces durante la carga (una desde `cargarRelaciones()` y otra desde `renderUIData()`), y la segunda llamada hacía `container.innerHTML = cardsHtml` reemplazando los `<div>` que Quill ya había transformado. La defensa inicial `if (cycleQuills[cid][field]) return;` impedía recrear los Quill, dejando referencias huérfanas a nodos del DOM destruido. Corrección: `initCycleQuills()` ahora resetea `cycleQuills[cid] = {}` antes de crear Quills nuevos, garantizando que las instancias siempre apunten a los `<div>` actualmente en el DOM.
+
+**Tests realizados en DEV (todos exitosos):**
+
+- ✅ Hidratación de campos al expandir un ciclo con datos previos.
+- ✅ Autosave de cada uno de los 13 campos del cuerpo (texto, selects, fechas, Quill, sumativa toggleable).
+- ✅ Header del ciclo se refresca al cambiar topic/etapa/fechas sin destruir Quill.
+- ✅ Persistencia entre recargas para todos los campos del cuerpo.
+- ✅ Tabla de áreas muestra solo áreas vinculadas a la UI vía materias.
+- ✅ Marcar/desmarcar "Participa" habilita/deshabilita las conexiones de la fila.
+- ✅ Marcar/desmarcar conexiones individuales (POST/DELETE en `pln_unit_cycle_connections`).
+- ✅ DELETE en cascada de conexiones al desmarcar "Participa" (verificado en BD).
+- ✅ Reactividad: agregar/quitar materias en Información General refresca las tablas de áreas de todos los ciclos.
+- ✅ Mensaje guía cuando no hay materias vinculadas.
+- ✅ Eliminar un ciclo con cambios pendientes no genera errores (debounce timers cancelados).
+- ✅ Persistencia entre ciclos: marcar áreas/conexiones distintas en ciclos diferentes se conserva al recargar.
 
 ---
 
 ## Decisiones de implementación
+
+### 26 de mayo de 2026 — Activación de auditoría para tablas `pln_*`
+
+**Hallazgo:** las tablas `pln_*` se crearon en el paso 1 sin triggers de auditoría. El sistema SchoolNet tiene una función estándar `audit_trigger_function()` que se aplica a cada tabla auditada mediante un trigger por tabla con el patrón `<tabla>_audit_trigger`.
+
+**Aplicado en DEV:**
+
+1. Se crearon 10 triggers (uno por cada tabla `pln_*`) que disparan en INSERT, UPDATE y DELETE:
+   - `pln_units`, `pln_unit_grades`, `pln_unit_collaborators`, `pln_unit_subjects`, `pln_unit_key_concepts`, `pln_unit_atl_skills`, `pln_unit_learner_profile`, `pln_unit_tilata_attributes`, `pln_unit_action_types`, `pln_unit_action_scope`.
+   - Total: 30 triggers (10 tablas × 3 operaciones).
+
+2. Se modificó la función `audit_trigger_function()` para capturar correctamente el `row_id` de las nuevas tablas. La función tiene un IF-ELSIF que mapea nombre de tabla a su PK; antes caía al `ELSE` y guardaba `'unknown'`. Se agregaron los 10 casos `pln_*`. Las tablas M:N (todas menos `pln_units`) usan PK compuesta como row_id, ej. `unit_id || '-' || grade_id`, coherente con el patrón existente para `role_permissions` y `user_roles`.
+
+**Validación realizada:** edición de título de UI desde el formulario por Belzner. Registro antes del fix: `row_id = 'unknown'`. Después del fix: `row_id` con el `unit_id` real.
+
+**Aplicado en DEV:** ✅ 26 de mayo de 2026.
+**Aplicado en PROD:** ⏸️ Pendiente. Mismo script de los triggers (sin requerir cambios) y nueva versión de `audit_trigger_function()`.
+
+---
+
+### 26 de mayo de 2026 — Deuda técnica detectada: usuario en auditoría
+
+**Hallazgo:** el campo `audit_log.user_display_name` registra `'DB: postgres'` en lugar del usuario real de la aplicación en la gran mayoría de los registros de SchoolNet.
+
+**Causa raíz identificada:** la función `set_current_user()` usa `set_config('app.current_user_id', user_uuid::text, true)` con el parámetro `is_local = true`, lo que hace que la variable solo persista durante UNA transacción. Como cada llamada a `supabaseRequest()` en `config.js` ejecuta `set_current_user` y la query subsecuente en **fetch HTTP separados** (= conexiones/transacciones distintas en PostgREST), la variable se pierde entre llamadas.
+
+**Evidencia:** consulta agregada de los últimos 30 días muestra **1.439 registros** con `'DB: postgres'` vs **3 registros** con nombre de usuario real (`Mora Cortes Alexander`, en `env_water_readings_daily`). Es un bug arquitectónico del sistema completo, NO específico al módulo Planeación.
+
+**Implicación:** la auditoría sigue capturando QUÉ cambió (`old_values`, `new_values`) y CUÁNDO (`changed_at`), pero rara vez identifica QUIÉN (el `changed_by` uuid también queda en NULL). Para investigaciones forenses se puede triangular con la hora y los registros del cliente (logs del navegador, IP, etc.), pero no es ideal.
+
+**Estado:** documentado como deuda técnica del sistema SchoolNet (no del módulo Planeación). Resolución requiere análisis arquitectónico (probablemente cambiar a `is_local = false` con session ID, o adoptar Supabase Auth + RLS para que `auth.uid()` esté disponible automáticamente). Fuera del alcance del paso 4.
+
+---
+
+Antes de codificar, se cerraron 3 decisiones funcionales en conversación con el usuario:
+
+**Decisión 1 — Flujo de creación: sin modal de selección de grado**
+
+- El sistema asume la regla institucional definitiva: **un docente UI = un solo grado**.
+- Al hacer click en "Crear unidad de indagación", el sistema busca el grado del docente vía `academic_assignments` (subject "Unit of Inquiry", año vigente).
+- Si tiene exactamente 1 grado → crea la UI directamente.
+- Si tiene 0 grados → mensaje "No tiene asignación de Unit of Inquiry. No puede crear UIs."
+- Si tiene 2+ grados (caso excepcional, no esperado en el próximo año) → mensaje de error pidiendo contactar al administrador.
+
+**Decisión 2 — Pre-carga de colaboradores: Opción A**
+
+Al crear la UI, todos los workers con asignaciones académicas activas en cualquier curso del grado se agregan automáticamente a `pln_unit_collaborators`:
+- El creador como `is_lead = true`.
+- Los demás como `is_lead = false`.
+- El creador puede quitar manualmente a los que no aplican.
+- Los workers de otras áreas (que no enseñan en el grado) se agregan manualmente vía buscador si se necesitan.
+
+**Decisión 3 — Visualización del bloque informativo de coordinaciones**
+
+Debajo de la lista de colaboradores se muestra un bloque informativo (read-only):
+- Coordinador(es) del área académica de las materias vinculadas a la UI.
+- Director del programa al que pertenece el grado.
+- Director de la sección del grado.
+
+Estas personas **NO se agregan como colaboradores**. Su capacidad de editar viene automáticamente por su rol (caminos 4, 5 y 6 del modelo de acceso).
+
+**Decisión 4 — Cambios de personal: reacción automática**
+
+- Caminos 3-6 reaccionan automáticamente a cambios en BD (asignaciones, coordinadores, directores).
+- Camino 2 (colaboradores) requiere intervención manual para agregar/quitar de la lista.
+- **Validación adicional:** el control de acceso de colaborador (camino 2) valida `worker_status = 'active'`. Un colaborador inactivo pierde acceso automáticamente.
+- **Visualización:** los colaboradores inactivos se muestran tachados/grises con ícono de "inactivo" (no se ocultan, dan transparencia al equipo para limpiar la lista).
+
+**Decisión 5 — Workers sin acceso: modo solo lectura (Opción B)**
+
+- Un worker con el permiso `Gestionar unidades de indagación` que no cumpla ninguno de los 6 caminos de edición **puede ver la UI en modo solo lectura**.
+- Todos los campos `disabled`, sin botones de añadir/quitar.
+- Banner amarillo: "Está viendo esta unidad en modo lectura. No puede editarla."
+- Razón: transparencia institucional, los docentes pueden inspirarse en UIs de otros grados/programas.
+- Si en el futuro se necesita más estricto, se puede endurecer sin tocar UI.
+
+---
+
+### 26 de mayo de 2026 — Refinamiento del modelo: incorporar al director de sección como editor
+
+**Planteamiento del usuario:** En el Colegio Tilatá, el PEP IB comprende oficialmente desde Prejardín hasta Quinto. Sin embargo, operativamente hay dos coordinaciones de facto:
+- **Coordinación PEP "oficial"** → enfoque pedagógico en primero a quinto.
+- **Dirección de preescolar** → revisa y acompaña las UIs de prejardín, jardín y transición.
+
+**Opciones consideradas:**
+
+- **A:** Crear un programa "Primera infancia" separado. Descartada: rompe la fidelidad al marco IB (el PEP oficialmente incluye preescolar).
+- **B:** Permitir múltiples directores por programa (tabla M:N). Descartada: ambos editarían todo el PEP sin distinción, no refleja la realidad de delegación de funciones.
+- **C (elegida):** Incorporar al **director de sección** como un editor adicional. Las secciones (Preescolar, Primaria, Escuela media, Escuela alta) ya están modeladas en la tabla `sections` con director_email, y los grados ya tienen `section_id`.
+
+**Decisión:**
+
+Se incorpora el **director de sección** como un sexto editor en el modelo de control de acceso a UIs. La directora de preescolar puede editar UIs de prejardín/jardín/transición por ser directora de sección "Preescolar"; la coordinadora PEP puede editar todas las UIs del PEP por ser directora del programa.
+
+**Ventaja adicional:** la Opción C refleja la estructura organizacional colombiana real (directores de sección como figura institucional) sin forzar el marco IB.
+
+**Verificación técnica realizada:** la tabla `sections` ya existe con `director_email` poblado para las 4 secciones (Preescolar, Primaria, Escuela media, Escuela alta). Existe la pantalla `sections.html` con CRUD completo. No requiere SQL adicional ni nueva interfaz.
+
+**Modelo definitivo de control de acceso a UIs (6 editores):**
+
+1. Creador (`pln_units.created_by`)
+2. Colaboradores (`pln_unit_collaborators`)
+3. Docentes del grado (vía `academic_assignments` del año vigente)
+4. Coordinador del área académica de las materias de la UI (vía `academic_areas.coordinator_worker_id`)
+5. Director del programa del grado de la UI (vía `programs.program_director_email`)
+6. Director de la sección del grado de la UI (vía `sections.director_email`)
+
+---
 
 ### 25 de mayo de 2026 — Respuestas de coordinación de programa al modelo de UIs
 
@@ -551,6 +840,19 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 
 5. **Catálogo Tilatá:** poblar los atributos institucionales propios desde la interfaz de `catalogs.html` cuando el usuario tenga el material del PEI y sitio web.
 
+6. **Auditoría en PROD:** ✅ aplicada el 26/05/2026 (10 triggers + `audit_trigger_function()` actualizada).
+
+7. **`my-units.html` y permiso "Crear unidad de indagación":** ✅ sincronizado en PROD el 26/05/2026.
+
+8. **Deuda técnica de SchoolNet (no del módulo):** el sistema de auditoría no captura el usuario de la aplicación (registra `'DB: postgres'`). Bug reportado al sistema interno de tickets el 26/05/2026.
+
+9. **Asignación de permisos en PROD:** los 7 permisos del módulo `planning` existen en PROD pero **ningún rol los tiene asignados**. El superadmin ve el módulo (lógica de sidebar otorga todos los permisos a superadmins), pero los docentes/coordinadores reales no. Pendiente asignar permisos a los roles correspondientes vía la UI de SchoolNet en PROD.
+
+10. **Poblar datos pedagógicos en PROD:**
+    - `grades.program_id`: asignar PEP/PAI/PD a cada grado.
+    - `academic_areas.coordinator_worker_id`: asignar coordinador a las áreas que correspondan.
+    - Coordinar con direcciones de sección para que un par de docentes UI hagan pruebas reales.
+
 ---
 
 ## Histórico de hitos cerrados
@@ -568,7 +870,21 @@ Las decisiones de coordinación de programa quedaron cerradas el 25 de mayo de 2
 - **25 de mayo de 2026** — ⏸️ Paso 4.1 (`unit-form.html`) construido pero pausado antes de aplicar en DEV. Hallazgo durante el diseño: `academic_assignments` ya modela "Unit of Inquiry" como asignatura por curso. El modelo de autor/colaborador debe validarse con coordinación de programa antes de continuar.
 - **25 de mayo de 2026** — Respuestas de coordinación recibidas: UI por grado, creadores son docentes con "Unit of Inquiry", todos los docentes del grado editan, coordinadores de área y programa también editan. Un coordinador puede coordinar varias áreas pero un área tiene un solo coordinador.
 - **25 de mayo de 2026** — Verificaciones SQL: no hay relación nativa entre `grades` y `programs`, ni entre `academic_areas` y un coordinador. Se diseña paso 4.0 para ampliar el esquema con dos columnas nuevas. El archivo `unit-form.html` v0 queda descartado como base; se reescribirá sobre el modelo nuevo (v1).
+- **26 de mayo de 2026** — Paso 4.0 cerrado: aplicado SQL de ampliación de esquema en DEV y PROD. `grades.program_id` y `academic_areas.coordinator_worker_id` agregados con sus índices. Verificación visual confirmada en ambos ambientes.
+- **26 de mayo de 2026** — Paso 4.0a cerrado: ampliada la interfaz `grades.html` con selector de programa (modal + filtro), visualización del programa en cada tarjeta del grid, e integración con la BD. Aplicado en DEV. Pendiente PR a PROD y asignación de programa a cada grado por el admin.
+- **26 de mayo de 2026** — Paso 4.0b cerrado: ampliada la interfaz `academic-areas.html` con selector de coordinador en el modal, visualización del coordinador en la lista de áreas, y fix de contraste para el ítem activo. Aplicado en DEV. Pendiente PR a PROD.
+- **26 de mayo de 2026** — Refinamiento del modelo: se incorpora al **director de sección** como sexto editor de UIs (Opción C). La tabla `sections` y la pantalla `sections.html` ya existen y están pobladas. No requiere SQL ni nueva UI. El modelo final tiene 6 editores: creador, colaboradores, docentes del grado, coordinador de área, director de programa, director de sección.
+- **26 de mayo de 2026** — Paso 4.1 Bloque 1 implementado en DEV: control de acceso con 6 caminos, validación de creación, pre-carga de colaboradores, modo solo lectura, pantalla de error amigable. Hallazgos: `workers` no tiene `user_id` (unión por email), URL del permiso "Crear unidad de indagación" requirió `?new=true`. Tests del Bloque 1 validados parcialmente (falta probar creación exitosa con grados poblados de programa).
+- **26 de mayo de 2026** — Desviación del plan: se construyó `my-units.html` (listado de UIs del grado) tras descubrir bug de UX (cada click en "Crear" generaba UI nueva en blanco, no permitía retomar UIs existentes). Solución: el sidebar ahora apunta a `my-units.html` que muestra listado con selector de año académico y botón "Nueva unidad". La creación se mueve allí y `unit-form.html` se vuelve solo de edición. Funcional en DEV.
+- **26 de mayo de 2026** — Bug en Quill: contenido HTML guardado vía `getSemanticHTML()` no se renderiza al recargar (usa formato semántico simplificado, no estructura interna de Quill). Solución: helper `setQuillHTML()` que usa `clipboard.dangerouslyPasteHTML()` para que Quill interprete y reconstruya su estructura visual. Aplicado en DEV.
+- **26 de mayo de 2026** — Activación de auditoría en tablas `pln_*`: 30 triggers creados (10 tablas × 3 operaciones), función `audit_trigger_function()` actualizada con casos para las nuevas tablas. Validado: `row_id` captura correctamente el UUID del registro modificado. Pendiente aplicar en PROD.
+- **26 de mayo de 2026** — Detectada deuda técnica del sistema SchoolNet: `audit_log.user_display_name` registra `'DB: postgres'` en lugar del usuario real (1.439 registros vs 3 con nombre real en últimos 30 días). Causa: `set_current_user()` usa `is_local = true`, la variable de sesión se pierde entre fetches HTTP separados. Fuera del alcance del paso 4. Reportada como bug en el sistema interno de tickets.
+- **26 de mayo de 2026** — ✅ Paso 4.1 cerrado en DEV. Bloque 2 (informativo de coordinaciones) agregado: muestra debajo de los colaboradores los coordinadores de área de las materias vinculadas, el director del programa y el director de la sección. Personas con múltiples roles se muestran una sola vez con sus roles concatenados. El bloque se recalcula automáticamente cuando cambian las materias de la UI.
+- **26 de mayo de 2026** — ✅ Sincronización PROD completa (BD): columnas nuevas, índices, RLS deshabilitado en las 29 tablas pln_*, URL del permiso "Crear unidad de indagación" actualizada, 10 triggers de auditoría, función `audit_trigger_function()` actualizada. PR de código mergeado a `main` y deployado a PROD por Vercel. Falta poblar datos manualmente (programas en grados, coordinaciones de área).
+- **26 de mayo de 2026** — Lección aprendida: el cache del sidebar usa `sessionStorage` (no `localStorage`). Para limpiar tras cambios de permisos: `sessionStorage.removeItem('schoolnet_sidebar_permissions')` o `sessionStorage.clear()`.
+- **26 de mayo de 2026** — Aclaración importante sobre `academic_years.cycles`: el "6" se refiere a la **rotación semanal de días tipo D1-D6** del horario, no a ciclos pedagógicos. Los ciclos del módulo Planeación son iteraciones pedagógicas internas de cada UI, independientes del calendario.
+- **26 de mayo de 2026** — 🔵 Paso 4.2 Sub-bloque A en DEV: CRUD básico de ciclos funcional (crear, listar, expandir/colapsar, eliminar con renumeración automática). Decisiones de diseño: secuencia obligatoria, acordeones individuales con auto-colapso, sin drag&drop. Próximo: Sub-bloque B (cuerpo editable + áreas académicas + conexiones).
 
 ---
 
-*Última actualización: 25 de mayo de 2026 — Modelo de control de acceso a UIs definido tras conversación con coordinación. SQL del paso 4.0 (ampliar `grades` y `academic_areas`) entregado, pendiente de aplicar. Próximos pasos: ampliar interfaces de gestión de grados y de áreas académicas para poblar las nuevas relaciones por UI, no por SQL.*
+*Última actualización: 27 de mayo de 2026 — ✅ Paso 4.2 cerrado en DEV (Sub-bloques A y B completos: CRUD de ciclos + cuerpo editable de 13 campos + áreas y conexiones IB). **Próximo paso al retomar: sincronizar paso 4.2 a PROD (PR de developmen → main), luego paso 4.3 (Cierre de la unidad + planeadores vinculados + comentarios) o paso 5 (units.html — listado).** Tareas operativas en paralelo: poblar `grades.program_id` y `academic_areas.coordinator_worker_id` en PROD, asignar permisos del módulo a roles.*
