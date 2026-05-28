@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.27.11">
+    <meta name="page-version" content="26.5.28.1">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -301,6 +301,51 @@
             font-style: italic;
             background: #f8f9fa;
             border-radius: 4px;
+        }
+
+        /* ====================================================
+           BANNER STICKY DE CONFLICTO CONCURRENTE
+           ==================================================== */
+        #concurrent-edit-banner {
+            position: sticky;
+            top: 0;
+            z-index: 1030;
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            border-left: 4px solid #b88a00;
+            color: #6c4400;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 0 6px 6px;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        #concurrent-edit-banner.visible {
+            display: flex;
+        }
+        #concurrent-edit-banner .banner-text {
+            flex: 1;
+            font-size: 0.88rem;
+        }
+        #concurrent-edit-banner .banner-text strong {
+            color: #4a3700;
+        }
+        #concurrent-edit-banner .btn-reload {
+            background: #b88a00;
+            color: white;
+            border: none;
+            padding: 0.4rem 0.85rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        #concurrent-edit-banner .btn-reload:hover {
+            background: #9a7300;
         }
 
         /* ====================================================
@@ -800,6 +845,18 @@
             </ol>
         </nav>
 
+        <!-- BANNER DE CONFLICTO CONCURRENTE -->
+        <div id="concurrent-edit-banner">
+            <div class="banner-text">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <strong>Otro usuario ha modificado esta unidad.</strong>
+                Sus cambios locales siguen guardándose, pero para ver los cambios del otro usuario debe recargar la página.
+            </div>
+            <button type="button" class="btn-reload" id="btn-reload-on-conflict">
+                <i class="bi bi-arrow-clockwise me-1"></i>Recargar página
+            </button>
+        </div>
+
         <div id="alertContainer"></div>
 
         <!-- HEADER DE LA UI -->
@@ -1182,6 +1239,12 @@
         const debounceTimers = {};
         let pendingPatches = 0;
 
+        // Polling de concurrencia (vigila solo pln_units.updated_at, la tabla padre)
+        const POLLING_INTERVAL_MS = 15000;
+        let lastKnownUpdatedAt = null;        // último updated_at conocido de pln_units
+        let pollingIntervalId = null;          // id del setInterval para limpiar al salir
+        let concurrentEditDetected = false;    // true tras detectar conflicto (deja de seguir avisando)
+
         // ============================================================
         // INICIALIZACIÓN
         // ============================================================
@@ -1241,6 +1304,11 @@
 
                 ocultarLoading();
                 document.getElementById('page-content').style.display = 'block';
+
+                // Iniciar polling de concurrencia (solo si la UI es editable)
+                if (!isReadOnly) {
+                    iniciarPollingConcurrencia();
+                }
 
                 console.log('✅ unit-form.html cargado (sub-paso 4.1)');
            } catch (error) {
@@ -2637,6 +2705,10 @@
                     body: JSON.stringify(payload)
                 });
                 unitData[colName] = payload[colName];
+                unitData.updated_at = payload.updated_at;
+                // Mantener lastKnownUpdatedAt sincronizado con el PATCH propio para que
+                // el polling no lo interprete como cambio externo
+                lastKnownUpdatedAt = payload.updated_at;
                 doneSaving();
             } catch (err) {
                 errorSaving(err);
@@ -3683,6 +3755,82 @@
             quill.setContents([]);  // Limpiar contenido previo
             quill.clipboard.dangerouslyPasteHTML(0, sanitized);
         }
+
+        // ============================================================
+        // POLLING DE CONCURRENCIA
+        // ============================================================
+        // Vigila solo pln_units.updated_at (la tabla padre). Los PATCH a las
+        // tablas hijas (pln_unit_cycles, M:N, comentarios) NO actualizan
+        // pln_units.updated_at, así que dos docentes editando ciclos distintos
+        // del mismo UI no se "ven" mutuamente vía polling. Limitación aceptable
+        // para el nivel de concurrencia esperado (típicamente codocencia de 2
+        // personas en grados PEP).
+        function iniciarPollingConcurrencia() {
+            // Inicializar el ancla con el updated_at actual de la BD
+            lastKnownUpdatedAt = unitData.updated_at || null;
+
+            // Si no hay updated_at (UI recién creada sin PATCH), no arrancamos el polling
+            // hasta que haya un valor conocido (se inicializará en el primer patchUnit)
+            if (!lastKnownUpdatedAt) {
+                console.log('🔍 Polling diferido: la UI aún no tiene updated_at en BD');
+            } else {
+                console.log(`🔍 Polling iniciado. Ancla: ${lastKnownUpdatedAt}`);
+            }
+
+            pollingIntervalId = setInterval(verificarCambiosConcurrentes, POLLING_INTERVAL_MS);
+
+            // Listener del botón "Recargar"
+            const reloadBtn = document.getElementById('btn-reload-on-conflict');
+            if (reloadBtn) {
+                reloadBtn.addEventListener('click', () => {
+                    window.location.reload();
+                });
+            }
+        }
+
+        async function verificarCambiosConcurrentes() {
+            if (concurrentEditDetected) return;  // ya avisamos, no seguir consultando
+            if (!unitId) return;
+
+            try {
+                const data = await supabaseRequest(
+                    `/pln_units?select=updated_at&unit_id=eq.${unitId}&limit=1`
+                );
+                if (!data || data.length === 0) return;
+
+                const remoteUpdatedAt = data[0].updated_at;
+
+                // Primera vez con valor real: solo guardamos el ancla
+                if (!lastKnownUpdatedAt) {
+                    lastKnownUpdatedAt = remoteUpdatedAt;
+                    return;
+                }
+
+                if (remoteUpdatedAt && remoteUpdatedAt !== lastKnownUpdatedAt) {
+                    // Cambio detectado por otro cliente
+                    concurrentEditDetected = true;
+                    mostrarBannerConflicto();
+                    console.log(`⚠️ Cambio concurrente detectado. Local: ${lastKnownUpdatedAt}, Remoto: ${remoteUpdatedAt}`);
+                }
+            } catch (err) {
+                // Si la consulta falla (sin conexión, error transitorio), no rompemos nada;
+                // el polling lo reintentará en el siguiente tick.
+                console.warn('Polling: error transitorio consultando updated_at', err);
+            }
+        }
+
+        function mostrarBannerConflicto() {
+            const banner = document.getElementById('concurrent-edit-banner');
+            if (banner) banner.classList.add('visible');
+        }
+
+        // Cleanup: detener el polling al salir de la página
+        window.addEventListener('beforeunload', () => {
+            if (pollingIntervalId) {
+                clearInterval(pollingIntervalId);
+                pollingIntervalId = null;
+            }
+        });
 
         // ============================================================
         // CONTROL DE ACCESO: LOS 6 CAMINOS DE EDICIÓN
