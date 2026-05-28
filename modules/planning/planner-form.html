@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.28.2">
+    <meta name="page-version" content="26.5.28.3">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -373,6 +373,125 @@
             font-style: italic;
             font-size: 0.85rem;
         }
+
+        /* ====================================================
+           BLOQUE 3 — CRITERIOS DE EVALUACIÓN
+           ==================================================== */
+        .criteria-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        .criterion-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: white;
+            overflow: hidden;
+        }
+        .criterion-header {
+            padding: 0.7rem 0.95rem;
+            background: #f8f9fa;
+            border-bottom: 1px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            user-select: none;
+        }
+        .criterion-card.expanded .criterion-header {
+            border-bottom-color: #e0e0e0;
+        }
+        .criterion-header:hover { background: #f1f3f5; }
+        .criterion-header-main {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex: 1;
+            min-width: 0;
+        }
+        .criterion-number-badge {
+            background: var(--planning-primary);
+            color: white;
+            font-weight: 600;
+            font-size: 0.8rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 12px;
+            flex-shrink: 0;
+        }
+        .criterion-header-label {
+            font-size: 0.92rem;
+            color: #333;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .criterion-header-label.empty {
+            color: #adb5bd;
+            font-style: italic;
+            font-weight: 400;
+        }
+        .criterion-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+        .criterion-toggle-icon {
+            color: #6c757d;
+            transition: transform 0.2s;
+        }
+        .criterion-card.expanded .criterion-toggle-icon {
+            transform: rotate(180deg);
+        }
+        .btn-criterion-delete {
+            background: transparent;
+            border: 1px solid transparent;
+            color: #dc3545;
+            padding: 0.2rem 0.45rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-criterion-delete:hover {
+            background: #fde2e4;
+            border-color: #f5c2c7;
+        }
+        .criterion-body {
+            padding: 1rem;
+            display: none;
+        }
+        .criterion-card.expanded .criterion-body { display: block; }
+
+        .criteria-empty {
+            padding: 1.25rem;
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 0.88rem;
+        }
+        .btn-add-criterion {
+            margin-top: 0.85rem;
+            background: white;
+            color: var(--planning-primary);
+            border: 1px dashed var(--planning-primary);
+            padding: 0.55rem 1rem;
+            border-radius: 6px;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-add-criterion:hover:not(:disabled) {
+            background: var(--planning-light);
+        }
+        .btn-add-criterion:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     </style>
     
 </head>
@@ -550,7 +669,7 @@
         </div>
 
         <!-- ============================================================ -->
-        <!-- BLOQUE 3: CRITERIOS DE EVALUACIÓN (placeholder)               -->
+        <!-- BLOQUE 3: CRITERIOS DE EVALUACIÓN                             -->
         <!-- ============================================================ -->
         <div class="block-card collapsed" id="block-criteria">
             <div class="block-header" onclick="toggleBlock('block-criteria')">
@@ -558,10 +677,15 @@
                 <i class="bi bi-chevron-down toggle-icon"></i>
             </div>
             <div class="block-body">
-                <div class="placeholder-block">
-                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
-                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.D.</p>
+                <p class="curricular-field-hint" style="margin-top: 0; margin-bottom: 0.85rem;">
+                    Defina los objetivos de evaluación del trimestre. Cada objetivo se valora en una escala de 4 niveles (2 a 5). El nivel 1 corresponde a "no logrado" y es implícito.
+                </p>
+                <div class="criteria-list" id="criteria-list">
+                    <!-- Tarjetas de criterios generadas dinámicamente -->
                 </div>
+                <button type="button" class="btn-add-criterion" id="btn-add-criterion">
+                    <i class="bi bi-plus-circle me-1"></i>Agregar objetivo
+                </button>
             </div>
         </div>
 
@@ -669,6 +793,10 @@
         let catalogATLSkills = [];           // catálogo completo de pln_ib_atl_skills
         let selectedATLSkills = new Set();   // atl_skill_id activos para este planeador
 
+        // Criterios de evaluación (pln_planner_assessment_criteria)
+        let plannerCriteria = [];            // array de criterios ordenado por objective_number
+        let expandedCriterionId = null;      // id del criterio actualmente expandido (uno a la vez)
+
         // ============================================================
         // AUTOGUARDADO — contador y debounce
         // ============================================================
@@ -734,7 +862,12 @@
                 // Inicializar Bloque 2 (marco curricular)
                 initCurricularBlock();
 
+                // Cargar e inicializar Bloque 3 (criterios de evaluación)
+                await cargarCriterios();
+                initCriteriaBlock();
+
                 // Iniciar polling de cambios concurrentes (solo si puede editar)
+                
                 if (!isReadOnly) {
                     lastKnownUpdatedAt = plannerData.updated_at;
                     iniciarPollingConcurrencia();
@@ -1296,6 +1429,221 @@
             document.querySelectorAll('#atl-groups input[type="checkbox"]').forEach(cb => {
                 cb.disabled = true;
             });
+            // Deshabilitar botón de agregar criterio + ocultar botones de eliminar
+            const addBtn = document.getElementById('btn-add-criterion');
+            if (addBtn) addBtn.disabled = true;
+            document.querySelectorAll('.btn-criterion-delete').forEach(b => b.style.display = 'none');
+        }
+
+        // ============================================================
+        // BLOQUE 3 — CRITERIOS DE EVALUACIÓN
+        // ============================================================
+        async function cargarCriterios() {
+            const res = await supabaseRequest(
+                `/pln_planner_assessment_criteria?select=*&planner_id=eq.${plannerId}&order=objective_number.asc`
+            );
+            plannerCriteria = res || [];
+        }
+
+        function initCriteriaBlock() {
+            renderCriteriaList();
+
+            const addBtn = document.getElementById('btn-add-criterion');
+            if (addBtn) {
+                addBtn.addEventListener('click', agregarCriterio);
+                if (isReadOnly) addBtn.disabled = true;
+            }
+        }
+
+        function renderCriteriaList() {
+            const container = document.getElementById('criteria-list');
+            if (!container) return;
+
+            if (plannerCriteria.length === 0) {
+                container.innerHTML = `
+                    <div class="criteria-empty">
+                        Aún no hay objetivos. Use el botón "Agregar objetivo" para crear el primero.
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = plannerCriteria.map(c => renderCriterionCard(c)).join('');
+
+            // Listeners por tarjeta
+            plannerCriteria.forEach(c => {
+                const card = document.getElementById(`criterion-card-${c.criterion_id}`);
+                if (!card) return;
+
+                // Header → toggle expandir
+                const header = card.querySelector('.criterion-header');
+                if (header) {
+                    header.addEventListener('click', (e) => {
+                        // Ignorar click en el botón eliminar
+                        if (e.target.closest('.btn-criterion-delete')) return;
+                        toggleCriterionExpansion(c.criterion_id);
+                    });
+                }
+
+                // Botón eliminar
+                const delBtn = card.querySelector('.btn-criterion-delete');
+                if (delBtn && !isReadOnly) {
+                    delBtn.addEventListener('click', () => eliminarCriterio(c.criterion_id));
+                }
+            });
+        }
+
+        function renderCriterionCard(criterion) {
+            const isExpanded = expandedCriterionId === criterion.criterion_id;
+            const labelText = criterion.objective_label && criterion.objective_label.trim() !== ''
+                ? escapeHtml(criterion.objective_label)
+                : '<span class="criterion-header-label empty">Sin etiqueta</span>';
+
+            const deleteBtn = isReadOnly ? '' : `
+                <button type="button" class="btn-criterion-delete" title="Eliminar objetivo">
+                    <i class="bi bi-trash"></i>
+                </button>
+            `;
+
+            return `
+                <div class="criterion-card ${isExpanded ? 'expanded' : ''}" id="criterion-card-${criterion.criterion_id}">
+                    <div class="criterion-header">
+                        <div class="criterion-header-main">
+                            <span class="criterion-number-badge">#${criterion.objective_number}</span>
+                            <span class="criterion-header-label">${labelText}</span>
+                        </div>
+                        <div class="criterion-header-actions">
+                            ${deleteBtn}
+                            <i class="bi bi-chevron-down criterion-toggle-icon"></i>
+                        </div>
+                    </div>
+                    <div class="criterion-body" id="criterion-body-${criterion.criterion_id}">
+                        <div class="curricular-atl-placeholder">
+                            <i class="bi bi-hourglass-split me-1"></i>
+                            Cuerpo editable del criterio en el sub-bloque 6.2.D.2.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleCriterionExpansion(criterionId) {
+            // Auto-colapsar otros (uno a la vez)
+            if (expandedCriterionId === criterionId) {
+                expandedCriterionId = null;
+            } else {
+                expandedCriterionId = criterionId;
+            }
+            // Refrescar todas las clases sin destruir el DOM
+            plannerCriteria.forEach(c => {
+                const card = document.getElementById(`criterion-card-${c.criterion_id}`);
+                if (card) {
+                    card.classList.toggle('expanded', c.criterion_id === expandedCriterionId);
+                }
+            });
+        }
+
+        async function agregarCriterio() {
+            if (isReadOnly) return;
+            const addBtn = document.getElementById('btn-add-criterion');
+            if (addBtn) addBtn.disabled = true;
+
+            try {
+                startSaving();
+                // Llamada a la función SQL atómica vía RPC
+                const res = await supabaseRequest('/rpc/pln_create_planner_criterion', {
+                    method: 'POST',
+                    body: JSON.stringify({ p_planner_id: plannerId })
+                });
+
+                // La función devuelve SETOF, así que res es un array con un elemento
+                const nuevo = Array.isArray(res) ? res[0] : res;
+                if (!nuevo || !nuevo.criterion_id) {
+                    throw new Error('La función no devolvió el criterio creado.');
+                }
+
+                plannerCriteria.push(nuevo);
+                expandedCriterionId = nuevo.criterion_id;  // expandir el nuevo automáticamente
+                renderCriteriaList();
+                doneSaving();
+            } catch (err) {
+                errorSaving(err);
+            } finally {
+                if (addBtn) addBtn.disabled = isReadOnly;
+            }
+        }
+
+        async function eliminarCriterio(criterionId) {
+            if (isReadOnly) return;
+
+            const criterion = plannerCriteria.find(c => c.criterion_id === criterionId);
+            if (!criterion) return;
+
+            const label = criterion.objective_label && criterion.objective_label.trim() !== ''
+                ? `"${criterion.objective_label}"`
+                : `#${criterion.objective_number}`;
+
+            if (!confirm(`¿Eliminar el objetivo ${label}? Esta acción no se puede deshacer.`)) {
+                return;
+            }
+
+            try {
+                startSaving();
+
+                // 1. DELETE del criterio
+                await supabaseRequest(
+                    `/pln_planner_assessment_criteria?criterion_id=eq.${criterionId}`,
+                    { method: 'DELETE' }
+                );
+
+                // 2. Quitar del estado local
+                plannerCriteria = plannerCriteria.filter(c => c.criterion_id !== criterionId);
+                if (expandedCriterionId === criterionId) expandedCriterionId = null;
+
+                // 3. Renumerar los siguientes para mantener secuencia
+                await renumerarCriterios();
+
+                // 4. Re-render
+                renderCriteriaList();
+                doneSaving();
+            } catch (err) {
+                errorSaving(err);
+                // Recargar desde BD para recuperar estado consistente
+                await cargarCriterios();
+                renderCriteriaList();
+            }
+        }
+
+        // Renumera los criterios para que objective_number sea estrictamente
+        // consecutivo desde 1. Se invoca tras eliminar.
+        async function renumerarCriterios() {
+            // Ordenar por objective_number actual (ya viene así, defensivo)
+            plannerCriteria.sort((a, b) => a.objective_number - b.objective_number);
+
+            // PATCH solo los que cambiaron de número
+            const updates = [];
+            plannerCriteria.forEach((c, idx) => {
+                const expected = idx + 1;
+                if (c.objective_number !== expected) {
+                    updates.push({ id: c.criterion_id, newNumber: expected });
+                    c.objective_number = expected;  // actualizar en memoria
+                }
+            });
+
+            // Ejecutar PATCHs secuencialmente para no chocar con el UNIQUE
+            // (planner_id, objective_number). Patrón: pasar todos los afectados
+            // a un número temporal alto y luego al definitivo no es necesario aquí
+            // porque al renumerar tras un DELETE, los números bajan en orden y nunca
+            // colisionan entre sí (cada uno baja a un número que ya quedó libre).
+            for (const u of updates) {
+                await supabaseRequest(
+                    `/pln_planner_assessment_criteria?criterion_id=eq.${u.id}`,
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({ objective_number: u.newNumber })
+                    }
+                );
+            }
         }
 
         // ============================================================
@@ -1565,7 +1913,8 @@
             console.warn('⚠️ Pantalla de error mostrada:', mensaje);
         }
 
-        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C (marco curricular completo)');
+        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D.1 (criterios CRUD básico)');
+        
     </script>
 </body>
 </html>
