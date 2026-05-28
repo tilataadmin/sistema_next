@@ -1415,6 +1415,7 @@ Tras el cierre de `planner-form.html`, las opciones de continuación son:
 - **28 de mayo de 2026** — Paso 6.2.F cerrado en DEV y PROD (Ciclos del planeador completo, 11 campos por ciclo). Segunda función SQL atómica: `pln_create_planner_cycle(uuid)`. Validación cruzada asimétrica de fechas (mover inicio adelante arrastra el fin; mover fin antes del inicio rechaza con alert). Toggle de sumativa con cancelación de debounce. Decisión: PATCH de ciclos NO actualiza `pln_planners.updated_at`.
 - **28 de mayo de 2026** — Paso 6.2.G cerrado en DEV y PROD (Comentarios polimórficos sobre planeador y sobre cada ciclo). Bugs corregidos durante el desarrollo: 401 por `Prefer` que rompía wrapper (regla confirmada: nunca pasar headers a `supabaseRequest()`); hilos de ciclos no hidratados al cargar (refresh explícito tras `cargarComentarios()`). Intento descartado: cache-buster `_cb=...` rompe PostgREST (regla confirmada: PostgREST no ignora parámetros desconocidos).
 - **28 de mayo de 2026** — 🎯 **Hito mayor: `planner-form.html` funcionalmente completo en DEV y PROD** (6 bloques cubiertos, 4 caminos de acceso, polling de concurrencia, autosave coherente, dos funciones SQL atómicas en BD). Pruebas con equipo académico pendientes cuando esté disponible.
+- - **Sesión previa sin documentar en su momento** — Bug menor `sections.html` (typo `alidatePageAccess` línea 308) corregido a `validatePageAccess`. Verificado el 28 de mayo de 2026 en visualización del archivo.
 
 ---
 
