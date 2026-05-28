@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.28.4">
+    <meta name="page-version" content="26.5.28.5">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -748,7 +748,7 @@
         </div>
 
         <!-- ============================================================ -->
-        <!-- BLOQUE 4: REFLEXIÓN DEL TRIMESTRE (placeholder)               -->
+        <!-- BLOQUE 4: REFLEXIÓN DEL TRIMESTRE                             -->
         <!-- ============================================================ -->
         <div class="block-card collapsed" id="block-reflection">
             <div class="block-header" onclick="toggleBlock('block-reflection')">
@@ -756,10 +756,35 @@
                 <i class="bi bi-chevron-down toggle-icon"></i>
             </div>
             <div class="block-body">
-                <div class="placeholder-block">
-                    <i class="bi bi-hourglass-split" style="font-size: 1.5rem;"></i>
-                    <p class="mb-0 mt-2">Esta sección se habilitará en el sub-bloque 6.2.E.</p>
+
+                <!-- 1. Reflexión antes de enseñar -->
+                <div class="curricular-field">
+                    <label class="curricular-field-label">Reflexión antes de enseñar</label>
+                    <div id="refl-before"></div>
+                    <div class="curricular-field-hint">Qué expectativas, supuestos y aprendizajes previos identifico antes de iniciar el trimestre.</div>
                 </div>
+
+                <!-- 2. Reflexión durante el trimestre -->
+                <div class="curricular-field">
+                    <label class="curricular-field-label">Reflexión durante el trimestre</label>
+                    <div id="refl-during"></div>
+                    <div class="curricular-field-hint">Observaciones, ajustes y aprendizajes que emergen mientras se desarrolla el trimestre.</div>
+                </div>
+
+                <!-- 3. Reflexión después del trimestre -->
+                <div class="curricular-field">
+                    <label class="curricular-field-label">Reflexión después del trimestre</label>
+                    <div id="refl-after"></div>
+                    <div class="curricular-field-hint">Balance al cerrar el trimestre: qué funcionó, qué no, qué cambiar la próxima vez.</div>
+                </div>
+
+                <!-- 4. Síntesis de voces del estudiante -->
+                <div class="curricular-field">
+                    <label class="curricular-field-label">Síntesis de voces del estudiante</label>
+                    <div id="refl-student"></div>
+                    <div class="curricular-field-hint">Qué dicen los estudiantes sobre su propio aprendizaje en este trimestre.</div>
+                </div>
+
             </div>
         </div>
 
@@ -855,6 +880,9 @@
         let plannerCriteria = [];            // array de criterios ordenado por objective_number
         let expandedCriterionId = null;      // id del criterio actualmente expandido (uno a la vez)
 
+        // Reflexión del trimestre (4 Quill directos a pln_planners)
+        let reflectionQuills = {};           // { fieldName: QuillInstance }
+
         // ============================================================
         // AUTOGUARDADO — contador y debounce
         // ============================================================
@@ -923,6 +951,9 @@
                 // Cargar e inicializar Bloque 3 (criterios de evaluación)
                 await cargarCriterios();
                 initCriteriaBlock();
+
+                // Inicializar Bloque 4 (reflexión del trimestre)
+                initReflectionBlock();
 
                 // Iniciar polling de cambios concurrentes (solo si puede editar)
                 
@@ -1491,6 +1522,72 @@
             const addBtn = document.getElementById('btn-add-criterion');
             if (addBtn) addBtn.disabled = true;
             document.querySelectorAll('.btn-criterion-delete').forEach(b => b.style.display = 'none');
+        }
+
+        // ============================================================
+        // BLOQUE 4 — REFLEXIÓN DEL TRIMESTRE
+        // ============================================================
+        const REFLECTION_FIELDS = [
+            { field: 'reflection_before',  containerId: 'refl-before' },
+            { field: 'reflection_during',  containerId: 'refl-during' },
+            { field: 'reflection_after',   containerId: 'refl-after' },
+            { field: 'student_reflection', containerId: 'refl-student' }
+        ];
+
+        function initReflectionBlock() {
+            // 1. Inicializar los 4 Quill (misma toolbar que el Marco curricular)
+            REFLECTION_FIELDS.forEach(({ field, containerId }) => {
+                const container = document.getElementById(containerId);
+                if (!container) {
+                    console.warn(`Contenedor #${containerId} no encontrado para campo ${field}`);
+                    return;
+                }
+                const quill = new Quill(container, {
+                    theme: 'snow',
+                    modules: { toolbar: CURRICULAR_TOOLBAR },
+                    placeholder: ''
+                });
+                reflectionQuills[field] = quill;
+            });
+
+            // 2. Hidratar desde plannerData
+            hidratarReflexion();
+
+            // 3. Conectar autosave
+            setupReflectionAutosave();
+
+            // 4. Si es solo lectura, deshabilitar
+            if (isReadOnly) {
+                Object.values(reflectionQuills).forEach(q => {
+                    if (q && typeof q.enable === 'function') q.enable(false);
+                });
+            }
+        }
+
+        function hidratarReflexion() {
+            REFLECTION_FIELDS.forEach(({ field }) => {
+                const quill = reflectionQuills[field];
+                if (!quill) return;
+                setQuillHTML(quill, plannerData[field]);
+            });
+        }
+
+        function setupReflectionAutosave() {
+            REFLECTION_FIELDS.forEach(({ field }) => {
+                const quill = reflectionQuills[field];
+                if (!quill) return;
+                const key = `refl_${field}`;
+
+                quill.on('text-change', (delta, oldDelta, source) => {
+                    // Ignorar cambios programáticos (hidratación inicial)
+                    if (source !== 'user') return;
+
+                    debouncedPatch(key, async () => {
+                        const html = quill.getText().trim() === '' ? null : quill.root.innerHTML;
+                        await patchPlanner({ [field]: html });
+                    });
+                });
+            });
         }
 
         // ============================================================
@@ -2111,7 +2208,7 @@
             console.warn('⚠️ Pantalla de error mostrada:', mensaje);
         }
 
-        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D (criterios completo)');
+        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D + 6.2.E (reflexión del trimestre)');
         
     </script>
 </body>
