@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.28.7">
+    <meta name="page-version" content="26.5.28.8">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -726,6 +726,8 @@
         }
         .pcycle-field .ql-container {
             font-size: 0.9rem;
+            border-bottom-left-radius: 4px;
+            border-bottom-right-radius: 4px;
         }
         .pcycle-field .ql-editor {
             min-height: 90px;
@@ -735,10 +737,26 @@
             border-top-left-radius: 4px;
             border-top-right-radius: 4px;
         }
-        .pcycle-field .ql-container {
-            border-bottom-left-radius: 4px;
-            border-bottom-right-radius: 4px;
+
+        /* ====================================================
+           BLOQUE 5 — TOGGLE DE SUMATIVA
+           ==================================================== */
+        .pcycle-summative-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.7rem;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 0.6rem;
+            font-size: 0.88rem;
+            cursor: pointer;
+            user-select: none;
         }
+        .pcycle-summative-toggle:hover { background: #f1f3f5; }
+        .pcycle-summative-toggle input { margin: 0; }
+        .pcycle-summative-editor.hidden { display: none; }
 
         /* ====================================================
            BLOQUE 3 — CUERPO EDITABLE DEL CRITERIO
@@ -1970,12 +1988,18 @@
                                 <div class="pcycle-field-hint">Cómo se acompaña y retroalimenta durante el ciclo.</div>
                             </div>
 
-                            <!-- Sumativa con toggle: pendiente en 6.2.F.2.b -->
+                            <!-- Sumativa con toggle -->
                             <div class="pcycle-field">
-                                <label class="pcycle-field-label">Evaluación sumativa</label>
-                                <div class="curricular-atl-placeholder">
-                                    <i class="bi bi-hourglass-split me-1"></i>
-                                    Toggle de evaluación sumativa en el sub-bloque 6.2.F.2.b.
+                                <label class="pcycle-summative-toggle" for="pcycle-summative-toggle-${cid}">
+                                    <input type="checkbox"
+                                        id="pcycle-summative-toggle-${cid}"
+                                        data-cycle-id="${cid}"
+                                        ${ro}>
+                                    <span>Incluir evaluación sumativa en este ciclo</span>
+                                </label>
+                                <div class="pcycle-summative-editor hidden" id="pcycle-summative-wrapper-${cid}">
+                                    <div id="pcycle-q-summative-${cid}"></div>
+                                    <div class="pcycle-field-hint">Cómo se evaluará el cierre del ciclo (proyecto, prueba, exposición, etc.).</div>
                                 </div>
                             </div>
                         </div>
@@ -2149,11 +2173,13 @@
             }
         }
 
-        // Campos Quill del cuerpo del ciclo (sin sumativa — esa va en 6.2.F.2.b)
+        // Campos Quill del cuerpo del ciclo (la sumativa se inicializa igual,
+        // pero su visibilidad la controla el toggle)
         const PCYCLE_QUILL_FIELDS = [
             { field: 'session_objectives',     containerId: 'pcycle-q-session' },
             { field: 'learning_experiences',   containerId: 'pcycle-q-experiences' },
             { field: 'formative_assessment',   containerId: 'pcycle-q-formative' },
+            { field: 'summative_assessment',   containerId: 'pcycle-q-summative' },
             { field: 'cycle_reflection_during', containerId: 'pcycle-q-refl-during' },
             { field: 'cycle_reflection_after',  containerId: 'pcycle-q-refl-after' }
         ];
@@ -2198,6 +2224,15 @@
                 if (!quill) return;
                 setQuillHTML(quill, cycle[field]);
             });
+
+            // Toggle de sumativa: marcado si hay contenido en BD, desmarcado si NULL
+            const toggleEl = document.getElementById(`pcycle-summative-toggle-${cid}`);
+            const wrapperEl = document.getElementById(`pcycle-summative-wrapper-${cid}`);
+            const tieneSumativa = cycle.summative_assessment !== null
+                                && cycle.summative_assessment !== undefined
+                                && cycle.summative_assessment !== '';
+            if (toggleEl) toggleEl.checked = tieneSumativa;
+            if (wrapperEl) wrapperEl.classList.toggle('hidden', !tieneSumativa);
         }
 
         function setupPCycleAutosave(cid) {
@@ -2220,21 +2255,60 @@
                 });
             }
 
-            // --- Fechas (change inmediato) ---
-            ['start_date', 'end_date'].forEach((field, idx) => {
-                const id = idx === 0 ? `pcycle-start-${cid}` : `pcycle-end-${cid}`;
-                const el = document.getElementById(id);
-                if (!el) return;
-                el.addEventListener('change', async () => {
+            // --- Fechas (change inmediato + validación cruzada) ---
+            // Comportamiento asimétrico:
+            // - Si cambia start_date y queda > end_date → ajusta end_date al mismo valor
+            //   (caso típico: el ciclo se corrió, probablemente también querías mover el fin).
+            // - Si cambia end_date y queda < start_date → revierte el cambio + alerta
+            //   (caso típico: error de tecleo).
+            const startEl = document.getElementById(`pcycle-start-${cid}`);
+            const endEl = document.getElementById(`pcycle-end-${cid}`);
+
+            if (startEl) {
+                startEl.addEventListener('change', async () => {
+                    const newStart = startEl.value || null;
+                    const currentEnd = endEl ? (endEl.value || null) : null;
+
                     try {
                         startSaving();
-                        await patchPCycleField(cid, field, el.value || null);
+
+                        // Si la nueva fecha de inicio supera la fecha de fin, arrastrar el fin
+                        if (newStart && currentEnd && newStart > currentEnd) {
+                            await patchPCycleField(cid, 'end_date', newStart);
+                            if (endEl) endEl.value = newStart;
+                        }
+                        await patchPCycleField(cid, 'start_date', newStart);
+
                         doneSaving();
                     } catch (err) {
                         errorSaving(err);
                     }
                 });
-            });
+            }
+
+            if (endEl) {
+                endEl.addEventListener('change', async () => {
+                    const newEnd = endEl.value || null;
+                    const currentStart = startEl ? (startEl.value || null) : null;
+
+                    // Si la nueva fecha de fin es anterior al inicio, rechazar
+                    if (newEnd && currentStart && newEnd < currentStart) {
+                        alert('La fecha de fin no puede ser anterior a la fecha de inicio.');
+                        // Revertir al valor previo guardado en BD
+                        const c = plannerCycles.find(x => x.cycle_id === cid);
+                        endEl.value = (c && c.end_date) || '';
+                        return;
+                    }
+
+                    try {
+                        startSaving();
+                        await patchPCycleField(cid, 'end_date', newEnd);
+                        doneSaving();
+                    } catch (err) {
+                        errorSaving(err);
+                    }
+                });
+            }
 
             // --- Recursos (textarea): debounce + blur ---
             const resEl = document.getElementById(`pcycle-resources-${cid}`);
@@ -2267,6 +2341,43 @@
                     });
                 });
             });
+
+            // --- Toggle de sumativa ---
+            // - Marcar: mostrar editor, no guardar nada hasta que el usuario tipee.
+            // - Desmarcar: PATCH inmediato summative_assessment=NULL, vaciar Quill, ocultar editor.
+            const toggleEl = document.getElementById(`pcycle-summative-toggle-${cid}`);
+            const wrapperEl = document.getElementById(`pcycle-summative-wrapper-${cid}`);
+            if (toggleEl && wrapperEl) {
+                toggleEl.addEventListener('change', async () => {
+                    const checked = toggleEl.checked;
+                    wrapperEl.classList.toggle('hidden', !checked);
+
+                    if (!checked) {
+                        // Desmarcado: limpiar contenido y guardar NULL
+                        // Cancelar cualquier debounce pendiente del Quill de sumativa
+                        const key = `pcycle_${cid}_summative_assessment`;
+                        if (debounceTimers[key]) {
+                            clearTimeout(debounceTimers[key]);
+                            delete debounceTimers[key];
+                        }
+
+                        const sumQuill = pcycleQuills[cid] && pcycleQuills[cid]['summative_assessment'];
+                        if (sumQuill) sumQuill.setText('');
+
+                        try {
+                            startSaving();
+                            await patchPCycleField(cid, 'summative_assessment', null);
+                            doneSaving();
+                        } catch (err) {
+                            errorSaving(err);
+                            // Revertir visual ante error
+                            toggleEl.checked = true;
+                            wrapperEl.classList.remove('hidden');
+                        }
+                    }
+                    // Si checked → mostrar editor, no guardar nada hasta que el usuario escriba
+                });
+            }
         }
 
         // PATCH atómico de un campo de un ciclo. NO actualiza pln_planners.updated_at
@@ -3005,7 +3116,7 @@
             console.warn('⚠️ Pantalla de error mostrada:', mensaje);
         }
 
-        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D + 6.2.E + 6.2.F.2.a (cuerpo del ciclo sin sumativa)');
+        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D + 6.2.E + 6.2.F (ciclos del planeador completo)');
         
     </script>
 </body>
