@@ -466,8 +466,13 @@ async function supabaseRequest(endpoint, options = {}) {
     const isGet = method === 'GET';
     const hasExplicitLimit = endpoint.toLowerCase().includes('limit=');
 
-    // Establecer usuario en sesión si existe (una sola vez)
-    await setCurrentUserInSession();
+    // Establecer usuario en sesión SOLO para operaciones que disparan auditoría.
+    // Los SELECT no disparan triggers de auditoría, así que evitamos el
+    // round-trip redundante (optimización 28/05/2026: reduce a la mitad las
+    // llamadas HTTP en páginas con muchas consultas).
+    if (!isGet) {
+        await setCurrentUserInSession();
+    }
 
     // Para GET sin limit explícito: paginación automática
     if (isGet && !hasExplicitLimit) {
