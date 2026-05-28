@@ -1346,7 +1346,7 @@ Tras el cierre de `planner-form.html`, las opciones de continuación son:
 2. **Pantallas de coordinación** — `planners.html` (paso 7), `coordinator-area.html` y `coordinator-program.html` (paso 9). Requiere conversación previa con coordinaciones para validar qué información esperan.
 3. **Notificaciones por email** — paso 4.3c. Requiere decisión de política antes de codificar.
 4. **`units.html`** — paso 5. Listado general de UIs para coordinadores PEP.
-5. **Pulido de bugs menores** — typo `alidatePageAccess` en `sections.html`, auditoría faltante en 3 tablas, test formal de `subjects-descriptions`.
+5. **Pulido de bugs menores** — auditoría faltante en 3 tablas (`pln_comments`, `pln_unit_cycle_areas`, `pln_unit_cycle_connections`), test formal de `subjects-descriptions`. ~~Typo `alidatePageAccess` en `sections.html`~~ resuelto (ver histórico de hitos).
 
 ### 🟡 Pendientes operativos (no bloqueantes para desarrollo, dependen de terceros)
 
