@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.28.6">
+    <meta name="page-version" content="26.5.28.7">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -643,6 +643,104 @@
         }
 
         /* ====================================================
+           BLOQUE 5 — CUERPO EDITABLE DEL CICLO
+           ==================================================== */
+        .pcycle-section {
+            margin-bottom: 1.4rem;
+        }
+        .pcycle-section:last-child { margin-bottom: 0; }
+        .pcycle-section-title {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--planning-primary-dark);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding-bottom: 0.35rem;
+            border-bottom: 1px solid #e8ecef;
+            margin-bottom: 0.85rem;
+        }
+        .pcycle-field {
+            margin-bottom: 0.95rem;
+        }
+        .pcycle-field:last-child { margin-bottom: 0; }
+        .pcycle-field-label {
+            font-weight: 500;
+            font-size: 0.85rem;
+            color: #333;
+            margin-bottom: 0.3rem;
+            display: block;
+        }
+        .pcycle-field-hint {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 0.2rem;
+        }
+        .pcycle-input-text {
+            width: 100%;
+            padding: 0.45rem 0.7rem;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.92rem;
+        }
+        .pcycle-input-text:focus {
+            outline: none;
+            border-color: var(--planning-primary);
+            box-shadow: 0 0 0 0.15rem rgba(44, 95, 155, 0.15);
+        }
+        .pcycle-dates-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.85rem;
+        }
+        @media (max-width: 600px) {
+            .pcycle-dates-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .pcycle-date-input {
+            width: 100%;
+            padding: 0.4rem 0.7rem;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .pcycle-date-input:focus {
+            outline: none;
+            border-color: var(--planning-primary);
+            box-shadow: 0 0 0 0.15rem rgba(44, 95, 155, 0.15);
+        }
+        .pcycle-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 0.45rem 0.7rem;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.88rem;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .pcycle-textarea:focus {
+            outline: none;
+            border-color: var(--planning-primary);
+            box-shadow: 0 0 0 0.15rem rgba(44, 95, 155, 0.15);
+        }
+        .pcycle-field .ql-container {
+            font-size: 0.9rem;
+        }
+        .pcycle-field .ql-editor {
+            min-height: 90px;
+            font-size: 0.9rem;
+        }
+        .pcycle-field .ql-toolbar {
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        .pcycle-field .ql-container {
+            border-bottom-left-radius: 4px;
+            border-bottom-right-radius: 4px;
+        }
+
+        /* ====================================================
            BLOQUE 3 — CUERPO EDITABLE DEL CRITERIO
            ==================================================== */
         
@@ -1041,6 +1139,7 @@
         // Ciclos del planeador (pln_planner_cycles)
         let plannerCycles = [];              // array de ciclos ordenado por cycle_number
         let expandedPCycleId = null;         // id del ciclo expandido (uno a la vez)
+        let pcycleQuills = {};               // { cycleId: { field: QuillInstance } }
 
         // ============================================================
         // AUTOGUARDADO — contador y debounce
@@ -1690,6 +1789,13 @@
             const addBtnCycle = document.getElementById('btn-add-pcycle');
             if (addBtnCycle) addBtnCycle.disabled = true;
             document.querySelectorAll('.btn-pcycle-delete').forEach(b => b.style.display = 'none');
+
+            // Deshabilitar Quills de ciclos
+            Object.values(pcycleQuills).forEach(qmap => {
+                Object.values(qmap || {}).forEach(q => {
+                    if (q && typeof q.enable === 'function') q.enable(false);
+                });
+            });
         }
 
        // ============================================================
@@ -1727,7 +1833,7 @@
 
             container.innerHTML = plannerCycles.map(c => renderPCycleCard(c)).join('');
 
-            // Listeners por tarjeta
+            // Listeners + inicialización del cuerpo por tarjeta
             plannerCycles.forEach(c => {
                 const card = document.getElementById(`pcycle-card-${c.cycle_id}`);
                 if (!card) return;
@@ -1746,6 +1852,11 @@
                 if (delBtn && !isReadOnly) {
                     delBtn.addEventListener('click', () => eliminarPCycle(c.cycle_id));
                 }
+
+                // Inicializar Quill del cuerpo + hidratar + autosave
+                initPCycleQuills(c);
+                hidratarPCycle(c);
+                setupPCycleAutosave(c.cycle_id);
             });
         }
 
@@ -1768,25 +1879,124 @@
                 </button>
             `;
 
+            const cid = cycle.cycle_id;
+            const ro = isReadOnly ? 'disabled' : '';
+
             return `
-                <div class="pcycle-card ${isExpanded ? 'expanded' : ''}" id="pcycle-card-${cycle.cycle_id}">
+                <div class="pcycle-card ${isExpanded ? 'expanded' : ''}" id="pcycle-card-${cid}">
                     <div class="pcycle-header">
                         <div class="pcycle-header-main">
-                            <span class="pcycle-number-badge">#${cycle.cycle_number}</span>
-                            ${statusBadge}
-                            ${topicText}
-                            ${datesBadge}
+                            <span class="pcycle-number-badge" id="pcycle-num-${cid}">#${cycle.cycle_number}</span>
+                            <span id="pcycle-status-wrap-${cid}">${statusBadge}</span>
+                            <span id="pcycle-topic-wrap-${cid}">${topicText}</span>
+                            <span id="pcycle-dates-wrap-${cid}">${datesBadge}</span>
                         </div>
                         <div class="pcycle-header-actions">
                             ${deleteBtn}
                             <i class="bi bi-chevron-down pcycle-toggle-icon"></i>
                         </div>
                     </div>
-                    <div class="pcycle-body" id="pcycle-body-${cycle.cycle_id}">
-                        <div class="curricular-atl-placeholder">
-                            <i class="bi bi-hourglass-split me-1"></i>
-                            Cuerpo editable del ciclo en el sub-bloque 6.2.F.2.
+                    <div class="pcycle-body" id="pcycle-body-${cid}">
+
+                        <!-- Sección 1: Identidad y temporalidad -->
+                        <div class="pcycle-section">
+                            <div class="pcycle-section-title">Identidad y temporalidad</div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label" for="pcycle-topic-${cid}">Tema del ciclo</label>
+                                <input type="text" class="pcycle-input-text"
+                                    id="pcycle-topic-${cid}"
+                                    data-cycle-id="${cid}"
+                                    data-field="topic"
+                                    maxlength="300"
+                                    ${ro}>
+                                <div class="pcycle-field-hint">Nombre corto del ciclo (p. ej. "Introducción a la novela").</div>
+                            </div>
+
+                            <div class="pcycle-dates-grid">
+                                <div class="pcycle-field" style="margin-bottom: 0;">
+                                    <label class="pcycle-field-label" for="pcycle-start-${cid}">Fecha de inicio</label>
+                                    <input type="date" class="pcycle-date-input"
+                                        id="pcycle-start-${cid}"
+                                        data-cycle-id="${cid}"
+                                        data-field="start_date"
+                                        ${ro}>
+                                </div>
+                                <div class="pcycle-field" style="margin-bottom: 0;">
+                                    <label class="pcycle-field-label" for="pcycle-end-${cid}">Fecha de fin</label>
+                                    <input type="date" class="pcycle-date-input"
+                                        id="pcycle-end-${cid}"
+                                        data-cycle-id="${cid}"
+                                        data-field="end_date"
+                                        ${ro}>
+                                </div>
+                            </div>
                         </div>
+
+                        <!-- Sección 2: Aprendizaje -->
+                        <div class="pcycle-section">
+                            <div class="pcycle-section-title">Aprendizaje</div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label">Objetivos de la sesión</label>
+                                <div id="pcycle-q-session-${cid}"></div>
+                                <div class="pcycle-field-hint">Qué se espera que los estudiantes aprendan en este ciclo.</div>
+                            </div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label">Experiencias de aprendizaje</label>
+                                <div id="pcycle-q-experiences-${cid}"></div>
+                                <div class="pcycle-field-hint">Actividades, secuencia didáctica, organización del trabajo en clase.</div>
+                            </div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label" for="pcycle-resources-${cid}">Recursos</label>
+                                <textarea class="pcycle-textarea"
+                                    id="pcycle-resources-${cid}"
+                                    data-cycle-id="${cid}"
+                                    data-field="resources"
+                                    ${ro}></textarea>
+                                <div class="pcycle-field-hint">Materiales, enlaces, lecturas específicas de este ciclo.</div>
+                            </div>
+                        </div>
+
+                        <!-- Sección 3: Evaluación -->
+                        <div class="pcycle-section">
+                            <div class="pcycle-section-title">Evaluación</div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label">Evaluación formativa</label>
+                                <div id="pcycle-q-formative-${cid}"></div>
+                                <div class="pcycle-field-hint">Cómo se acompaña y retroalimenta durante el ciclo.</div>
+                            </div>
+
+                            <!-- Sumativa con toggle: pendiente en 6.2.F.2.b -->
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label">Evaluación sumativa</label>
+                                <div class="curricular-atl-placeholder">
+                                    <i class="bi bi-hourglass-split me-1"></i>
+                                    Toggle de evaluación sumativa en el sub-bloque 6.2.F.2.b.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sección 4: Reflexión del ciclo -->
+                        <div class="pcycle-section">
+                            <div class="pcycle-section-title">Reflexión del ciclo</div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label">Reflexión durante el ciclo</label>
+                                <div id="pcycle-q-refl-during-${cid}"></div>
+                                <div class="pcycle-field-hint">Observaciones y ajustes mientras se desarrolla el ciclo.</div>
+                            </div>
+
+                            <div class="pcycle-field">
+                                <label class="pcycle-field-label">Reflexión después del ciclo</label>
+                                <div id="pcycle-q-refl-after-${cid}"></div>
+                                <div class="pcycle-field-hint">Balance al cerrar el ciclo: qué funcionó, qué cambiar.</div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             `;
@@ -1936,6 +2146,178 @@
                         body: JSON.stringify({ cycle_number: u.newNumber })
                     }
                 );
+            }
+        }
+
+        // Campos Quill del cuerpo del ciclo (sin sumativa — esa va en 6.2.F.2.b)
+        const PCYCLE_QUILL_FIELDS = [
+            { field: 'session_objectives',     containerId: 'pcycle-q-session' },
+            { field: 'learning_experiences',   containerId: 'pcycle-q-experiences' },
+            { field: 'formative_assessment',   containerId: 'pcycle-q-formative' },
+            { field: 'cycle_reflection_during', containerId: 'pcycle-q-refl-during' },
+            { field: 'cycle_reflection_after',  containerId: 'pcycle-q-refl-after' }
+        ];
+
+        // Crea los Quill del cuerpo del ciclo. Resetea pcycleQuills[cid] antes
+        // de instanciar para evitar referencias huérfanas tras re-render del DOM.
+        function initPCycleQuills(cycle) {
+            const cid = cycle.cycle_id;
+            pcycleQuills[cid] = {};
+
+            PCYCLE_QUILL_FIELDS.forEach(({ field, containerId }) => {
+                const container = document.getElementById(`${containerId}-${cid}`);
+                if (!container) return;
+                const quill = new Quill(container, {
+                    theme: 'snow',
+                    modules: { toolbar: CURRICULAR_TOOLBAR },
+                    placeholder: ''
+                });
+                pcycleQuills[cid][field] = quill;
+            });
+        }
+
+        function hidratarPCycle(cycle) {
+            const cid = cycle.cycle_id;
+
+            // Inputs simples
+            const topicEl = document.getElementById(`pcycle-topic-${cid}`);
+            if (topicEl) topicEl.value = cycle.topic || '';
+
+            const startEl = document.getElementById(`pcycle-start-${cid}`);
+            if (startEl) startEl.value = cycle.start_date || '';
+
+            const endEl = document.getElementById(`pcycle-end-${cid}`);
+            if (endEl) endEl.value = cycle.end_date || '';
+
+            const resourcesEl = document.getElementById(`pcycle-resources-${cid}`);
+            if (resourcesEl) resourcesEl.value = cycle.resources || '';
+
+            // Quills
+            PCYCLE_QUILL_FIELDS.forEach(({ field }) => {
+                const quill = pcycleQuills[cid] && pcycleQuills[cid][field];
+                if (!quill) return;
+                setQuillHTML(quill, cycle[field]);
+            });
+        }
+
+        function setupPCycleAutosave(cid) {
+            if (isReadOnly) return;
+
+            // --- Tema (input text): debounce + blur ---
+            const topicEl = document.getElementById(`pcycle-topic-${cid}`);
+            if (topicEl) {
+                const key = `pcycle_${cid}_topic`;
+                topicEl.addEventListener('input', () => {
+                    debouncedPatch(key, async () => {
+                        await patchPCycleField(cid, 'topic', topicEl.value);
+                    });
+                });
+                topicEl.addEventListener('blur', () => {
+                    if (!debounceTimers[key]) return;
+                    flushDebounced(key, async () => {
+                        await patchPCycleField(cid, 'topic', topicEl.value);
+                    });
+                });
+            }
+
+            // --- Fechas (change inmediato) ---
+            ['start_date', 'end_date'].forEach((field, idx) => {
+                const id = idx === 0 ? `pcycle-start-${cid}` : `pcycle-end-${cid}`;
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('change', async () => {
+                    try {
+                        startSaving();
+                        await patchPCycleField(cid, field, el.value || null);
+                        doneSaving();
+                    } catch (err) {
+                        errorSaving(err);
+                    }
+                });
+            });
+
+            // --- Recursos (textarea): debounce + blur ---
+            const resEl = document.getElementById(`pcycle-resources-${cid}`);
+            if (resEl) {
+                const key = `pcycle_${cid}_resources`;
+                resEl.addEventListener('input', () => {
+                    debouncedPatch(key, async () => {
+                        await patchPCycleField(cid, 'resources', resEl.value);
+                    });
+                });
+                resEl.addEventListener('blur', () => {
+                    if (!debounceTimers[key]) return;
+                    flushDebounced(key, async () => {
+                        await patchPCycleField(cid, 'resources', resEl.value);
+                    });
+                });
+            }
+
+            // --- Quill (debounce, filtro source === 'user') ---
+            PCYCLE_QUILL_FIELDS.forEach(({ field }) => {
+                const quill = pcycleQuills[cid] && pcycleQuills[cid][field];
+                if (!quill) return;
+                const key = `pcycle_${cid}_${field}`;
+
+                quill.on('text-change', (delta, oldDelta, source) => {
+                    if (source !== 'user') return;
+                    debouncedPatch(key, async () => {
+                        const html = quill.getText().trim() === '' ? null : quill.root.innerHTML;
+                        await patchPCycleField(cid, field, html);
+                    });
+                });
+            });
+        }
+
+        // PATCH atómico de un campo de un ciclo. NO actualiza pln_planners.updated_at
+        // (el polling vigila la tabla padre, no los hijos — decisión registrada).
+        async function patchPCycleField(cid, field, rawValue) {
+            const value = (rawValue === '' || rawValue === undefined) ? null : rawValue;
+            await supabaseRequest(
+                `/pln_planner_cycles?cycle_id=eq.${cid}`,
+                {
+                    method: 'PATCH',
+                    body: JSON.stringify({ [field]: value })
+                }
+            );
+
+            // Sincronizar estado local
+            const c = plannerCycles.find(x => x.cycle_id === cid);
+            if (c) c[field] = value;
+
+            // Si cambia tema o fechas, refrescar el header sin destruir el body
+            if (field === 'topic' || field === 'start_date' || field === 'end_date') {
+                refrescarHeaderPCycle(cid);
+            }
+        }
+
+        function refrescarHeaderPCycle(cid) {
+            const c = plannerCycles.find(x => x.cycle_id === cid);
+            if (!c) return;
+
+            // Topic
+            const topicWrap = document.getElementById(`pcycle-topic-wrap-${cid}`);
+            if (topicWrap) {
+                topicWrap.innerHTML = (c.topic && c.topic.trim() !== '')
+                    ? `<span class="pcycle-topic">${escapeHtml(c.topic)}</span>`
+                    : `<span class="pcycle-topic empty">Sin tema</span>`;
+            }
+
+            // Fechas
+            const datesWrap = document.getElementById(`pcycle-dates-wrap-${cid}`);
+            if (datesWrap) {
+                const datesText = formatRangoFechasPCycle(c);
+                datesWrap.innerHTML = datesText
+                    ? `<span class="pcycle-dates">${escapeHtml(datesText)}</span>`
+                    : '';
+            }
+
+            // Status (depende de fechas)
+            const statusWrap = document.getElementById(`pcycle-status-wrap-${cid}`);
+            if (statusWrap) {
+                const status = calcularEstadoPCycle(c);
+                const statusLabels = { pending: 'Pendiente', active: 'En curso', completed: 'Completado' };
+                statusWrap.innerHTML = `<span class="pcycle-status-badge ${status}">${statusLabels[status]}</span>`;
             }
         }
 
@@ -2623,7 +3005,7 @@
             console.warn('⚠️ Pantalla de error mostrada:', mensaje);
         }
 
-        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D + 6.2.E + 6.2.F.1 (ciclos CRUD básico)');
+        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C + 6.2.D + 6.2.E + 6.2.F.2.a (cuerpo del ciclo sin sumativa)');
         
     </script>
 </body>
