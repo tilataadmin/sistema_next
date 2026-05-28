@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.28.9">
+    <meta name="page-version" content="26.5.28.10">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -2845,7 +2845,10 @@
             });
         }
 
-        // Crear comentario (raíz o respuesta)
+        // Crear comentario (raíz o respuesta).
+        // POST sin headers explícitos (el wrapper centralizado los inyecta).
+        // Tras crear, re-lee el comentario más reciente del autor actual para
+        // este entity para obtener comment_id y created_at reales.
         async function crearComentario(entityType, entityId, body, parentCommentId) {
             try {
                 startSaving();
@@ -2859,16 +2862,24 @@
                     comment_status: 'active'
                 };
 
-                // POST con representación completa para tener created_at
-                const res = await supabaseRequest('/pln_comments', {
+                await supabaseRequest('/pln_comments', {
                     method: 'POST',
-                    headers: { 'Prefer': 'return=representation' },
                     body: JSON.stringify(payload)
                 });
 
-                const nuevo = Array.isArray(res) ? res[0] : res;
+                // Re-leer el comentario recién creado.
+                // Filtramos por entity + author + body + (parent o NULL) y tomamos el más reciente.
+                const parentFilter = parentCommentId
+                    ? `&parent_comment_id=eq.${parentCommentId}`
+                    : '&parent_comment_id=is.null';
+                const bodyEncoded = encodeURIComponent(body);
+                const res = await supabaseRequest(
+                    `/pln_comments?select=*&entity_type=eq.${entityType}&entity_id=eq.${entityId}&author_id=eq.${currentWorkerId}&comment_body=eq.${bodyEncoded}${parentFilter}&order=created_at.desc&limit=1`
+                );
+
+                const nuevo = Array.isArray(res) && res.length > 0 ? res[0] : null;
                 if (!nuevo || !nuevo.comment_id) {
-                    throw new Error('No se pudo crear el comentario.');
+                    throw new Error('No se pudo recuperar el comentario recién creado.');
                 }
 
                 // Agregar al estado en memoria
@@ -2885,7 +2896,7 @@
                 throw err;
             }
         }
-
+        
         // Inyecta un compositor secundario justo debajo del comentario raíz.
         // Solo un compositor de respuesta abierto a la vez por hilo.
         function abrirComposerRespuesta(containerEl, entityType, entityId, parentCommentId) {
