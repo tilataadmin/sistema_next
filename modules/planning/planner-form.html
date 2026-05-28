@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.28.1">
+    <meta name="page-version" content="26.5.28.2">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -320,6 +320,59 @@
             border-radius: 4px;
             font-size: 0.85rem;
         }
+
+        /* ====================================================
+           BLOQUE 2 — MULTI-SELECT DE HABILIDADES ATL
+           ==================================================== */
+        .atl-groups {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+        .atl-group {
+            border: 1px solid #e8ecef;
+            border-radius: 6px;
+            padding: 0.6rem 0.85rem;
+            background: #fafbfc;
+        }
+        .atl-group-title {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--planning-primary-dark);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.5rem;
+        }
+        .atl-skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 0.4rem 0.85rem;
+        }
+        .atl-skill-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.55rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+            font-size: 0.86rem;
+        }
+        .atl-skill-item:hover { background: var(--planning-light); }
+        .atl-skill-item input { margin: 0; flex-shrink: 0; }
+        .atl-skill-item.checked {
+            background: var(--planning-light);
+            border-color: var(--planning-primary);
+        }
+        .atl-skills-empty {
+            padding: 0.75rem;
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.85rem;
+        }
     </style>
     
 </head>
@@ -433,12 +486,14 @@
                     <div class="curricular-field-hint">Estándares del Ministerio de Educación Nacional vinculados.</div>
                 </div>
 
-                <!-- 4. Habilidades ATL (M:N — pendiente en sub-bloque 6.2.C.2) -->
+                <!-- 4. Habilidades ATL (M:N pln_planner_atl_skills) -->
                 <div class="curricular-field">
                     <label class="curricular-field-label">Habilidades ATL</label>
-                    <div class="curricular-atl-placeholder" id="curr-atl-placeholder">
-                        <i class="bi bi-hourglass-split me-1"></i>
-                        Selector de habilidades ATL en el sub-bloque 6.2.C.2.
+                    <div class="curricular-field-hint" style="margin-top: 0; margin-bottom: 0.5rem;">
+                        Marque las habilidades del enfoque (ATL) que se priorizan en este trimestre.
+                    </div>
+                    <div class="atl-groups" id="atl-groups">
+                        <!-- Contenido dinámico generado por renderATLSkills() -->
                     </div>
                 </div>
 
@@ -610,6 +665,10 @@
         // fieldName coincide con el nombre de columna en pln_planners.
         let curricularQuills = {};
 
+        // Habilidades ATL (M:N pln_planner_atl_skills)
+        let catalogATLSkills = [];           // catálogo completo de pln_ib_atl_skills
+        let selectedATLSkills = new Set();   // atl_skill_id activos para este planeador
+
         // ============================================================
         // AUTOGUARDADO — contador y debounce
         // ============================================================
@@ -752,14 +811,15 @@
 
         async function loadContext() {
             // Cargar todos los catálogos base que necesitamos (incluyendo workers y áreas/secciones para los caminos)
-            const [gradesRes, subjectsRes, programsRes, workersRes, areasRes, sectionsRes, connectionTypesRes] = await Promise.all([
+            const [gradesRes, subjectsRes, programsRes, workersRes, areasRes, sectionsRes, connectionTypesRes, atlSkillsRes] = await Promise.all([
                 supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id'),
                 supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id'),
                 supabaseRequest('/programs?select=program_id,program_name,program_director_email'),
                 supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,email,worker_status&worker_status=eq.active'),
                 supabaseRequest('/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active'),
                 supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active'),
-                supabaseRequest('/pln_connection_types?select=*&active=eq.true&order=sort_order.asc')
+                supabaseRequest('/pln_connection_types?select=*&active=eq.true&order=sort_order.asc'),
+                supabaseRequest('/pln_ib_atl_skills?select=*&active=eq.true&order=category.asc,sort_order.asc')
             ]);
 
             allGrades = gradesRes || [];
@@ -769,6 +829,7 @@
             allAreas = areasRes || [];
             allSections = sectionsRes || [];
             catalogConnectionTypes = connectionTypesRes || [];
+            catalogATLSkills = atlSkillsRes || [];
         }
 
         // ============================================================
@@ -796,6 +857,12 @@
                 `/pln_planner_connections?select=connection_type_id&planner_id=eq.${plannerId}`
             );
             selectedConnections = new Set((connsRes || []).map(r => r.connection_type_id));
+
+            // 3. Cargar habilidades ATL ya marcadas para este planeador
+            const atlRes = await supabaseRequest(
+                `/pln_planner_atl_skills?select=atl_skill_id&planner_id=eq.${plannerId}`
+            );
+            selectedATLSkills = new Set((atlRes || []).map(r => r.atl_skill_id));
         }
 
         async function cargarPlaneador() {
@@ -1144,7 +1211,10 @@
             // 3. Conectar autosave (Quill + inputs text)
             setupCurricularAutosave();
 
-            // 4. Si es solo lectura, deshabilitar todo
+            // 4. Renderizar multi-select de habilidades ATL
+            renderATLSkills();
+
+            // 5. Si es solo lectura, deshabilitar todo
             if (isReadOnly) {
                 aplicarSoloLecturaCurricular();
             }
@@ -1222,6 +1292,108 @@
             Object.values(curricularQuills).forEach(q => {
                 if (q && typeof q.enable === 'function') q.enable(false);
             });
+            // Deshabilitar checkboxes ATL
+            document.querySelectorAll('#atl-groups input[type="checkbox"]').forEach(cb => {
+                cb.disabled = true;
+            });
+        }
+
+        // ============================================================
+        // BLOQUE 2 — HABILIDADES ATL (multi-select agrupado)
+        // ============================================================
+        function renderATLSkills() {
+            const container = document.getElementById('atl-groups');
+            if (!container) return;
+
+            if (catalogATLSkills.length === 0) {
+                container.innerHTML = `
+                    <div class="atl-skills-empty">
+                        No hay habilidades ATL activas en el catálogo. Configúrelas en "Catálogos de planeación".
+                    </div>
+                `;
+                return;
+            }
+
+            // Agrupar por category preservando el orden de llegada (ya viene ordenado
+            // por category.asc, sort_order.asc desde loadContext).
+            const groups = {};
+            const groupOrder = [];
+            catalogATLSkills.forEach(skill => {
+                const cat = skill.category || 'Sin categoría';
+                if (!groups[cat]) {
+                    groups[cat] = [];
+                    groupOrder.push(cat);
+                }
+                groups[cat].push(skill);
+            });
+
+            container.innerHTML = groupOrder.map(cat => {
+                const items = groups[cat].map(skill => {
+                    const checked = selectedATLSkills.has(skill.atl_skill_id);
+                    return `
+                        <label class="atl-skill-item ${checked ? 'checked' : ''}">
+                            <input type="checkbox"
+                                data-atl-skill-id="${skill.atl_skill_id}"
+                                ${checked ? 'checked' : ''}
+                                ${isReadOnly ? 'disabled' : ''}>
+                            <span>${escapeHtml(skill.name_es)}</span>
+                        </label>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="atl-group">
+                        <div class="atl-group-title">${escapeHtml(cat)}</div>
+                        <div class="atl-skills-grid">${items}</div>
+                    </div>
+                `;
+            }).join('');
+
+            // Listeners
+            container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.addEventListener('change', () => onATLSkillToggle(cb));
+            });
+        }
+
+        async function onATLSkillToggle(checkbox) {
+            const atlSkillId = checkbox.dataset.atlSkillId;
+            const checked = checkbox.checked;
+
+            // Actualizar visual del item contenedor
+            checkbox.closest('.atl-skill-item').classList.toggle('checked', checked);
+
+            // Deshabilitar mientras procesa
+            checkbox.disabled = true;
+
+            try {
+                startSaving();
+
+                if (checked) {
+                    await supabaseRequest('/pln_planner_atl_skills', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            planner_id: plannerId,
+                            atl_skill_id: atlSkillId
+                        })
+                    });
+                    selectedATLSkills.add(atlSkillId);
+                } else {
+                    await supabaseRequest(
+                        `/pln_planner_atl_skills?planner_id=eq.${plannerId}&atl_skill_id=eq.${atlSkillId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedATLSkills.delete(atlSkillId);
+                }
+
+                doneSaving();
+            } catch (err) {
+                // Revertir visual
+                checkbox.checked = !checked;
+                checkbox.closest('.atl-skill-item').classList.toggle('checked', !checked);
+                errorSaving(err);
+            } finally {
+                checkbox.disabled = isReadOnly;
+            }
         }
 
         // ============================================================
@@ -1393,7 +1565,7 @@
             console.warn('⚠️ Pantalla de error mostrada:', mensaje);
         }
 
-        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C.1 (marco curricular sin ATL)');
+        console.log('✅ planner-form.html — sub-bloques 6.2.A + 6.2.B + 6.2.C (marco curricular completo)');
     </script>
 </body>
 </html>
