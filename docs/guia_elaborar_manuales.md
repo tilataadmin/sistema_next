@@ -1,3 +1,117 @@
+# 📖 GUÍA PARA ELABORACIÓN DE MANUALES - SCHOOLNET v4.1
+
+**Documento:** Guía de creación de manuales de usuario  
+**Versión:** 4.1  
+**Fecha de creación:** Noviembre 2025  
+**Última actualización:** 29 de mayo de 2026  
+**Propósito:** Estandarizar la creación de documentación para usuarios finales
+
+---
+
+## 📋 TABLA DE CONTENIDOS
+
+1. [Introducción](#introducción)
+2. [Estructura de carpetas](#estructura-de-carpetas)
+3. [Convenciones de nombres](#convenciones-de-nombres)
+4. [Plantilla base](#plantilla-base)
+5. [Proceso paso a paso](#proceso-paso-a-paso)
+6. [Elementos del manual](#elementos-del-manual)
+7. [Buenas prácticas](#buenas-prácticas)
+8. [Ejemplos completos](#ejemplos-completos)
+9. [Checklist de revisión](#checklist-de-revisión)
+
+---
+
+## 🎯 INTRODUCCIÓN
+
+### ¿Qué es un manual de usuario?
+
+Los manuales de usuario de SchoolNet son documentos HTML que explican de forma clara y sencilla cómo usar cada funcionalidad del sistema. Están diseñados para usuarios finales (docentes, administrativos, directivos) sin conocimientos técnicos.
+
+### Características principales
+
+- ✅ **Solo para usuarios finales:** Sin código, sin términos técnicos
+- ✅ **Lenguaje sencillo:** Explicaciones paso a paso con ejemplos
+- ✅ **Estructura paralela:** Siguen la misma organización que el código funcional
+- ✅ **Consistencia visual:** Usan el template estandarizado con colores institucionales
+- ✅ **Accesibilidad:** Fácil reporte de problemas mediante el botón flotante de bug
+
+### ¿Cuándo crear un manual?
+
+**Siempre que:**
+- Se crea una nueva página funcional (índice de módulo o función específica)
+- Se actualiza significativamente una funcionalidad existente
+- Los usuarios reportan confusión sobre cómo usar una función
+
+---
+
+## 📁 ESTRUCTURA DE CARPETAS
+
+### Organización del sistema
+
+```
+schoolnet/
+├── modules/                    # Código funcional
+│   ├── follow-ups/            # Módulo de seguimientos
+│   │   ├── index.html         # Índice del módulo
+│   │   ├── create-note.html   # Función específica
+│   │   └── query-notes.html   # Otra función
+│   ├── security/              # Módulo de seguridad
+│   └── hr/                    # Módulo de recursos humanos
+│
+└── manual/                     # Manuales (estructura paralela)
+    ├── follow-ups/            # Manuales del módulo seguimientos
+    │   ├── index.html         # Manual del índice
+    │   ├── create-note.html   # Manual de crear nota
+    │   └── query-notes.html   # Manual de consultar notas
+    ├── security/              # Manuales del módulo seguridad
+    ├── hr/                    # Manuales del módulo RRHH
+    └── report-bug.html        # Página única de reporte (raíz de manual)
+```
+
+### Reglas de estructura
+
+1. **Correspondencia 1:1:** Por cada archivo en `/modules/`, debe existir uno en `/manual/`
+2. **Mismo nombre:** El archivo del manual tiene el mismo nombre que el funcional
+3. **Misma carpeta:** La carpeta del manual coincide con la del módulo
+4. **Raíz diferente:** El punto de partida cambia (`modules/` vs `manual/`)
+
+---
+
+## 🏷️ CONVENCIONES DE NOMBRES
+
+### Estructura de URLs
+
+#### Páginas funcionales:
+```
+/modules/[nombre-modulo]/[nombre-pagina].html
+```
+
+**Ejemplos:**
+- `/modules/follow-ups/index.html`
+- `/modules/follow-ups/create-note.html`
+- `/modules/security/users.html`
+- `/modules/hr/contracts.html`
+
+#### Páginas de manuales:
+```
+/manual/[nombre-modulo]/[nombre-pagina].html
+```
+
+**Ejemplos:**
+- `/manual/follow-ups/index.html`
+- `/manual/follow-ups/create-note.html`
+- `/manual/security/users.html`
+- `/manual/hr/contracts.html`
+
+### URL de reporte de bugs
+
+**Única para todo el sistema:**
+
+```
+/manual/report-bug.html
+```
+
 **Características:**
 - Siempre la misma ruta, sin importar desde dónde se llame
 - NO cambia según el módulo o página
@@ -26,17 +140,21 @@ El template contiene marcadores entre corchetes `[MARCADOR]` que deben reemplaza
 ### Elementos obligatorios del template
 
 **1. Meta versión:**
+
 ```html
 <meta name="page-version" content="26.05.29.18.30">
 ```
+
 Actualizar con la fecha de creación en formato `AA.MM.DD.HH.MM`
 
 **2. Título dinámico:**
+
 ```html
 <title>Manual - [NOMBRE_MODULO] - [NOMBRE_PAGINA] - SchoolNet</title>
 ```
 
 **3. Botón "Volver al Módulo":**
+
 ```html
 <a href="../../modules/[MODULO_PATH]/[PAGINA_PATH]" class="btn btn-outline-primary">
     <i class="bi bi-arrow-left me-1"></i>Volver al Módulo
@@ -44,6 +162,7 @@ Actualizar con la fecha de creación en formato `AA.MM.DD.HH.MM`
 ```
 
 **4. Botón flotante para reporte de bugs (única vía de reporte):**
+
 ```html
 <!-- Botón flotante (único punto de reporte en el manual) -->
 <a href="../report-bug.html" class="btn btn-danger btn-lg floating-bug-button">
@@ -54,6 +173,7 @@ Actualizar con la fecha de creación en formato `AA.MM.DD.HH.MM`
 > **⚠️ Nota de actualización (versión 26.05.29):** La tarjeta inferior de reporte de bugs (`.bug-report-card`) fue retirada del template. El único punto de contacto para reportar bugs desde un manual es el botón flotante. **No agregar la tarjeta en manuales nuevos.** Si encuentras un manual viejo que la incluya, retírala al actualizarlo.
 
 **5. Configuración de página (JavaScript):**
+
 ```javascript
 const PAGE_CONFIG = {
     moduleName: '[NOMBRE_MODULO]',
@@ -238,6 +358,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Contexto de uso
 
 **Ejemplo:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -270,6 +391,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Limitaciones importantes
 
 **Ejemplo:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -299,6 +421,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Preparación requerida
 
 **Ejemplo:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -333,6 +456,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Qué esperar en cada paso
 
 **Estructura:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -384,6 +508,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Cuándo pedir ayuda
 
 **Ejemplo:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -421,6 +546,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Mejores formas de aprovechar la función
 
 **Ejemplo:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -454,6 +580,7 @@ Agregar el contenido después de la tarjeta `.info-card` y antes del cierre del 
 - Referencias a otras secciones si es necesario
 
 **Ejemplo:**
+
 ```html
 <section>
     <h2 class="section-title">
@@ -576,6 +703,7 @@ Usar iconos consistentes para cada tipo de sección:
    - Finalmente: Problemas y preguntas
 
 2. **Usar listas numeradas para procesos:**
+
 ```html
    <ol>
        <li>Primer paso</li>
@@ -585,6 +713,7 @@ Usar iconos consistentes para cada tipo de sección:
 ```
 
 3. **Usar listas con viñetas para características:**
+
 ```html
    <ul class="feature-list">
        <li>Primera característica</li>
@@ -599,16 +728,19 @@ Usar iconos consistentes para cada tipo de sección:
 ### Formato visual
 
 1. **Usar negritas para términos importantes:**
+
 ```html
    La función permite <strong>buscar y visualizar notas</strong>.
 ```
 
 2. **Usar cursivas para énfasis suave:**
+
 ```html
    Recuerda que <em>solo</em> verás tus propias notas.
 ```
 
 3. **Resaltar acciones con código inline (opcional):**
+
 ```html
    Haz clic en el botón <code>Buscar</code>.
 ```
@@ -653,13 +785,16 @@ Usar iconos consistentes para cada tipo de sección:
 ### Mantener actualizado
 
 1. **Versionar el manual:**
+
 ```html
    <meta name="page-version" content="26.05.29.18.30">
 ```
+
    Actualizar con cada cambio significativo.
 
 2. **Documentar cambios importantes:**
    Si la función cambia drásticamente, agregar una nota al inicio:
+
 ```html
    <div class="info-box">
        <strong><i class="bi bi-clock-history me-2"></i>Actualización:</strong>
