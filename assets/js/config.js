@@ -1166,6 +1166,60 @@ function detectRequiredPermission() {
     return null;
 }
 
+// ==========================================
+// VALIDACIÓN DE ACCESO MULTI-PERMISO
+// ==========================================
+/**
+ * Variante de validatePageAccess() que acepta una lista de permisos y autoriza
+ * el acceso si el usuario tiene AL MENOS UNO de ellos.
+ * Útil para páginas donde el contenido es accesible desde múltiples roles
+ * (ej: planner-form.html — docente, coordinador de área, coordinador de programa).
+ * La lógica fina de qué se puede hacer adentro (edición vs solo lectura)
+ * la decide la propia página.
+ *
+ * @param {string[]} permissionList - Lista de nombres de permisos (al menos uno)
+ * @returns {Promise<boolean>} true si tiene acceso, false en caso contrario
+ */
+async function validatePageAccessAny(permissionList) {
+    try {
+        console.log('🔐 Validando acceso a página (multi-permiso)...');
+
+        // 1. Verificar sesión activa
+        const session = getStoredSession();
+        if (!session || !session.user) {
+            console.log('❌ No hay sesión activa');
+            redirectToLogin();
+            return false;
+        }
+
+        // 2. Validar lista de permisos
+        if (!Array.isArray(permissionList) || permissionList.length === 0) {
+            console.error('❌ validatePageAccessAny() requiere una lista no vacía de permisos');
+            showAccessDenied('Permisos no especificados para esta página');
+            return false;
+        }
+
+        // 3. Probar cada permiso; el primero que pase autoriza
+        for (const perm of permissionList) {
+            const hasPermission = await checkUserPermission(session.user.user_id, perm);
+            if (hasPermission) {
+                console.log(`✅ Usuario tiene acceso vía: ${perm}`);
+                return true;
+            }
+        }
+
+        // 4. Ninguno pasó
+        console.log(`❌ Usuario NO tiene ninguno de los permisos: ${permissionList.join(', ')}`);
+        showAccessDenied(permissionList.join(' o '));
+        return false;
+
+    } catch (error) {
+        console.error('❌ Error validando acceso (multi-permiso):', error);
+        showAccessDenied('Error de validación');
+        return false;
+    }
+}
+
 // Verificar si usuario tiene permiso específico
 // ==========================================
 // VERIFICAR SI USUARIO TIENE PERMISO ESPECÍFICO - CORREGIDO
