@@ -48,7 +48,7 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 4.3a | Cierre de la unidad (3 reflexiones finales) | ✅ Cerrado en DEV y PROD |
 | 4.3b | Comentarios polimórficos (`pln_comments`) | ✅ Cerrado en DEV y PROD |
 | 4.3c | Notificaciones por email de comentarios | Pendiente |
-| 5 | `units.html` — listado de UIs | Pendiente |
+| 5 | `units.html` — listado de UIs para coordinaciones | ✅ Cerrado en DEV y PROD |
 | 6.1 | `my-planners.html` — listado y creación de planeadores (modelo planeador-por-grado) | ✅ Cerrado en DEV y PROD |
 | 6.2 | `planner-form.html` — formulario de Planeador de Área | ✅ Cerrado en DEV y PROD |
 | 6.2.A | Esqueleto + control de acceso (4 caminos) + polling de concurrencia + header informativo | ✅ Cerrado en DEV y PROD |
@@ -58,9 +58,13 @@ Se actualiza al cerrar cada sub-paso (no en cada mensaje).
 | 6.2.E | Bloque 4 — Reflexión del trimestre (4 Quill) | ✅ Cerrado en DEV y PROD |
 | 6.2.F | Bloque 5 — Ciclos del planeador (CRUD + cuerpo editable + atomicidad) | ✅ Cerrado en DEV y PROD |
 | 6.2.G | Bloque 6 — Comentarios polimórficos (planner + cada ciclo) | ✅ Cerrado en DEV y PROD |
-| 7 | `planners.html` — listado general de planeadores (para coordinadores) | Pendiente |
+| 7 | `planners.html` — listado de planeadores para coordinaciones | ✅ Cerrado en DEV y PROD |
 | 8 | Comentarios en ambos forms | Pendiente |
-| 9 | `coordinator-area.html` y `coordinator-program.html` | Pendiente |
+| 9.1 | `coordinator-area.html` — vista lista (tabs Planeadores + UIs) | ✅ Cerrado en DEV y PROD |
+| 9.2 | `coordinator-area.html` — vista panorama (tabs Planeadores + UIs) | ✅ Cerrado en DEV y PROD |
+| 9.3 | `coordinator-program.html` — vista lista (tabs Planeadores + UIs) | ✅ Cerrado en DEV y PROD |
+| 9.4 | `coordinator-program.html` — vista panorama (tabs Planeadores + UIs) | ✅ Cerrado en DEV y PROD |
+| 9.5 | Helper `validatePageAccessAny()` en `config.js` + fix de cascada en `planner-form.html` y `unit-form.html` | ✅ Cerrado en DEV y PROD |
 
 ---
 
@@ -1336,6 +1340,148 @@ Misma semántica que la sumativa de ciclos de UI (paso 4.2.B).
 
 ---
 
+### Paso 9.1 — `coordinator-area.html` vista lista ✅
+
+**Fecha de cierre en DEV y PROD:** 29 de mayo de 2026.
+
+Archivo nuevo: `/modules/planning/coordinator-area.html`. Pantalla de coordinación de área con dos tabs (Planeadores + Unidades de indagación), cada uno en vista lista. Alcance: las áreas donde el worker actual aparece como `academic_areas.coordinator_worker_id`. Un coordinador puede cubrir varias áreas; si así es, aparece un selector "Área coordinada" en el header.
+
+**Decisiones de diseño:**
+
+- **Selector de área coordinada** en el header cuando el worker coordina ≥ 2 áreas. Si solo coordina 1, no se muestra el selector.
+- **Estructura paralela a `units.html` y `planners.html`**: filtros + tabla con columnas relevantes para coordinación de área. Filtros del tab Planeadores: año académico, programa, grado, trimestre, asignatura, docente actual. Filtros del tab UIs: año académico, grado, estado.
+- **Columnas clave del tab Planeadores**: Asignatura — Grado, Trimestre, Docente actual (con chips, +N si son más de 3), # ciclos, último update, # comentarios pendientes (raíces sin respuesta del docente actual), estado.
+- **Columnas clave del tab UIs**: Título, Grados, # ciclos, último update, # comentarios pendientes (raíces sin respuesta de algún editor de la UI), estado.
+- **Click en fila** navega a `planner-form.html` o `unit-form.html` correspondiente; el control de acceso del formulario decide editable o solo lectura.
+- **Carga lazy del tab UIs**: solo se carga `cargarDatosUIsDelAno()` cuando el usuario abre el tab por primera vez en una sesión.
+- **Comentarios pendientes calculado en cliente**: una sola query bulk de `pln_comments` para todos los planeadores/ciclos del año, agrupado en cliente. Patrón ya probado en `units.html` y `planners.html`.
+
+**Tests realizados en DEV:**
+
+- ✅ Coordinadora con un área: entra directamente sin selector.
+- ✅ Coordinadora con dos áreas: aparece selector, cambio entre áreas re-renderiza tabla.
+- ✅ Tab UIs lazy load: la primera apertura dispara `cargarDatosUIsDelAno`, las siguientes no.
+- ✅ Comentarios pendientes: contadores coherentes con los hilos abiertos en `planner-form.html` y `unit-form.html`.
+
+---
+
+### Paso 9.2 — `coordinator-area.html` vista panorama ✅
+
+**Fecha de cierre en DEV y PROD:** 29 de mayo de 2026.
+
+Vista panorama agregada a ambos tabs de `coordinator-area.html`. Diseñada para responder qué está pasando en el área del coordinador a nivel agregado, no qué está pasando con cada planeador individual.
+
+**Estructura común a ambos tabs:**
+
+- **Sección 1 — Cobertura curricular**: charts horizontales de barras (CSS + HTML, sin Chart.js) que cuentan cuántos planeadores o UIs incluyen cada elemento del catálogo IB correspondiente. Las barras se escalan proporcionalmente al máximo del chart.
+- **Sección 2 — Salud del proceso**: tres health cards con listas cortas (máx 10 ítems) de planeadores o UIs que requieren atención. Click en cualquier ítem abre el formulario correspondiente.
+
+**Tab Planeadores — vista panorama:**
+
+- **Selector de trimestre** T1/T2/T3 en el header del panorama. Default inferido por heurística: trimestre con más planeadores actualizados en los últimos 30 días. Si nadie actualizó nada reciente, default T1.
+- **4 charts de cobertura**: (1) Habilidades ATL trabajadas, agrupadas por categoría IB (Pensamiento, Comunicación, Investigación, Autogestión, Colaboración). (2) Tipos de conexión IB (6 tipos del catálogo `pln_connection_types`). (3) Distribución por grado. (4) Distribución por asignatura. El chart de conexiones muestra un mensaje específico cuando el área no tiene planeadores con conexiones declaradas (típico de áreas no-PEP).
+- **3 health cards**: (1) Sin ciclos cargados. (2) Sin actualizar hace 15+ días. (3) Mis comentarios sin respuesta (raíces de la coordinadora actual sin respuesta del docente actual).
+
+**Tab UIs — vista panorama:**
+
+- **Sin selector de trimestre** (las UIs viven en el año, no en trimestres). Solo se usa el año académico ya seleccionado en la vista lista.
+- **5 charts de cobertura**: (1) Temas transdisciplinarios IB. (2) Habilidades ATL. (3) Conceptos clave IB. (4) Distribución por grado. (5) Materias del área en UIs. Temas y conceptos muestran mensaje específico cuando ninguna UI los declara (típico de UIs no-PEP).
+- **3 health cards análogas** al tab Planeadores, ajustadas al modelo de "editores" de la UI (creator + colaboradores + docentes con assignment) en lugar de "docente actual".
+
+**Decisiones técnicas:**
+
+- **Charts con CSS + HTML, no Chart.js**: barras de conteo simples (4-10 items por chart), sin necesidad de ejes, leyendas, tooltips. Mantiene el bundle ligero y consistente con el resto del módulo.
+- **Cache por (año, área, trimestre)** para planeadores y por (año, área) para UIs, en `STATE.panoramaCache` y `STATE.unitsPanoramaCache`. Invalidación al cambiar año o área.
+- **Catálogos del panorama cargados lazy** la primera vez que se abre cualquier panorama. Una sola query agrupada para ATL + conexiones + temas + conceptos.
+- **Lazy load**: el panorama solo se calcula la primera vez que el usuario abre la vista panorama de cada tab.
+- **Health card "Mis comentarios sin respuesta"**: filtro `author_id = currentWorkerId` sobre comentarios raíz activos, cruzado con respuestas activas del docente actual (planeadores) o de cualquier editor de la UI (UIs).
+
+**Tests realizados en DEV:**
+
+- ✅ Heurística de trimestre inicial elige el más actualizado.
+- ✅ Cambio de trimestre con T1/T2/T3 recalcula y cachea.
+- ✅ Cambio de área coordinada (cuando aplica) invalida cache y recalcula ambos panoramas si están activos.
+- ✅ Cambio de año académico invalida caches en ambos lados.
+- ✅ Click en ítems de health cards abre el formulario correspondiente.
+- ✅ Mensajes específicos de "no aplica" en charts vacíos de conexiones, temas y conceptos.
+
+---
+
+### Paso 9.3 — `coordinator-program.html` vista lista ✅
+
+**Fecha de cierre en DEV y PROD:** 29 de mayo de 2026.
+
+Archivo nuevo: `/modules/planning/coordinator-program.html`. Pantalla de coordinación de programa, análoga a `coordinator-area.html` pero con alcance distinto: el programa completo (PEP, PAI o PD), no un área específica.
+
+**Decisión arquitectónica: vinculación director-programa por email institucional.**
+
+El coordinador (director) del programa se identifica vía `programs.program_director_email = workers.email` del worker actual. Esto es una **decisión deliberada del colegio**, NO deuda técnica: el binding por cargo institucional desacopla cargo de persona, así que rotaciones de personal en la dirección de un programa no requieren UPDATEs en tablas de aprobación/coordinación. Basta con reasignar el email institucional al nuevo director. Mismo patrón aplica a `sections.director_email`.
+
+Implicación práctica: una persona dirige un solo programa. Si el query devolviera varios programas con el mismo `program_director_email`, se toma el primero (caso anómalo, no esperado).
+
+**Diferencias respecto a `coordinator-area.html`:**
+
+- **Sin selector de área coordinada** en el header (no aplica — el alcance es un programa único).
+- **Filtro adicional "Área"** en las tablas y en los panoramas: como el director de programa cruza áreas, conviene poder enfocar por área específica. Default "Todas".
+- **Alcance de planeadores**: vía `grades.program_id = currentProgramId`. La query carga todos los planeadores del año cuyo grado pertenezca al programa.
+- **Alcance de UIs**: unión de dos vías para robustez: (A) `pln_units.program_id` directo + (B) `pln_unit_grades` con grados del programa. La UI aparece en el listado si está vinculada por al menos una vía.
+
+**Tests realizados en DEV:**
+
+- ✅ Director de Bachillerato (PAI/PD): ve los planeadores y UIs de grados de su programa.
+- ✅ Filtro de área refina el listado sin afectar el alcance del programa.
+- ✅ UIs vinculadas vía `program_id` y vía `pln_unit_grades` aparecen ambas (deduplicadas por `unit_id`).
+- ✅ Click en filas abre los formularios; el control de acceso decide editable o solo lectura.
+
+---
+
+### Paso 9.4 — `coordinator-program.html` vista panorama ✅
+
+**Fecha de cierre en DEV y PROD:** 29 de mayo de 2026.
+
+Vista panorama agregada a ambos tabs de `coordinator-program.html`. Estructura idéntica al panorama de `coordinator-area.html` con tres diferencias:
+
+1. **Alcance por programa**, no por área. Las métricas suman todos los planeadores o UIs del programa.
+2. **Filtro adicional de área** en el header del panorama (default "Todas las áreas"). Al seleccionar un área específica, los charts y health cards se recalculan con la restricción adicional.
+3. **Sin selector de área coordinada** en el header de la pantalla (no aplica).
+
+**Implementación:**
+
+- Reutiliza las funciones de render genéricas (`renderBarChart`, `renderGroupedBarChart`, `renderHealthCard`) que ya se habían escrito para `coordinator-area.html`. La estructura visual es idéntica; las funciones de cálculo de métricas son las que cambian para incluir el filtro de programa + filtro opcional de área.
+- **Cache clave**: `${yearId}::${trim}::${areaFilter || 'all'}` para planeadores y `${yearId}::${areaFilter || 'all'}` para UIs. Invalidación al cambiar año, trimestre o filtro de área.
+- **Título dinámico del chart de materias en UIs**: cuando hay filtro de área activo, el chart se titula "Materias del área seleccionada en UIs"; cuando no, "Materias en UIs (todas las áreas)". Aclara al coordinador qué está viendo.
+- **Selector de área del panorama** se pobla con las áreas que tienen al menos un planeador (tab Planeadores) o una UI con materia vinculada al área (tab UIs) en el año seleccionado. Áreas sin actividad no aparecen.
+
+**Tests realizados en DEV:**
+
+- ✅ Cambio de filtro de área en el panorama de planeadores recalcula los 4 charts y las 3 health cards.
+- ✅ Cambio de filtro de área en el panorama de UIs cambia el título del chart de materias y recalcula los 5 charts.
+- ✅ Cambio de año académico invalida caches en ambos panoramas y recalcula si están activos.
+- ✅ Lazy load por tab: el panorama solo se calcula la primera vez que el usuario abre la vista panorama de cada tab.
+
+---
+
+### Paso 9.5 — `validatePageAccessAny()` + fix de cascada en formularios ✅
+
+**Fecha de cierre en DEV y PROD:** 29 de mayo de 2026.
+
+Bug encontrado durante las pruebas de `coordinator-program.html`: una coordinadora de programa hacía clic en un planeador o UI desde la pantalla de coordinación y recibía "Acceso Denegado" en `planner-form.html` o `unit-form.html`. Causa raíz: ambos formularios validaban un único permiso vía `validatePageAccess(...)`, sin contemplar que coordinaciones también pueden abrir el formulario (en modo solo lectura, decidido por `canEdit()` interno).
+
+**Decisión:** agregar una función helper `validatePageAccessAny(permissionList)` en `config.js` que autoriza si el usuario tiene **al menos uno** de los permisos listados. La función interna `canEdit()` de cada formulario sigue decidiendo edit/readonly. Es una mejora estructural reutilizable en cualquier pantalla con múltiples roles de acceso.
+
+**Cambios aplicados:**
+
+- **`config.js`**: nueva función `validatePageAccessAny(permissionList)` después de `detectRequiredPermission()`. Itera la lista de permisos; el primer match autoriza. Si ninguno pasa, muestra `showAccessDenied(permissionList.join(' o '))`.
+- **`planner-form.html`**: la validación inicial reemplazó `validatePageAccess('Gestionar planeadores de área')` por `validatePageAccessAny(['Crear planeador de área', 'Gestionar planeadores de área', 'Coordinar planeación de área', 'Coordinar planeación de programa'])`.
+- **`unit-form.html`**: análogo. Preserva la lógica `?new=true` (solo `'Crear unidad de indagación'` para creación); para edición usa la lista completa con coordinaciones.
+
+**Tests realizados en DEV y PROD:**
+
+- ✅ Coordinadora de área abre planeador desde `coordinator-area.html`: entra en modo solo lectura (camino 4 de `canEdit()`).
+- ✅ Director de programa abre UI desde `coordinator-program.html`: entra en modo solo lectura (camino 5 de `canEdit()`).
+- ✅ Docente normal sin coordinación: comportamiento sin cambios.
+- ✅ Usuario sin ninguno de los permisos: mensaje "Acceso Denegado" con los permisos listados separados por " o ".
+
 ## Pendientes y bloqueos
 
 ### 🟢 Listo para continuar — el archivo `planner-form.html` está cerrado en DEV y PROD
@@ -1366,7 +1512,7 @@ Tras el cierre de `planner-form.html`, las opciones de continuación son:
 
 5. **Catálogo Tilatá:** poblar los atributos institucionales propios desde la interfaz de `catalogs.html` cuando el usuario tenga el material del PEI y sitio web.
 
-6. **Deuda técnica de SchoolNet (no del módulo):** el sistema de auditoría no captura el usuario de la aplicación (registra `'DB: postgres'`). Reportada al sistema interno de tickets el 26/05/2026.
+6. **Deuda técnica de SchoolNet (no del módulo):** el sistema de auditoría no captura el usuario de la aplicación (registra `'DB: postgres'`). Reportada al sistema interno de tickets el 26/05/2026. **Diagnóstico técnico añadido el 28/05/2026:** la causa raíz probable es que cada request HTTP a PostgREST usa una conexión PostgreSQL distinta del pool del servidor, por lo que el `SET` ejecutado por `set_current_user` en una request no persiste hasta la siguiente request (el PATCH/INSERT/DELETE). Verificación empírica: `audit_log` en DEV mostraba 131 registros recientes consecutivos con `user_display_name = 'DB: postgres'`, **antes** y después de la optimización de `supabaseRequest()`. La solución correcta requiere pasar el `user_id` como parámetro en cada función RPC, o usar un encabezado HTTP que PostgREST inyecte como GUC vía configuración `pgrst.db_extra_search_path` o similar — refactor estructural que NO se aborda en este módulo.
 
 ---
 
@@ -1421,6 +1567,18 @@ Tras el cierre de `planner-form.html`, las opciones de continuación son:
 - **28 de mayo de 2026** — Función SQL atómica `pln_create_unit_cycle(p_unit_id uuid)` creada en DEV y PROD. Replica el patrón de `pln_create_planner_cycle`: `PERFORM 1 ... FOR UPDATE` + `SELECT MAX(cycle_number) + 1` + `INSERT ... RETURNING *`. Resuelve la race condition en la creación de ciclos de UI por clientes concurrentes (especialmente relevante en codocencia PEP).
 - **28 de mayo de 2026** — Deuda técnica de `unit-form.html` cerrada en DEV y PROD: (1) `agregarCiclo()` migrado a RPC `pln_create_unit_cycle` (elimina el cálculo `Math.max(...) + 1` en cliente, vulnerable a race conditions); (2) mecanismo de polling de concurrencia implementado replicando el patrón de `planner-form.html` (banner sticky de conflicto, polling de `pln_units.updated_at` cada 15s, deshabilitado en modo solo lectura, sincronización de `lastKnownUpdatedAt` con PATCH propios). Decisión arquitectónica confirmada: el polling vigila solo la tabla padre, no las hijas — mismo criterio que en `planner-form.html`. Deuda técnica restante anotada: `renumerarCiclos()` también es vulnerable a race conditions ante eliminaciones concurrentes (no se aborda ahora porque eliminar es mucho menos frecuente que crear; arreglarlo requeriría una función SQL `pln_renumber_unit_cycles` adicional).
 
+- **28 de mayo de 2026** — `units.html` (paso 5) cerrado en DEV y PROD: listado general de UIs para coordinaciones. Alcance filtrado por rol estructural (coordinador de área, director de programa, director de sección) — opción B confirmada con el usuario. Filtros: año académico (default vigente), programa, grado, búsqueda por título. Columnas: Título, Grado, Programa (con badge por programa), Autor (lead o creador), Fechas, # ciclos, Estado del ciclo activo (badge calculado por comparación con `getCurrentDateColombia()`), # comentarios (UI + ciclos, solo activos). Ordenamiento por grado → título. Click en fila o botón "Abrir" navega a `unit-form.html?unit_id=...` donde el control de acceso de los 6 caminos ya filtra. Decisión deliberada: el camino "creador" y "colaborador" NO se incluyen en este listado porque ya están cubiertos por `my-units.html`. El camino "docente del grado" tampoco se incluye porque sería una consulta extra costosa por UI y no corresponde al caso de uso de coordinación. Pruebas validadas en DEV con tres perfiles: director de programa, director de sección, coordinador de área.
+- **28 de mayo de 2026** — 🎯 Optimización global de `config.js` (afecta a todo SchoolNet, no solo a Planeación): `supabaseRequest()` ahora invoca `setCurrentUserInSession()` SOLO para operaciones que disparan auditoría (POST/PATCH/DELETE), no para GET. Razón: los SELECT no disparan triggers de auditoría, así que la llamada previa era redundante. Mejora medida: ~50% menos round-trips HTTP en páginas con muchas consultas (verificado en `unit-form.html` con DevTools Network). Análisis previo confirmó que ninguna vista ni función de la BD depende de `app.current_user_id` durante un SELECT: solo `audit_trigger_function` lo consume, y solo en INSERT/UPDATE/DELETE. Funciones huérfanas `has_permission_safe`, `is_super_admin_safe`, `current_app_user_id`, `test_current_user` existen pero no son referenciadas por triggers, vistas ni otras funciones del sistema. Verificado en DEV y PROD: ninguna página rompió tras el cambio.
+
+- **28 de mayo de 2026** — `planners.html` (paso 7, primera mitad de la opción b) cerrado en DEV y PROD: listado general de planeadores para coordinaciones, hermano de `units.html`. Alcance filtrado por rol estructural (3 caminos: coordinador de área, director de programa, director de sección). Filtros: año académico (default vigente), trimestre (default "Todos" — se descartó hardcodear fechas de trimestres como deuda futura: requeriría tabla `academic_trimesters`), programa, grado, asignatura, búsqueda por strand. Columnas: identificador "Asignatura — Grado — T{trimestre}" con strand como subtítulo, programa (badge por programa), autor (`teacher_id` = creador histórico), UI vinculada (título de la UI cuando `unit_id` no es null), # criterios, # ciclos, # comentarios (planner + ciclos, solo activos). Ordenamiento por grado → asignatura → trimestre. Asignaturas accesibles por coordinador de área se precalculan en `subjectIdsAsCoordinator` para filtro O(1). Pruebas validadas en DEV con coordinadora de Español tras corrección del bug operativo (ver siguiente entrada). Sin badge de "ciclo activo" porque los ciclos del planeador son iteraciones de trabajo, no etapas pedagógicas con fechas.
+- **28 de mayo de 2026** — 🐛 Bug operativo corregido en DEV y PROD: el permiso `Gestionar planeadores de área` tenía `url_path = /modules/planning/my-planners.html` (apuntando al archivo del docente) en lugar de `/modules/planning/planners.html`. Hallado tras observar que las coordinadoras hacían clic en "Gestionar planeadores de área" y llegaban a la pantalla de creación de planeadores propios. UPDATE aplicado en ambos ambientes. Nota: los usuarios con sesión activa al momento del UPDATE conservan el `url_path` viejo en `sessionStorage` del sidebar hasta cerrar sesión; recomendación de limpiar cache (`sessionStorage.clear()` + reload) para validación inmediata, o esperar al próximo login natural. Los otros tres permisos del módulo (`Crear unidad de indagación` → `my-units.html`, `Gestionar unidades de indagación` → `units.html`, `Crear planeador de área` → `my-planners.html`) están correctos.
+
+- **29 de mayo de 2026** — Pasos 9.1 y 9.3 cerrados en DEV y PROD: vistas lista de `coordinator-area.html` y `coordinator-program.html`. Tabs Planeadores + UIs, filtros completos, columnas relevantes para coordinación. Click en fila abre el formulario correspondiente con control de acceso del formulario decidiendo editable o solo lectura.
+- **29 de mayo de 2026** — Decisión arquitectónica registrada: vinculación director-programa por email institucional (`programs.program_director_email = workers.email`) es deliberada, no deuda técnica. Desacopla cargo de persona y permite rotación de personal sin UPDATEs en tablas de aprobación. Mismo patrón aplica a `sections.director_email`.
+- **29 de mayo de 2026** — Pasos 9.2 y 9.4 cerrados en DEV y PROD: vistas panorama de `coordinator-area.html` y `coordinator-program.html`. Estructura común: cobertura curricular (charts CSS+HTML de barras) + salud del proceso (3 health cards con listas de máx 10 ítems clickables). Tab Planeadores con selector de trimestre T1/T2/T3 inferido por heurística (trimestre con más actualizaciones en últimos 30 días). Tab UIs solo selector de año. `coordinator-program.html` tiene filtro adicional de área en ambos panoramas. Cache por (año, trim, área) en planeadores y (año, área) en UIs. Lazy load. Catálogos del panorama cargados una sola vez por sesión.
+- **29 de mayo de 2026** — Paso 9.5 cerrado en DEV y PROD: helper `validatePageAccessAny(permissionList)` en `config.js` (autoriza si el usuario tiene al menos uno de los permisos listados, reutilizable). Fix de cascada aplicado en `planner-form.html` y `unit-form.html` para permitir que coordinaciones de área y de programa abran los formularios en modo solo lectura (decisión final la toma `canEdit()` interno). Resuelve bug encontrado al hacer clic desde las pantallas de coordinación.
+- **29 de mayo de 2026** — 🎯 **Hito mayor: paso 9 funcionalmente completo en DEV y PROD.** `coordinator-area.html` y `coordinator-program.html` con vistas lista y panorama en ambos tabs. Las cuatro pantallas de coordinación del módulo (`units.html`, `planners.html`, `coordinator-area.html`, `coordinator-program.html`) están operativas. Pruebas con equipo académico pendientes cuando esté disponible.
+
 ---
 
-*Última actualización: 28 de mayo de 2026 — ✅ `planner-form.html` funcionalmente completo en DEV y PROD. ✅ `unit-form.html` funcionalmente completo en DEV y PROD con paridad de robustez frente a `planner-form.html` (polling de concurrencia + atomicidad SQL en creación de ciclos). Tres funciones SQL atómicas activas en ambos ambientes: `pln_create_planner_criterion(uuid)`, `pln_create_planner_cycle(uuid)`, `pln_create_unit_cycle(uuid)`. Cobertura de auditoría: 20 triggers `pln_*_audit_trigger` activos en DEV y PROD (5 tablas principales + criterios de evaluación + M:N pedagógicas). Bug menor `sections.html` verificado como ya corregido. Las pruebas de desarrollo fueron exitosas; las pruebas con el equipo académico real se harán cuando esté disponible. **Próximas opciones de continuación**: (b) pantallas de coordinación (`planners.html` paso 7, `coordinator-area.html` y `coordinator-program.html` paso 9); (c) notificaciones por email (paso 4.3c); (d) `units.html` (paso 5). Pendiente menor restante de (e): test formal de `subjects-descriptions` en `unit-form.html`. Deuda técnica futura anotada: `renumerarCiclos()` en `unit-form.html` es vulnerable a race conditions ante eliminaciones concurrentes — no urgente porque eliminar es poco frecuente. Tareas operativas pendientes (dependen de terceros): asignar 7 permisos del módulo a roles en PROD, poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD.*
+*Última actualización: 29 de mayo de 2026 — ✅ **Paso 9 cerrado en DEV y PROD**: `coordinator-area.html` y `coordinator-program.html` con vistas lista y panorama en ambos tabs (Planeadores + UIs). Las cuatro pantallas de coordinación del módulo (`units.html`, `planners.html`, `coordinator-area.html`, `coordinator-program.html`) están operativas. Helper `validatePageAccessAny()` agregado a `config.js` y fix de cascada aplicado en `planner-form.html` y `unit-form.html` para permitir que coordinaciones abran los formularios en modo solo lectura. Decisión arquitectónica registrada: vinculación director-programa por email institucional es deliberada, no deuda técnica. ✅ `planner-form.html` y `unit-form.html` funcionalmente completos en DEV y PROD con paridad de robustez (polling de concurrencia + atomicidad SQL en creación de ciclos). ✅ `units.html` (paso 5) y `planners.html` (paso 7) cerrados en DEV y PROD: listados de coordinación con alcance filtrado por rol estructural. ✅ Optimización global de `config.js` aplicada: ~50% menos round-trips HTTP en páginas con muchas consultas. Tres funciones SQL atómicas activas: `pln_create_planner_criterion(uuid)`, `pln_create_planner_cycle(uuid)`, `pln_create_unit_cycle(uuid)`. Cobertura de auditoría: 20 triggers `pln_*_audit_trigger` activos. **Próximas opciones de continuación**: (a) pruebas con equipo académico real (depende de disponibilidad del equipo); (b) notificaciones por email de comentarios (paso 4.3c) — mejor postponer hasta tener uso real para calibrar política de notificación; (c) pulido de bugs menores: test formal de `subjects-descriptions` en `unit-form.html`. Deuda técnica futura: `renumerarCiclos()` vulnerable a race concurrentes (no urgente), tabla `academic_trimesters` para resolver default de trimestre vigente en `planners.html` y mejorar la heurística del panorama de planeadores (no urgente). Deuda técnica de SchoolNet (no del módulo): bug del `user_display_name = 'DB: postgres'` en `audit_log` por pool de conexiones de PostgREST. Tareas operativas pendientes (dependen de terceros): asignar 7 permisos del módulo a roles en PROD — incluyendo los dos nuevos de coordinación (`Coordinar planeación de área` → workers `coordinator_worker_id` de cada área; `Coordinar planeación de programa` → los 3 directores de programa) — poblar `grades.program_id` en 13 de 14 grados PROD, poblar `academic_areas.coordinator_worker_id` en 10 de 11 áreas PROD, verificar que `workers.email` de los directores de programa coincida con `programs.program_director_email`.*
