@@ -547,6 +547,8 @@ Orden recomendado, **DEV primero → verificar → confirmar → PROD** en cada 
 
 **Bloque 6 — Sincronización a PROD:** PR `developmen` → `main` por bloque validado.
 
+**Bloque 7 — Manuales de usuario:** tras estabilizar cada pantalla, crear su manual HTML siguiendo `GUIA_ELABORACION_MANUALES_SCHOOLNET_v4_0.md` y `manual_template`, con correspondencia 1:1 (`/manual/planning/<archivo>.html` por cada `/modules/planning/<archivo>.html`): `my-dp-outlines.html`, `dp-outline-form.html`, `my-dp-planners.html`, `dp-planner-form.html` (+ la página de config del flag si aplica). Son HTML para usuarios finales, sin tecnicismos. Énfasis propios de PD que el manual debe aclarar: la relación bi-anual → trimestral (qué se llena primero), la separación SL/HL en planeadores distintos, que el cronograma se llena por sesión dentro de ciclos, y que la reflexión hoy no se comparte con familias. **Se elaboran al final, cuando la pantalla existe y está estable; no antes.**
+
 ---
 
 ## 11. Pruebas mínimas
@@ -573,6 +575,7 @@ Orden recomendado, **DEV primero → verificar → confirmar → PROD** en cada 
 | 12.6 | **Reporte por promoción** (vista de las 6 sumativas de una cohorte). Sale de los datos por filtro; construir como reporte cuando haya uso real. | Fase posterior. |
 | 12.7 | **Tareas operativas en PROD (dependen de terceros):** asignar los permisos nuevos a roles; poblar `grades.program_id` (PD en 10° y 11°); poblar `academic_areas.coordinator_worker_id`; verificar `programs.program_director_email` y `sections.director_email` de Escuela Alta. | Operativo. |
 | 12.8 | **Decisión revisable:** Esquema del curso como tabla estructurada (D11). Si coordinación lo prefiere como texto libre, colapsar `pln_dp_outline_topics` a un campo en `pln_dp_outlines`. | Revisable. |
+| 12.9 | **Manuales de usuario** (Bloque 7). Entregable obligatorio por pantalla, en HTML, según la guía v4.0. Se elaboran cuando la UI está estable, no durante el diseño. | Entregable post-UI. |
 
 ---
 
