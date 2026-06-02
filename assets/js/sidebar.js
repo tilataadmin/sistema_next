@@ -306,6 +306,9 @@ const MODULE_ITEM_ORDER = {
         'Gestionar unidades de indagación',
         'Crear planeador de área',
         'Gestionar planeadores de área',
+        'Crear planeador bianual PD',
+        'Gestionar planeadores bianuales PD',
+        'Crear planeador trimestral PD',
         'Coordinar planeación de área',
         'Coordinar planeación de programa',
         'Administrar catálogos de planeación'
