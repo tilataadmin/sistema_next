@@ -1,0 +1,229 @@
+# Bitácora — Módulo de Planeación: Extensión Programa del Diploma (PD)
+
+**Proyecto:** SchoolNet — Colegio Tilatá  
+**Rama activa:** `developmen` → `main`  
+**Entornos:** DEV `spjzvpcsgbewxupjvmfm` · PROD `mrtuerkncqodhakuwjob`  
+**Fecha de corte:** 2 de junio de 2026
+
+---
+
+## 1. Resumen del alcance
+
+La extensión PD agrega al módulo de planeación (`pln_`) dos nuevos tipos de documento:
+
+| Documento | Tabla principal | Identidad única | Naturaleza |
+|---|---|---|---|
+| Esquema bi-anual (Esquema del curso) | `pln_dp_outlines` | `(subject_id, level)` | Vivo — sin año académico |
+| Planeador trimestral PD | `pln_planners` + `pln_planner_dp` | `(subject_id, grade_id, trimester, academic_year_id, level)` | Por año académico |
+
+El esquema bi-anual es el documento IB G1 que cubre los dos años del programa (Año 1 = 10°, Año 2 = 11°) para una asignatura y nivel (SL/HL). El planeador trimestral es el documento operativo de cada trimestre.
+
+---
+
+## 2. Decisiones de diseño registradas (D1–D13)
+
+| ID | Decisión |
+|---|---|
+| D3 | SL/HL es discriminador de identidad — genera planeadores separados |
+| D4 | El esquema bi-anual es un documento vivo: una sola versión por `(subject_id, level)` |
+| D6 | Cronograma en planeador PD = ciclos → sesiones (`pln_planner_sessions`) |
+| D7 | PD no usa rúbrica 2–5; la evaluación es descriptiva (formativa/sumativa) |
+| D8 | Componentes sumativos con peso en `pln_planner_dp_components` |
+| D10 | Visibilidad de reflexión a familias: boolean en `programs.share_reflection_with_families` |
+| D11 | Esquema del curso = tabla estructurada en `pln_dp_outline_topics` (6 celdas: año 1 y 2 × trimestre 1–3) |
+| D13 | Formularios PD en archivos dedicados (`dp-outline-form.html`, `dp-planner-form.html`) |
+
+---
+
+## 3. Estado de implementación
+
+### Bloque 1 — Base de datos ✅ COMPLETO (DEV + PROD)
+
+**5 tablas nuevas creadas, RLS deshabilitado:**
+
+- `pln_dp_outlines` — encabezado del esquema bi-anual (20 columnas)
+- `pln_dp_outline_topics` — 6 celdas del Esquema del curso (UNIQUE `outline_id + program_year + trimester`)
+- `pln_planner_dp` — cuerpo extendido 1:1 del planeador PD (21 columnas)
+- `pln_planner_sessions` — sesiones del cronograma por ciclo (UNIQUE `cycle_id + day_number`)
+- `pln_planner_dp_components` — componentes sumativos con peso
+
+**Alteraciones a tablas existentes:**
+- `pln_planners`: columnas `level` y `dp_outline_id`; UNIQUE reconstruido como `uq_pln_planners_identity` (incluye `COALESCE(level,'')`)
+- `programs`: columna `share_reflection_with_families boolean DEFAULT false`
+- `pln_comments`: CHECK ampliado para incluir `entity_type = 'dp_outline'`
+
+**Auditoría:**
+- `audit_trigger_function()` actualizada con 5 bloques ELSIF nuevos
+- 5 triggers de auditoría creados (total `pln_*`: 25 triggers)
+- Función atómica `pln_create_planner_session(p_cycle_id)` creada
+
+**Verificación PROD:**
+```
+5 tablas nuevas: RLS = false ✓
+uq_pln_planners_identity activo ✓
+25 triggers pln_* ✓
+share_reflection_with_families en programs ✓
+CHECK pln_comments incluye dp_outline ✓
+```
+
+---
+
+### Bloque 2 — Permisos y sidebar ✅ COMPLETO (DEV + PROD)
+
+**3 permisos nuevos en tabla `permissions`:**
+
+| `permission_name` | `url_path` |
+|---|---|
+| Crear planeador bianual PD | `/modules/planning/my-dp-outlines.html` |
+| Gestionar planeadores bianuales PD | `/modules/planning/dp-outlines.html` |
+| Crear planeador trimestral PD | `/modules/planning/my-dp-planners.html` |
+
+**Total permisos de planeación: 10** ✓
+
+**`sidebar.js` — `MODULE_ITEM_ORDER['planning']` actualizado:**
+```javascript
+'Crear planeador bianual PD',        // nuevo
+'Gestionar planeadores bianuales PD', // nuevo
+'Crear planeador trimestral PD',      // nuevo
+```
+PR `developmen` → `main` aplicado. Ítems visibles en el menú lateral de PROD ✓
+
+> **Pendiente operativo (requiere terceros):** asignación de los 3 permisos nuevos a los roles correspondientes en PROD.
+
+---
+
+### Bloque 3 — UI del esquema bi-anual 🔄 EN PROGRESO
+
+#### `my-dp-outlines.html` ✅ COMPLETO
+
+Ruta: `/modules/planning/my-dp-outlines.html`  
+Comprometido en rama `developmen` (pendiente PR a `main` junto con archivos restantes del bloque).
+
+Funcionalidades implementadas:
+- Acceso con `validatePageAccessAny(['Crear planeador bianual PD', 'Gestionar planeadores bianuales PD'])`
+- Carga de asignaturas del docente desde `academic_assignments` (sin filtro de año — el bi-anual es documento vivo)
+- Formulario de creación: asignatura + nivel (SL/HL)
+- Validación de existencia antes de crear (consulta local + directa a BD)
+- Al crear: POST a `pln_dp_outlines` + 6 filas en `pln_dp_outline_topics` (Promise.all)
+- Redirección a `dp-outline-form.html?outline_id=...`
+- Tabla de listado: asignatura, nivel (badge SL/HL), completado por, estado, última edición
+- Click en fila → abre formulario
+
+---
+
+#### `dp-outline-form.html` ⏸ EN PAUSA
+
+Motivo de la pausa: revisión del alcance de los campos del formulario.
+
+**Avance entregado hasta la pausa:**
+- Fragmento 1: HEAD + estilos completos ✅
+- Fragmento 2: HTML body parcial (Bloques 1–7 de 10) — pendiente corrección y reentrega
+
+---
+
+## 4. Pregunta abierta: alcance de campos por asignatura
+
+### Contexto
+
+El formulario `dp-outline-form.html` debe representar el documento _Esquema del curso_ del IB. El prototipo tomó como referencia el formato institucional G1, que incluye un campo de **"Obras elegidas"** — específico de asignaturas de Lengua A / Literatura.
+
+### Análisis de campos actuales en `pln_dp_outlines`
+
+| Campo | ¿Universal? | Observación |
+|---|---|---|
+| `completed_by_worker_id` | ✅ Sí | Identificación |
+| `completion_date` | ✅ Sí | Identificación |
+| `ib_training_date` | ✅ Sí | Identificación |
+| `workshop_name` | ✅ Sí | Identificación |
+| `school_code` | ✅ Sí | Identificación |
+| `chosen_works` | ⚠️ **Solo Grupo 1 IB** | Lengua A Literatura / English A Literature |
+| `internal_external_assessment` | ✅ Sí | Todos los sujetos PD tienen EA/IA |
+| `tok_links` | ✅ Sí | Requerido por IB para todas las asignaturas |
+| `atl_approaches` | ✅ Sí | Universal |
+| `international_mindedness` | ✅ Sí | Universal |
+| `learner_profile_development` | ✅ Sí | Universal |
+| `resources` | ✅ Sí | Universal |
+
+### Análisis de campos en `pln_dp_outline_topics` (Esquema del curso)
+
+| Campo | ¿Universal? | Observación |
+|---|---|---|
+| `theme` | ✅ Sí | Tema / área de exploración |
+| `contents` | ✅ Sí | Contenidos |
+| `assigned_time` | ✅ Sí | Tiempo asignado (horas) |
+| `assessment_instruments` | ✅ Sí | Instrumentos de evaluación |
+| `resources` | ✅ Sí | Recursos |
+
+### Conclusión preliminar
+
+El único campo actualmente en el esquema que NO aplica a todas las asignaturas es `chosen_works`. Todos los demás son universales al PD.
+
+La solución técnica propuesta (mostrar/ocultar por keywords en `subject_name`) funciona para el caso actual. Sin embargo, antes de continuar la implementación, se requiere confirmar:
+
+1. ¿Hay otros campos del formato G1 que solo apliquen a ciertas asignaturas (p. ej. Matemáticas, Ciencias, Humanidades)?
+2. ¿El formato de `pln_dp_outline_topics` (5 campos de texto libre) es suficiente para todas las asignaturas, o alguna necesita columnas adicionales?
+3. ¿El campo `chosen_works` debería eliminarse del schema y manejarse dentro de `resources` u otro campo genérico, o mantenerse como campo propio con visibilidad condicional?
+
+---
+
+## 5. Próximos pasos
+
+### Inmediatos (requieren decisión antes de continuar)
+
+- [ ] Responder las 3 preguntas abiertas de la sección anterior
+- [ ] Confirmar el mapeo completo de campos del formato IB oficial contra el schema actual
+
+### Bloque 3 (continuación tras decisión)
+
+- [ ] Completar y corregir `dp-outline-form.html`
+  - Bloque Identificación (inputs simples + select de trabajadores)
+  - Bloque Obras elegidas (Quill, visibilidad condicional)
+  - Bloque Esquema del curso (6 tarjetas dinámicas desde `pln_dp_outline_topics`)
+  - Bloques narrativos: Evaluación IB, TdC, ATL, Mentalidad internacional, Perfil IB (Quill)
+  - Bloque Recursos (Quill)
+  - Bloque Comentarios (`entity_type = 'dp_outline'`)
+  - Control de acceso (4 caminos: assignment activa, coordinador de área, director de programa, director de sección)
+  - Autosave: `patchOutline()` + `patchTopic()` + polling de concurrencia
+
+### Bloque 4
+
+- [ ] `my-dp-planners.html` — listado y creación de planeadores trimestrales PD
+- [ ] `dp-planner-form.html` — formulario completo PD trimestral:
+  - Cuerpo `pln_planner_dp` (objetivos, proceso de aprendizaje, evaluación formativa/sumativa)
+  - Componentes sumativos con peso (`pln_planner_dp_components`)
+  - Cronograma: ciclos → sesiones (`pln_planner_sessions`, función atómica `pln_create_planner_session`)
+  - Reflexión (3 campos: qué funcionó, qué no, notas)
+  - Comentarios (`entity_type = 'planner'`)
+
+### Bloque 5
+
+- [ ] Ramificación en vistas de coordinación (`planners.html`, `coordinator-area.html`, `coordinator-program.html`) para abrir `dp-planner-form.html` en lugar de `planner-form.html` cuando el planeador tiene `level IS NOT NULL`
+- [ ] Toggle de visibilidad de reflexión a familias (`programs.share_reflection_with_families`) en la vista de coordinación de programa
+
+### Bloque 6
+
+- [ ] PR `developmen` → `main` con todos los archivos HTML nuevos del bloque
+
+### Bloque 7
+
+- [ ] Manuales de usuario en HTML para las pantallas nuevas (según `GUIA_ELABORACION_MANUALES_SCHOOLNET_v4_0`)
+
+### Operativo (requiere terceros)
+
+- [ ] Asignar los 3 permisos PD a los roles correspondientes en PROD
+- [ ] Poblar `grades.program_id` para los grados 10° y 11° en PROD
+- [ ] Poblar `academic_areas.coordinator_worker_id` para las áreas PD en PROD
+- [ ] Verificar `programs.program_director_email` del programa PD en PROD
+
+---
+
+## 6. Deuda técnica relevante
+
+- Validación atómica de `cycle_number` y `objective_number` pendiente antes de uso masivo en producción
+- Polling de concurrencia pendiente de aplicar retroactivamente a `unit-form.html`
+- RLS audit pendiente en ~10 tablas (varias `ai_*` usan service key intencionalmente desde `tilata-ia`)
+- Migración de API key Supabase pendiente para PresuCorti y PROD
+
+---
+
+*Documento generado por Desarrollos / Claude — SchoolNet v26.6.2*
