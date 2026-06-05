@@ -485,10 +485,6 @@ async function supabaseRequest(endpoint, options = {}) {
     return await _supabaseRequestSingle(endpoint, options);
 }
 
-    // Para todo lo demás: petición única
-    return await _supabaseRequestSingle(endpoint, options);
-}
-
 // Petición única (POST, PATCH, DELETE, o GET con limit explícito)
 async function _supabaseRequestSingle(endpoint, options = {}) {
     const url = `${SUPABASE_CONFIG.apiUrl}${endpoint}`;
