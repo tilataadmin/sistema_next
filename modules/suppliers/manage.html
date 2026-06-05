@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="6.5.27.1">
+    <meta name="page-version" content="26.6.5.1">
     <title>Gestionar Proveedores - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -222,6 +222,9 @@
                 <div class="d-flex gap-2">
                     <button class="btn btn-primary btn-sm" onclick="abrirRegistroManual()">
                         <i class="bi bi-plus-circle me-1"></i>Registrar Manualmente
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="exportarExcel()" id="btn-export">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
                     </button>
                     <button class="btn btn-outline-secondary btn-sm" onclick="cargarProveedores()">
                         <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
@@ -576,6 +579,7 @@
 
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     
     <script>
@@ -1800,6 +1804,99 @@
             const env = detectEnvironment();
             const config = ENVIRONMENT_CONFIGS[env]?.supabase || ENVIRONMENT_CONFIGS.development.supabase;
             return `${config.url}/storage/v1/object/public`;
+        }
+
+        // ==========================================
+        // EXPORTAR EXCEL
+        // ==========================================
+
+        function exportarExcel() {
+            // Obtener los proveedores actualmente filtrados
+            const searchName = document.getElementById('search-name').value.toLowerCase().trim();
+            const searchServices = document.getElementById('search-services').value.toLowerCase().trim();
+            const filterStatus = document.getElementById('filter-status').value;
+            const filterType = document.getElementById('filter-type').value;
+
+            const filtered = cacheSuppliers.filter(s => {
+                if (filterStatus && s.supplier_status !== filterStatus) return false;
+                if (filterType && s.person_type !== filterType) return false;
+                if (searchName) {
+                    const nameFields = [s.business_name, s.first_name, s.second_name, s.last_name_1, s.last_name_2, s.contact_name].filter(Boolean).join(' ').toLowerCase();
+                    if (!nameFields.includes(searchName)) return false;
+                }
+                if (searchServices) {
+                    if (!(s.products_services || '').toLowerCase().includes(searchServices)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                showMessage('No hay proveedores para exportar con los filtros actuales.', 'warning');
+                return;
+            }
+
+            const statusMap = { pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', inactive: 'Inactivo' };
+            const typeMap = { natural: 'Natural', juridica: 'Jurídica' };
+
+            const rows = filtered.map(s => ({
+                'Tipo de persona':          typeMap[s.person_type] || s.person_type,
+                'Estado':                   statusMap[s.supplier_status] || s.supplier_status,
+                'Tipo de registro':         s.registration_type === 'manually_registered' ? 'Manual' : 'Auto-registro',
+                // Persona jurídica
+                'Razón social':             s.business_name || '',
+                'NIT':                      s.nit ? `${s.nit}-${s.nit_verification_digit || ''}` : '',
+                'Representante legal':      s.legal_representative || '',
+                'Nombre de contacto':       s.contact_name || '',
+                // Persona natural
+                'Tipo de documento':        s.document_type || '',
+                'Número de documento':      s.document_number || '',
+                'Primer nombre':            s.first_name || '',
+                'Segundo nombre':           s.second_name || '',
+                'Primer apellido':          s.last_name_1 || '',
+                'Segundo apellido':         s.last_name_2 || '',
+                // Contacto
+                'Teléfono':                 s.phone || '',
+                'Correo electrónico':       s.email || '',
+                // Ubicación
+                'País':                     s.is_colombian === false ? (s.country_name || '') : 'Colombia',
+                'Departamento':             s.sup_departments?.department_name || '',
+                'Municipio':                s.sup_municipalities?.municipality_name || '',
+                'Ciudad (internacional)':   s.is_colombian === false ? (s.city_name || '') : '',
+                'Dirección':               s.address || '',
+                'Referencia':               s.address_reference || '',
+                'Contacto en el colegio':   s.school_contact_person || '',
+                // Fiscal
+                'CIIU':                     s.sup_ciiu_activities ? `${s.sup_ciiu_activities.ciiu_code} - ${s.sup_ciiu_activities.ciiu_description}` : '',
+                'Productos / Servicios':    s.products_services || '',
+                'Régimen tributario':       s.sup_tax_regimes?.regime_name || '',
+                // Bancaria
+                'Banco':                    s.sup_banks?.bank_name || '',
+                'Tipo de cuenta':           s.account_type || '',
+                'Número de cuenta':         s.account_number || '',
+                // Gestión interna
+                'Worker responsable':       s.responsible_worker ? `${s.responsible_worker.worker_first_name} ${s.responsible_worker.worker_last_name_1}` : '',
+                'Aprobado/Rechazado por':   s.approved_by_user?.user_name || '',
+                'Fecha aprobación/rechazo': s.approved_at ? formatDate(s.approved_at) : '',
+                'Motivo de rechazo':        s.rejection_reason || '',
+                'Fecha de registro':        s.created_at ? formatDate(s.created_at) : '',
+                'Última actualización':     s.updated_at ? formatDate(s.updated_at) : ''
+            }));
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(rows);
+
+            // Ancho de columnas automático
+            const colWidths = Object.keys(rows[0]).map(key => ({
+                wch: Math.max(key.length, ...rows.map(r => String(r[key] || '').length), 12)
+            }));
+            ws['!cols'] = colWidths;
+
+            XLSX.utils.book_append_sheet(wb, ws, 'Proveedores');
+
+            const fecha = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(wb, `Proveedores_${fecha}.xlsx`);
+
+            console.log(`✅ Excel exportado: ${filtered.length} proveedores`);
         }
 
         console.log('✅ manage.html cargado');
