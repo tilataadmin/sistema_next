@@ -447,6 +447,16 @@ function getHeaders(options = {}) {
         'Prefer': 'return=representation'
     };
     
+    // Agregar user_id de la sesión activa para auditoría
+    try {
+        const session = getStoredSession();
+        if (session && session.user && session.user.user_id) {
+            defaultHeaders['x-app-user-id'] = session.user.user_id;
+        }
+    } catch (e) {
+        // Silencioso — no interrumpir si no hay sesión
+    }
+    
     // Agregar headers específicos de ambiente
     if (ENV_CONFIG.features.debugMode) {
         defaultHeaders['X-Debug-Mode'] = 'true';
@@ -466,18 +476,14 @@ async function supabaseRequest(endpoint, options = {}) {
     const isGet = method === 'GET';
     const hasExplicitLimit = endpoint.toLowerCase().includes('limit=');
 
-    // Establecer usuario en sesión SOLO para operaciones que disparan auditoría.
-    // Los SELECT no disparan triggers de auditoría, así que evitamos el
-    // round-trip redundante (optimización 28/05/2026: reduce a la mitad las
-    // llamadas HTTP en páginas con muchas consultas).
-    if (!isGet) {
-        await setCurrentUserInSession();
-    }
-
     // Para GET sin limit explícito: paginación automática
     if (isGet && !hasExplicitLimit) {
         return await _supabaseRequestPaginated(endpoint, options);
     }
+
+    // Para todo lo demás: petición única
+    return await _supabaseRequestSingle(endpoint, options);
+}
 
     // Para todo lo demás: petición única
     return await _supabaseRequestSingle(endpoint, options);
