@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.6.10.2">
+    <meta name="page-version" content="26.6.10.3">
     <title>Resultados - Evaluación Docente - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -410,8 +410,15 @@
                     }
                 }
 
-                // Obtener respuestas en lotes (para no exceder el límite de longitud de URL),
-                // disparados en paralelo para reducir el tiempo total de carga.
+                // Catálogo de preguntas/secciones: se trae UNA sola vez (no embebido por respuesta)
+                const questionsCatalog = await supabaseRequest(
+                    '/teval_form_questions?select=question_id,question_text,question_type,question_order,form_section_id,teval_form_sections(section_title,section_order,english_only,director_only,scale_id)'
+                );
+                const questionsMap = {};
+                questionsCatalog.forEach(q => { questionsMap[q.question_id] = q; });
+
+                // Respuestas en lotes (para no exceder el límite de longitud de URL),
+                // en paralelo y SIN embebido: el catálogo se cruza en JS por question_id.
                 const allSessionIds = filteredSessions.map(s => s.session_id);
                 const RESP_BATCH_SIZE = 100;
 
@@ -422,7 +429,7 @@
                         .map(id => `"${id}"`)
                         .join(',');
                     batchPromises.push(supabaseRequest(
-                        `/teval_responses?select=response_id,session_id,question_id,response_value,response_text,teval_form_questions(question_text,question_type,question_order,form_section_id,teval_form_sections(section_title,section_order,english_only,director_only,scale_id))&session_id=in.(${chunkIds})`
+                        `/teval_responses?select=response_id,session_id,question_id,response_value,response_text&session_id=in.(${chunkIds})`
                     ));
                 }
 
@@ -437,7 +444,7 @@
                 });
 
                 // Procesar datos
-                datosResultados = procesarDatos(filteredSessions, responses, periodNames);
+                datosResultados = procesarDatos(filteredSessions, responses, periodNames, questionsMap);
 
                 // Mostrar resultados
                 document.getElementById('resultsContent').style.display = 'block';
@@ -465,7 +472,7 @@
         // ==========================================
         // PROCESAR DATOS EN ESTRUCTURA ÚTIL
         // ==========================================
-        function procesarDatos(sessions, responses, periodNames) {
+        function procesarDatos(sessions, responses, periodNames, questionsMap) {
             const data = {
                 periodNames: periodNames,
                 periods: Object.keys(periodNames),
@@ -528,7 +535,7 @@
                 const session = sessionMap[r.session_id];
                 if (!session) return;
 
-                const q = r.teval_form_questions;
+                const q = questionsMap[r.question_id];
                 const sec = q?.teval_form_sections;
                 const fsId = q?.form_section_id;
 
