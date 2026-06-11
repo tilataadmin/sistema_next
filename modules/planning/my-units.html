@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.6.11.4">
+    <meta name="page-version" content="26.6.11.5">
     <title>Mis Unidades de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -190,10 +190,10 @@
         <div class="page-header">
             <h1>
                 <i class="bi bi-journal-bookmark me-2"></i>
-                Unidades de indagación — <span id="header-grade">—</span>
+                Unidades de indagación
             </h1>
             <p class="subtitle" id="header-subtitle">
-                Listado de unidades de indagación del grado.
+                —
             </p>
         </div>
 
@@ -434,10 +434,11 @@
                     return;
                 }
 
-                // FASE 2: Una sola query trae las UIs completas con sus datos para las cards.
+                // FASE 2: Una sola query trae las UIs completas con sus datos para las cards,
+                // incluyendo el join con pln_unit_grades para mostrar el grado en cada card.
                 const idsArray = Array.from(accessibleUnitIds);
                 const units = await supabaseRequest(
-                    `/pln_units?select=unit_id,unit_title,theme_id,unit_status,created_at,updated_at,created_by,academic_year_id&unit_id=in.(${idsArray.join(',')})&order=updated_at.desc`
+                    `/pln_units?select=unit_id,unit_title,theme_id,unit_status,created_at,updated_at,created_by,academic_year_id,pln_unit_grades(grade_id)&unit_id=in.(${idsArray.join(',')})&order=updated_at.desc`
                 );
 
                 renderUnits(units || []);
@@ -565,13 +566,36 @@
         // RENDER
         // ============================================================
         function renderHeader() {
-            // myGrade puede ser null si el worker no es titular UI.
-            // En el Paso 4 este header se refina con sub-título contextual de roles.
-            const headerGrade = document.getElementById('header-grade');
+            // Sub-título contextual: lista los roles institucionales del worker actual.
+            // Permite al usuario entender por qué ve las unidades que ve.
+            const subtitle = document.getElementById('header-subtitle');
+            const roles = [];
+
             if (myGrade) {
-                headerGrade.textContent = myGrade.grade_name;
+                roles.push(`Docente UI de ${myGrade.grade_name}`);
+            }
+
+            const email = (currentWorkerEmail || '').toLowerCase().trim();
+
+            // Áreas que coordina
+            allAreas
+                .filter(a => a.coordinator_worker_id === currentWorkerId)
+                .forEach(a => roles.push(`Coordinador(a) del Área de ${a.area_name}`));
+
+            // Programas que dirige
+            allPrograms
+                .filter(p => (p.program_director_email || '').toLowerCase().trim() === email)
+                .forEach(p => roles.push(`Director(a) del programa ${p.program_name}`));
+
+            // Secciones que dirige
+            allSections
+                .filter(s => (s.director_email || '').toLowerCase().trim() === email)
+                .forEach(s => roles.push(`Director(a) de la sección ${s.section_name}`));
+
+            if (roles.length > 0) {
+                subtitle.textContent = 'Como ' + roles.join(' · ');
             } else {
-                headerGrade.textContent = '—';
+                subtitle.textContent = 'Listado de unidades en las que participa.';
             }
         }
 
@@ -632,6 +656,18 @@
 
             const statusBadge = getStatusBadge(unit.unit_status);
 
+            // Resolver nombre(s) de grado(s) desde el join pln_unit_grades.
+            // El schema permite múltiples grados por UI; el modelo institucional actual
+            // asume uno solo, pero soportamos varios por si acaso.
+            const gradeIds = (unit.pln_unit_grades || []).map(r => r.grade_id);
+            const gradeNames = gradeIds
+                .map(gid => {
+                    const g = allGrades.find(x => x.grade_id === gid);
+                    return g ? g.grade_name : null;
+                })
+                .filter(Boolean)
+                .join(', ');
+
             return `
                 <div class="unit-card" data-unit-id="${unit.unit_id}">
                     <div class="d-flex justify-content-between align-items-start">
@@ -640,6 +676,12 @@
                     </div>
                     ${themeName ? `<span class="unit-theme">${escapeHtml(themeName)}</span>` : ''}
                     <div class="unit-meta">
+                        ${gradeNames ? `
+                            <div class="unit-meta-item">
+                                <i class="bi bi-mortarboard"></i>
+                                <span>${escapeHtml(gradeNames)}</span>
+                            </div>
+                        ` : ''}
                         <div class="unit-meta-item">
                             <i class="bi bi-clock-history"></i>
                             <span>Editada ${updatedAt}</span>
