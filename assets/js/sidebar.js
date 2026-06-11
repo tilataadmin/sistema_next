@@ -302,7 +302,7 @@ const MODULE_ITEM_ORDER = {
         'Logs de auditoría'
     ],
     'planning': [
-        'Crear unidad de indagación',
+        'Mis unidades de indagación',
         'Gestionar unidades de indagación',
         'Crear planeador de área',
         'Gestionar planeadores de área',
