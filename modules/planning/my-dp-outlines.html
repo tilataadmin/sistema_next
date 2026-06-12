@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.6.12.1">
+    <meta name="page-version" content="26.6.12.2">
     <title>Mis esquemas bienales PD</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -268,10 +268,39 @@
         // CARGA DE DATOS DEL WORKER
         // ============================================================
         async function refreshOutlineData() {
-            const assignmentsRes = await supabaseRequest(
-                `/academic_assignments?select=subject_id&worker_id=eq.${currentWorkerId}&assignment_status=eq.active`
+            // Solo asignaciones en cursos de grados del Programa del Diploma
+            // Filtro por nombre de programa para que funcione igual en DEV y PROD
+            const pdProgramRes = await supabaseRequest(
+                `/programs?select=program_id&program_name=like.PD*&program_status=eq.active`
             );
-            mySubjectIds = new Set((assignmentsRes || []).map(a => a.subject_id));
+            const pdProgramIds = (pdProgramRes || []).map(p => p.program_id);
+
+            if (pdProgramIds.length === 0) {
+                mySubjectIds = new Set();
+            } else {
+                const pdGradesRes = await supabaseRequest(
+                    `/grades?select=grade_id&program_id=in.(${pdProgramIds.join(',')})&grade_status=eq.active`
+                );
+                const pdGradeIds = (pdGradesRes || []).map(g => g.grade_id);
+
+                if (pdGradeIds.length === 0) {
+                    mySubjectIds = new Set();
+                } else {
+                    const pdCourseRes = await supabaseRequest(
+                        `/courses?select=course_id&grade_id=in.(${pdGradeIds.join(',')})`
+                    );
+                    const pdCourseIds = (pdCourseRes || []).map(c => c.course_id);
+
+                    if (pdCourseIds.length === 0) {
+                        mySubjectIds = new Set();
+                    } else {
+                        const assignmentsRes = await supabaseRequest(
+                            `/academic_assignments?select=subject_id&worker_id=eq.${currentWorkerId}&assignment_status=eq.active&course_id=in.(${pdCourseIds.join(',')})`
+                        );
+                        mySubjectIds = new Set((assignmentsRes || []).map(a => a.subject_id));
+                    }
+                }
+            }
 
             outlinesList = [];
             if (mySubjectIds.size > 0) {
