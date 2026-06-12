@@ -302,13 +302,10 @@ const MODULE_ITEM_ORDER = {
         'Logs de auditoría'
     ],
     'planning': [
-        'Mis unidades de indagación',
-        'Gestionar unidades de indagación',
         'Mis planeadores de área',
-        'Gestionar planeadores de área',
-        'Crear planeador bianual PD',
-        'Gestionar planeadores bianuales PD',
-        'Crear planeador trimestral PD',
+        'Mis unidades de indagación',
+        'Mis esquemas bienales PD',
+        'Mis planeadores trimestrales PD',
         'Coordinar planeación de área',
         'Coordinar planeación de programa',
         'Coordinar planeación de sección',
