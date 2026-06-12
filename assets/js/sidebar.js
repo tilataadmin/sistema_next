@@ -311,6 +311,7 @@ const MODULE_ITEM_ORDER = {
         'Crear planeador trimestral PD',
         'Coordinar planeación de área',
         'Coordinar planeación de programa',
+        'Coordinar planeación de sección',
         'Administrar catálogos de planeación'
     ]
 };
