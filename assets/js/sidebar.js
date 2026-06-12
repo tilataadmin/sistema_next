@@ -304,7 +304,7 @@ const MODULE_ITEM_ORDER = {
     'planning': [
         'Mis unidades de indagación',
         'Gestionar unidades de indagación',
-        'Crear planeador de área',
+        'Mis planeadores de área',
         'Gestionar planeadores de área',
         'Crear planeador bianual PD',
         'Gestionar planeadores bianuales PD',
