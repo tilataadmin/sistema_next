@@ -301,12 +301,12 @@ const MODULE_ITEM_ORDER = {
         'Consulta de seguridad',
         'Logs de auditoría'
     ],
-    'planning': [
-        'Mis planeadores de área',
+   'planning': [
+        'Mis planeadores de asignatura',
         'Mis unidades de indagación',
         'Mis esquemas bienales PD',
         'Mis planeadores trimestrales PD',
-        'Coordinar planeación de área',
+        'Coordinar planeación de asignatura',
         'Coordinar planeación de programa',
         'Coordinar planeación de sección',
         'Administrar catálogos de planeación'
