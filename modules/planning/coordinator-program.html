@@ -559,8 +559,12 @@
                     <i class="bi bi-compass me-1"></i> Unidades de indagación
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-dp-outlines" type="button" data-tab="dp-outlines">
+                    <i class="bi bi-journal-bookmark me-1"></i> Bienales PD
+                </button>
+            </li>
         </ul>
-
         <!-- Contenido tab Planeadores -->
         <div id="tab-content-planners" class="tab-pane-content">
 
@@ -871,6 +875,30 @@
 
         </div>
 
+        <!-- Contenido tab Bi-anuales PD -->
+        <div id="tab-content-dp-outlines" class="tab-pane-content" style="display:none;">
+
+            <!-- Tabla -->
+            <div class="table-card">
+                <div class="table-summary" id="dp-outlines-summary">Cargando...</div>
+                <div class="table-responsive">
+                    <table class="table pln-table" id="dp-outlines-table">
+                        <thead>
+                            <tr>
+                                <th class="no-sort">Asignatura</th>
+                                <th class="no-sort">Nivel</th>
+                                <th class="no-sort">Completado por</th>
+                                <th class="no-sort">Estado</th>
+                                <th class="no-sort">Última edición</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dp-outlines-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
     </div>
 
     <!-- Bootstrap JS -->
@@ -906,9 +934,14 @@
             panoramaCache: {},        // key: `${yearId}::${trim}::${areaFilter}`
             // Panorama UIs
             unitsPanoramaAreaFilter: '',
-            unitsPanoramaCache: {}    // key: `${yearId}::${areaFilter}`
+            unitsPanoramaCache: {},   // key: `${yearId}::${areaFilter}`
+            // Tab Bi-anuales PD
+            dpOutlinesLoaded: false,
+            dpOutlines: [],
+            dpOutlineSubjectsById: new Map(),
+            dpOutlineWorkersById: new Map()
         };
-
+        
         // ============================================================
         // ARRANQUE
         // ============================================================
@@ -2969,11 +3002,127 @@
             });
             document.getElementById('tab-content-planners').style.display = tab === 'planners' ? 'block' : 'none';
             document.getElementById('tab-content-units').style.display = tab === 'units' ? 'block' : 'none';
+            document.getElementById('tab-content-dp-outlines').style.display = tab === 'dp-outlines' ? 'block' : 'none';
 
             if (tab === 'units') {
                 await cargarDatosUIsDelAno(STATE.selectedYearId);
                 aplicarFiltrosYRenderizarUIs();
             }
+            if (tab === 'dp-outlines') {
+                await cargarDatosDPOutlines();
+                aplicarFiltrosYRenderizarDPOutlines();
+            }
+        }
+
+        // ============================================================
+        // TAB BI-ANUALES PD — CARGA Y RENDER
+        // ============================================================
+        // Scoping por programa: bianuales cuya asignatura se dicta en algún
+        // grado del programa (programGradeIds ya está en yearData desde el arranque).
+        async function cargarDatosDPOutlines() {
+            if (STATE.dpOutlinesLoaded) return;
+
+            mostrarLoading();
+
+            const outlines = await supabaseRequest(
+                `/pln_dp_outlines?select=outline_id,subject_id,level,completed_by_worker_id,outline_status,updated_at&outline_status=neq.deleted&order=updated_at.desc`
+            ) || [];
+
+            const subjectIds = uniq(outlines.map(o => o.subject_id));
+            if (subjectIds.length > 0) {
+                const subjects = await supabaseRequest(
+                    `/academic_subjects?select=subject_id,subject_name,area_id&subject_id=in.(${subjectIds.join(',')})`
+                ) || [];
+                subjects.forEach(s => STATE.dpOutlineSubjectsById.set(s.subject_id, s));
+            }
+
+            const workerIds = uniq(outlines.map(o => o.completed_by_worker_id));
+            if (workerIds.length > 0) {
+                const workers = await supabaseRequest(
+                    `/workers?select=worker_id,worker_first_name,worker_last_name_1&worker_id=in.(${workerIds.join(',')})`
+                ) || [];
+                workers.forEach(w => STATE.dpOutlineWorkersById.set(w.worker_id, w));
+            }
+
+            STATE.dpOutlines = outlines;
+            STATE.dpOutlinesLoaded = true;
+
+            ocultarLoading();
+        }
+
+        function aplicarFiltrosYRenderizarDPOutlines() {
+            // Resolver asignaturas dictadas en los grados del programa
+            const yearData = STATE.yearData[STATE.selectedYearId];
+            if (!yearData) return;
+
+            // Construir Set de subject_id que aparecen en planeadores del programa
+            // (ya tenemos subjectsById poblado con todas las asignaturas del año/programa)
+            const subjectIdsDelPrograma = new Set(
+                yearData.planners.map(p => p.subject_id)
+            );
+
+            // Además incluir asignaturas de UIs del programa (si ya se cargaron)
+            if (yearData.units) {
+                yearData.units.forEach(u => {
+                    (yearData.unitsSubjectsByUnit?.get(u.unit_id) || []).forEach(sid => subjectIdsDelPrograma.add(sid));
+                });
+            }
+
+            // Si no hay planeadores aún, hacer scoping directo por grade_id de los bianuales
+            // Los bianuales no tienen grade_id, pero sí subject_id. Complementamos:
+            // cualquier asignatura cuyos planeadores están en programGradeIds.
+            const programGradeIds = new Set(yearData.programGradeIds || []);
+
+            const outlinesDelPrograma = STATE.dpOutlines.filter(o => {
+                // Si ya tenemos la asignatura en los planeadores del programa, incluir
+                if (subjectIdsDelPrograma.has(o.subject_id)) return true;
+                // Si no hay planeadores aún, verificar si la asignatura tiene asignaciones
+                // en los grados del programa (heurística de respaldo, no hace query extra)
+                return false;
+            });
+
+            renderTablaDPOutlines(outlinesDelPrograma);
+        }
+
+        function renderTablaDPOutlines(outlines) {
+            const tbody = document.getElementById('dp-outlines-tbody');
+            const summary = document.getElementById('dp-outlines-summary');
+            if (!tbody || !summary) return;
+
+            summary.innerHTML = `<strong>${outlines.length}</strong> esquema(s) bi-anual(es) en el alcance de tu programa.`;
+
+            if (outlines.length === 0) {
+                tbody.innerHTML = `
+                    <tr><td colspan="5">
+                        <div class="empty-state">
+                            <i class="bi bi-journal-x"></i>
+                            <h5>Sin esquemas bienales</h5>
+                            <p class="mb-0">Aún no hay esquemas bienales PD para las asignaturas de tu programa.</p>
+                        </div>
+                    </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = outlines.map(o => {
+                const subj = STATE.dpOutlineSubjectsById.get(o.subject_id);
+                const completor = STATE.dpOutlineWorkersById.get(o.completed_by_worker_id);
+                const levelClass = o.level === 'HL' ? 'badge-program-pd' : 'badge-program-pep';
+                return `
+                    <tr data-outline-id="${o.outline_id}">
+                        <td><span style="font-weight: 600; color: var(--pln-primary);">${escapeHtml(subj?.subject_name || 'Sin asignatura')}</span></td>
+                        <td><span class="badge ${levelClass}">${escapeHtml(o.level || '—')}</span></td>
+                        <td>${completor ? escapeHtml(nombreCortoWorker(completor)) : '<span class="text-muted">—</span>'}</td>
+                        <td>${renderEstado(o.outline_status)}</td>
+                        <td><span class="${claseTiempo(o.updated_at)}">${formatearTiempoRelativo(o.updated_at)}</span></td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.querySelectorAll('tr[data-outline-id]').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    window.location.href = `dp-outline-form.html?outline_id=${tr.getAttribute('data-outline-id')}`;
+                });
+            });
         }
 
         async function cambiarVista(view) {

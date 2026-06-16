@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.29.1">
+    <meta name="page-version" content="26.6.12.1">
     <title>Planeador de Área - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1350,10 +1350,11 @@
         document.addEventListener('DOMContentLoaded', async function() {
             try {
                 const hasAccess = await validatePageAccessAny([
-                    'Crear planeador de área',
+                    'Mis planeadores de área',
                     'Gestionar planeadores de área',
                     'Coordinar planeación de área',
-                    'Coordinar planeación de programa'
+                    'Coordinar planeación de programa',
+                    'Coordinar planeación de sección'
                 ]);
                 if (!hasAccess) return;
 
@@ -1369,7 +1370,7 @@
                 plannerId = urlParams.get('planner_id');
                 if (!plannerId) {
                     mostrarPantallaError(
-                        'No se especificó qué planeador abrir. Para crear un planeador nuevo, use "Crear planeador de área" en el menú lateral.',
+                        'No se especificó qué planeador abrir. Para crear un planeador nuevo, use "Mis planeadores de área" en el menú lateral.',
                         'warning'
                     );
                     return;
@@ -3670,16 +3671,22 @@
         // ============================================================
         // PATCH centralizado al planeador. Actualiza lastKnownUpdatedAt para que
         // el polling de concurrencia no dispare el banner por ediciones propias.
+
         async function patchPlanner(payload) {
             const nowIso = new Date().toISOString();
             const body = { ...payload, updated_at: nowIso };
-            await supabaseRequest(`/pln_planners?planner_id=eq.${plannerId}`, {
+            const result = await supabaseRequest(`/pln_planners?planner_id=eq.${plannerId}`, {
                 method: 'PATCH',
                 body: JSON.stringify(body)
             });
-            // Sincronizar estado local y referencia de polling
             Object.assign(plannerData, payload);
-            lastKnownUpdatedAt = nowIso;
+            // Usar el updated_at real de PostgreSQL como ancla del polling,
+            // no el timestamp generado por el cliente
+            const realUpdatedAt = (result && result[0] && result[0].updated_at)
+                ? result[0].updated_at
+                : nowIso;
+            plannerData.updated_at = realUpdatedAt;
+            lastKnownUpdatedAt = realUpdatedAt;
         }
 
         // Debounce con cancelación por clave. Útil para Quill/input que envían
