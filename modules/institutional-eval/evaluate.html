@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.6.9.1">
+    <meta name="page-version" content="26.6.16.1">
     <title>Evaluar Componentes - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- jsPDF para generación de PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
         :root {
@@ -281,6 +283,11 @@
                 </h1>
                 <p class="text-muted mb-0">Valorar componentes con escala 1-4, registrar observaciones y subir evidencias</p>
             </div>
+            <div class="col-auto d-flex align-items-center" id="btn-pdf-container" style="display: none !important;">
+                <button class="btn btn-outline-secondary" id="btn-generar-pdf" onclick="generarPDF()">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>Generar PDF
+                </button>
+            </div>
         </div>
 
         <!-- CONTENEDOR DE ALERTAS -->
@@ -543,6 +550,7 @@
                 document.getElementById('eval-banner-row').style.display = 'none';
                 document.getElementById('processes-section').style.display = 'none';
                 document.getElementById('evidence-section').style.display = 'none';
+                document.getElementById('btn-pdf-container').style.display = 'none';
                 return;
             }
             
@@ -662,6 +670,7 @@
                 
                 document.getElementById('processes-section').style.display = 'block';
                 document.getElementById('evidence-section').style.display = 'block';
+                document.getElementById('btn-pdf-container').style.display = procesosAsignados.length > 0 ? 'flex' : 'none';
                 
             } catch (error) {
                 console.error('❌ Error cargando datos de evaluación:', error);
@@ -1409,6 +1418,394 @@
         
         function ocultarLoading() {
             document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        // ==========================================
+        // GENERACIÓN DE PDF
+        // ==========================================
+        async function generarPDF() {
+            if (!selectedEval || procesosAsignados.length === 0) {
+                showMessage('No hay datos para generar el PDF', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('btn-generar-pdf');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Generando...';
+            btn.disabled = true;
+
+            try {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+                const PAGE_W = 210;
+                const PAGE_H = 297;
+                const MARGIN = 15;
+                const CONTENT_W = PAGE_W - MARGIN * 2;
+                let y = MARGIN;
+
+                const COLORS = {
+                    primary:    [5, 150, 105],
+                    dark:       [44, 62, 80],
+                    muted:      [108, 117, 125],
+                    light:      [248, 249, 250],
+                    border:     [233, 236, 239],
+                    level1:     [220, 53, 69],
+                    level2:     [245, 158, 11],
+                    level3:     [14, 165, 233],
+                    level4:     [5, 150, 105],
+                    white:      [255, 255, 255]
+                };
+
+                const NIVEL_NOMBRES = {
+                    1: 'Existencia',
+                    2: 'Pertinencia',
+                    3: 'Apropiación',
+                    4: 'Mejoramiento Continuo'
+                };
+
+                // ---- helpers ----
+                function checkPageBreak(needed) {
+                    if (y + needed > PAGE_H - MARGIN) {
+                        doc.addPage();
+                        y = MARGIN;
+                    }
+                }
+
+                function drawText(text, x, yPos, opts = {}) {
+                    const { size = 10, color = COLORS.dark, style = 'normal', maxWidth = CONTENT_W } = opts;
+                    doc.setFontSize(size);
+                    doc.setTextColor(...color);
+                    doc.setFont('helvetica', style);
+                    const lines = doc.splitTextToSize(String(text || ''), maxWidth);
+                    doc.text(lines, x, yPos);
+                    return lines.length * (size * 0.35 + 1);
+                }
+
+                function drawRect(x, rectY, w, h, fillColor, strokeColor = null) {
+                    doc.setFillColor(...fillColor);
+                    if (strokeColor) {
+                        doc.setDrawColor(...strokeColor);
+                        doc.rect(x, rectY, w, h, 'FD');
+                    } else {
+                        doc.setDrawColor(...fillColor);
+                        doc.rect(x, rectY, w, h, 'F');
+                    }
+                }
+
+                function levelColor(val) {
+                    return COLORS[`level${val}`] || COLORS.muted;
+                }
+
+                async function imageUrlToBase64(url) {
+                    try {
+                        const resp = await fetch(url);
+                        if (!resp.ok) return null;
+                        const blob = await resp.blob();
+                        return new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.onerror = () => resolve(null);
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch {
+                        return null;
+                    }
+                }
+
+                // ---- logo ----
+                let logoBase64 = null;
+                try {
+                    const cfg = await supabaseRequest('/system_config?select=logo_url,organization_name&limit=1');
+                    if (cfg && cfg[0] && cfg[0].logo_url) {
+                        logoBase64 = await imageUrlToBase64(cfg[0].logo_url);
+                    }
+                } catch { /* sin logo */ }
+
+                // ---- portada / encabezado ----
+                drawRect(0, 0, PAGE_W, 38, COLORS.primary);
+                if (logoBase64) {
+                    try { doc.addImage(logoBase64, 'PNG', MARGIN, 7, 24, 24); } catch { /* skip */ }
+                }
+                const headerX = logoBase64 ? MARGIN + 28 : MARGIN;
+                doc.setFontSize(15);
+                doc.setTextColor(...COLORS.white);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Autoevaluación Institucional', headerX, 16);
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                doc.text(selectedEval.evaluation_name, headerX, 23);
+                const yearName = selectedEval.academic_years ? selectedEval.academic_years.year_name : '';
+                const modeLabel = selectedEval.evaluation_mode === 'consensus' ? 'Modo Consenso' : 'Modo Individual';
+                doc.text(`${yearName}  ·  ${modeLabel}  ·  ${currentUser.user_display_name || ''}`, headerX, 29);
+
+                // fecha generación
+                const now = new Date();
+                const fechaStr = now.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' });
+                doc.setFontSize(8);
+                doc.setTextColor(...COLORS.white);
+                doc.text(`Generado: ${fechaStr}`, PAGE_W - MARGIN, 34, { align: 'right' });
+
+                y = 46;
+
+                // progreso global
+                const totalComps = componentesCache.length;
+                const calificados = new Set(ratingsCache.map(r => r.component_id)).size;
+                checkPageBreak(14);
+                drawRect(MARGIN, y, CONTENT_W, 12, COLORS.light, COLORS.border);
+                doc.setFontSize(9);
+                doc.setTextColor(...COLORS.muted);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Progreso: ${calificados} de ${totalComps} componentes evaluados`, MARGIN + 4, y + 7.5);
+                const pct = totalComps > 0 ? Math.round((calificados / totalComps) * 100) : 0;
+                doc.text(`${pct}%`, PAGE_W - MARGIN - 4, y + 7.5, { align: 'right' });
+                y += 17;
+
+                // ---- iterar procesos ----
+                for (const proceso of procesosAsignados) {
+                    const comps = componentesCache.filter(c => c.process_id === proceso.process_id);
+                    const areaName = proceso.ie_management_areas ? proceso.ie_management_areas.area_name : '';
+                    const resultados = resultadosEsperadosCache.filter(r => r.process_id === proceso.process_id);
+                    const evidencias = evidenciasCache.filter(e => e.process_id === proceso.process_id);
+
+                    // encabezado de proceso
+                    checkPageBreak(20);
+                    drawRect(MARGIN, y, CONTENT_W, 14, COLORS.primary);
+                    doc.setFontSize(11);
+                    doc.setTextColor(...COLORS.white);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(proceso.process_name, MARGIN + 4, y + 6);
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(areaName, MARGIN + 4, y + 11);
+                    y += 17;
+
+                    // componentes
+                    for (const comp of comps) {
+                        const rating = ratingsCache.find(r => r.component_id === comp.component_id);
+                        const rubricasComp = rubricasCache.filter(r => r.component_id === comp.component_id);
+
+                        checkPageBreak(24);
+                        drawRect(MARGIN, y, CONTENT_W, 10, COLORS.light, COLORS.border);
+                        doc.setFontSize(9);
+                        doc.setTextColor(...COLORS.dark);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text(comp.component_name, MARGIN + 4, y + 6.5);
+
+                        if (rating) {
+                            const lvlColor = levelColor(rating.rating_value);
+                            const lvlName = NIVEL_NOMBRES[rating.rating_value] || '';
+                            const badge = `${rating.rating_value} — ${lvlName}`;
+                            const badgeW = doc.getTextWidth(badge) + 6;
+                            drawRect(PAGE_W - MARGIN - badgeW - 2, y + 2, badgeW, 6, lvlColor);
+                            doc.setFontSize(8);
+                            doc.setTextColor(...COLORS.white);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(badge, PAGE_W - MARGIN - badgeW + 1, y + 6.5);
+                        }
+                        y += 12;
+
+                        // definición
+                        if (comp.component_definition) {
+                            checkPageBreak(10);
+                            doc.setFontSize(8);
+                            doc.setTextColor(...COLORS.muted);
+                            doc.setFont('helvetica', 'italic');
+                            const defLines = doc.splitTextToSize(comp.component_definition, CONTENT_W - 8);
+                            doc.text(defLines, MARGIN + 4, y);
+                            y += defLines.length * 4 + 3;
+                        }
+
+                        // rúbrica seleccionada
+                        if (rating && rubricasComp.length > 0) {
+                            const rubrica = rubricasComp.find(r => r.evaluation_level === rating.rating_value);
+                            if (rubrica) {
+                                checkPageBreak(14);
+                                const lvlColor = levelColor(rating.rating_value);
+                                drawRect(MARGIN + 4, y, 3, 0, lvlColor); // línea vertical decorativa
+                                doc.setFillColor(...lvlColor);
+                                doc.rect(MARGIN + 4, y, 2, 10, 'F');
+                                doc.setFontSize(8);
+                                doc.setTextColor(...COLORS.muted);
+                                doc.setFont('helvetica', 'normal');
+                                const rubLines = doc.splitTextToSize(rubrica.rubric_description, CONTENT_W - 14);
+                                doc.text(rubLines, MARGIN + 9, y + 4);
+                                y += Math.max(rubLines.length * 4 + 4, 12);
+                            }
+                        }
+
+                        // observaciones
+                        if (rating && rating.observations) {
+                            checkPageBreak(14);
+                            doc.setFontSize(8);
+                            doc.setTextColor(...COLORS.muted);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text('Observaciones:', MARGIN + 4, y);
+                            y += 4;
+                            doc.setFont('helvetica', 'normal');
+                            const obsLines = doc.splitTextToSize(rating.observations, CONTENT_W - 8);
+                            doc.text(obsLines, MARGIN + 4, y);
+                            y += obsLines.length * 4 + 4;
+                        }
+
+                        y += 3;
+                    }
+
+                    if (comps.length === 0) {
+                        checkPageBreak(8);
+                        doc.setFontSize(8);
+                        doc.setTextColor(...COLORS.muted);
+                        doc.setFont('helvetica', 'italic');
+                        doc.text('Este proceso no tiene componentes configurados.', MARGIN + 4, y);
+                        y += 8;
+                    }
+
+                    // evidencias por resultado
+                    if (evidencias.length > 0) {
+                        checkPageBreak(12);
+                        doc.setFontSize(9);
+                        doc.setTextColor(...COLORS.primary);
+                        doc.setFont('helvetica', 'bold');
+                        doc.text('Evidencias de resultados', MARGIN, y);
+                        y += 6;
+
+                        for (const resultado of resultados) {
+                            const evidsDeResultado = evidencias.filter(e => e.expected_result_id === resultado.result_id);
+                            if (evidsDeResultado.length === 0) continue;
+
+                            checkPageBreak(10);
+                            doc.setFontSize(8);
+                            doc.setTextColor(...COLORS.dark);
+                            doc.setFont('helvetica', 'bold');
+                            const rdLines = doc.splitTextToSize('▸ ' + resultado.result_description, CONTENT_W - 4);
+                            doc.text(rdLines, MARGIN + 2, y);
+                            y += rdLines.length * 4 + 3;
+
+                            for (const ev of evidsDeResultado) {
+                                const publicUrl = getStoragePublicUrl(ev.image_storage_path);
+                                const imgBase64 = await imageUrlToBase64(publicUrl);
+
+                                const IMG_W = 70;
+                                const IMG_H = 52;
+
+                                if (imgBase64) {
+                                    checkPageBreak(IMG_H + 10);
+                                    try {
+                                        doc.addImage(imgBase64, 'JPEG', MARGIN + 2, y, IMG_W, IMG_H);
+                                    } catch {
+                                        try { doc.addImage(imgBase64, 'PNG', MARGIN + 2, y, IMG_W, IMG_H); } catch { /* skip */ }
+                                    }
+
+                                    // descripción y análisis al lado de la imagen
+                                    const textX = MARGIN + IMG_W + 6;
+                                    const textMaxW = CONTENT_W - IMG_W - 8;
+                                    let textY = y + 4;
+
+                                    if (ev.image_description) {
+                                        doc.setFontSize(8);
+                                        doc.setTextColor(...COLORS.muted);
+                                        doc.setFont('helvetica', 'italic');
+                                        const descLines = doc.splitTextToSize(ev.image_description, textMaxW);
+                                        doc.text(descLines, textX, textY);
+                                        textY += descLines.length * 4 + 3;
+                                    }
+
+                                    if (ev.result_analysis) {
+                                        doc.setFontSize(8);
+                                        doc.setTextColor(...COLORS.dark);
+                                        doc.setFont('helvetica', 'normal');
+                                        const anaLines = doc.splitTextToSize(ev.result_analysis, textMaxW);
+                                        doc.text(anaLines, textX, textY);
+                                    }
+
+                                    y += IMG_H + 5;
+                                } else {
+                                    // imagen no cargó: solo texto
+                                    checkPageBreak(10);
+                                    doc.setFontSize(8);
+                                    doc.setTextColor(...COLORS.muted);
+                                    doc.setFont('helvetica', 'italic');
+                                    doc.text(`[Imagen no disponible: ${ev.image_description || ev.image_storage_path}]`, MARGIN + 2, y);
+                                    y += 6;
+                                    if (ev.result_analysis) {
+                                        const anaLines = doc.splitTextToSize(ev.result_analysis, CONTENT_W - 4);
+                                        doc.text(anaLines, MARGIN + 2, y);
+                                        y += anaLines.length * 4 + 3;
+                                    }
+                                }
+                            }
+                        }
+
+                        // evidencias huérfanas (sin resultado asociado)
+                        const huerfanas = evidencias.filter(e => !e.expected_result_id);
+                        if (huerfanas.length > 0) {
+                            checkPageBreak(10);
+                            doc.setFontSize(8);
+                            doc.setTextColor(...COLORS.muted);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text('Evidencias sin resultado asociado:', MARGIN + 2, y);
+                            y += 5;
+
+                            for (const ev of huerfanas) {
+                                const publicUrl = getStoragePublicUrl(ev.image_storage_path);
+                                const imgBase64 = await imageUrlToBase64(publicUrl);
+                                const IMG_W = 70;
+                                const IMG_H = 52;
+
+                                if (imgBase64) {
+                                    checkPageBreak(IMG_H + 6);
+                                    try {
+                                        doc.addImage(imgBase64, 'JPEG', MARGIN + 2, y, IMG_W, IMG_H);
+                                    } catch {
+                                        try { doc.addImage(imgBase64, 'PNG', MARGIN + 2, y, IMG_W, IMG_H); } catch { /* skip */ }
+                                    }
+                                    if (ev.image_description) {
+                                        doc.setFontSize(7);
+                                        doc.setTextColor(...COLORS.muted);
+                                        doc.setFont('helvetica', 'italic');
+                                        doc.text(ev.image_description, MARGIN + IMG_W + 6, y + 4);
+                                    }
+                                    y += IMG_H + 5;
+                                } else {
+                                    checkPageBreak(8);
+                                    doc.setFontSize(8);
+                                    doc.setTextColor(...COLORS.muted);
+                                    doc.setFont('helvetica', 'italic');
+                                    doc.text(`[Imagen no disponible: ${ev.image_description || ''}]`, MARGIN + 2, y);
+                                    y += 6;
+                                }
+                            }
+                        }
+                    }
+
+                    y += 8; // separación entre procesos
+                }
+
+                // ---- pie de página en todas las páginas ----
+                const totalPages = doc.getNumberOfPages();
+                for (let i = 1; i <= totalPages; i++) {
+                    doc.setPage(i);
+                    doc.setDrawColor(...COLORS.border);
+                    doc.line(MARGIN, PAGE_H - 12, PAGE_W - MARGIN, PAGE_H - 12);
+                    doc.setFontSize(7);
+                    doc.setTextColor(...COLORS.muted);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text('SchoolNet — Autoevaluación Institucional', MARGIN, PAGE_H - 7);
+                    doc.text(`Página ${i} de ${totalPages}`, PAGE_W - MARGIN, PAGE_H - 7, { align: 'right' });
+                }
+
+                // ---- descargar ----
+                const evalSlug = selectedEval.evaluation_name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+                doc.save(`Autoevaluacion_${evalSlug}_${new Date().toISOString().slice(0, 10)}.pdf`);
+                showMessage('PDF generado correctamente', 'success');
+
+            } catch (error) {
+                console.error('❌ Error generando PDF:', error);
+                showMessage('Error al generar PDF: ' + error.message, 'danger');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
         
         console.log('🎉 Evaluar Componentes - Autoevaluación Institucional cargada');
