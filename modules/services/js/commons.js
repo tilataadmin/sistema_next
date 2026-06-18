@@ -1017,15 +1017,23 @@ const SvcCommons = (() => {
                 .map(est => est.student_id)
                 .filter(Boolean);
             if (studentIds.length > 0) {
-                const serviciosData = await supabaseRequest(
-                    `/students?select=student_id,uses_cafeteria_service,uses_snack_service&student_id=in.(${studentIds.join(',')})`
+                // Resolver año académico vigente (los servicios ahora viven por año)
+                const yearArr = await supabaseRequest(
+                    `/academic_years?select=year_id&is_current=eq.true&limit=1`
                 );
-                (serviciosData || []).forEach(s => {
-                    const items = [];
-                    if (s.uses_cafeteria_service) items.push('Almuerzo');
-                    if (s.uses_snack_service) items.push('Refrigerio');
-                    serviciosMap[s.student_id] = items.join(', ');
-                });
+                const currentYearId = (yearArr && yearArr.length > 0) ? yearArr[0].year_id : null;
+
+                if (currentYearId) {
+                    const serviciosData = await supabaseRequest(
+                        `/svc_student_year_services?select=student_id,uses_cafeteria_service,uses_snack_service&academic_year_id=eq.${currentYearId}&student_id=in.(${studentIds.join(',')})`
+                    );
+                    (serviciosData || []).forEach(s => {
+                        const items = [];
+                        if (s.uses_cafeteria_service) items.push('Almuerzo');
+                        if (s.uses_snack_service) items.push('Refrigerio');
+                        serviciosMap[s.student_id] = items.join(', ');
+                    });
+                }
             }
         } catch (e) {
             console.warn('⚠️ No se pudieron cargar servicios de estudiantes:', e);
