@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.03.24.14.30">
+    <meta name="page-version" content="26.6.18.1">
     <title>Consultar personas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -519,6 +519,7 @@
         let currentFamilyPage = 1;
         let currentWorkerPage = 1;
         let photosBaseUrl = null;
+        let currentAcademicYearId = null;
         
         // ==========================================
         // OBTENER URL DE FOTO DIRECTAMENTE
@@ -808,6 +809,43 @@
             } catch (e) { console.error('❌ Error cargando grupos de representación:', e); }
         }
 
+        // ==========================================
+        // RESOLVER AÑO ACADÉMICO VIGENTE
+        // ==========================================
+        async function cargarAnioVigenteEstudiantes() {
+            try {
+                const data = await supabaseRequest('/academic_years?select=year_id&is_current=eq.true&limit=1');
+                currentAcademicYearId = (data && data.length > 0) ? data[0].year_id : null;
+            } catch (e) {
+                console.error('❌ Error cargando año vigente:', e);
+                currentAcademicYearId = null;
+            }
+        }
+
+        // ==========================================
+        // CARGAR SERVICIOS POR AÑO Y ADJUNTARLOS A LOS ESTUDIANTES
+        // ==========================================
+        async function cargarServiciosEstudiantes() {
+            try {
+                if (!currentAcademicYearId) {
+                    console.warn('⚠ Sin año vigente: no se cargan servicios de estudiantes');
+                    return;
+                }
+                const data = await supabaseRequest('/svc_student_year_services?select=student_id,uses_cafeteria_service,uses_snack_service,morning_access:svc_access_types!svc_student_year_services_morning_fkey(access_type_name),afternoon_access:svc_access_types!svc_student_year_services_afternoon_fkey(access_type_name)&academic_year_id=eq.' + currentAcademicYearId);
+                const mapa = {};
+                (data || []).forEach(s => { mapa[s.student_id] = s; });
+                allStudents.forEach(st => {
+                    const svc = mapa[st.student_id];
+                    st.morning_access = svc ? svc.morning_access : null;
+                    st.afternoon_access = svc ? svc.afternoon_access : null;
+                    st.uses_cafeteria_service = svc ? svc.uses_cafeteria_service : false;
+                    st.uses_snack_service = svc ? svc.uses_snack_service : false;
+                });
+                console.log('✅ Servicios por año de estudiantes cargados');
+            } catch (e) {
+                console.error('❌ Error cargando servicios de estudiantes:', e);
+            }
+        }
         
         // ==========================================
         // CARGAR ESTUDIANTES
@@ -818,8 +856,10 @@
                 console.log('📚 Cargando estudiantes...');
                 
                 // Cargar estudiantes con sus relaciones
-                allStudents = await supabaseRequest('/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,photo_publication_authorized,courses(course_id,course_name,grades(grade_name,sections(section_name))),genders(gender_name),student_status(status_code),uses_cafeteria_service,uses_snack_service,morning_access:svc_access_types!students_morning_access_fkey(access_type_name),afternoon_access:svc_access_types!students_afternoon_access_fkey(access_type_name)&order=student_last_name_1.asc,student_last_name_2.asc,student_first_name.asc');
+                await cargarAnioVigenteEstudiantes();
+                allStudents = await supabaseRequest('/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_birthday,photo_publication_authorized,courses(course_id,course_name,grades(grade_name,sections(section_name))),genders(gender_name),student_status(status_code)&order=student_last_name_1.asc,student_last_name_2.asc,student_first_name.asc');
                 await Promise.all([
+                    cargarServiciosEstudiantes(),
                     cargarEquiposEstudiantes(),
                     cargarGruposRepEstudiantes()
                 ]);
