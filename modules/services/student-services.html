@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.27.12.30">
-    <title>Accesos y Servicios Estudiantiles - SchoolNet</title>
+    <meta name="page-version" content="26.6.18.1">
+    <title>Accesos y Servicios Estudiantiles</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -221,6 +221,8 @@
         let cacheAccesos = [];
         let cacheEstudiantes = [];
         let modalMasivo;
+        let currentYearId = null;
+        let currentYearName = null;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -254,7 +256,8 @@
                 // Cargar catálogos en paralelo
                 await Promise.all([
                     cargarGrados(),
-                    cargarTiposAcceso()
+                    cargarTiposAcceso(),
+                    cargarAnioVigente()
                 ]);
 
                 ocultarLoading();
@@ -289,6 +292,22 @@
                 cacheAccesos = data || [];
             } catch (e) {
                 console.error('❌ Error cargando tipos de acceso:', e);
+            }
+        }
+
+        async function cargarAnioVigente() {
+            try {
+                const data = await supabaseRequest('/academic_years?select=year_id,year_name&is_current=eq.true&limit=1');
+                if (data && data.length > 0) {
+                    currentYearId = data[0].year_id;
+                    currentYearName = data[0].year_name;
+                    console.log('✅ Año vigente:', currentYearName);
+                } else {
+                    currentYearId = null;
+                    console.warn('⚠ No hay año académico vigente configurado');
+                }
+            } catch (e) {
+                console.error('❌ Error cargando año vigente:', e);
             }
         }
 
@@ -328,10 +347,38 @@
 
             if (!cursoId) return;
 
+            if (!currentYearId) {
+                showMessage('No hay un año académico vigente configurado. No es posible asignar servicios.', 'warning');
+                return;
+            }
+
             try {
                 mostrarLoading();
-                const data = await supabaseRequest('/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,morning_access_type_id,afternoon_access_type_id,uses_cafeteria_service,uses_snack_service,student_status(status_description)&course_id=eq.' + cursoId + '&order=student_last_name_1.asc,student_last_name_2.asc');
-                cacheEstudiantes = data || [];
+
+                // 1. Estudiantes del curso (los servicios ya no viven en students)
+                const estudiantes = await supabaseRequest('/students?select=student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,student_status(status_description)&course_id=eq.' + cursoId + '&order=student_last_name_1.asc,student_last_name_2.asc');
+                const lista = estudiantes || [];
+
+                // 2. Filas de servicios del año vigente para esos estudiantes
+                const serviciosPorEstudiante = {};
+                if (lista.length > 0) {
+                    const ids = lista.map(e => e.student_id).join(',');
+                    const servicios = await supabaseRequest('/svc_student_year_services?select=service_id,student_id,morning_access_type_id,afternoon_access_type_id,uses_cafeteria_service,uses_snack_service&academic_year_id=eq.' + currentYearId + '&student_id=in.(' + ids + ')');
+                    (servicios || []).forEach(s => { serviciosPorEstudiante[s.student_id] = s; });
+                }
+
+                // 3. Combinar: cada estudiante lleva sus valores de servicio (o defaults)
+                cacheEstudiantes = lista.map(est => {
+                    const svc = serviciosPorEstudiante[est.student_id];
+                    return Object.assign(est, {
+                        service_id: svc ? svc.service_id : null,
+                        morning_access_type_id: svc ? svc.morning_access_type_id : null,
+                        afternoon_access_type_id: svc ? svc.afternoon_access_type_id : null,
+                        uses_cafeteria_service: svc ? svc.uses_cafeteria_service : false,
+                        uses_snack_service: svc ? svc.uses_snack_service : false
+                    });
+                });
+
                 renderEstudiantes();
                 actualizarMetricas();
                 mostrarMetricasYAcciones();
@@ -429,15 +476,11 @@
             const row = document.getElementById('row-' + studentId);
             row.classList.add('saving');
 
-            const payload = {};
-            payload[campo] = valor || null;
+            const est = cacheEstudiantes.find(e => e.student_id === studentId);
 
             try {
-                await supabaseRequest('/students?student_id=eq.' + studentId, { method: 'PATCH', body: JSON.stringify(payload) });
-
-                // Actualizar caché
-                const est = cacheEstudiantes.find(e => e.student_id === studentId);
-                if (est) est[campo] = valor || null;
+                await upsertServicio(est, { [campo]: valor || null });
+                est[campo] = valor || null;
 
                 row.classList.remove('saving');
                 row.classList.add('saved-ok');
@@ -458,15 +501,11 @@
             const row = document.getElementById('row-' + studentId);
             row.classList.add('saving');
 
-            const payload = {};
-            payload[campo] = valor;
+            const est = cacheEstudiantes.find(e => e.student_id === studentId);
 
             try {
-                await supabaseRequest('/students?student_id=eq.' + studentId, { method: 'PATCH', body: JSON.stringify(payload) });
-
-                // Actualizar caché
-                const est = cacheEstudiantes.find(e => e.student_id === studentId);
-                if (est) est[campo] = valor;
+                await upsertServicio(est, { [campo]: valor });
+                est[campo] = valor;
 
                 row.classList.remove('saving');
                 row.classList.add('saved-ok');
@@ -477,6 +516,41 @@
                 row.classList.add('saved-err');
                 setTimeout(() => row.classList.remove('saved-err'), 600);
                 showMessage('Error al guardar: ' + err.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // UPSERT DE SERVICIOS POR AÑO (crea o actualiza la fila del estudiante)
+        // ==========================================
+        async function upsertServicio(est, campos) {
+            if (!currentYearId) {
+                throw new Error('No hay año académico vigente configurado');
+            }
+            if (!est) {
+                throw new Error('Estudiante no encontrado en caché');
+            }
+
+            if (est.service_id) {
+                // Ya existe fila para este año: actualizar
+                const payload = Object.assign({}, campos, { updated_at: new Date().toISOString() });
+                await supabaseRequest('/svc_student_year_services?service_id=eq.' + est.service_id, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                // No existe: crear fila perezosamente y guardar el service_id devuelto
+                const payload = Object.assign({
+                    student_id: est.student_id,
+                    academic_year_id: currentYearId
+                }, campos);
+                const created = await supabaseRequest('/svc_student_year_services', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                const fila = Array.isArray(created) ? created[0] : created;
+                if (fila && fila.service_id) {
+                    est.service_id = fila.service_id;
+                }
             }
         }
 
@@ -520,9 +594,7 @@
 
             for (const est of cacheEstudiantes) {
                 try {
-                    const payload = {};
-                    payload[campo] = valor || null;
-                    await supabaseRequest('/students?student_id=eq.' + est.student_id, { method: 'PATCH', body: JSON.stringify(payload) });
+                    await upsertServicio(est, { [campo]: valor || null });
                     est[campo] = valor || null;
                     exitos++;
                 } catch (e) {
@@ -556,8 +628,7 @@
 
             for (const est of cacheEstudiantes) {
                 try {
-                    const payload = { afternoon_access_type_id: est.morning_access_type_id || null };
-                    await supabaseRequest('/students?student_id=eq.' + est.student_id, { method: 'PATCH', body: JSON.stringify(payload) });
+                    await upsertServicio(est, { afternoon_access_type_id: est.morning_access_type_id || null });
                     est.afternoon_access_type_id = est.morning_access_type_id || null;
                     exitos++;
                 } catch (e) {
