@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.6.16.3">
+    <meta name="page-version" content="26.7.1.1">
     <title>Unidad de Indagación - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -181,6 +181,67 @@
             margin-bottom: 0.4rem;
             padding-left: 0.2rem;
         }
+
+        /* ====================================================
+           ATL COMO ÁRBOL COLAPSABLE (solo-hojas seleccionables)
+           ==================================================== */
+        .atl-tree {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+        }
+        .atl-node-header { padding: 0.3rem 0; }
+        .atl-node-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        .atl-node-toggle:hover .atl-node-name { color: var(--planning-primary); }
+        .atl-node-caret {
+            color: var(--planning-primary);
+            transition: transform 0.15s ease;
+            font-size: 0.8rem;
+        }
+        .atl-node.expanded > .atl-node-header > .atl-node-toggle > .atl-node-caret {
+            transform: rotate(90deg);
+        }
+        .atl-node-name { color: #333; }
+        .atl-level-1 > .atl-node-header .atl-node-name {
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.03em;
+            color: var(--planning-primary-dark);
+        }
+        .atl-level-2 > .atl-node-header .atl-node-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .atl-node-children {
+            display: none;
+            padding-left: 1.5rem;
+            margin-top: 0.15rem;
+        }
+        .atl-node.expanded > .atl-node-children { display: block; }
+        .atl-leaf-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.5rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 0.88rem;
+            margin: 0.2rem 0;
+        }
+        .atl-leaf-item:hover { background: var(--planning-light); }
+        .atl-leaf-item.checked { background: var(--planning-light); border-color: var(--planning-primary); }
+        .atl-leaf-item input { margin: 0; flex-shrink: 0; }
+        .atl-leaf-es { font-weight: 500; }
+        .atl-leaf-en { color: #6c757d; font-size: 0.82rem; font-style: italic; }
 
         /* ====================================================
            CHIP SELECTOR (colaboradores con búsqueda)
@@ -1890,7 +1951,7 @@
             renderCheckboxGrid('grid-key_concepts', catalogKeyConcepts, 'concept_id', selectedKeyConcepts,
                 (id, checked) => toggleM2M('pln_unit_key_concepts', 'concept_id', id, checked, selectedKeyConcepts));
 
-            renderAtlGrouped('grid-atl_skills', catalogAtl, 'atl_skill_id', selectedAtl,
+            renderAtlTree('grid-atl_skills', catalogAtl, selectedAtl,
                 (id, checked) => toggleM2M('pln_unit_atl_skills', 'atl_skill_id', id, checked, selectedAtl));
 
             renderCheckboxGrid('grid-learner_profile', catalogLearnerProfile, 'profile_attribute_id', selectedLearnerProfile,
@@ -2353,51 +2414,98 @@
             });
         }
 
-        // Renderiza ATL agrupada por categoría
-        function renderAtlGrouped(containerId, items, idField, selectedSet, onToggle) {
+        // Renderiza ATL como árbol colapsable de 3 niveles.
+        // Solo las hojas (nodos sin hijos en el set cargado) son seleccionables.
+        // El toggle de expandir es un <span>, no un <button>, para que el modo
+        // solo-lectura no lo deshabilite: un lector puede navegar aunque no marque.
+        function renderAtlTree(containerId, items, selectedSet, onToggle) {
             const container = document.getElementById(containerId);
             if (!container) return;
 
-            if (items.length === 0) {
+            if (!items || items.length === 0) {
                 container.innerHTML = '<div class="text-muted small">No hay habilidades ATL disponibles.</div>';
                 return;
             }
 
-            // Agrupar por categoría
-            const grouped = {};
-            items.forEach(item => {
-                const cat = item.category || 'Otros';
-                if (!grouped[cat]) grouped[cat] = [];
-                grouped[cat].push(item);
+            // Mapa parent_id -> [hijos ordenados]. Raíces bajo '__root__'.
+            // Si un nodo intermedio está inactivo (filtrado en la query), sus hijos
+            // quedan inalcanzables: desactivar un nodo oculta todo su subárbol.
+            const childrenMap = {};
+            items.forEach(n => {
+                const key = n.parent_id || '__root__';
+                (childrenMap[key] = childrenMap[key] || []).push(n);
+            });
+            Object.values(childrenMap).forEach(arr =>
+                arr.sort((a, b) => (a.sort_order - b.sort_order) || a.name_es.localeCompare(b.name_es))
+            );
+
+            const roots = childrenMap['__root__'] || [];
+            container.innerHTML = `<div class="atl-tree">${roots.map(r => renderAtlTreeNode(r, childrenMap, selectedSet)).join('')}</div>`;
+
+            // Listeners de expansión/colapso
+            container.querySelectorAll('.atl-node-toggle').forEach(tog => {
+                tog.addEventListener('click', () => {
+                    tog.closest('.atl-node').classList.toggle('expanded');
+                });
             });
 
-            container.innerHTML = Object.keys(grouped).map(cat => `
-                <div class="checkbox-group-category">
-                    <div class="checkbox-group-category-title">${escapeHtml(cat)}</div>
-                    <div class="checkbox-grid">
-                        ${grouped[cat].map(item => {
-                            const id = item[idField];
-                            const checked = selectedSet.has(id);
-                            return `
-                                <label class="checkbox-grid-item ${checked ? 'checked' : ''}">
-                                    <input type="checkbox" ${checked ? 'checked' : ''} data-id="${id}">
-                                    <span>${escapeHtml(item.name_es)}</span>
-                                </label>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            `).join('');
-
-            // Conectar listeners
-            container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            // Listeners de las hojas (checkbox)
+            container.querySelectorAll('input[data-role="atl-leaf"]').forEach(cb => {
                 cb.addEventListener('change', async (e) => {
                     const id = e.target.dataset.id;
                     const checked = e.target.checked;
-                    e.target.closest('.checkbox-grid-item').classList.toggle('checked', checked);
+                    e.target.closest('.atl-leaf-item').classList.toggle('checked', checked);
                     await onToggle(id, checked);
                 });
             });
+
+            // Solo lectura: deshabilitar únicamente los checkboxes de hoja.
+            // Se fuerza aquí porque aplicarModoSoloLectura() corre dentro de cargarUI(),
+            // antes de que renderUIData() pinte este grid.
+            if (isReadOnly) {
+                container.querySelectorAll('input[data-role="atl-leaf"]').forEach(cb => { cb.disabled = true; });
+            }
+        }
+
+        // Renderiza un nodo del árbol. Hoja = sin hijos en el set cargado.
+        function renderAtlTreeNode(node, childrenMap, selectedSet) {
+            const hijos = childrenMap[node.atl_skill_id] || [];
+            const esHoja = hijos.length === 0;
+
+            if (esHoja) {
+                const checked = selectedSet.has(node.atl_skill_id);
+                return `
+                    <label class="atl-leaf-item ${checked ? 'checked' : ''}">
+                        <input type="checkbox" ${checked ? 'checked' : ''} data-id="${node.atl_skill_id}" data-role="atl-leaf">
+                        <span class="atl-leaf-es">${escapeHtml(node.name_es)}</span>
+                        <span class="atl-leaf-en">${escapeHtml(node.name_en)}</span>
+                    </label>
+                `;
+            }
+
+            // Nodo agrupador: se abre si algún descendiente está seleccionado,
+            // para que las selecciones no queden escondidas dentro de una rama colapsada.
+            const abrir = atlSubtreeHasSelection(node, childrenMap, selectedSet);
+            return `
+                <div class="atl-node atl-level-${node.level} ${abrir ? 'expanded' : ''}">
+                    <div class="atl-node-header">
+                        <span class="atl-node-toggle">
+                            <i class="bi bi-chevron-right atl-node-caret"></i>
+                            <span class="atl-node-name">${escapeHtml(node.name_es)}</span>
+                        </span>
+                    </div>
+                    <div class="atl-node-children">
+                        ${hijos.map(h => renderAtlTreeNode(h, childrenMap, selectedSet)).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // True si el nodo es una hoja seleccionada o si algún descendiente lo está.
+        function atlSubtreeHasSelection(node, childrenMap, selectedSet) {
+            const hijos = childrenMap[node.atl_skill_id] || [];
+            if (hijos.length === 0) return selectedSet.has(node.atl_skill_id);
+            return hijos.some(h => atlSubtreeHasSelection(h, childrenMap, selectedSet));
         }
 
         function renderSubjectsSelect() {
