@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.1.1">
+    <meta name="page-version" content="26.7.2.1">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1816,6 +1816,21 @@
             if (inputStart) wizardData._editedStartDate = inputStart.value || null;
             if (inputEnd) wizardData._editedEndDate = inputEnd.value || null;
             
+            // Contar asignaciones académicas activas del año que se cierra (para duplicación)
+            if (wizardData._assignmentsToDuplicateCount === undefined) {
+                try {
+                    const asignsExistentes = await supabaseRequest(
+                        '/academic_assignments?select=assignment_id&academic_year_id=eq.' + yearToCloseId + '&assignment_status=eq.active'
+                    );
+                    wizardData._assignmentsToDuplicateCount = (asignsExistentes || []).length;
+                } catch (e) {
+                    console.warn('No se pudo contar asignaciones a duplicar:', e.message);
+                    wizardData._assignmentsToDuplicateCount = null; // desconocido
+                }
+                // Por defecto se duplica, salvo que sepamos que no hay nada que duplicar
+                wizardData._duplicarAsignaciones = (wizardData._assignmentsToDuplicateCount !== 0);
+            }
+            
             // Calcular resumen
             const totales = calcularTotalesParaResumen();
             
@@ -1873,6 +1888,51 @@
                     </div>
                 </div>
             `;
+            
+            // Bloque de duplicación de asignaciones académicas
+            const nDup = wizardData._assignmentsToDuplicateCount;
+            if (nDup === 0) {
+                html += `
+                    <div class="card mb-3 border-secondary">
+                        <div class="card-header bg-light">
+                            <strong><i class="bi bi-people me-2"></i>Asignaciones académicas</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-0 small text-muted">
+                                El año que se cierra no tiene asignaciones académicas activas. No hay nada que duplicar;
+                                el año entrante deberá configurarse desde Asignación Académica.
+                            </p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const nDupTexto = (nDup === null)
+                    ? 'las asignaciones académicas activas'
+                    : `<strong>${nDup}</strong> asignación(es) académica(s) activa(s)`;
+                html += `
+                    <div class="card mb-3 border-info">
+                        <div class="card-header bg-info bg-opacity-25">
+                            <strong><i class="bi bi-people me-2"></i>Duplicar asignaciones académicas</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="chkDuplicarAsignaciones"
+                                       ${wizardData._duplicarAsignaciones ? 'checked' : ''}
+                                       onchange="toggleDuplicarAsignaciones(this.checked)">
+                                <label class="form-check-label" for="chkDuplicarAsignaciones">
+                                    Copiar ${nDupTexto} del año <strong>${escapeHtml(yearToCloseData.year_name)}</strong>
+                                    al año entrante <strong>${escapeHtml(wizardData.newCurrentYearData?.year_name || '?')}</strong>.
+                                </label>
+                            </div>
+                            <p class="mb-0 mt-2 small text-muted">
+                                Se copia el mismo docente, asignatura y curso, cambiando solo el año. Si el año entrante ya tuviera
+                                asignaciones activas, la duplicación se omite automáticamente. Los docentes retirados se ajustan
+                                después desde Asignación Académica.
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }
             
             // Listado de estudiantes que se quedan (si los hay)
             if (totales.seQuedan > 0) {
@@ -2414,8 +2474,13 @@
         }
         
         // Exponer funciones globales
+        function toggleDuplicarAsignaciones(checked) {
+            wizardData._duplicarAsignaciones = checked;
+        }
+        
         window.validarConfirmacionCierre = validarConfirmacionCierre;
         window.ejecutarCierreFinal = ejecutarCierreFinal;
+        window.toggleDuplicarAsignaciones = toggleDuplicarAsignaciones;
         
         // ==========================================
         // UTILIDADES
