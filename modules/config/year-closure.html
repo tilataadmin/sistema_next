@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.2.2">
+    <meta name="page-version" content="26.7.2.3">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -2157,6 +2157,17 @@
                 if (!closureId) throw new Error('No se pudo crear el registro de auditoría');
                 log('✓ Auditoría creada: ' + closureId, 'success');
                 
+                // PASO 2.5: Poblar estadísticas de matrícula por grado (ANTES de mutar estados/promociones)
+                log('📊 Calculando estadísticas de matrícula por grado...');
+                try {
+                    const filasStats = await poblarEstadisticasPorGrado();
+                    log('✓ Estadísticas por grado guardadas: ' + filasStats + ' grado(s)', 'success');
+                } catch (e) {
+                    const msg = 'No se pudieron poblar las estadísticas por grado: ' + e.message;
+                    errores.push(msg);
+                    log('⚠ ' + msg, 'warning');
+                }
+                
                 // PASO 3: Procesar undécimos (graduación)
                 const totales = calcularTotalesParaResumen();
                 log(`🎓 Procesando ${totales.seGraduan} graduados de Undécimo...`);
@@ -2444,6 +2455,82 @@
             };
         }
         
+        // ==========================================
+        // POBLAR ESTADÍSTICAS DE MATRÍCULA POR GRADO
+        // ==========================================
+        // Congela, por cada grado del año que se cierra: total de estudiantes
+        // activos y conteos de servicios (cafetería, snack, acceso mañana/tarde).
+        // Debe ejecutarse ANTES de promover/graduar (los estudiantes aún están
+        // en su curso original). Re-ejecutable: borra las filas del año y reinserta.
+        async function poblarEstadisticasPorGrado() {
+            // 1. Índice course_id -> grado (congelado desde el mapeo del Paso 1)
+            const courseToGrade = {};
+            wizardData.coursesMapping.forEach(m => {
+                courseToGrade[m.sourceCourse.course_id] = {
+                    grade_id: m.sourceCourse.grade_id,
+                    grade_name: m.sourceCourse.grade_name,
+                    grade_order: m.sourceCourse.grade_order
+                };
+            });
+
+            // 2. Agrupar estudiantes activos por grado y contar total
+            const statsByGrade = {};
+            wizardData.studentsToProcess.forEach(s => {
+                const g = courseToGrade[s.course_id];
+                if (!g) return; // curso sin grado mapeado (atípico)
+                if (!statsByGrade[g.grade_id]) {
+                    statsByGrade[g.grade_id] = {
+                        year_id: yearToCloseId,
+                        grade_id: g.grade_id,
+                        grade_name: g.grade_name,
+                        grade_order: g.grade_order,
+                        total_students: 0,
+                        cafeteria_count: 0,
+                        snack_count: 0,
+                        morning_access_count: 0,
+                        afternoon_access_count: 0
+                    };
+                }
+                statsByGrade[g.grade_id].total_students++;
+            });
+
+            // 3. Traer servicios del año que se cierra y mapear por estudiante
+            const servicios = await supabaseRequest(
+                '/svc_student_year_services?select=student_id,uses_cafeteria_service,uses_snack_service,morning_access_type_id,afternoon_access_type_id&academic_year_id=eq.' + yearToCloseId
+            );
+            const svcByStudent = {};
+            (servicios || []).forEach(sv => { svcByStudent[sv.student_id] = sv; });
+
+            // 4. Sumar conteos de servicio al grado correspondiente
+            wizardData.studentsToProcess.forEach(s => {
+                const g = courseToGrade[s.course_id];
+                if (!g || !statsByGrade[g.grade_id]) return;
+                const sv = svcByStudent[s.student_id];
+                if (!sv) return;
+                if (sv.uses_cafeteria_service) statsByGrade[g.grade_id].cafeteria_count++;
+                if (sv.uses_snack_service) statsByGrade[g.grade_id].snack_count++;
+                if (sv.morning_access_type_id) statsByGrade[g.grade_id].morning_access_count++;
+                if (sv.afternoon_access_type_id) statsByGrade[g.grade_id].afternoon_access_count++;
+            });
+
+            const filas = Object.values(statsByGrade);
+
+            // 5. Re-ejecutable: borrar las filas de este año antes de insertar
+            await supabaseRequest('/academic_year_grade_stats?year_id=eq.' + yearToCloseId, {
+                method: 'DELETE'
+            });
+
+            // 6. Insertar las filas nuevas (una por grado)
+            if (filas.length > 0) {
+                await supabaseRequest('/academic_year_grade_stats', {
+                    method: 'POST',
+                    body: JSON.stringify(filas)
+                });
+            }
+
+            return filas.length;
+        }
+
         // ==========================================
         // OBTENER STATUS_ID DE student_status POR CÓDIGO
         // ==========================================
