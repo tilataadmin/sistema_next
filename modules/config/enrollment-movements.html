@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.07.02.14.30">
+    <title>Movimiento de matrícula por grado - SchoolNet</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #185FA5;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .table-movimientos th,
+        .table-movimientos td { text-align: center; vertical-align: middle; }
+        .table-movimientos th:first-child,
+        .table-movimientos td:first-child { text-align: left; }
+        .col-ingresos { color: #198754; font-weight: 600; }
+        .col-retiros { color: #dc3545; font-weight: 600; }
+        .col-final { font-weight: 700; }
+        .fila-total td {
+            border-top: 2px solid #adb5bd;
+            font-weight: 700;
+            background: #f8f9fa;
+        }
+        .mensaje-vacio {
+            text-align: center;
+            padding: 3rem;
+            color: #adb5bd;
+        }
+        .mensaje-vacio i {
+            font-size: 3rem;
+            display: block;
+            margin-bottom: 1rem;
+            opacity: 0.4;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0" id="loading-message">Cargando...</p>
+        </div>
+    </div>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <div class="container-fluid">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="index.html">Configuración</a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Movimiento de matrícula
+                </li>
+            </ol>
+        </nav>
+
+        <!-- ENCABEZADO -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-arrow-left-right me-2"></i>
+                    Movimiento de matrícula por grado
+                </h1>
+                <p class="text-muted">
+                    Por cada año y grado: estudiantes que iniciaron, ingresos y retiros en cualquier momento del año.
+                </p>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DE ALERTAS -->
+        <div id="alertContainer"></div>
+
+        <!-- SELECTOR DE AÑO -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label for="yearSelect" class="form-label">Año académico</label>
+                        <select id="yearSelect" class="form-select" onchange="onYearChange()">
+                            <option value="">Cargando años...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-outline-secondary w-100" onclick="recargar()">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABLA DE MOVIMIENTOS -->
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div id="tablaContainer">
+                    <div class="mensaje-vacio">
+                        <i class="bi bi-hourglass-split"></i>
+                        <p>Selecciona un año para ver el movimiento de matrícula.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // ESTADO
+        // ==========================================
+        let anios = [];
+        let anioSeleccionadoId = null;
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Ver movimiento de matrícula por grado');
+                if (!hasAccess) return;
+
+                await cargarAnios();
+            } catch (error) {
+                console.error('❌ Error inicializando:', error);
+                showMessage('Error al cargar la página: ' + error.message, 'danger');
+            }
+        });
+
+        // ==========================================
+        // CARGAR AÑOS ACADÉMICOS
+        // ==========================================
+        async function cargarAnios() {
+            mostrarLoading('Cargando años académicos...');
+            try {
+                // Vigente y cerrados (excluye años futuros aún no iniciados)
+                anios = await supabaseRequest(
+                    '/academic_years?select=year_id,year_name,is_current,year_order,year_status' +
+                    '&year_status=in.(active,closed)&order=year_order.desc'
+                );
+
+                const select = document.getElementById('yearSelect');
+
+                if (!anios || anios.length === 0) {
+                    select.innerHTML = '<option value="">No hay años disponibles</option>';
+                    ocultarLoading();
+                    return;
+                }
+
+                // El vigente queda por defecto; si no hay vigente, el más reciente
+                const vigente = anios.find(a => a.is_current) || anios[0];
+                anioSeleccionadoId = vigente.year_id;
+
+                select.innerHTML = anios.map(a => {
+                    const etiqueta = a.year_name + (a.is_current ? ' (vigente)' : (a.year_status === 'closed' ? ' (cerrado)' : ''));
+                    const selected = a.year_id === anioSeleccionadoId ? 'selected' : '';
+                    return `<option value="${a.year_id}" ${selected}>${escapeHtml(etiqueta)}</option>`;
+                }).join('');
+
+                ocultarLoading();
+                await cargarMovimientos(anioSeleccionadoId);
+
+            } catch (error) {
+                ocultarLoading();
+                console.error('❌ Error cargando años:', error);
+                showMessage('Error al cargar años académicos: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // EVENTOS
+        // ==========================================
+        function onYearChange() {
+            const select = document.getElementById('yearSelect');
+            anioSeleccionadoId = select.value || null;
+            if (anioSeleccionadoId) cargarMovimientos(anioSeleccionadoId);
+        }
+
+        function recargar() {
+            if (anioSeleccionadoId) cargarMovimientos(anioSeleccionadoId);
+        }
+
+        // ==========================================
+        // CARGAR Y ARMAR EL CUADRO
+        // ==========================================
+        async function cargarMovimientos(yearId) {
+            mostrarLoading('Cargando movimiento de matrícula...');
+            try {
+                const [stats, ingresos, retiros] = await Promise.all([
+                    supabaseRequest('/academic_year_grade_stats?select=grade_id,grade_name,grade_order,total_students&year_id=eq.' + yearId),
+                    supabaseRequest('/student_entries?select=grade_id,grade_name,grade_order&academic_year_id=eq.' + yearId),
+                    supabaseRequest('/student_withdrawals?select=grade_id,grade_name,grade_order&academic_year_id=eq.' + yearId)
+                ]);
+
+                const filas = combinarPorGrado(stats || [], ingresos || [], retiros || []);
+                renderizarTabla(filas, (stats || []).length === 0);
+
+                ocultarLoading();
+            } catch (error) {
+                ocultarLoading();
+                console.error('❌ Error cargando movimientos:', error);
+                showMessage('Error al cargar el movimiento: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // COMBINAR LAS TRES FUENTES POR GRADO
+        // Clave estable: grade_order (o grade_id si el orden es nulo).
+        // Todas las fuentes congelan grade_name/grade_order.
+        // ==========================================
+        function combinarPorGrado(stats, ingresos, retiros) {
+            const mapa = {};
+
+            const clave = (g) => (g.grade_order !== null && g.grade_order !== undefined)
+                ? 'o:' + g.grade_order
+                : 'g:' + g.grade_id;
+
+            const asegurar = (g) => {
+                const k = clave(g);
+                if (!mapa[k]) {
+                    mapa[k] = {
+                        grade_name: g.grade_name || 'Sin grado',
+                        grade_order: (g.grade_order !== null && g.grade_order !== undefined) ? g.grade_order : 9999,
+                        iniciaron: 0,
+                        ingresos: 0,
+                        retiros: 0
+                    };
+                }
+                return mapa[k];
+            };
+
+            // Iniciaron (matrícula congelada al cierre; 0 si el año aún no se ha cerrado con la lógica nueva)
+            stats.forEach(s => { asegurar(s).iniciaron += (s.total_students || 0); });
+
+            // Ingresos y retiros durante el año
+            ingresos.forEach(e => { asegurar(e).ingresos += 1; });
+            retiros.forEach(r => { asegurar(r).retiros += 1; });
+
+            return Object.values(mapa)
+                .map(f => ({ ...f, final: f.iniciaron + f.ingresos - f.retiros }))
+                .sort((a, b) => a.grade_order - b.grade_order);
+        }
+
+        // ==========================================
+        // RENDERIZAR TABLA
+        // ==========================================
+        function renderizarTabla(filas, sinMatriculaInicial) {
+            const container = document.getElementById('tablaContainer');
+
+            if (!filas || filas.length === 0) {
+                container.innerHTML = `
+                    <div class="mensaje-vacio">
+                        <i class="bi bi-inbox"></i>
+                        <p>No hay movimientos registrados para este año.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const tot = filas.reduce((acc, f) => ({
+                iniciaron: acc.iniciaron + f.iniciaron,
+                ingresos: acc.ingresos + f.ingresos,
+                retiros: acc.retiros + f.retiros,
+                final: acc.final + f.final
+            }), { iniciaron: 0, ingresos: 0, retiros: 0, final: 0 });
+
+            let html = '';
+
+            if (sinMatriculaInicial) {
+                html += `
+                    <div class="alert alert-info m-3 mb-0 small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Este año aún no tiene matrícula inicial registrada; se genera al cerrar el año.
+                        La columna <strong>Iniciaron</strong> aparece en 0 por ahora.
+                    </div>
+                `;
+            }
+
+            html += `
+                <div class="table-responsive">
+                    <table class="table table-hover table-movimientos mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Grado</th>
+                                <th>Iniciaron</th>
+                                <th>Ingresos</th>
+                                <th>Retiros</th>
+                                <th>Final</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            filas.forEach(f => {
+                html += `
+                    <tr>
+                        <td>${escapeHtml(f.grade_name)}</td>
+                        <td>${f.iniciaron}</td>
+                        <td class="col-ingresos">${f.ingresos > 0 ? '+' + f.ingresos : '0'}</td>
+                        <td class="col-retiros">${f.retiros > 0 ? '−' + f.retiros : '0'}</td>
+                        <td class="col-final">${f.final}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                        <tfoot>
+                            <tr class="fila-total">
+                                <td>TOTAL</td>
+                                <td>${tot.iniciaron}</td>
+                                <td class="col-ingresos">${tot.ingresos > 0 ? '+' + tot.ingresos : '0'}</td>
+                                <td class="col-retiros">${tot.retiros > 0 ? '−' + tot.retiros : '0'}</td>
+                                <td class="col-final">${tot.final}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function mostrarLoading(mensaje = 'Cargando...') {
+            const overlay = document.getElementById('loading-overlay');
+            const msg = document.getElementById('loading-message');
+            if (msg) msg.textContent = mensaje;
+            overlay.classList.remove('hidden');
+        }
+
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        // Exponer funciones usadas en onclick/onchange
+        window.onYearChange = onYearChange;
+        window.recargar = recargar;
+
+        console.log('✅ Movimiento de matrícula por grado cargado');
+    </script>
+</body>
+</html>
