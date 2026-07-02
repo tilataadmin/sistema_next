@@ -306,6 +306,7 @@ const MODULE_ITEM_ORDER = {
         'Mis unidades de indagación',
         'Mis esquemas bienales PD',
         'Mis planeadores trimestrales PD',
+        'Mis planeadores PAI',
         'Coordinar planeación de asignatura',
         'Coordinar planeación de programa',
         'Coordinar planeación de sección',
