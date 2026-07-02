@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.19.13.00">
+    <meta name="page-version" content="26.7.2.1">
     <title>Reporte de estudiantes nuevos - SchoolNet</title>
     
     <!-- Bootstrap 5 CSS -->
@@ -625,6 +625,40 @@
                     method: 'POST',
                     body: JSON.stringify(insertData)
                 });
+
+                // 2.5. Registrar el movimiento de ingreso en student_entries (estadística de matrícula)
+                try {
+                    // Resolver año vigente
+                    const yearData = await supabaseRequest('/academic_years?select=year_id&is_current=eq.true&limit=1');
+                    const academicYearId = (yearData && yearData.length > 0) ? yearData[0].year_id : null;
+
+                    if (!academicYearId) {
+                        console.warn('No hay año académico vigente; no se registró el ingreso en student_entries.');
+                    } else {
+                        // Congelar el grado desde el curso actual del estudiante
+                        const datosGrado = await supabaseRequest(
+                            '/students?select=course_id,courses(grade_id,grades(grade_name,grade_order))&student_id=eq.' + estudianteSeleccionado.student_id + '&limit=1'
+                        );
+                        const gradeId = datosGrado?.[0]?.courses?.grade_id || null;
+                        const grado = datosGrado?.[0]?.courses?.grades || null;
+
+                        await supabaseRequest('/student_entries', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                student_id: estudianteSeleccionado.student_id,
+                                academic_year_id: academicYearId,
+                                grade_id: gradeId,
+                                grade_name: grado ? grado.grade_name : null,
+                                grade_order: grado ? grado.grade_order : null,
+                                entry_date: fechaIngreso,
+                                reason: null
+                            })
+                        });
+                    }
+                } catch (e) {
+                    // No interrumpir el reporte si falla el registro estadístico
+                    console.error('Error registrando el ingreso en student_entries:', e.message);
+                }
 
                 // 3. Enviar notificaciones usando sistema centralizado
                 await enviarNotificacionEstudianteNuevo();

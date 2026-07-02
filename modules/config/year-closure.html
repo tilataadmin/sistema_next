@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.7">
+    <meta name="page-version" content="26.7.2.3">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1084,8 +1084,7 @@
             // El paso es válido solo si:
             //  - No hay cursos faltantes
             //  - No hay undécimos sin documento ni ya existentes en alumni
-            const tieneIssuesUndecimo = (wizardData.undecimoIssues?.sinDocumento?.length || 0) > 0
-                || (wizardData.undecimoIssues?.yaEnAlumni?.length || 0) > 0;
+            //  (tieneIssuesUndecimo ya se calculó arriba en esta misma función)
             marcarPasoValido(1, totalFaltantes === 0 && !tieneIssuesUndecimo);
         }
         
@@ -1817,6 +1816,21 @@
             if (inputStart) wizardData._editedStartDate = inputStart.value || null;
             if (inputEnd) wizardData._editedEndDate = inputEnd.value || null;
             
+            // Contar asignaciones académicas activas del año que se cierra (para duplicación)
+            if (wizardData._assignmentsToDuplicateCount === undefined) {
+                try {
+                    const asignsExistentes = await supabaseRequest(
+                        '/academic_assignments?select=assignment_id&academic_year_id=eq.' + yearToCloseId + '&assignment_status=eq.active'
+                    );
+                    wizardData._assignmentsToDuplicateCount = (asignsExistentes || []).length;
+                } catch (e) {
+                    console.warn('No se pudo contar asignaciones a duplicar:', e.message);
+                    wizardData._assignmentsToDuplicateCount = null; // desconocido
+                }
+                // Por defecto se duplica, salvo que sepamos que no hay nada que duplicar
+                wizardData._duplicarAsignaciones = (wizardData._assignmentsToDuplicateCount !== 0);
+            }
+            
             // Calcular resumen
             const totales = calcularTotalesParaResumen();
             
@@ -1874,6 +1888,51 @@
                     </div>
                 </div>
             `;
+            
+            // Bloque de duplicación de asignaciones académicas
+            const nDup = wizardData._assignmentsToDuplicateCount;
+            if (nDup === 0) {
+                html += `
+                    <div class="card mb-3 border-secondary">
+                        <div class="card-header bg-light">
+                            <strong><i class="bi bi-people me-2"></i>Asignaciones académicas</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-0 small text-muted">
+                                El año que se cierra no tiene asignaciones académicas activas. No hay nada que duplicar;
+                                el año entrante deberá configurarse desde Asignación Académica.
+                            </p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const nDupTexto = (nDup === null)
+                    ? 'las asignaciones académicas activas'
+                    : `<strong>${nDup}</strong> asignación(es) académica(s) activa(s)`;
+                html += `
+                    <div class="card mb-3 border-info">
+                        <div class="card-header bg-info bg-opacity-25">
+                            <strong><i class="bi bi-people me-2"></i>Duplicar asignaciones académicas</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="chkDuplicarAsignaciones"
+                                       ${wizardData._duplicarAsignaciones ? 'checked' : ''}
+                                       onchange="toggleDuplicarAsignaciones(this.checked)">
+                                <label class="form-check-label" for="chkDuplicarAsignaciones">
+                                    Copiar ${nDupTexto} del año <strong>${escapeHtml(yearToCloseData.year_name)}</strong>
+                                    al año entrante <strong>${escapeHtml(wizardData.newCurrentYearData?.year_name || '?')}</strong>.
+                                </label>
+                            </div>
+                            <p class="mb-0 mt-2 small text-muted">
+                                Se copia el mismo docente, asignatura y curso, cambiando solo el año. Si el año entrante ya tuviera
+                                asignaciones activas, la duplicación se omite automáticamente. Los docentes retirados se ajustan
+                                después desde Asignación Académica.
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }
             
             // Listado de estudiantes que se quedan (si los hay)
             if (totales.seQuedan > 0) {
@@ -2066,7 +2125,8 @@
                 stayed_11: 0,
                 stayed_other: 0,
                 errors_grad: 0,
-                errors_prom: 0
+                errors_prom: 0,
+                assignments_duplicated: 0
             };
             
             try {
@@ -2096,6 +2156,17 @@
                 const closureId = Array.isArray(closureRecord) ? closureRecord[0]?.closure_id : closureRecord?.closure_id;
                 if (!closureId) throw new Error('No se pudo crear el registro de auditoría');
                 log('✓ Auditoría creada: ' + closureId, 'success');
+                
+                // PASO 2.5: Poblar estadísticas de matrícula por grado (ANTES de mutar estados/promociones)
+                log('📊 Calculando estadísticas de matrícula por grado...');
+                try {
+                    const filasStats = await poblarEstadisticasPorGrado();
+                    log('✓ Estadísticas por grado guardadas: ' + filasStats + ' grado(s)', 'success');
+                } catch (e) {
+                    const msg = 'No se pudieron poblar las estadísticas por grado: ' + e.message;
+                    errores.push(msg);
+                    log('⚠ ' + msg, 'warning');
+                }
                 
                 // PASO 3: Procesar undécimos (graduación)
                 const totales = calcularTotalesParaResumen();
@@ -2206,6 +2277,55 @@
                 });
                 log('✓ Año ' + wizardData.newCurrentYearData.year_name + ' marcado como vigente', 'success');
                 
+                // PASO 5.5: Duplicar asignaciones académicas al año entrante (no crítico)
+                if (wizardData._duplicarAsignaciones) {
+                    log('👥 Duplicando asignaciones académicas al año entrante...');
+                    try {
+                        // Guardia: solo duplicar si el año entrante NO tiene ya asignaciones activas
+                        const yaExistentes = await supabaseRequest(
+                            '/academic_assignments?select=assignment_id&academic_year_id=eq.' + wizardData.newCurrentYearId + '&assignment_status=eq.active&limit=1'
+                        );
+                        
+                        if (yaExistentes && yaExistentes.length > 0) {
+                            log('⚠ El año entrante ya tiene asignaciones activas. Se omite la duplicación.', 'warning');
+                            errores.push('Duplicación de asignaciones omitida: el año entrante ya tenía asignaciones activas.');
+                        } else {
+                            // Leer todas las asignaciones activas del año que se cierra
+                            const origen = await supabaseRequest(
+                                '/academic_assignments?select=subject_id,course_id,worker_id,notes&academic_year_id=eq.' + yearToCloseId + '&assignment_status=eq.active'
+                            );
+                            
+                            if (!origen || origen.length === 0) {
+                                log('• No hay asignaciones en el año que se cierra. Nada que duplicar.', 'info');
+                            } else {
+                                const nuevas = origen.map(a => ({
+                                    academic_year_id: wizardData.newCurrentYearId,
+                                    subject_id: a.subject_id,
+                                    course_id: a.course_id,
+                                    worker_id: a.worker_id,
+                                    assignment_status: 'active',
+                                    assigned_by: currentUser.user_id,
+                                    notes: a.notes || null
+                                }));
+                                
+                                const insertadas = await supabaseRequest('/academic_assignments', {
+                                    method: 'POST',
+                                    body: JSON.stringify(nuevas)
+                                });
+                                
+                                stats.assignments_duplicated = Array.isArray(insertadas) ? insertadas.length : nuevas.length;
+                                log('✓ ' + stats.assignments_duplicated + ' asignación(es) duplicada(s) al año entrante', 'success');
+                            }
+                        }
+                    } catch (e) {
+                        const msg = 'No se pudieron duplicar las asignaciones: ' + e.message;
+                        errores.push(msg);
+                        log('⚠ ' + msg, 'warning');
+                    }
+                } else {
+                    log('• Duplicación de asignaciones desactivada. Se omite.', 'info');
+                }
+                
                 // PASO 6: Marcar año actual como cerrado y no vigente
                 log('🔒 Cerrando año ' + yearToCloseData.year_name + '...');
                 await supabaseRequest('/academic_years?year_id=eq.' + yearToCloseId, {
@@ -2222,7 +2342,7 @@
                 // PASO 7: Actualizar system_config si tiene current_academic_year_id
                 log('⚙️ Actualizando system_config...');
                 try {
-                    await supabaseRequest('/system_config', {
+                    await supabaseRequest('/system_config?config_id=not.is.null', {
                         method: 'PATCH',
                         body: JSON.stringify({ current_academic_year_id: wizardData.newCurrentYearId })
                     });
@@ -2240,9 +2360,9 @@
                         students_promoted: stats.promoted,
                         students_not_promoted: stats.stayed_other,
                         students_stayed_11: stats.stayed_11,
-                        notes: errores.length > 0 
+                        notes: (errores.length > 0 
                             ? `Completado con ${errores.length} error(es). Ver snapshot_data.errors.`
-                            : 'Completado exitosamente.'
+                            : 'Completado exitosamente.') + ` Asignaciones duplicadas: ${stats.assignments_duplicated}.`
                     })
                 });
                 
@@ -2336,6 +2456,82 @@
         }
         
         // ==========================================
+        // POBLAR ESTADÍSTICAS DE MATRÍCULA POR GRADO
+        // ==========================================
+        // Congela, por cada grado del año que se cierra: total de estudiantes
+        // activos y conteos de servicios (cafetería, snack, acceso mañana/tarde).
+        // Debe ejecutarse ANTES de promover/graduar (los estudiantes aún están
+        // en su curso original). Re-ejecutable: borra las filas del año y reinserta.
+        async function poblarEstadisticasPorGrado() {
+            // 1. Índice course_id -> grado (congelado desde el mapeo del Paso 1)
+            const courseToGrade = {};
+            wizardData.coursesMapping.forEach(m => {
+                courseToGrade[m.sourceCourse.course_id] = {
+                    grade_id: m.sourceCourse.grade_id,
+                    grade_name: m.sourceCourse.grade_name,
+                    grade_order: m.sourceCourse.grade_order
+                };
+            });
+
+            // 2. Agrupar estudiantes activos por grado y contar total
+            const statsByGrade = {};
+            wizardData.studentsToProcess.forEach(s => {
+                const g = courseToGrade[s.course_id];
+                if (!g) return; // curso sin grado mapeado (atípico)
+                if (!statsByGrade[g.grade_id]) {
+                    statsByGrade[g.grade_id] = {
+                        year_id: yearToCloseId,
+                        grade_id: g.grade_id,
+                        grade_name: g.grade_name,
+                        grade_order: g.grade_order,
+                        total_students: 0,
+                        cafeteria_count: 0,
+                        snack_count: 0,
+                        morning_access_count: 0,
+                        afternoon_access_count: 0
+                    };
+                }
+                statsByGrade[g.grade_id].total_students++;
+            });
+
+            // 3. Traer servicios del año que se cierra y mapear por estudiante
+            const servicios = await supabaseRequest(
+                '/svc_student_year_services?select=student_id,uses_cafeteria_service,uses_snack_service,morning_access_type_id,afternoon_access_type_id&academic_year_id=eq.' + yearToCloseId
+            );
+            const svcByStudent = {};
+            (servicios || []).forEach(sv => { svcByStudent[sv.student_id] = sv; });
+
+            // 4. Sumar conteos de servicio al grado correspondiente
+            wizardData.studentsToProcess.forEach(s => {
+                const g = courseToGrade[s.course_id];
+                if (!g || !statsByGrade[g.grade_id]) return;
+                const sv = svcByStudent[s.student_id];
+                if (!sv) return;
+                if (sv.uses_cafeteria_service) statsByGrade[g.grade_id].cafeteria_count++;
+                if (sv.uses_snack_service) statsByGrade[g.grade_id].snack_count++;
+                if (sv.morning_access_type_id) statsByGrade[g.grade_id].morning_access_count++;
+                if (sv.afternoon_access_type_id) statsByGrade[g.grade_id].afternoon_access_count++;
+            });
+
+            const filas = Object.values(statsByGrade);
+
+            // 5. Re-ejecutable: borrar las filas de este año antes de insertar
+            await supabaseRequest('/academic_year_grade_stats?year_id=eq.' + yearToCloseId, {
+                method: 'DELETE'
+            });
+
+            // 6. Insertar las filas nuevas (una por grado)
+            if (filas.length > 0) {
+                await supabaseRequest('/academic_year_grade_stats', {
+                    method: 'POST',
+                    body: JSON.stringify(filas)
+                });
+            }
+
+            return filas.length;
+        }
+
+        // ==========================================
         // OBTENER STATUS_ID DE student_status POR CÓDIGO
         // ==========================================
         async function obtenerStatusIdPorCode(statusCode) {
@@ -2394,6 +2590,11 @@
                             </div>
                         </div>
                         
+                        <p class="small text-muted mb-3">
+                            <i class="bi bi-people me-1"></i>Asignaciones académicas duplicadas al año entrante:
+                            <strong>${stats.assignments_duplicated}</strong>
+                        </p>
+                        
                         ${tieneErrores ? `
                             <div class="alert alert-warning">
                                 <strong>Errores durante el cierre:</strong>
@@ -2415,8 +2616,13 @@
         }
         
         // Exponer funciones globales
+        function toggleDuplicarAsignaciones(checked) {
+            wizardData._duplicarAsignaciones = checked;
+        }
+        
         window.validarConfirmacionCierre = validarConfirmacionCierre;
         window.ejecutarCierreFinal = ejecutarCierreFinal;
+        window.toggleDuplicarAsignaciones = toggleDuplicarAsignaciones;
         
         // ==========================================
         // UTILIDADES
