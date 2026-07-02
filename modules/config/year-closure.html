@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.2.1">
+    <meta name="page-version" content="26.7.2.2">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -2125,7 +2125,8 @@
                 stayed_11: 0,
                 stayed_other: 0,
                 errors_grad: 0,
-                errors_prom: 0
+                errors_prom: 0,
+                assignments_duplicated: 0
             };
             
             try {
@@ -2265,6 +2266,55 @@
                 });
                 log('✓ Año ' + wizardData.newCurrentYearData.year_name + ' marcado como vigente', 'success');
                 
+                // PASO 5.5: Duplicar asignaciones académicas al año entrante (no crítico)
+                if (wizardData._duplicarAsignaciones) {
+                    log('👥 Duplicando asignaciones académicas al año entrante...');
+                    try {
+                        // Guardia: solo duplicar si el año entrante NO tiene ya asignaciones activas
+                        const yaExistentes = await supabaseRequest(
+                            '/academic_assignments?select=assignment_id&academic_year_id=eq.' + wizardData.newCurrentYearId + '&assignment_status=eq.active&limit=1'
+                        );
+                        
+                        if (yaExistentes && yaExistentes.length > 0) {
+                            log('⚠ El año entrante ya tiene asignaciones activas. Se omite la duplicación.', 'warning');
+                            errores.push('Duplicación de asignaciones omitida: el año entrante ya tenía asignaciones activas.');
+                        } else {
+                            // Leer todas las asignaciones activas del año que se cierra
+                            const origen = await supabaseRequest(
+                                '/academic_assignments?select=subject_id,course_id,worker_id,notes&academic_year_id=eq.' + yearToCloseId + '&assignment_status=eq.active'
+                            );
+                            
+                            if (!origen || origen.length === 0) {
+                                log('• No hay asignaciones en el año que se cierra. Nada que duplicar.', 'info');
+                            } else {
+                                const nuevas = origen.map(a => ({
+                                    academic_year_id: wizardData.newCurrentYearId,
+                                    subject_id: a.subject_id,
+                                    course_id: a.course_id,
+                                    worker_id: a.worker_id,
+                                    assignment_status: 'active',
+                                    assigned_by: currentUser.user_id,
+                                    notes: a.notes || null
+                                }));
+                                
+                                const insertadas = await supabaseRequest('/academic_assignments', {
+                                    method: 'POST',
+                                    body: JSON.stringify(nuevas)
+                                });
+                                
+                                stats.assignments_duplicated = Array.isArray(insertadas) ? insertadas.length : nuevas.length;
+                                log('✓ ' + stats.assignments_duplicated + ' asignación(es) duplicada(s) al año entrante', 'success');
+                            }
+                        }
+                    } catch (e) {
+                        const msg = 'No se pudieron duplicar las asignaciones: ' + e.message;
+                        errores.push(msg);
+                        log('⚠ ' + msg, 'warning');
+                    }
+                } else {
+                    log('• Duplicación de asignaciones desactivada. Se omite.', 'info');
+                }
+                
                 // PASO 6: Marcar año actual como cerrado y no vigente
                 log('🔒 Cerrando año ' + yearToCloseData.year_name + '...');
                 await supabaseRequest('/academic_years?year_id=eq.' + yearToCloseId, {
@@ -2299,9 +2349,9 @@
                         students_promoted: stats.promoted,
                         students_not_promoted: stats.stayed_other,
                         students_stayed_11: stats.stayed_11,
-                        notes: errores.length > 0 
+                        notes: (errores.length > 0 
                             ? `Completado con ${errores.length} error(es). Ver snapshot_data.errors.`
-                            : 'Completado exitosamente.'
+                            : 'Completado exitosamente.') + ` Asignaciones duplicadas: ${stats.assignments_duplicated}.`
                     })
                 });
                 
@@ -2452,6 +2502,11 @@
                                 </div>
                             </div>
                         </div>
+                        
+                        <p class="small text-muted mb-3">
+                            <i class="bi bi-people me-1"></i>Asignaciones académicas duplicadas al año entrante:
+                            <strong>${stats.assignments_duplicated}</strong>
+                        </p>
                         
                         ${tieneErrores ? `
                             <div class="alert alert-warning">
