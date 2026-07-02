@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.2.1">
+    <meta name="page-version" content="26.7.2.2">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -380,6 +380,52 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal para retirar estudiante -->
+    <div class="modal fade" id="withdrawModal" tabindex="-1" aria-labelledby="withdrawModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="withdrawModalLabel">
+                        <i class="bi bi-box-arrow-right me-2"></i>Retirar Estudiante
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        El estudiante quedará marcado como <strong>Retirado</strong>. Se registrará la fecha,
+                        el motivo y el grado en el que se encontraba.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Estudiante</label>
+                        <input type="text" class="form-control" id="withdrawStudentName" readonly>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="withdrawDate" class="form-label">
+                            Fecha de retiro <span class="required">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="withdrawDate" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="withdrawReason" class="form-label">Motivo</label>
+                        <textarea class="form-control" id="withdrawReason" rows="3"
+                                  placeholder="Motivo del retiro (opcional)..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-danger" id="btnConfirmWithdraw">
+                        <i class="bi bi-box-arrow-right me-1"></i>Confirmar Retiro
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- SCRIPTS - ORDEN CRÍTICO -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
@@ -403,6 +449,8 @@
         let currentStudentId = null;
         let searchTimeout = null;
         let modalInstance = null;
+        let withdrawModalInstance = null;
+        let currentWithdrawStudentId = null;
 
         // ==========================================
         // MAPEOS ESPECÍFICOS PARA SINCRONIZACIÓN DE ESTUDIANTES
@@ -499,6 +547,7 @@
                 
                 // Inicializar modal
                 modalInstance = new bootstrap.Modal(document.getElementById('studentModal'));
+                withdrawModalInstance = new bootstrap.Modal(document.getElementById('withdrawModal'));
                 
                 // Cargar datos iniciales
                 await loadDropdownData();
@@ -708,12 +757,23 @@
                 return;
             }
             
+            const STATUS_ACTIVO_ID = 'd89b6287-ee51-435d-aeeb-d0f503af4646';
+
             tbody.innerHTML = students.map(student => {
                 const fullName = `${student.student_last_name_1} ${student.student_last_name_2 || ''} ${student.student_first_name}`.trim();
                 const familyName = student.families ? student.families.family_name : 'Sin familia';
                 const courseName = student.courses ? student.courses.course_name : 'Sin curso';
                 const statusName = student.student_status ? student.student_status.status_description : 'Sin estado';
-                
+                const esActivo = student.status_id === STATUS_ACTIVO_ID;
+
+                const btnRetirar = esActivo
+                    ? `<button class="btn btn-sm btn-outline-danger"
+                                onclick="abrirModalRetiro(${student.student_id})"
+                                title="Retirar estudiante">
+                            <i class="bi bi-box-arrow-right"></i>
+                       </button>`
+                    : '';
+
                 return `
                     <tr>
                         <td><strong>${student.student_code}</strong></td>
@@ -728,6 +788,7 @@
                                     title="Editar estudiante">
                                 <i class="bi bi-pencil"></i>
                             </button>
+                            ${btnRetirar}
                         </td>
                     </tr>
                 `;
@@ -809,8 +870,103 @@
             
             // Formulario
             document.getElementById('studentForm').addEventListener('submit', handleSubmit);
+
+            // Botón confirmar retiro
+            document.getElementById('btnConfirmWithdraw').addEventListener('click', retirarEstudiante);
             
             console.log('✅ Event listeners configurados');
+        }
+
+        // ==========================================
+        // RETIRO DE ESTUDIANTE
+        // ==========================================
+
+        function abrirModalRetiro(studentId) {
+            const student = students.find(s => s.student_id == studentId);
+            if (!student) {
+                showAlert('No se encontró el estudiante seleccionado', 'danger');
+                return;
+            }
+
+            currentWithdrawStudentId = studentId;
+
+            const fullName = `${student.student_last_name_1} ${student.student_last_name_2 || ''} ${student.student_first_name}`.trim();
+            document.getElementById('withdrawStudentName').value = fullName;
+            document.getElementById('withdrawDate').value = getCurrentDateColombia();
+            document.getElementById('withdrawReason').value = '';
+
+            withdrawModalInstance.show();
+        }
+
+        async function retirarEstudiante() {
+            if (!currentWithdrawStudentId) return;
+
+            const withdrawalDate = document.getElementById('withdrawDate').value;
+            const reason = document.getElementById('withdrawReason').value.trim();
+
+            if (!withdrawalDate) {
+                showAlert('La fecha de retiro es obligatoria', 'danger');
+                return;
+            }
+
+            const btn = document.getElementById('btnConfirmWithdraw');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Retirando...';
+
+            // Retirado = status_code 3
+            const STATUS_RETIRADO_ID = '7386162d-6aa5-4b80-bea3-718ed8f82205';
+
+            try {
+                // 1. Resolver año vigente
+                const yearData = await supabaseRequest('/academic_years?select=year_id&is_current=eq.true&limit=1');
+                if (!yearData || yearData.length === 0) {
+                    throw new Error('No hay un año académico vigente configurado');
+                }
+                const academicYearId = yearData[0].year_id;
+
+                // 2. Congelar el grado desde el curso actual del estudiante
+                const studentData = await supabaseRequest(
+                    '/students?select=course_id,courses(grade_id,grades(grade_name,grade_order))&student_id=eq.' + currentWithdrawStudentId + '&limit=1'
+                );
+                if (!studentData || studentData.length === 0) {
+                    throw new Error('No se encontró el estudiante');
+                }
+
+                const gradeId = studentData[0].courses?.grade_id || null;
+                const grado = studentData[0].courses?.grades || null;
+
+                // 3. Insertar el registro de retiro PRIMERO (dato irrecuperable)
+                await supabaseRequest('/student_withdrawals', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        student_id: currentWithdrawStudentId,
+                        academic_year_id: academicYearId,
+                        grade_id: gradeId,
+                        grade_name: grado ? grado.grade_name : null,
+                        grade_order: grado ? grado.grade_order : null,
+                        withdrawal_date: withdrawalDate,
+                        reason: reason || null
+                    })
+                });
+
+                // 4. Solo si el registro quedó, cambiar el estado a Retirado
+                await supabaseRequest('/students?student_id=eq.' + currentWithdrawStudentId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status_id: STATUS_RETIRADO_ID })
+                });
+
+                withdrawModalInstance.hide();
+                showAlert('Estudiante retirado correctamente', 'success');
+
+                await loadStudents(document.getElementById('searchInput').value, currentPage);
+
+            } catch (error) {
+                console.error('❌ Error retirando estudiante:', error);
+                showAlert('Error al retirar el estudiante: ' + error.message, 'danger');
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-box-arrow-right me-1"></i>Confirmar Retiro';
         }
         
         // ==========================================
@@ -1251,6 +1407,7 @@
         window.editStudent = editStudent;
         window.loadStudents = loadStudents;
         window.syncWithPhidias = syncWithPhidias;
+        window.abrirModalRetiro = abrirModalRetiro;
         
         console.log('🎉 Gestión de Estudiantes cargada correctamente');
     </script>
