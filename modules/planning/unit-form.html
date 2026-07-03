@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.3.1">
+    <meta name="page-version" content="26.7.3.2">
     <title>Unidad de Indagación</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1269,6 +1269,7 @@
         let selectedActionScope = new Set();
         let selectedGrades = new Set();
         let selectedSubjects = new Map();      // subject_id → description
+        let selectedSubjectConnections = new Map(); // subject_id → Set<connection_type_id>
         let selectedCollaborators = new Map(); // worker_id → {is_lead, worker_data}
         let subjectIdsOfGrade = new Set();     // subject_id con asignación activa en el año y grado de la UI
 
@@ -1781,10 +1782,11 @@
                 supabaseRequest(`/pln_unit_action_scope?select=action_scope_id&unit_id=eq.${unitId}`),
                 supabaseRequest(`/pln_unit_grades?select=grade_id&unit_id=eq.${unitId}`),
                 supabaseRequest(`/pln_unit_subjects?select=subject_id,description&unit_id=eq.${unitId}`),
+                supabaseRequest(`/pln_unit_subject_connections?select=subject_id,connection_type_id&unit_id=eq.${unitId}`),
                 collabPreloaded ? Promise.resolve(collabPreloaded) : supabaseRequest(`/pln_unit_collaborators?select=worker_id,is_lead&unit_id=eq.${unitId}`)
             ];
 
-            const [kc, atl, lp, til, at, as_, gr, subs, collab] = await Promise.all(queries);
+            const [kc, atl, lp, til, at, as_, gr, subs, subConns, collab] = await Promise.all(queries);
 
             selectedKeyConcepts = new Set((kc || []).map(r => r.concept_id));
             selectedAtl = new Set((atl || []).map(r => r.atl_skill_id));
@@ -1796,6 +1798,14 @@
 
             selectedSubjects = new Map();
             (subs || []).forEach(r => selectedSubjects.set(r.subject_id, r.description || ''));
+
+            selectedSubjectConnections = new Map();
+            (subConns || []).forEach(r => {
+                if (!selectedSubjectConnections.has(r.subject_id)) {
+                    selectedSubjectConnections.set(r.subject_id, new Set());
+                }
+                selectedSubjectConnections.get(r.subject_id).add(r.connection_type_id);
+            });
 
             selectedCollaborators = new Map();
             (collab || []).forEach(r => {
@@ -2566,9 +2576,21 @@
                 Array.from(selectedSubjects.keys()).map(subjectId => {
                     const subj = allSubjects.find(s => s.subject_id === subjectId);
                     if (!subj) return '';
+                    const connSet = selectedSubjectConnections.get(subjectId) || new Set();
+                    const connCheckboxes = catalogConnectionTypes.map(ct => {
+                        const checked = connSet.has(ct.connection_type_id);
+                        return `
+                            <label class="checkbox-grid-item ${checked ? 'checked' : ''}">
+                                <input type="checkbox" data-subject-id="${subjectId}" data-connection-id="${ct.connection_type_id}" data-role="subject-connection" ${checked ? 'checked' : ''} ${isReadOnly ? 'disabled' : ''}>
+                                <span>${escapeHtml(ct.name_es)}</span>
+                            </label>
+                        `;
+                    }).join('');
                     return `
                         <div class="subject-row">
                             <div class="subject-name">${escapeHtml(subj.subject_name)}</div>
+                            <div class="field-hint mb-1">Tipos de conexión</div>
+                            <div class="checkbox-grid mb-2">${connCheckboxes}</div>
                             <textarea class="form-control form-control-sm subject-description"
                                 data-subject-id="${subjectId}"
                                 rows="2"
@@ -2576,6 +2598,10 @@
                         </div>
                     `;
                 }).join('');
+
+            container.querySelectorAll('input[data-role="subject-connection"]').forEach(cb => {
+                cb.addEventListener('change', () => onSubjectConnectionToggle(cb));
+            });
 
             container.querySelectorAll('.subject-description').forEach(ta => {
                 const sid = ta.dataset.subjectId;
@@ -2591,6 +2617,37 @@
             });
         }
 
+        async function onSubjectConnectionToggle(checkbox) {
+            const subjectId = checkbox.dataset.subjectId;
+            const connectionTypeId = checkbox.dataset.connectionId;
+            const checked = checkbox.checked;
+
+            checkbox.closest('.checkbox-grid-item').classList.toggle('checked', checked);
+            checkbox.disabled = true;
+
+            try {
+                startSaving();
+                if (checked) {
+                    await supabaseRequest('/pln_unit_subject_connections', {
+                        method: 'POST',
+                        body: JSON.stringify({ unit_id: unitId, subject_id: subjectId, connection_type_id: connectionTypeId })
+                    });
+                    if (!selectedSubjectConnections.has(subjectId)) selectedSubjectConnections.set(subjectId, new Set());
+                    selectedSubjectConnections.get(subjectId).add(connectionTypeId);
+                } else {
+                    await supabaseRequest(`/pln_unit_subject_connections?unit_id=eq.${unitId}&subject_id=eq.${subjectId}&connection_type_id=eq.${connectionTypeId}`, { method: 'DELETE' });
+                    selectedSubjectConnections.get(subjectId)?.delete(connectionTypeId);
+                }
+                doneSaving();
+            } catch (err) {
+                checkbox.checked = !checked;
+                checkbox.closest('.checkbox-grid-item').classList.toggle('checked', !checked);
+                errorSaving(err);
+            } finally {
+                checkbox.disabled = isReadOnly;
+            }
+        }
+        
         function debouncedSaveSubjectDescription(subjectId, value) {
             const key = 'subject_' + subjectId;
             if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
