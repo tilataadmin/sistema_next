@@ -302,11 +302,11 @@ const MODULE_ITEM_ORDER = {
         'Logs de auditoría'
     ],
    'planning': [
-        'Mis planeadores de asignatura',
-        'Mis unidades de indagación',
+        'Mis planeadores de asignatura PEP',
+        'Mis unidades de indagación PEP',
+        'Mis planeadores PAI',
         'Mis esquemas bienales PD',
         'Mis planeadores trimestrales PD',
-        'Mis planeadores PAI',
         'Coordinar planeación de asignatura',
         'Coordinar planeación de programa',
         'Coordinar planeación de sección',
