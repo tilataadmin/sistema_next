@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestionar Familias - SchoolNet</title>
+    <meta name="page-version" content="26.7.7.1">
+    <title>Gestionar Familias</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -160,10 +161,11 @@
                     <table class="table table-hover mb-0" id="tabla-familias">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 15%;">Código</th>
-                                <th style="width: 35%;">Nombre de Familia</th>
-                                <th style="width: 15%;" class="text-center">Estudiantes</th>
-                                <th style="width: 15%;" class="text-center">Estado</th>
+                                <th style="width: 13%;">Código</th>
+                                <th style="width: 30%;">Nombre de Familia</th>
+                                <th style="width: 12%;" class="text-center">Estudiantes</th>
+                                <th style="width: 12%;" class="text-center">Familiares</th>
+                                <th style="width: 13%;" class="text-center">Estado</th>
                                 <th style="width: 20%;" class="text-center">Acciones</th>
                             </tr>
                         </thead>
@@ -187,7 +189,7 @@
     </div>
     <!-- Modal: Crear/Editar Familia -->
     <div class="modal fade" id="modal-familia" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="modal-title">
@@ -265,6 +267,39 @@
                                 Este valor se calcula automáticamente
                             </div>
                         </div>
+
+                        <!-- Sección de Familiares -->
+                        <hr>
+                        <div id="familiares-section">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0">
+                                    <i class="bi bi-people me-1"></i>Familiares
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarFilaFamiliar()">
+                                    <i class="bi bi-plus-circle me-1"></i>Agregar familiar
+                                </button>
+                            </div>
+                            <div class="form-text mb-2">
+                                Registra uno o más familiares. Marca "Contacto principal" para el contacto principal de la familia.
+                            </div>
+                            <datalist id="relaciones-list">
+                                <option value="Padre"></option>
+                                <option value="Madre"></option>
+                                <option value="Abuelo"></option>
+                                <option value="Abuela"></option>
+                                <option value="Tío"></option>
+                                <option value="Tía"></option>
+                                <option value="Hermano"></option>
+                                <option value="Hermana"></option>
+                                <option value="Acudiente"></option>
+                                <option value="Tutor"></option>
+                                <option value="Tutora"></option>
+                            </datalist>
+                            <div id="familiares-container"></div>
+                            <div id="familiares-empty" class="text-muted fst-italic small">
+                                Aún no hay familiares registrados.
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -290,6 +325,7 @@
         let familiasFiltradas = [];
         let modalFamilia = null;
         let currentUser = null;
+        let familiaresOriginales = [];
         
         // ==========================================
         // INICIALIZACIÓN
@@ -331,14 +367,15 @@
                 mostrarLoading();
                 console.log('📡 Cargando familias...');
                 
-                // Query con JOIN para contar estudiantes
-                const query = `/families?select=*,students(student_id)&order=family_code.asc`;
+                // Query con JOIN para contar estudiantes y familiares
+                const query = `/families?select=*,students(student_id),family_members(family_member_id)&order=family_code.asc`;
                 const datos = await supabaseRequest(query);
                 
-                // Procesar datos agregando contador
+                // Procesar datos agregando contadores
                 familiasCache = datos.map(familia => ({
                     ...familia,
-                    student_count: familia.students ? familia.students.length : 0
+                    student_count: familia.students ? familia.students.length : 0,
+                    familiar_count: familia.family_members ? familia.family_members.length : 0
                 }));
                 
                 familiasFiltradas = [...familiasCache];
@@ -379,9 +416,11 @@
                 return `
                     <tr>
                         <td><strong>${familia.family_code}</strong></td>
-                        <td>${familyName}</td>
                         <td class="text-center">
                             <span class="badge bg-primary">${familia.student_count}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-info text-dark">${familia.familiar_count}</span>
                         </td>
                         <td class="text-center">${statusBadge}</td>
                         <td class="text-center table-actions">
@@ -443,6 +482,9 @@
             document.getElementById('family-id').value = '';
             document.getElementById('modo-edicion').value = 'crear';
             
+            // Limpiar familiares
+            limpiarFamiliares();
+            
             // Configurar modal para crear
             document.getElementById('modal-title').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Nueva Familia';
             document.getElementById('btn-guardar').innerHTML = '<i class="bi bi-save me-1"></i>Guardar';
@@ -478,6 +520,9 @@
                 document.getElementById('family-status').value = familia.family_status;
                 document.getElementById('student-count').value = familia.student_count;
                 document.getElementById('modo-edicion').value = 'editar';
+                
+                // Cargar familiares existentes de la familia
+                await cargarFamiliaresEnModal(familia.family_id);
                 
                 // Configurar modal para editar
                 document.getElementById('modal-title').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Familia';
@@ -542,10 +587,14 @@
                         student_count: 1
                     };
                     
-                    await supabaseRequest('/families', {
+                    const creada = await supabaseRequest('/families', {
                         method: 'POST',
                         body: JSON.stringify(nuevaFamilia)
                     });
+                    
+                    // Persistir familiares en la familia recién creada
+                    const nuevaFamiliaId = Array.isArray(creada) ? creada[0].family_id : creada.family_id;
+                    await guardarFamiliares(nuevaFamiliaId);
                     
                     showMessage('Familia creada exitosamente', 'success');
                     
@@ -574,6 +623,9 @@
                         method: 'PATCH',
                         body: JSON.stringify(datosActualizados)
                     });
+                    
+                    // Persistir cambios de familiares
+                    await guardarFamiliares(familyId);
                     
                     showMessage('Familia actualizada exitosamente', 'success');
                 }
@@ -696,6 +748,211 @@
         }
         
         // ==========================================
+        // GESTIÓN DE FAMILIARES (UI)
+        // ==========================================
+        let familiarRowIndex = 0;
+        
+        function limpiarFamiliares() {
+            const cont = document.getElementById('familiares-container');
+            if (cont) cont.innerHTML = '';
+            familiaresOriginales = [];
+            actualizarEmptyFamiliares();
+        }
+        
+        function actualizarEmptyFamiliares() {
+            const cont = document.getElementById('familiares-container');
+            const empty = document.getElementById('familiares-empty');
+            if (!cont || !empty) return;
+            empty.style.display = cont.children.length === 0 ? 'block' : 'none';
+        }
+        
+        function agregarFilaFamiliar(data = {}) {
+            const cont = document.getElementById('familiares-container');
+            if (!cont) return;
+            
+            const idx = familiarRowIndex++;
+            const memberId = escapeAttr(data.family_member_id || '');
+            const rel = escapeAttr(data.relationship || '');
+            const nombre = escapeAttr(data.full_name || '');
+            const phone = escapeAttr(data.phone || '');
+            const email = escapeAttr(data.email || '');
+            const status = escapeAttr(data.member_status || 'active');
+            const primary = data.is_primary ? 'checked' : '';
+            
+            const card = document.createElement('div');
+            card.className = 'card mb-2 familiar-row';
+            card.innerHTML = `
+                <div class="card-body py-2 px-3">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Relación</label>
+                            <input type="text" class="form-control form-control-sm familiar-relationship"
+                                   list="relaciones-list" maxlength="50" placeholder="Ej: Madre" value="${rel}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Nombre completo</label>
+                            <input type="text" class="form-control form-control-sm familiar-fullname"
+                                   maxlength="150" placeholder="Nombres y apellidos" value="${nombre}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small mb-1">Celular</label>
+                            <input type="text" class="form-control form-control-sm familiar-phone"
+                                   maxlength="30" placeholder="Celular" value="${phone}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Correo</label>
+                            <input type="email" class="form-control form-control-sm familiar-email"
+                                   maxlength="100" placeholder="Correo" value="${email}">
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between mt-2">
+                        <div class="form-check mb-0">
+                            <input class="form-check-input familiar-primary" type="checkbox"
+                                   id="familiar-primary-${idx}" ${primary} onchange="marcarPrincipalUnico(this)">
+                            <label class="form-check-label small" for="familiar-primary-${idx}">Contacto principal</label>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaFamiliar(this)" title="Eliminar familiar">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" class="familiar-id" value="${memberId}">
+                    <input type="hidden" class="familiar-status" value="${status}">
+                </div>
+            `;
+            cont.appendChild(card);
+            actualizarEmptyFamiliares();
+        }
+        
+        function eliminarFilaFamiliar(btn) {
+            const card = btn.closest('.familiar-row');
+            if (card) card.remove();
+            actualizarEmptyFamiliares();
+        }
+        
+        function marcarPrincipalUnico(checkbox) {
+            if (!checkbox.checked) return;
+            document.querySelectorAll('#familiares-container .familiar-primary').forEach(cb => {
+                if (cb !== checkbox) cb.checked = false;
+            });
+        }
+        
+        function escapeAttr(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+        
+        // ==========================================
+        // CARGA Y PERSISTENCIA DE FAMILIARES
+        // ==========================================
+        async function cargarFamiliaresEnModal(familyId) {
+            limpiarFamiliares();
+            try {
+                const familiares = await supabaseRequest(
+                    `/family_members?family_id=eq.${familyId}&member_status=eq.active&order=display_order.asc,created_at.asc`
+                );
+                familiaresOriginales = familiares || [];
+                familiaresOriginales.forEach(f => agregarFilaFamiliar(f));
+            } catch (error) {
+                console.error('❌ Error cargando familiares:', error);
+                showMessage('Error al cargar familiares de la familia', 'danger');
+            }
+        }
+        
+        function leerFamiliaresDelFormulario() {
+            const cards = document.querySelectorAll('#familiares-container .familiar-row');
+            const familiares = [];
+            let orden = 1;
+            let yaHayPrincipal = false;
+            
+            cards.forEach(card => {
+                const relationship = card.querySelector('.familiar-relationship').value.trim() || null;
+                const full_name = card.querySelector('.familiar-fullname').value.trim() || null;
+                const phone = card.querySelector('.familiar-phone').value.trim() || null;
+                const email = card.querySelector('.familiar-email').value.trim() || null;
+                const family_member_id = card.querySelector('.familiar-id').value || null;
+                let is_primary = card.querySelector('.familiar-primary').checked;
+                
+                // Ignorar filas completamente vacías
+                if (!relationship && !full_name && !phone && !email) return;
+                
+                // Garantizar un único contacto principal
+                if (is_primary && yaHayPrincipal) is_primary = false;
+                if (is_primary) yaHayPrincipal = true;
+                
+                familiares.push({
+                    family_member_id,
+                    relationship,
+                    full_name,
+                    phone,
+                    email,
+                    is_primary,
+                    display_order: orden++,
+                    member_status: 'active'
+                });
+            });
+            
+            return familiares;
+        }
+        
+        async function guardarFamiliares(familyId) {
+            const actuales = leerFamiliaresDelFormulario();
+            
+            const idsActuales = actuales
+                .filter(f => f.family_member_id)
+                .map(f => f.family_member_id);
+            
+            // Eliminar los originales que ya no están en el formulario
+            const aEliminar = familiaresOriginales
+                .filter(orig => !idsActuales.includes(orig.family_member_id));
+            for (const f of aEliminar) {
+                await supabaseRequest(`/family_members?family_member_id=eq.${f.family_member_id}`, {
+                    method: 'DELETE'
+                });
+            }
+            
+            // Actualizar los existentes
+            const aActualizar = actuales.filter(f => f.family_member_id);
+            for (const f of aActualizar) {
+                await supabaseRequest(`/family_members?family_member_id=eq.${f.family_member_id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        relationship: f.relationship,
+                        full_name: f.full_name,
+                        phone: f.phone,
+                        email: f.email,
+                        is_primary: f.is_primary,
+                        display_order: f.display_order,
+                        member_status: f.member_status,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+            }
+            
+            // Insertar los nuevos (en lote)
+            const aInsertar = actuales
+                .filter(f => !f.family_member_id)
+                .map(f => ({
+                    family_id: familyId,
+                    relationship: f.relationship,
+                    full_name: f.full_name,
+                    phone: f.phone,
+                    email: f.email,
+                    is_primary: f.is_primary,
+                    display_order: f.display_order,
+                    member_status: f.member_status
+                }));
+            if (aInsertar.length > 0) {
+                await supabaseRequest('/family_members', {
+                    method: 'POST',
+                    body: JSON.stringify(aInsertar)
+                });
+            }
+        }
+        
+        // ==========================================
         // HACER FUNCIONES DISPONIBLES GLOBALMENTE
         // ==========================================
         window.abrirModalNuevo = abrirModalNuevo;
@@ -704,6 +961,9 @@
         window.cambiarEstado = cambiarEstado;
         window.filtrarTabla = filtrarTabla;
         window.limpiarFiltros = limpiarFiltros;
+        window.agregarFilaFamiliar = agregarFilaFamiliar;
+        window.eliminarFilaFamiliar = eliminarFilaFamiliar;
+        window.marcarPrincipalUnico = marcarPrincipalUnico;
         
         console.log('✅ families.html cargado correctamente');
     </script>
