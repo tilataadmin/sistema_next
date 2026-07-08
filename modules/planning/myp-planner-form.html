@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.8.5">
+    <meta name="page-version" content="26.7.8.6">
     <title>Planeador PAI - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -313,7 +313,7 @@ let catalogConceptStrategies=[],selectedConceptStrategies=new Set();
 let catalogLearnerProfile=[],catalogTilataAttrs=[],selectedLearnerProfile=new Set(),selectedTilataAttrs=new Set();
 let mypYearByGrade=null;
 let plannerCycles=[],plannerCriteria=[],commentsByEntity={},quills={};
-let yearTrimestersCount=3,yearCyclesPerTrimester=10,yearDaysPerCycle=6;
+let yearTrimestersCount=3,yearDaysPerCycle=6,yearTrimesterCycles=[];
 
 const QUILL_TOOLBAR=[['bold','italic','underline'],[{list:'ordered'},{list:'bullet'}],['link'],['clean']];
 
@@ -343,11 +343,18 @@ const MYP_QUILL_FIELDS=[
 ];
 
 function getRangoCiclosTrimestre() {
-    const inicio=(plannerData.trimester-1)*yearCyclesPerTrimester+1;
-    const fin=plannerData.trimester*yearCyclesPerTrimester;
+    const trimestreActual=plannerData.trimester;
+    let inicio=1;
+    for(let t=1;t<trimestreActual;t++){
+        const fila=yearTrimesterCycles.find(r=>r.trimester_number===t);
+        inicio+=fila?fila.cycles_count:10; // fallback si falta configuración
+    }
+    const filaActual=yearTrimesterCycles.find(r=>r.trimester_number===trimestreActual);
+    const ciclosDeEsteTrimestre=filaActual?filaActual.cycles_count:10;
+    const fin=inicio+ciclosDeEsteTrimestre-1;
     return {inicio,fin};
 }
-
+        
 const CRITERION_LETTERS = ['A','B','C','D'];
 const CRITERION_BANDS = [
     {field:'band_0',   label:'0'},
@@ -437,13 +444,16 @@ async function cargarPlaneador() {
     const data=await supabaseRequest(`/pln_planners?select=*&planner_id=eq.${plannerId}&limit=1`);
     if(!data||data.length===0)throw new Error('Planeador no encontrado.');
     plannerData=data[0];
-    const yr=await supabaseRequest(`/academic_years?select=year_name,trimesters_count,cycles_per_trimester,days_per_cycle&year_id=eq.${plannerData.academic_year_id}&limit=1`);
+    const [yr,trimRows]=await Promise.all([
+        supabaseRequest(`/academic_years?select=year_name,trimesters_count,days_per_cycle&year_id=eq.${plannerData.academic_year_id}&limit=1`),
+        supabaseRequest(`/academic_year_trimesters?select=trimester_number,cycles_count&year_id=eq.${plannerData.academic_year_id}&order=trimester_number.asc`)
+    ]);
     if(yr&&yr.length>0){
         plannerData._year_name=yr[0].year_name;
         yearTrimestersCount=yr[0].trimesters_count||3;
-        yearCyclesPerTrimester=yr[0].cycles_per_trimester||10;
         yearDaysPerCycle=yr[0].days_per_cycle||6;
     }
+    yearTrimesterCycles=trimRows||[];
 }
 
 async function cargarPlannerMYP() {
