@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.8.2">
+    <meta name="page-version" content="26.7.8.3">
     <title>Años Académicos</title>
     
     <!-- Bootstrap CSS -->
@@ -373,7 +373,7 @@
                         </div>
 
                         <div class="row">
-                            <div class="col-md-4">
+                            <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="trimestersCount" class="form-label">Trimestres al año</label>
                                     <input type="number" class="form-control" id="trimestersCount" 
@@ -381,21 +381,19 @@
                                 </div>
                             </div>
 
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label for="cyclesPerTrimester" class="form-label">Ciclos por trimestre</label>
-                                    <input type="number" class="form-control" id="cyclesPerTrimester" 
-                                           min="1" max="20" value="10" placeholder="10">
-                                </div>
-                            </div>
-
-                            <div class="col-md-4">
+                            <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="daysPerCycle" class="form-label">Días por ciclo</label>
                                     <input type="number" class="form-control" id="daysPerCycle" 
                                            min="1" max="10" value="6" placeholder="6">
                                 </div>
                             </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Ciclos por trimestre</label>
+                            <div class="row" id="trimesterCyclesContainer"></div>
+                            <small class="form-text text-muted">Cada trimestre puede tener un número distinto de ciclos.</small>
                         </div>
                         
                         <div class="mb-3">
@@ -504,6 +502,14 @@
                     createYear();
                 }
             });
+
+            document.getElementById('trimestersCount').addEventListener('change', function() {
+                const valoresActuales = {};
+                document.querySelectorAll('.trimester-cycles-input').forEach(inp => {
+                    valoresActuales[inp.dataset.trimester] = inp.value;
+                });
+                renderTrimesterCyclesInputs(this.value, valoresActuales);
+            });
             
             console.log('✅ Event listeners configurados');
         }
@@ -529,8 +535,12 @@
                 
                 // Cargar closures recientes para detectar cuáles son reversables
                 await cargarClosuresParaYears();
+
+                // Cargar ciclos configurados por trimestre
+                await cargarTrimestresParaYears();
                 
                 filteredYears = [...allYears];
+                
                 renderYearsGrid();
                 loadStats();
                 
@@ -590,6 +600,25 @@
             } catch (error) {
                 console.warn('No se pudieron cargar closures:', error.message);
                 // No es fatal — el botón de reversa simplemente no aparecerá
+            }
+        }
+
+        // ==========================================
+        // CARGAR CICLOS POR TRIMESTRE PARA CADA AÑO
+        // ==========================================
+        async function cargarTrimestresParaYears() {
+            try {
+                const rows = await supabaseRequest('/academic_year_trimesters?select=year_id,trimester_number,cycles_count&order=trimester_number.asc');
+                const porYear = {};
+                (rows || []).forEach(r => {
+                    if (!porYear[r.year_id]) porYear[r.year_id] = [];
+                    porYear[r.year_id].push(r);
+                });
+                allYears.forEach(year => {
+                    year._trimesterCycles = porYear[year.year_id] || [];
+                });
+            } catch (error) {
+                console.warn('No se pudieron cargar ciclos por trimestre:', error.message);
             }
         }
         
@@ -664,7 +693,7 @@
                                     <div class="mb-3">
                                         <small class="text-muted">
                                             <i class="bi bi-calendar3-range me-1"></i>
-                                            ${year.trimesters_count} trimestres · ${year.cycles_per_trimester || '-'} ciclos c/u · ${year.days_per_cycle || '-'} días por ciclo
+                                            ${year.trimesters_count} trimestres · ${(year._trimesterCycles && year._trimesterCycles.length) ? year._trimesterCycles.map(t => t.cycles_count).join('+') + ' ciclos' : 'ciclos por trimestre sin configurar'} · ${year.days_per_cycle || '-'} días por ciclo
                                         </small>
                                     </div>
                                 ` : ''}
@@ -762,6 +791,49 @@
             return div.innerHTML;
         }
         // ==========================================
+        // CICLOS POR TRIMESTRE (dinámico según Trimestres al año)
+        // ==========================================
+        function renderTrimesterCyclesInputs(count, values = {}) {
+            const container = document.getElementById('trimesterCyclesContainer');
+            if (!container) return;
+            const n = parseInt(count) || 0;
+            let html = '';
+            for (let i = 1; i <= n; i++) {
+                const val = values[i] !== undefined ? values[i] : 10;
+                html += `
+                    <div class="col-md-4 col-6 mb-2">
+                        <label class="form-label small">Trimestre ${i}</label>
+                        <input type="number" class="form-control trimester-cycles-input" data-trimester="${i}" min="1" max="30" value="${val}">
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        function getTrimesterCyclesValues() {
+            const inputs = document.querySelectorAll('.trimester-cycles-input');
+            const result = [];
+            inputs.forEach(inp => {
+                result.push({
+                    trimester_number: parseInt(inp.dataset.trimester),
+                    cycles_count: parseInt(inp.value) || 1
+                });
+            });
+            return result;
+        }
+
+        async function guardarCiclosPorTrimestre(yearId) {
+            const valores = getTrimesterCyclesValues();
+            await supabaseRequest('/academic_year_trimesters?year_id=eq.' + yearId, { method: 'DELETE' });
+            if (valores.length === 0) return;
+            const rows = valores.map(v => ({ year_id: yearId, trimester_number: v.trimester_number, cycles_count: v.cycles_count }));
+            await supabaseRequest('/academic_year_trimesters', {
+                method: 'POST',
+                body: JSON.stringify(rows)
+            });
+        }
+
+        // ==========================================
         // MODAL Y FORMULARIO
         // ==========================================
         
@@ -779,8 +851,8 @@
             document.getElementById('yearStatus').value = 'active';
             document.getElementById('cycles').value = '2';
             document.getElementById('trimestersCount').value = '3';
-            document.getElementById('cyclesPerTrimester').value = '10';
             document.getElementById('daysPerCycle').value = '6';
+            renderTrimesterCyclesInputs(3);
             
             // Mostrar modal
             modalInstance.show();
@@ -821,12 +893,11 @@
                     cycles: parseInt(document.getElementById('cycles').value) || null,
                     year_order: parseInt(document.getElementById('yearOrder').value) || null,
                     trimesters_count: parseInt(document.getElementById('trimestersCount').value) || 3,
-                    cycles_per_trimester: parseInt(document.getElementById('cyclesPerTrimester').value) || 10,
                     days_per_cycle: parseInt(document.getElementById('daysPerCycle').value) || 6,
                     is_current: document.getElementById('isCurrent').checked
                 };
                 
-                console.log('📅 Actualizando año académico:', formData);
+                console.log('📅 Creando año académico:', formData);
                 
                 // Si se marca como actual, desmarcar otros años
                 if (formData.is_current) {
@@ -842,6 +913,8 @@
                 });
                 
                 const newYear = Array.isArray(yearData) ? yearData[0] : yearData;
+
+                await guardarCiclosPorTrimestre(newYear.year_id);
                 
                 showMessage('Año académico "' + newYear.year_name + '" creado exitosamente', 'success');
                 closeYearModal();
@@ -895,9 +968,13 @@
                 document.getElementById('cycles').value = year.cycles || '';
                 document.getElementById('yearOrder').value = year.year_order || '';
                 document.getElementById('trimestersCount').value = year.trimesters_count || 3;
-                document.getElementById('cyclesPerTrimester').value = year.cycles_per_trimester || 10;
                 document.getElementById('daysPerCycle').value = year.days_per_cycle || 6;
                 document.getElementById('isCurrent').checked = year.is_current;
+
+                const trimestreRows = await supabaseRequest('/academic_year_trimesters?select=trimester_number,cycles_count&year_id=eq.' + yearId + '&order=trimester_number.asc');
+                const valoresExistentes = {};
+                (trimestreRows || []).forEach(r => { valoresExistentes[r.trimester_number] = r.cycles_count; });
+                renderTrimesterCyclesInputs(year.trimesters_count || 3, valoresExistentes);
                 
                 // Mostrar modal
                 modalInstance.show();
@@ -932,12 +1009,11 @@
                     cycles: parseInt(document.getElementById('cycles').value) || null,
                     year_order: parseInt(document.getElementById('yearOrder').value) || null,
                     trimesters_count: parseInt(document.getElementById('trimestersCount').value) || 3,
-                    cycles_per_trimester: parseInt(document.getElementById('cyclesPerTrimester').value) || 10,
                     days_per_cycle: parseInt(document.getElementById('daysPerCycle').value) || 6,
                     is_current: document.getElementById('isCurrent').checked
                 };
                 
-                console.log('📅 Creando año académico:', formData);
+                console.log('📅 Actualizando año académico:', formData);
                 
                 // Si se marca como actual, desmarcar otros años
                 if (formData.is_current) {
@@ -951,6 +1027,8 @@
                     method: 'PATCH',
                     body: JSON.stringify(formData)
                 });
+
+                await guardarCiclosPorTrimestre(currentYearId);
                 
                 showMessage('Año académico "' + formData.year_name + '" actualizado exitosamente', 'success');
                 closeYearModal();
