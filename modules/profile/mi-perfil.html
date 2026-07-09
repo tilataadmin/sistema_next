@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.9.3">
+    <meta name="page-version" content="26.7.9.5">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -786,6 +786,7 @@
             holidays: [],
             pedagogicalDays: [],
             allWorkers: [],          // [{worker_id, email, nombre}]
+            selectedInvitees: new Map(), // worker_id -> {worker_id, email, nombre}, persiste aunque cambie el filtro de búsqueda
             recurringCalendarId: null,
             myRecurrences: []
         };
@@ -892,7 +893,7 @@
                 }));
 
                 rtPoblarSelectorDia();
-                rtRenderizarListaInvitados(rtState.allWorkers);
+                rtRenderizarListaInvitados();
 
                 await rtCargarMisRecurrencias();
 
@@ -915,40 +916,73 @@
         }
 
         // ---- Selector de invitados ----
-        function rtRenderizarListaInvitados(workers) {
+        // Muestra dos bloques: los ya seleccionados (siempre visibles, sin importar el filtro)
+        // y los resultados de la búsqueda actual (excluyendo a quienes ya están seleccionados).
+        function rtRenderizarListaInvitados() {
             const container = document.getElementById('rt-invitees-list');
-            if (!workers || workers.length === 0) {
-                container.innerHTML = '<div class="text-muted small">No hay personas disponibles.</div>';
-                return;
-            }
+            const searchInput = document.getElementById('rt-invitees-search');
+            const term = (searchInput ? searchInput.value : '').trim().toLowerCase();
 
-            const previamenteMarcados = new Set(
-                Array.from(container.querySelectorAll('.rt-invitee-chk:checked')).map(cb => cb.value)
-            );
+            const seleccionados = Array.from(rtState.selectedInvitees.values());
+            const noSeleccionados = rtState.allWorkers.filter(w => !rtState.selectedInvitees.has(w.worker_id));
+            const resultados = term
+                ? noSeleccionados.filter(w => w.nombre.toLowerCase().includes(term) || w.email.toLowerCase().includes(term))
+                : noSeleccionados;
 
             let html = '';
-            workers.forEach(w => {
-                const checked = previamenteMarcados.has(w.worker_id) ? 'checked' : '';
-                html += `
-                    <div class="form-check">
-                        <input class="form-check-input rt-invitee-chk" type="checkbox"
-                               value="${w.worker_id}" data-email="${escapeHtmlCert(w.email)}"
-                               id="rt-inv-${w.worker_id}" ${checked}>
-                        <label class="form-check-label" for="rt-inv-${w.worker_id}">
-                            ${escapeHtmlCert(w.nombre)} <small class="text-muted">${escapeHtmlCert(w.email)}</small>
-                        </label>
-                    </div>
-                `;
-            });
+
+            if (seleccionados.length > 0) {
+                html += '<div class="mb-1"><small class="text-muted fw-bold">Seleccionados (' + seleccionados.length + ')</small></div>';
+                seleccionados.forEach(w => {
+                    html += rtFilaInvitado(w, true);
+                });
+                html += '<hr class="my-2">';
+            }
+
+            if (resultados.length === 0) {
+                if (term) {
+                    html += '<div class="text-muted small">Sin resultados para "' + escapeHtmlCert(term) + '".</div>';
+                } else if (seleccionados.length === 0) {
+                    html += '<div class="text-muted small">No hay personas disponibles.</div>';
+                }
+            } else {
+                resultados.forEach(w => {
+                    html += rtFilaInvitado(w, false);
+                });
+            }
+
             container.innerHTML = html;
+
+            container.querySelectorAll('.rt-invitee-chk').forEach(cb => {
+                cb.addEventListener('change', rtToggleInvitado);
+            });
         }
 
-        function filtrarInvitados(e) {
-            const term = e.target.value.trim().toLowerCase();
-            const filtrados = term
-                ? rtState.allWorkers.filter(w => w.nombre.toLowerCase().includes(term) || w.email.toLowerCase().includes(term))
-                : rtState.allWorkers;
-            rtRenderizarListaInvitados(filtrados);
+        function rtFilaInvitado(w, checked) {
+            return `
+                <div class="form-check">
+                    <input class="form-check-input rt-invitee-chk" type="checkbox"
+                           value="${w.worker_id}" id="rt-inv-${w.worker_id}" ${checked ? 'checked' : ''}>
+                    <label class="form-check-label" for="rt-inv-${w.worker_id}">
+                        ${escapeHtmlCert(w.nombre)} <small class="text-muted">${escapeHtmlCert(w.email)}</small>
+                    </label>
+                </div>
+            `;
+        }
+
+        function rtToggleInvitado(e) {
+            const workerId = e.target.value;
+            if (e.target.checked) {
+                const worker = rtState.allWorkers.find(w => w.worker_id === workerId);
+                if (worker) rtState.selectedInvitees.set(workerId, worker);
+            } else {
+                rtState.selectedInvitees.delete(workerId);
+            }
+            rtRenderizarListaInvitados();
+        }
+
+        function filtrarInvitados() {
+            rtRenderizarListaInvitados();
         }
 
         // ---- Agendar recurrencia ----
@@ -957,7 +991,7 @@
             const dia = parseInt(document.getElementById('rt-dia').value, 10);
             const startTime = document.getElementById('rt-start').value;
             const endTime = document.getElementById('rt-end').value;
-            const invitedCheckboxes = Array.from(document.querySelectorAll('.rt-invitee-chk:checked'));
+            const invitedWorkers = Array.from(rtState.selectedInvitees.values());
 
             if (!title) {
                 showMessage('Ingresa un nombre para la reunión', 'warning');
@@ -978,7 +1012,7 @@
                 return;
             }
 
-            const invitadosEmails = invitedCheckboxes.map(cb => cb.dataset.email);
+            const invitadosEmails = invitedWorkers.map(w => w.email);
             // El que agenda queda invitado automáticamente
             const guestsEmails = Array.from(new Set([currentUser.user_mail, ...invitadosEmails]));
 
@@ -1015,11 +1049,11 @@
                 const recurringEventId = Array.isArray(inserted) ? inserted[0].recurring_event_id : inserted.recurring_event_id;
 
                 // 2) Insertar invitados
-                if (invitedCheckboxes.length > 0) {
-                    const invRows = invitedCheckboxes.map(cb => ({
+                if (invitedWorkers.length > 0) {
+                    const invRows = invitedWorkers.map(w => ({
                         recurring_event_id: recurringEventId,
-                        worker_id: cb.value,
-                        invitee_email: cb.dataset.email
+                        worker_id: w.worker_id,
+                        invitee_email: w.email
                     }));
                     await supabaseRequest('/tilata_recurring_invitees', {
                         method: 'POST',
@@ -1058,7 +1092,9 @@
 
                 // Limpiar formulario
                 document.getElementById('rt-title').value = '';
-                document.querySelectorAll('.rt-invitee-chk:checked').forEach(cb => cb.checked = false);
+                document.getElementById('rt-invitees-search').value = '';
+                rtState.selectedInvitees.clear();
+                rtRenderizarListaInvitados();
 
                 await rtCargarMisRecurrencias();
 
