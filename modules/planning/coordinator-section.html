@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.3.1">
+    <meta name="page-version" content="26.7.9.9">
     <title>Coordinación de sección — Planeación — SchoolNet</title>
 
     <!-- Bootstrap -->
@@ -564,6 +564,11 @@
                     <i class="bi bi-journal-bookmark me-1"></i> Bienales PD
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-interdisc" type="button" data-tab="interdisc">
+                    <i class="bi bi-diagram-3 me-1"></i> Interdisc. PAI
+                </button>
+            </li>
         </ul>
 
         <!-- Contenido tab Planeadores -->
@@ -900,6 +905,63 @@
 
         </div>
 
+        <!-- Contenido tab Interdisc. PAI -->
+        <div id="tab-content-interdisc" class="tab-pane-content" style="display:none;">
+
+            <!-- Filtros -->
+            <div class="filters-card">
+                <div class="row g-2">
+                    <div class="col-md-2 col-6">
+                        <label class="form-label">Año académico</label>
+                        <select id="filter-interdisc-year" class="form-select form-select-sm"></select>
+                    </div>
+                    <div class="col-md-2 col-6">
+                        <label class="form-label">Grado</label>
+                        <select id="filter-interdisc-grade" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 col-12">
+                        <label class="form-label">Área</label>
+                        <select id="filter-interdisc-area" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 col-12">
+                        <label class="form-label">Estado</label>
+                        <select id="filter-interdisc-status" class="form-select form-select-sm">
+                            <option value="active">Activas</option>
+                            <option value="archived">Archivadas</option>
+                            <option value="all">Todas</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla -->
+            <div class="table-card">
+                <div class="table-summary" id="interdisc-summary">Cargando...</div>
+                <div class="table-responsive">
+                    <table class="table pln-table" id="interdisc-table">
+                        <thead>
+                            <tr>
+                                <th data-sort-interdisc="title" class="sorted">Unidad <span class="sort-indicator">▲</span></th>
+                                <th class="no-sort">Grado</th>
+                                <th class="no-sort">Disciplinas</th>
+                                <th class="no-sort">Creador</th>
+                                <th data-sort-interdisc="cycles">Ciclos <span class="sort-indicator">▲</span></th>
+                                <th data-sort-interdisc="updatedAt">Último update <span class="sort-indicator">▲</span></th>
+                                <th data-sort-interdisc="commentsPending">Pendientes <span class="sort-indicator">▲</span></th>
+                                <th data-sort-interdisc="status">Estado <span class="sort-indicator">▲</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="interdisc-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
     </div>
 
     <!-- Bootstrap JS -->
@@ -945,7 +1007,11 @@
             panoramaCache: {},        // key: `${yearId}::${trim}::${areaFilter}`
             // Panorama UIs
             unitsPanoramaAreaFilter: '',
-            unitsPanoramaCache: {}    // key: `${yearId}::${areaFilter}`
+            unitsPanoramaCache: {},   // key: `${yearId}::${areaFilter}`
+            // Tab Interdisc. PAI
+            interdiscLoaded: {},
+            interdiscData: {},
+            sortInterdisc: { column: 'title', direction: 'asc' }
         };
 
         // ============================================================
@@ -2958,6 +3024,8 @@
                 STATE.selectedYearId = e.target.value;
                 const otherYearSel = document.getElementById('filter-year');
                 if (otherYearSel) otherYearSel.value = STATE.selectedYearId;
+                const interdiscYearSel = document.getElementById('filter-interdisc-year');
+                if (interdiscYearSel) interdiscYearSel.value = STATE.selectedYearId;
                 // Invalidar caches y reinferir trimestre del panorama de planeadores
                 STATE.panoramaTrim = null;
                 invalidarCachePanorama();
@@ -2970,6 +3038,10 @@
                 }
                 if (STATE.activeTab === 'units' && STATE.activeViewUnits === 'panorama') {
                     await cargarYRenderizarPanoramaUIs();
+                }
+                if (STATE.activeTab === 'interdisc') {
+                    await cargarDatosInterdiscDelAno(STATE.selectedYearId);
+                    aplicarFiltrosYRenderizarInterdisc();
                 }
             });
 
@@ -2990,6 +3062,9 @@
                     aplicarFiltrosYRenderizarUIs();
                 });
             });
+
+            // Filtros del tab Interdisc. PAI
+            setupInterdiscFilters();
         }
 
         async function cambiarTab(tab) {
@@ -3000,6 +3075,7 @@
             document.getElementById('tab-content-planners').style.display = tab === 'planners' ? 'block' : 'none';
             document.getElementById('tab-content-units').style.display = tab === 'units' ? 'block' : 'none';
             document.getElementById('tab-content-dp-outlines').style.display = tab === 'dp-outlines' ? 'block' : 'none';
+            document.getElementById('tab-content-interdisc').style.display = tab === 'interdisc' ? 'block' : 'none';
 
             if (tab === 'units') {
                 await cargarDatosUIsDelAno(STATE.selectedYearId);
@@ -3008,6 +3084,16 @@
             if (tab === 'dp-outlines') {
                 await cargarDatosDPOutlines();
                 aplicarFiltrosYRenderizarDPOutlines();
+            }
+            if (tab === 'interdisc') {
+                const interdiscYearSel = document.getElementById('filter-interdisc-year');
+                if (interdiscYearSel) {
+                    interdiscYearSel.innerHTML = STATE.academicYears
+                        .map(y => `<option value="${y.year_id}" ${y.year_id === STATE.selectedYearId ? 'selected' : ''}>${escapeHtml(y.year_name)}${y.is_current ? ' (actual)' : ''}</option>`)
+                        .join('');
+                }
+                await cargarDatosInterdiscDelAno(STATE.selectedYearId);
+                aplicarFiltrosYRenderizarInterdisc();
             }
         }
 
@@ -3227,6 +3313,323 @@
                     </div>
                 `;
             }
+        }
+
+        // ============================================================
+        // TAB INTERDISC. PAI — CARGA Y RENDER
+        // ============================================================
+        // Alcance: unidades interdisciplinarias cuyo grade_id pertenece a algún
+        // grado de la sección dirigida por el usuario actual. Si la sección no
+        // tiene grados PAI, la tabla saldrá vacía (las unidades interdisc son
+        // exclusivas del PAI por diseño).
+        // ============================================================
+
+        async function cargarDatosInterdiscDelAno(yearId) {
+            if (STATE.interdiscLoaded[yearId]) return;
+
+            // Grados de la sección (ya calculados en yearData desde el arranque)
+            const yearData = STATE.yearData[yearId] || {};
+            const sectionGradeIds = yearData.sectionGradeIds || [];
+
+            if (sectionGradeIds.length === 0) {
+                STATE.interdiscData[yearId] = { units: [], disciplinesByUnit: new Map(), cyclesByUnit: new Map(), commentsPendingByUnit: new Map(), workersById: new Map(), subjectsById: new Map(), gradesById: new Map(), areasById: new Map() };
+                STATE.interdiscLoaded[yearId] = true;
+                return;
+            }
+
+            // 1) Unidades del año cuyo grade_id esté en la sección
+            const unidadesRes = await supabaseRequest(
+                `/pln_interdisc_units?select=*&academic_year_id=eq.${yearId}&grade_id=in.(${sectionGradeIds.join(',')})&unit_status=neq.deleted`
+            );
+            const unidades = unidadesRes || [];
+
+            if (unidades.length === 0) {
+                STATE.interdiscData[yearId] = { units: [], disciplinesByUnit: new Map(), cyclesByUnit: new Map(), commentsPendingByUnit: new Map(), workersById: new Map(), subjectsById: new Map(), gradesById: new Map(), areasById: new Map() };
+                STATE.interdiscLoaded[yearId] = true;
+                return;
+            }
+
+            const unitIds = unidades.map(u => u.interdisc_unit_id);
+
+            // 2) Disciplinas
+            const disciplinasRes = await supabaseRequest(
+                `/pln_interdisc_unit_disciplines?select=discipline_id,interdisc_unit_id,subject_id&interdisc_unit_id=in.(${unitIds.join(',')})`
+            );
+            const disciplinesByUnit = new Map();
+            (disciplinasRes || []).forEach(d => {
+                if (!disciplinesByUnit.has(d.interdisc_unit_id)) disciplinesByUnit.set(d.interdisc_unit_id, []);
+                disciplinesByUnit.get(d.interdisc_unit_id).push(d);
+            });
+
+            // 3) Ciclos (conteo)
+            const cyclesRes = await supabaseRequest(
+                `/pln_interdisc_unit_cycles?select=cycle_id,interdisc_unit_id&interdisc_unit_id=in.(${unitIds.join(',')})`
+            );
+            const cyclesByUnit = new Map();
+            (cyclesRes || []).forEach(c => {
+                cyclesByUnit.set(c.interdisc_unit_id, (cyclesByUnit.get(c.interdisc_unit_id) || 0) + 1);
+            });
+
+            // 4) Comentarios pendientes
+            const cycleUnitMap = new Map();
+            (cyclesRes || []).forEach(c => cycleUnitMap.set(c.cycle_id, c.interdisc_unit_id));
+
+            const allEntityIds = [...unitIds, ...cycleUnitMap.keys()];
+            const commentsRes = allEntityIds.length > 0 ? (await supabaseRequest(
+                `/pln_comments?select=comment_id,entity_type,entity_id,parent_comment_id,comment_status&entity_id=in.(${allEntityIds.join(',')})&comment_status=eq.active`
+            )) || [] : [];
+
+            const respuestasPorParent = new Map();
+            commentsRes.forEach(c => {
+                if (c.parent_comment_id) {
+                    respuestasPorParent.set(c.parent_comment_id, (respuestasPorParent.get(c.parent_comment_id) || 0) + 1);
+                }
+            });
+
+            const commentsPendingByUnit = new Map();
+            commentsRes.forEach(c => {
+                if (c.parent_comment_id) return;
+                if ((respuestasPorParent.get(c.comment_id) || 0) > 0) return;
+                let uid = null;
+                if (c.entity_type === 'interdisc_unit') uid = c.entity_id;
+                else if (c.entity_type === 'interdisc_unit_cycle') uid = cycleUnitMap.get(c.entity_id);
+                if (uid) commentsPendingByUnit.set(uid, (commentsPendingByUnit.get(uid) || 0) + 1);
+            });
+
+            // 5) Workers (creadores)
+            const creatorIds = [...new Set(unidades.map(u => u.created_by).filter(x => x))];
+            const workersRes = creatorIds.length > 0 ? await supabaseRequest(
+                `/workers?select=worker_id,worker_first_name,worker_last_name_1&worker_id=in.(${creatorIds.join(',')})`
+            ) : [];
+            const workersById = new Map();
+            (workersRes || []).forEach(w => workersById.set(w.worker_id, w));
+
+            // 6) Grados
+            const gradeIds = [...new Set(unidades.map(u => u.grade_id).filter(x => x))];
+            const gradesRes = gradeIds.length > 0 ? await supabaseRequest(
+                `/grades?select=grade_id,grade_name&grade_id=in.(${gradeIds.join(',')})`
+            ) : [];
+            const gradesById = new Map();
+            (gradesRes || []).forEach(g => gradesById.set(g.grade_id, g));
+
+            // 7) Subjects + Areas
+            const allSubjectIds = [...new Set((disciplinasRes || []).map(d => d.subject_id))];
+            const subjectsRes = allSubjectIds.length > 0 ? await supabaseRequest(
+                `/academic_subjects?select=subject_id,subject_name,area_id&subject_id=in.(${allSubjectIds.join(',')})`
+            ) : [];
+            const subjectsById = new Map();
+            (subjectsRes || []).forEach(s => subjectsById.set(s.subject_id, s));
+
+            const allAreaIds = [...new Set((subjectsRes || []).map(s => s.area_id).filter(x => x))];
+            const areasRes = allAreaIds.length > 0 ? await supabaseRequest(
+                `/academic_areas?select=area_id,area_name&area_id=in.(${allAreaIds.join(',')})&area_status=eq.active`
+            ) : [];
+            const areasById = new Map();
+            (areasRes || []).forEach(a => areasById.set(a.area_id, a));
+
+            STATE.interdiscData[yearId] = {
+                units: unidades,
+                disciplinesByUnit,
+                cyclesByUnit,
+                commentsPendingByUnit,
+                workersById,
+                subjectsById,
+                gradesById,
+                areasById
+            };
+            STATE.interdiscLoaded[yearId] = true;
+
+            poblarFiltrosInterdisc(yearId);
+        }
+
+        function poblarFiltrosInterdisc(yearId) {
+            const data = STATE.interdiscData[yearId];
+            if (!data) return;
+
+            // Grado
+            const gradeSel = document.getElementById('filter-interdisc-grade');
+            if (gradeSel) {
+                const usados = [...new Set(data.units.map(u => u.grade_id))]
+                    .map(gid => data.gradesById.get(gid))
+                    .filter(g => g)
+                    .sort((a, b) => a.grade_name.localeCompare(b.grade_name));
+                gradeSel.innerHTML = '<option value="">Todos</option>' +
+                    usados.map(g => `<option value="${g.grade_id}">${escapeHtml(g.grade_name)}</option>`).join('');
+            }
+
+            // Área
+            const areaSel = document.getElementById('filter-interdisc-area');
+            if (areaSel) {
+                const areaIdsUsadas = new Set();
+                data.units.forEach(u => {
+                    (data.disciplinesByUnit.get(u.interdisc_unit_id) || []).forEach(d => {
+                        const s = data.subjectsById.get(d.subject_id);
+                        if (s && s.area_id) areaIdsUsadas.add(s.area_id);
+                    });
+                });
+                const disponibles = [...areaIdsUsadas]
+                    .map(aid => data.areasById.get(aid))
+                    .filter(a => a)
+                    .sort((a, b) => a.area_name.localeCompare(b.area_name));
+                areaSel.innerHTML = '<option value="">Todas</option>' +
+                    disponibles.map(a => `<option value="${a.area_id}">${escapeHtml(a.area_name)}</option>`).join('');
+            }
+        }
+
+        function aplicarFiltrosYRenderizarInterdisc() {
+            const yearId = STATE.selectedYearId;
+            const data = STATE.interdiscData[yearId];
+            if (!data) { renderTablaInterdisc([], null, 0); return; }
+
+            const gradeFilter = document.getElementById('filter-interdisc-grade')?.value || '';
+            const areaFilter = document.getElementById('filter-interdisc-area')?.value || '';
+            const statusFilter = document.getElementById('filter-interdisc-status')?.value || 'active';
+
+            const filtradas = data.units.filter(u => {
+                if (gradeFilter && u.grade_id !== gradeFilter) return false;
+                if (statusFilter !== 'all' && u.unit_status !== statusFilter) return false;
+                if (areaFilter) {
+                    const disc = data.disciplinesByUnit.get(u.interdisc_unit_id) || [];
+                    const tieneArea = disc.some(d => {
+                        const s = data.subjectsById.get(d.subject_id);
+                        return s && s.area_id === areaFilter;
+                    });
+                    if (!tieneArea) return false;
+                }
+                return true;
+            });
+
+            const ordenadas = ordenarInterdisc(filtradas, data);
+            renderTablaInterdisc(ordenadas, data, data.units.length);
+        }
+
+        function ordenarInterdisc(units, data) {
+            const { column, direction } = STATE.sortInterdisc;
+            const dir = direction === 'asc' ? 1 : -1;
+            const arr = [...units];
+            arr.sort((a, b) => {
+                let va, vb;
+                switch (column) {
+                    case 'title':
+                        va = (a.unit_title || '').toLowerCase();
+                        vb = (b.unit_title || '').toLowerCase();
+                        break;
+                    case 'cycles':
+                        va = data.cyclesByUnit.get(a.interdisc_unit_id) || 0;
+                        vb = data.cyclesByUnit.get(b.interdisc_unit_id) || 0;
+                        break;
+                    case 'updatedAt':
+                        va = a.updated_at || '';
+                        vb = b.updated_at || '';
+                        break;
+                    case 'commentsPending':
+                        va = data.commentsPendingByUnit.get(a.interdisc_unit_id) || 0;
+                        vb = data.commentsPendingByUnit.get(b.interdisc_unit_id) || 0;
+                        break;
+                    case 'status':
+                        va = a.unit_status || '';
+                        vb = b.unit_status || '';
+                        break;
+                    default:
+                        va = (a.unit_title || '').toLowerCase();
+                        vb = (b.unit_title || '').toLowerCase();
+                }
+                if (va < vb) return -1 * dir;
+                if (va > vb) return 1 * dir;
+                return 0;
+            });
+            return arr;
+        }
+
+        function renderTablaInterdisc(units, data, totalEnAlcance) {
+            const tbody = document.getElementById('interdisc-tbody');
+            const summary = document.getElementById('interdisc-summary');
+            if (!tbody) return;
+
+            if (!data || units.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><em>No hay unidades interdisciplinarias que coincidan con los filtros.</em></td></tr>';
+                if (summary) summary.textContent = totalEnAlcance > 0 ? `0 de ${totalEnAlcance} en el alcance` : 'Sin unidades en el alcance de la sección.';
+                return;
+            }
+
+            tbody.innerHTML = units.map(u => {
+                const grado = data.gradesById.get(u.grade_id);
+                const creator = data.workersById.get(u.created_by);
+                const creatorName = creator ? `${creator.worker_first_name} ${creator.worker_last_name_1}` : '—';
+
+                const disciplinas = (data.disciplinesByUnit.get(u.interdisc_unit_id) || [])
+                    .map(d => data.subjectsById.get(d.subject_id))
+                    .filter(s => s);
+                const discChips = disciplinas.length > 0
+                    ? disciplinas.map(s => `<span class="chip">${escapeHtml(s.subject_name)}</span>`).join(' ')
+                    : '<span class="text-muted small">—</span>';
+
+                const ciclos = data.cyclesByUnit.get(u.interdisc_unit_id) || 0;
+                const pendientes = data.commentsPendingByUnit.get(u.interdisc_unit_id) || 0;
+
+                const statusBadge = u.unit_status === 'archived'
+                    ? '<span class="badge bg-secondary">Archivada</span>'
+                    : '<span class="badge bg-success">Activa</span>';
+
+                return `<tr class="interdisc-row" data-unit-id="${u.interdisc_unit_id}" style="cursor:pointer;">
+                    <td><strong>${escapeHtml(u.unit_title || 'Sin título')}</strong></td>
+                    <td>${escapeHtml(grado ? grado.grade_name : '—')}</td>
+                    <td>${discChips}</td>
+                    <td>${escapeHtml(creatorName)}</td>
+                    <td class="text-center">${ciclos}</td>
+                    <td>${formatFechaCorta(u.updated_at)}</td>
+                    <td class="text-center">${pendientes > 0 ? `<span class="badge bg-warning text-dark">${pendientes}</span>` : '<span class="text-muted">0</span>'}</td>
+                    <td>${statusBadge}</td>
+                </tr>`;
+            }).join('');
+
+            tbody.querySelectorAll('.interdisc-row').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    window.location.href = `interdisc-unit-form.html?interdisc_unit_id=${tr.dataset.unitId}`;
+                });
+            });
+
+            if (summary) summary.textContent = `${units.length} de ${totalEnAlcance} en el alcance`;
+        }
+
+        function formatFechaCorta(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: '2-digit' });
+        }
+
+        function setupInterdiscFilters() {
+            ['filter-interdisc-year', 'filter-interdisc-grade', 'filter-interdisc-area', 'filter-interdisc-status']
+                .forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.addEventListener('change', async () => {
+                        if (id === 'filter-interdisc-year') {
+                            STATE.selectedYearId = el.value;
+                            await cargarDatosInterdiscDelAno(STATE.selectedYearId);
+                        }
+                        aplicarFiltrosYRenderizarInterdisc();
+                    });
+                });
+
+            document.querySelectorAll('[data-sort-interdisc]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const col = th.getAttribute('data-sort-interdisc');
+                    if (STATE.sortInterdisc.column === col) {
+                        STATE.sortInterdisc.direction = STATE.sortInterdisc.direction === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        STATE.sortInterdisc.column = col;
+                        STATE.sortInterdisc.direction = 'asc';
+                    }
+                    document.querySelectorAll('[data-sort-interdisc]').forEach(t => {
+                        t.classList.toggle('sorted', t.getAttribute('data-sort-interdisc') === col);
+                        const ind = t.querySelector('.sort-indicator');
+                        if (ind) ind.textContent = t.getAttribute('data-sort-interdisc') === col
+                            ? (STATE.sortInterdisc.direction === 'asc' ? '▲' : '▼') : '▲';
+                    });
+                    aplicarFiltrosYRenderizarInterdisc();
+                });
+            });
         }
 
         console.log('✅ coordinator-section.html — iteración 1: tabs Planeadores + UIs, vista lista + panorama');
