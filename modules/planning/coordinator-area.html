@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.3.1">
+    <meta name="page-version" content="26.7.9.1">
     <title>Coordinación de asignatura — Planeación</title>
 
     <!-- Bootstrap -->
@@ -560,6 +560,11 @@
                     <i class="bi bi-journal-bookmark me-1"></i> Bi-anuales PD
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-interdisc" type="button" data-tab="interdisc">
+                    <i class="bi bi-diagram-3 me-1"></i> Interdisc. PAI
+                </button>
+            </li>
         </ul>
         <!-- Contenido tab Planeadores -->
         <div id="tab-content-planners" class="tab-pane-content">
@@ -888,6 +893,65 @@
 
         </div>
 
+        <!-- Contenido tab Interdisc. PAI -->
+        <div id="tab-content-interdisc" class="tab-pane-content" style="display:none;">
+
+            <!-- Filtros -->
+            <div class="filters-card">
+                <div class="row g-2">
+                    <div class="col-md-2 col-6">
+                        <label class="form-label">Año académico</label>
+                        <select id="filter-interdisc-year" class="form-select form-select-sm"></select>
+                    </div>
+                    <div class="col-md-2 col-6">
+                        <label class="form-label">Grado</label>
+                        <select id="filter-interdisc-grade" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 col-12">
+                        <label class="form-label">Disciplina (de mi área)</label>
+                        <select id="filter-interdisc-subject" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 col-12">
+                        <label class="form-label">Estado</label>
+                        <select id="filter-interdisc-status" class="form-select form-select-sm">
+                            <option value="active">Activas</option>
+                            <option value="archived">Archivadas</option>
+                            <option value="all">Todas</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla -->
+            <div class="table-card">
+                <div class="table-summary" id="interdisc-summary">Cargando...</div>
+                <div class="table-responsive">
+                    <table class="table pln-table" id="interdisc-table">
+                        <thead>
+                            <tr>
+                                <th data-sort-interdisc="title" class="sorted">Unidad <span class="sort-indicator">▲</span></th>
+                                <th class="no-sort">Grado</th>
+                                <th class="no-sort">Disciplinas de mi área</th>
+                                <th class="no-sort">Creador</th>
+                                <th data-sort-interdisc="cycles">Ciclos <span class="sort-indicator">▲</span></th>
+                                <th data-sort-interdisc="updatedAt">Último update <span class="sort-indicator">▲</span></th>
+                                <th data-sort-interdisc="commentsPending">Pendientes <span class="sort-indicator">▲</span></th>
+                                <th data-sort-interdisc="status">Estado <span class="sort-indicator">▲</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="interdisc-tbody">
+                            <!-- Filas inyectadas dinámicamente -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
     </div>
 
     <!-- Bootstrap JS -->
@@ -939,7 +1003,11 @@
             dpOutlinesLoaded: false,
             dpOutlines: [],                   // todos los bianuales no-deleted
             dpOutlineSubjectsById: new Map(), // subject_id -> {subject_name, area_id}
-            dpOutlineWorkersById: new Map()   // worker_id -> {worker_first_name, worker_last_name_1}
+            dpOutlineWorkersById: new Map(),  // worker_id -> {worker_first_name, worker_last_name_1}
+            // Tab Interdisc. PAI (unidades interdisciplinarias del PAI)
+            interdiscLoaded: {},              // year_id -> true cuando ya se cargaron las unidades del año
+            interdiscData: {},                // year_id -> { units, disciplinesByUnit, cyclesByUnit, commentsPendingByUnit, workersById, subjectsById, gradesById }
+            sortInterdisc: { column: 'title', direction: 'asc' }
         };
 
         // ============================================================
@@ -3038,6 +3106,8 @@
                 STATE.selectedYearId = e.target.value;
                 const otherYearSel = document.getElementById('filter-year');
                 if (otherYearSel) otherYearSel.value = STATE.selectedYearId;
+                const interdiscYearSel = document.getElementById('filter-interdisc-year');
+                if (interdiscYearSel) interdiscYearSel.value = STATE.selectedYearId;
                 // Invalidar caches de ambos panoramas
                 STATE.panoramaTrim = null;
                 invalidarCachePanorama();
@@ -3050,6 +3120,10 @@
                 }
                 if (STATE.activeTab === 'units' && STATE.activeViewUnits === 'panorama') {
                     await cargarYRenderizarPanoramaUIs();
+                }
+                if (STATE.activeTab === 'interdisc') {
+                    await cargarDatosInterdiscDelAno(STATE.selectedYearId);
+                    aplicarFiltrosYRenderizarInterdisc();
                 }
             });
             
@@ -3071,6 +3145,9 @@
                     aplicarFiltrosYRenderizarUIs();
                 });
             });
+
+            // Filtros del tab Interdisc. PAI
+            setupInterdiscFilters();
         }
 
         async function cambiarVistaUIs(view) {
@@ -3095,6 +3172,7 @@
             document.getElementById('tab-content-planners').style.display = tab === 'planners' ? 'block' : 'none';
             document.getElementById('tab-content-units').style.display = tab === 'units' ? 'block' : 'none';
             document.getElementById('tab-content-dp-outlines').style.display = tab === 'dp-outlines' ? 'block' : 'none';
+            document.getElementById('tab-content-interdisc').style.display = tab === 'interdisc' ? 'block' : 'none';
 
             // Lazy load del tab Bi-anuales PD la primera vez que se abre
             if (tab === 'dp-outlines') {
@@ -3113,6 +3191,18 @@
                 }
                 await cargarDatosUIsDelAno(STATE.selectedYearId);
                 aplicarFiltrosYRenderizarUIs();
+            }
+
+            // Lazy load del tab Interdisc. PAI la primera vez que se abre
+            if (tab === 'interdisc') {
+                const interdiscYearSel = document.getElementById('filter-interdisc-year');
+                if (interdiscYearSel) {
+                    interdiscYearSel.innerHTML = STATE.academicYears
+                        .map(y => `<option value="${y.year_id}" ${y.year_id === STATE.selectedYearId ? 'selected' : ''}>${escapeHtml(y.year_name)}${y.is_current ? ' (actual)' : ''}</option>`)
+                        .join('');
+                }
+                await cargarDatosInterdiscDelAno(STATE.selectedYearId);
+                aplicarFiltrosYRenderizarInterdisc();
             }
         }
 
@@ -3319,6 +3409,352 @@
             }
         }
 
+        // ============================================================
+        // TAB INTERDISC. PAI — CARGA Y RENDER
+        // ============================================================
+        // Unidades interdisciplinarias del PAI donde al menos una disciplina
+        // pertenece a un área coordinada por el usuario actual.
+        // ============================================================
+
+        async function cargarDatosInterdiscDelAno(yearId) {
+            if (STATE.interdiscLoaded[yearId]) return;
+
+            const areaIdsCoordinadas = STATE.coordinatedAreas.map(a => a.area_id);
+            if (areaIdsCoordinadas.length === 0) {
+                STATE.interdiscData[yearId] = { units: [], disciplinesByUnit: new Map(), cyclesByUnit: new Map(), commentsPendingByUnit: new Map(), workersById: new Map(), subjectsById: new Map(), gradesById: new Map(), subjectsFromMyAreas: [] };
+                STATE.interdiscLoaded[yearId] = true;
+                return;
+            }
+
+            // 1) Cargar asignaturas de las áreas coordinadas
+            const subjectsRes = await supabaseRequest(
+                `/academic_subjects?select=subject_id,subject_name,area_id&area_id=in.(${areaIdsCoordinadas.join(',')})`
+            );
+            const subjectsFromMyAreas = subjectsRes || [];
+            const subjectIdsFromMyAreas = subjectsFromMyAreas.map(s => s.subject_id);
+
+            if (subjectIdsFromMyAreas.length === 0) {
+                STATE.interdiscData[yearId] = { units: [], disciplinesByUnit: new Map(), cyclesByUnit: new Map(), commentsPendingByUnit: new Map(), workersById: new Map(), subjectsById: new Map(), gradesById: new Map(), subjectsFromMyAreas: [] };
+                STATE.interdiscLoaded[yearId] = true;
+                return;
+            }
+
+            // 2) Buscar disciplinas donde subject_id esté en las de mis áreas
+            //    Con eso identifico las unidades del alcance.
+            const disciplinasRes = await supabaseRequest(
+                `/pln_interdisc_unit_disciplines?select=discipline_id,interdisc_unit_id,subject_id&subject_id=in.(${subjectIdsFromMyAreas.join(',')})`
+            );
+            const unitIds = [...new Set((disciplinasRes || []).map(d => d.interdisc_unit_id))];
+
+            if (unitIds.length === 0) {
+                STATE.interdiscData[yearId] = { units: [], disciplinesByUnit: new Map(), cyclesByUnit: new Map(), commentsPendingByUnit: new Map(), workersById: new Map(), subjectsById: new Map(), gradesById: new Map(), subjectsFromMyAreas };
+                STATE.interdiscLoaded[yearId] = true;
+                return;
+            }
+
+            // 3) Cargar unidades del año que están en el alcance
+            const unidadesRes = await supabaseRequest(
+                `/pln_interdisc_units?select=*&interdisc_unit_id=in.(${unitIds.join(',')})&academic_year_id=eq.${yearId}&unit_status=neq.deleted`
+            );
+            const unidades = unidadesRes || [];
+
+            if (unidades.length === 0) {
+                STATE.interdiscData[yearId] = { units: [], disciplinesByUnit: new Map(), cyclesByUnit: new Map(), commentsPendingByUnit: new Map(), workersById: new Map(), subjectsById: new Map(), gradesById: new Map(), subjectsFromMyAreas };
+                STATE.interdiscLoaded[yearId] = true;
+                return;
+            }
+
+            const finalUnitIds = unidades.map(u => u.interdisc_unit_id);
+
+            // 4) Cargar TODAS las disciplinas de esas unidades (para poder mostrar solo las de mi área en la columna)
+            const allDisciplinasRes = await supabaseRequest(
+                `/pln_interdisc_unit_disciplines?select=discipline_id,interdisc_unit_id,subject_id&interdisc_unit_id=in.(${finalUnitIds.join(',')})`
+            );
+            const disciplinesByUnit = new Map();
+            (allDisciplinasRes || []).forEach(d => {
+                if (!disciplinesByUnit.has(d.interdisc_unit_id)) disciplinesByUnit.set(d.interdisc_unit_id, []);
+                disciplinesByUnit.get(d.interdisc_unit_id).push(d);
+            });
+
+            // 5) Cargar ciclos (solo conteo)
+            const cyclesRes = await supabaseRequest(
+                `/pln_interdisc_unit_cycles?select=cycle_id,interdisc_unit_id&interdisc_unit_id=in.(${finalUnitIds.join(',')})`
+            );
+            const cyclesByUnit = new Map();
+            (cyclesRes || []).forEach(c => {
+                cyclesByUnit.set(c.interdisc_unit_id, (cyclesByUnit.get(c.interdisc_unit_id) || 0) + 1);
+            });
+
+            // 6) Cargar comentarios pendientes (raíces sin respuesta)
+            const cycleIdsSet = new Set((cyclesRes || []).map(c => c.cycle_id));
+            const allEntityIds = [...finalUnitIds, ...cycleIdsSet];
+            const commentsRes = allEntityIds.length > 0 ? (await supabaseRequest(
+                `/pln_comments?select=comment_id,entity_type,entity_id,parent_comment_id,comment_status&entity_id=in.(${allEntityIds.join(',')})&comment_status=eq.active`
+            )) || [] : [];
+
+            // Un comentario "pendiente" = raíz activa (parent_comment_id = null) que no tiene ninguna respuesta activa
+            const cycleUnitMap = new Map();
+            (cyclesRes || []).forEach(c => cycleUnitMap.set(c.cycle_id, c.interdisc_unit_id));
+
+            const respuestasPorParent = new Map();
+            commentsRes.forEach(c => {
+                if (c.parent_comment_id) {
+                    respuestasPorParent.set(c.parent_comment_id, (respuestasPorParent.get(c.parent_comment_id) || 0) + 1);
+                }
+            });
+
+            const commentsPendingByUnit = new Map();
+            commentsRes.forEach(c => {
+                if (c.parent_comment_id) return; // solo raíces
+                if ((respuestasPorParent.get(c.comment_id) || 0) > 0) return; // ya respondido
+                let unitId = null;
+                if (c.entity_type === 'interdisc_unit') unitId = c.entity_id;
+                else if (c.entity_type === 'interdisc_unit_cycle') unitId = cycleUnitMap.get(c.entity_id);
+                if (unitId) {
+                    commentsPendingByUnit.set(unitId, (commentsPendingByUnit.get(unitId) || 0) + 1);
+                }
+            });
+
+            // 7) Cargar workers (para nombres de creadores)
+            const creatorIds = [...new Set(unidades.map(u => u.created_by).filter(x => x))];
+            const workersRes = creatorIds.length > 0 ? await supabaseRequest(
+                `/workers?select=worker_id,worker_first_name,worker_last_name_1&worker_id=in.(${creatorIds.join(',')})`
+            ) : [];
+            const workersById = new Map();
+            (workersRes || []).forEach(w => workersById.set(w.worker_id, w));
+
+            // 8) Cargar grados
+            const gradeIds = [...new Set(unidades.map(u => u.grade_id).filter(x => x))];
+            const gradesRes = gradeIds.length > 0 ? await supabaseRequest(
+                `/grades?select=grade_id,grade_name&grade_id=in.(${gradeIds.join(',')})`
+            ) : [];
+            const gradesById = new Map();
+            (gradesRes || []).forEach(g => gradesById.set(g.grade_id, g));
+
+            // 9) Todas las subjects_id de las disciplinas
+            const allSubjectIdsInUnits = [...new Set((allDisciplinasRes || []).map(d => d.subject_id))];
+            const allSubjectsRes = allSubjectIdsInUnits.length > 0 ? await supabaseRequest(
+                `/academic_subjects?select=subject_id,subject_name,area_id&subject_id=in.(${allSubjectIdsInUnits.join(',')})`
+            ) : [];
+            const subjectsById = new Map();
+            (allSubjectsRes || []).forEach(s => subjectsById.set(s.subject_id, s));
+
+            STATE.interdiscData[yearId] = {
+                units: unidades,
+                disciplinesByUnit,
+                cyclesByUnit,
+                commentsPendingByUnit,
+                workersById,
+                subjectsById,
+                gradesById,
+                subjectsFromMyAreas
+            };
+            STATE.interdiscLoaded[yearId] = true;
+
+            // Poblar filtros
+            poblarFiltrosInterdisc(yearId);
+        }
+
+        function poblarFiltrosInterdisc(yearId) {
+            const data = STATE.interdiscData[yearId];
+            if (!data) return;
+
+            // Filtro grado (solo grados presentes)
+            const gradeSel = document.getElementById('filter-interdisc-grade');
+            if (gradeSel) {
+                const usados = [...new Set(data.units.map(u => u.grade_id))]
+                    .map(gid => data.gradesById.get(gid))
+                    .filter(g => g)
+                    .sort((a, b) => a.grade_name.localeCompare(b.grade_name));
+                gradeSel.innerHTML = '<option value="">Todos</option>' +
+                    usados.map(g => `<option value="${g.grade_id}">${escapeHtml(g.grade_name)}</option>`).join('');
+            }
+
+            // Filtro disciplina (solo asignaturas de mis áreas presentes en alguna unidad del alcance)
+            const subjSel = document.getElementById('filter-interdisc-subject');
+            if (subjSel) {
+                const subjectIdsUsados = new Set();
+                data.units.forEach(u => {
+                    (data.disciplinesByUnit.get(u.interdisc_unit_id) || []).forEach(d => {
+                        subjectIdsUsados.add(d.subject_id);
+                    });
+                });
+                const disponibles = data.subjectsFromMyAreas
+                    .filter(s => subjectIdsUsados.has(s.subject_id))
+                    .sort((a, b) => a.subject_name.localeCompare(b.subject_name));
+                subjSel.innerHTML = '<option value="">Todas</option>' +
+                    disponibles.map(s => `<option value="${s.subject_id}">${escapeHtml(s.subject_name)}</option>`).join('');
+            }
+        }
+
+        function aplicarFiltrosYRenderizarInterdisc() {
+            const yearId = STATE.selectedYearId;
+            const data = STATE.interdiscData[yearId];
+            if (!data) { renderTablaInterdisc([], null, 0); return; }
+
+            const gradeFilter = document.getElementById('filter-interdisc-grade')?.value || '';
+            const subjectFilter = document.getElementById('filter-interdisc-subject')?.value || '';
+            const statusFilter = document.getElementById('filter-interdisc-status')?.value || 'active';
+
+            const filtradas = data.units.filter(u => {
+                if (gradeFilter && u.grade_id !== gradeFilter) return false;
+                if (statusFilter !== 'all' && u.unit_status !== statusFilter) return false;
+                if (subjectFilter) {
+                    const disc = data.disciplinesByUnit.get(u.interdisc_unit_id) || [];
+                    if (!disc.some(d => d.subject_id === subjectFilter)) return false;
+                }
+                return true;
+            });
+
+            const ordenadas = ordenarInterdisc(filtradas, data);
+            renderTablaInterdisc(ordenadas, data, data.units.length);
+        }
+
+        function ordenarInterdisc(units, data) {
+            const { column, direction } = STATE.sortInterdisc;
+            const dir = direction === 'asc' ? 1 : -1;
+            const arr = [...units];
+            arr.sort((a, b) => {
+                let va, vb;
+                switch (column) {
+                    case 'title':
+                        va = (a.unit_title || '').toLowerCase();
+                        vb = (b.unit_title || '').toLowerCase();
+                        break;
+                    case 'cycles':
+                        va = data.cyclesByUnit.get(a.interdisc_unit_id) || 0;
+                        vb = data.cyclesByUnit.get(b.interdisc_unit_id) || 0;
+                        break;
+                    case 'updatedAt':
+                        va = a.updated_at || '';
+                        vb = b.updated_at || '';
+                        break;
+                    case 'commentsPending':
+                        va = data.commentsPendingByUnit.get(a.interdisc_unit_id) || 0;
+                        vb = data.commentsPendingByUnit.get(b.interdisc_unit_id) || 0;
+                        break;
+                    case 'status':
+                        va = a.unit_status || '';
+                        vb = b.unit_status || '';
+                        break;
+                    default:
+                        va = (a.unit_title || '').toLowerCase();
+                        vb = (b.unit_title || '').toLowerCase();
+                }
+                if (va < vb) return -1 * dir;
+                if (va > vb) return 1 * dir;
+                return 0;
+            });
+            return arr;
+        }
+
+        function renderTablaInterdisc(units, data, totalEnAlcance) {
+            const tbody = document.getElementById('interdisc-tbody');
+            const summary = document.getElementById('interdisc-summary');
+            if (!tbody) return;
+
+            if (!data || units.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><em>No hay unidades interdisciplinarias que coincidan con los filtros.</em></td></tr>';
+                if (summary) summary.textContent = totalEnAlcance > 0 ? `0 de ${totalEnAlcance} en el alcance` : 'Sin unidades en el alcance del área.';
+                return;
+            }
+
+            const areaIdsCoordinadas = new Set(STATE.coordinatedAreas.map(a => a.area_id));
+
+            tbody.innerHTML = units.map(u => {
+                const grado = data.gradesById.get(u.grade_id);
+                const creator = data.workersById.get(u.created_by);
+                const creatorName = creator ? `${creator.worker_first_name} ${creator.worker_last_name_1}` : '—';
+
+                // Disciplinas de mi área en esta unidad
+                const todasDisc = data.disciplinesByUnit.get(u.interdisc_unit_id) || [];
+                const misDisc = todasDisc
+                    .map(d => data.subjectsById.get(d.subject_id))
+                    .filter(s => s && areaIdsCoordinadas.has(s.area_id));
+                const misDiscChips = misDisc.length > 0
+                    ? misDisc.map(s => `<span class="chip">${escapeHtml(s.subject_name)}</span>`).join(' ')
+                    : '<span class="text-muted small">—</span>';
+
+                const totalDisc = todasDisc.length;
+                const otrasDisc = totalDisc - misDisc.length;
+                const extraLabel = otrasDisc > 0 ? ` <span class="text-muted small">+${otrasDisc} de otras áreas</span>` : '';
+
+                const ciclos = data.cyclesByUnit.get(u.interdisc_unit_id) || 0;
+                const pendientes = data.commentsPendingByUnit.get(u.interdisc_unit_id) || 0;
+
+                const statusBadge = u.unit_status === 'archived'
+                    ? '<span class="badge bg-secondary">Archivada</span>'
+                    : '<span class="badge bg-success">Activa</span>';
+
+                return `<tr class="interdisc-row" data-unit-id="${u.interdisc_unit_id}" style="cursor:pointer;">
+                    <td><strong>${escapeHtml(u.unit_title || 'Sin título')}</strong></td>
+                    <td>${escapeHtml(grado ? grado.grade_name : '—')}</td>
+                    <td>${misDiscChips}${extraLabel}</td>
+                    <td>${escapeHtml(creatorName)}</td>
+                    <td class="text-center">${ciclos}</td>
+                    <td>${formatFechaCorta(u.updated_at)}</td>
+                    <td class="text-center">${pendientes > 0 ? `<span class="badge bg-warning text-dark">${pendientes}</span>` : '<span class="text-muted">0</span>'}</td>
+                    <td>${statusBadge}</td>
+                </tr>`;
+            }).join('');
+
+            // Listener de click
+            tbody.querySelectorAll('.interdisc-row').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    const uid = tr.dataset.unitId;
+                    window.location.href = `interdisc-unit-form.html?interdisc_unit_id=${uid}`;
+                });
+            });
+
+            if (summary) {
+                summary.textContent = `${units.length} de ${totalEnAlcance} en el alcance`;
+            }
+        }
+
+        function formatFechaCorta(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: '2-digit' });
+        }
+
+        // Setup listeners de filtros del tab Interdisc.
+        function setupInterdiscFilters() {
+            ['filter-interdisc-year', 'filter-interdisc-grade', 'filter-interdisc-subject', 'filter-interdisc-status']
+                .forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.addEventListener('change', async () => {
+                        if (id === 'filter-interdisc-year') {
+                            STATE.selectedYearId = el.value;
+                            await cargarDatosInterdiscDelAno(STATE.selectedYearId);
+                        }
+                        aplicarFiltrosYRenderizarInterdisc();
+                    });
+                });
+
+            // Sort de columnas
+            document.querySelectorAll('[data-sort-interdisc]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const col = th.getAttribute('data-sort-interdisc');
+                    if (STATE.sortInterdisc.column === col) {
+                        STATE.sortInterdisc.direction = STATE.sortInterdisc.direction === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        STATE.sortInterdisc.column = col;
+                        STATE.sortInterdisc.direction = 'asc';
+                    }
+                    // Actualizar indicadores visuales
+                    document.querySelectorAll('[data-sort-interdisc]').forEach(t => {
+                        t.classList.toggle('sorted', t.getAttribute('data-sort-interdisc') === col);
+                        const ind = t.querySelector('.sort-indicator');
+                        if (ind) ind.textContent = t.getAttribute('data-sort-interdisc') === col
+                            ? (STATE.sortInterdisc.direction === 'asc' ? '▲' : '▼') : '▲';
+                    });
+                    aplicarFiltrosYRenderizarInterdisc();
+                });
+            });
+        }
+
+        // Llamado desde conectarEventos() para no depender de timers.
         console.log('✅ coordinator-area.html — iteración 1: tab Planeadores, vista lista');
     </script>
 </body>
