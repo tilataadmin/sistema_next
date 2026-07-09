@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.2">
+    <meta name="page-version" content="26.7.9.8">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -524,6 +524,25 @@
 
     </div>
 
+    <!-- MODAL: OCURRENCIAS DE UNA RECURRENCIA -->
+    <div class="modal fade" id="rt-occurrences-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="rt-occurrences-modal-title">
+                        <i class="bi bi-calendar3 me-2"></i>Fechas de la recurrencia
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="rt-occurrences-list">
+                        <div class="text-muted small">Cargando...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
@@ -788,7 +807,13 @@
             allWorkers: [],          // [{worker_id, email, nombre}]
             selectedInvitees: new Map(), // worker_id -> {worker_id, email, nombre}, persiste aunque cambie el filtro de búsqueda
             recurringCalendarId: null,
-            myRecurrences: []
+            myRecurrences: [],
+            // Estado del modal "Fechas de la recurrencia"
+            currentRecurrenceId: null,
+            currentRecurrenceTitle: null,
+            currentRecurrenceGuests: [],
+            currentOccurrences: [],
+            editingOccurrenceId: null
         };
 
         // ---- Helpers de fecha (locales, sin corrimiento de zona horaria) ----
@@ -1081,7 +1106,24 @@
                     throw new Error((result && result.error) ? result.error : 'Error desconocido en el servidor');
                 }
 
-                // 4) Actualizar el contador de ocurrencias creadas
+                // 4) Guardar cada ocurrencia individual (fecha + ID real del evento en Calendar,
+                //    necesario para poder moverla u omitirla sin depender de búsquedas por fecha)
+                if (result.occurrences && result.occurrences.length > 0) {
+                    const occRows = result.occurrences.map(o => ({
+                        recurring_event_id: recurringEventId,
+                        calendar_event_id: o.calendarEventId,
+                        occurrence_date: o.date,
+                        start_time: startTime,
+                        end_time: endTime,
+                        status: 'scheduled'
+                    }));
+                    await supabaseRequest('/tilata_recurring_occurrences', {
+                        method: 'POST',
+                        body: JSON.stringify(occRows)
+                    });
+                }
+
+                // 5) Actualizar el contador de ocurrencias creadas
                 await supabaseRequest('/tilata_recurring_events?recurring_event_id=eq.' + recurringEventId, {
                     method: 'PATCH',
                     body: JSON.stringify({ occurrences_created: result.created })
@@ -1142,6 +1184,9 @@
                         <td>${r.start_time.substring(0,5)} - ${r.end_time.substring(0,5)}</td>
                         <td>${r.occurrences_created}</td>
                         <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-secondary me-1" onclick="rtAbrirOcurrencias('${r.recurring_event_id}')">
+                                <i class="bi bi-calendar3 me-1"></i>Ver fechas
+                            </button>
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="reversarRecurrencia('${r.recurring_event_id}')">
                                 <i class="bi bi-arrow-counterclockwise me-1"></i>Reversar
                             </button>
@@ -1200,6 +1245,278 @@
             }
         }
 
+        // ---- Ocurrencias individuales de una recurrencia ----
+        let rtOccurrencesModalInstance = null;
+
+        async function rtAbrirOcurrencias(recurringEventId) {
+            const recurrence = rtState.myRecurrences.find(r => r.recurring_event_id === recurringEventId);
+            if (!recurrence) return;
+
+            rtState.currentRecurrenceId = recurringEventId;
+            rtState.currentRecurrenceTitle = recurrence.title;
+            rtState.editingOccurrenceId = null;
+
+            document.getElementById('rt-occurrences-modal-title').innerHTML =
+                '<i class="bi bi-calendar3 me-2"></i>Fechas de "' + escapeHtmlCert(recurrence.title) + '"';
+            document.getElementById('rt-occurrences-list').innerHTML =
+                '<div class="text-muted small">Cargando...</div>';
+
+            if (!rtOccurrencesModalInstance) {
+                rtOccurrencesModalInstance = new bootstrap.Modal(document.getElementById('rt-occurrences-modal'));
+            }
+            rtOccurrencesModalInstance.show();
+
+            try {
+                // Invitados de la serie: se necesitan para poder restaurar una ocurrencia omitida
+                const invitees = await supabaseRequest(
+                    '/tilata_recurring_invitees?select=invitee_email&recurring_event_id=eq.' + recurringEventId
+                );
+                rtState.currentRecurrenceGuests = Array.from(new Set([
+                    currentUser.user_mail,
+                    ...((invitees || []).map(i => i.invitee_email))
+                ]));
+
+                const occurrences = await supabaseRequest(
+                    '/tilata_recurring_occurrences?select=*&recurring_event_id=eq.' + recurringEventId +
+                    '&order=occurrence_date.asc'
+                );
+                rtState.currentOccurrences = occurrences || [];
+                rtRenderizarOcurrenciasModal();
+
+            } catch (error) {
+                console.error('❌ Error cargando ocurrencias:', error);
+                document.getElementById('rt-occurrences-list').innerHTML =
+                    '<div class="alert alert-danger mb-0">Error cargando las fechas: ' + escapeHtmlCert(error.message) + '</div>';
+            }
+        }
+
+        function rtRenderizarOcurrenciasModal() {
+            const container = document.getElementById('rt-occurrences-list');
+            if (rtState.currentOccurrences.length === 0) {
+                container.innerHTML = '<div class="text-muted small">No hay fechas registradas para esta recurrencia.</div>';
+                return;
+            }
+
+            let html = '<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">';
+            html += '<thead class="table-light"><tr><th>Fecha</th><th>Horario</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead><tbody>';
+
+            rtState.currentOccurrences.forEach(o => {
+                html += (rtState.editingOccurrenceId === o.occurrence_id)
+                    ? rtFilaOcurrenciaEdicion(o)
+                    : rtFilaOcurrenciaVista(o);
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function rtFilaOcurrenciaVista(o) {
+            const fecha = rtParseDate(o.occurrence_date).toLocaleDateString('es-CO', {
+                weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+            });
+            const horario = o.start_time.substring(0, 5) + ' - ' + o.end_time.substring(0, 5);
+
+            let estadoBadge = '<span class="badge bg-success">Programada</span>';
+            if (o.status === 'skipped') {
+                estadoBadge = '<span class="badge bg-secondary">Omitida</span>';
+            } else if (o.is_modified) {
+                estadoBadge = '<span class="badge bg-warning text-dark">Modificada</span>';
+            }
+
+            let acciones;
+            if (o.status === 'scheduled') {
+                acciones = `
+                    <button type="button" class="btn btn-sm btn-outline-primary me-1" title="Mover"
+                            onclick="rtIniciarEdicionOcurrencia('${o.occurrence_id}')">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" title="Omitir"
+                            onclick="rtOmitirOcurrencia('${o.occurrence_id}')">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                `;
+            } else {
+                acciones = `
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="rtRestaurarOcurrencia('${o.occurrence_id}')">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Restaurar
+                    </button>
+                `;
+            }
+
+            return `
+                <tr>
+                    <td>${fecha}</td>
+                    <td>${horario}</td>
+                    <td>${estadoBadge}</td>
+                    <td class="text-end">${acciones}</td>
+                </tr>
+            `;
+        }
+
+        function rtFilaOcurrenciaEdicion(o) {
+            return `
+                <tr>
+                    <td><input type="date" class="form-control form-control-sm" id="rt-edit-date-${o.occurrence_id}" value="${o.occurrence_date}"></td>
+                    <td class="d-flex gap-1">
+                        <input type="time" class="form-control form-control-sm" id="rt-edit-start-${o.occurrence_id}" value="${o.start_time.substring(0,5)}">
+                        <input type="time" class="form-control form-control-sm" id="rt-edit-end-${o.occurrence_id}" value="${o.end_time.substring(0,5)}">
+                    </td>
+                    <td colspan="2" class="text-end">
+                        <button type="button" class="btn btn-sm btn-primary me-1" title="Guardar"
+                                onclick="rtGuardarMovimientoOcurrencia('${o.occurrence_id}')">
+                            <i class="bi bi-check-lg"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" title="Cancelar"
+                                onclick="rtCancelarEdicionOcurrencia()">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function rtIniciarEdicionOcurrencia(occurrenceId) {
+            rtState.editingOccurrenceId = occurrenceId;
+            rtRenderizarOcurrenciasModal();
+        }
+
+        function rtCancelarEdicionOcurrencia() {
+            rtState.editingOccurrenceId = null;
+            rtRenderizarOcurrenciasModal();
+        }
+
+        async function rtGuardarMovimientoOcurrencia(occurrenceId) {
+            const occurrence = rtState.currentOccurrences.find(o => o.occurrence_id === occurrenceId);
+            if (!occurrence) return;
+
+            const newDate = document.getElementById('rt-edit-date-' + occurrenceId).value;
+            const newStart = document.getElementById('rt-edit-start-' + occurrenceId).value;
+            const newEnd = document.getElementById('rt-edit-end-' + occurrenceId).value;
+
+            if (!newDate || !newStart || !newEnd || newStart >= newEnd) {
+                showMessage('Verifica la fecha y las horas', 'warning');
+                return;
+            }
+
+            try {
+                const fd = new FormData();
+                fd.append('action', 'move_recurring_occurrence');
+                fd.append('calendarId', rtState.recurringCalendarId);
+                fd.append('calendarEventId', occurrence.calendar_event_id);
+                fd.append('newDate', newDate);
+                fd.append('newStartTime', newStart);
+                fd.append('newEndTime', newEnd);
+
+                const resp = await fetch(NOTIFICATION_CONFIG.endpoint, { method: 'POST', body: fd });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+                const result = await resp.json();
+                if (!result || !result.success) {
+                    throw new Error((result && result.error) ? result.error : 'Error desconocido en el servidor');
+                }
+
+                await supabaseRequest('/tilata_recurring_occurrences?occurrence_id=eq.' + occurrenceId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        occurrence_date: newDate,
+                        start_time: newStart,
+                        end_time: newEnd,
+                        is_modified: true,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                occurrence.occurrence_date = newDate;
+                occurrence.start_time = newStart;
+                occurrence.end_time = newEnd;
+                occurrence.is_modified = true;
+                rtState.editingOccurrenceId = null;
+                rtRenderizarOcurrenciasModal();
+                showMessage('Fecha actualizada correctamente', 'success');
+
+            } catch (error) {
+                console.error('❌ Error moviendo ocurrencia:', error);
+                showMessage('Error al mover la ocurrencia: ' + error.message, 'danger');
+            }
+        }
+
+        async function rtOmitirOcurrencia(occurrenceId) {
+            const occurrence = rtState.currentOccurrences.find(o => o.occurrence_id === occurrenceId);
+            if (!occurrence) return;
+
+            if (!confirm('¿Omitir la ocurrencia del ' + occurrence.occurrence_date + '? Se eliminará ese evento puntual del calendario; el resto de la serie no se ve afectada.')) {
+                return;
+            }
+
+            try {
+                const fd = new FormData();
+                fd.append('action', 'skip_recurring_occurrence');
+                fd.append('calendarId', rtState.recurringCalendarId);
+                fd.append('calendarEventId', occurrence.calendar_event_id);
+
+                const resp = await fetch(NOTIFICATION_CONFIG.endpoint, { method: 'POST', body: fd });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+                const result = await resp.json();
+                if (!result || !result.success) {
+                    throw new Error((result && result.error) ? result.error : 'Error desconocido en el servidor');
+                }
+
+                await supabaseRequest('/tilata_recurring_occurrences?occurrence_id=eq.' + occurrenceId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status: 'skipped', updated_at: new Date().toISOString() })
+                });
+
+                occurrence.status = 'skipped';
+                rtRenderizarOcurrenciasModal();
+                showMessage('Ocurrencia omitida', 'success');
+
+            } catch (error) {
+                console.error('❌ Error omitiendo ocurrencia:', error);
+                showMessage('Error al omitir la ocurrencia: ' + error.message, 'danger');
+            }
+        }
+
+        async function rtRestaurarOcurrencia(occurrenceId) {
+            const occurrence = rtState.currentOccurrences.find(o => o.occurrence_id === occurrenceId);
+            if (!occurrence) return;
+
+            try {
+                const fd = new FormData();
+                fd.append('action', 'restore_recurring_occurrence');
+                fd.append('calendarId', rtState.recurringCalendarId);
+                fd.append('agendamientoId', rtState.currentRecurrenceId);
+                fd.append('title', rtState.currentRecurrenceTitle);
+                fd.append('date', occurrence.occurrence_date);
+                fd.append('startTime', occurrence.start_time.substring(0, 5));
+                fd.append('endTime', occurrence.end_time.substring(0, 5));
+                fd.append('guests', JSON.stringify(rtState.currentRecurrenceGuests.length ? rtState.currentRecurrenceGuests : [currentUser.user_mail]));
+
+                const resp = await fetch(NOTIFICATION_CONFIG.endpoint, { method: 'POST', body: fd });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+                const result = await resp.json();
+                if (!result || !result.success) {
+                    throw new Error((result && result.error) ? result.error : 'Error desconocido en el servidor');
+                }
+
+                await supabaseRequest('/tilata_recurring_occurrences?occurrence_id=eq.' + occurrenceId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        status: 'scheduled',
+                        calendar_event_id: result.calendarEventId,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                occurrence.status = 'scheduled';
+                occurrence.calendar_event_id = result.calendarEventId;
+                rtRenderizarOcurrenciasModal();
+                showMessage('Ocurrencia restaurada', 'success');
+
+            } catch (error) {
+                console.error('❌ Error restaurando ocurrencia:', error);
+                showMessage('Error al restaurar la ocurrencia: ' + error.message, 'danger');
+            }
+        }
+
         function rtLog(mensaje, tipo) {
             const log = document.getElementById('rt-log');
             const ts = new Date().toLocaleTimeString('es-CO');
@@ -1211,8 +1528,14 @@
             log.scrollTop = log.scrollHeight;
         }
 
-        // Exponer para el onclick inline del botón "Reversar"
+        // Exponer para los onclick inline de la tabla y del modal de ocurrencias
         window.reversarRecurrencia = reversarRecurrencia;
+        window.rtAbrirOcurrencias = rtAbrirOcurrencias;
+        window.rtIniciarEdicionOcurrencia = rtIniciarEdicionOcurrencia;
+        window.rtCancelarEdicionOcurrencia = rtCancelarEdicionOcurrencia;
+        window.rtGuardarMovimientoOcurrencia = rtGuardarMovimientoOcurrencia;
+        window.rtOmitirOcurrencia = rtOmitirOcurrencia;
+        window.rtRestaurarOcurrencia = rtRestaurarOcurrencia;
 
        // ==========================================
         // ACCESOS RÁPIDOS
