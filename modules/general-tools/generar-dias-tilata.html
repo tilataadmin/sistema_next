@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.9.1">
+    <meta name="page-version" content="26.7.9.2">
     <title>Generar Días Tilatá - SchoolNet</title>
 
     <!-- Bootstrap CSS -->
@@ -362,6 +362,17 @@
             const vacStart = year.start_of_vacations ? parseDate(year.start_of_vacations) : null;
             const vacEnd = year.end_of_vacations ? parseDate(year.end_of_vacations) : null;
 
+            // Semana Santa y semana de receso de octubre: toda la semana sin días Tilatá,
+            // aunque solo algunos de esos días sean festivos nacionales (Decreto 1373 de 2007).
+            const breakSet = new Set();
+            calcularRangoRecesos(year).forEach(b => {
+                let d = new Date(b.start);
+                while (d <= b.end) {
+                    breakSet.add(fmtDate(d));
+                    d = addDays(d, 1);
+                }
+            });
+
             const events = [];
             let counter = 0;
             let ciclo = 0;
@@ -375,8 +386,9 @@
                 const isHoliday = holidaySet.has(key);
                 const isVacation = vacStart && vacEnd && d >= vacStart && d <= vacEnd;
                 const isPed = pedSet.has(key);
+                const isBreakWeek = breakSet.has(key);
 
-                if (!isWeekend && !isHoliday && !isVacation && !isPed) {
+                if (!isWeekend && !isHoliday && !isVacation && !isPed && !isBreakWeek) {
                     counter++;
                     const dia = ((counter - 1) % daysPerCycle) + 1;
                     if (dia === 1) {
@@ -432,6 +444,11 @@
                 showMessage('Error leyendo exclusiones: ' + error.message, 'danger');
                 return;
             }
+
+            const recesos = calcularRangoRecesos(y);
+            recesos.forEach(b => {
+                agregarLog('📅 ' + b.name + ' excluida completa: ' + fmtDate(b.start) + ' → ' + fmtDate(b.end), 'info');
+            });
 
             const seq = calcularSecuencia(y, holidays, pedagogicalDays);
 
@@ -626,6 +643,27 @@
             const add = (dow === 1) ? 0 : ((8 - dow) % 7);
             r.setDate(r.getDate() + add);
             return r;
+        }
+
+        // Semana Santa (lunes a viernes de la semana de Pascua) y semana de receso de octubre
+        // (lunes a viernes de la semana anterior al festivo de Día de la Raza, Decreto 1373 de 2007).
+        // Toda la semana queda sin días Tilatá, aunque no todos sus días sean festivos.
+        function calcularSemanasDeReceso(year) {
+            const breaks = [];
+            const easter = computeEaster(year);
+            breaks.push({ name: 'Semana Santa', start: addDays(easter, -6), end: addDays(easter, -2) });
+            const diaDeLaRaza = toNextMonday(new Date(year, 9, 12));
+            breaks.push({ name: 'Semana de receso', start: addDays(diaDeLaRaza, -7), end: addDays(diaDeLaRaza, -3) });
+            return breaks;
+        }
+
+        // Une las semanas de receso de todos los años calendario que cubre el año académico
+        // (un año académico agosto-junio cruza dos años calendario).
+        function calcularRangoRecesos(year) {
+            const years = (year.start_year === year.end_year) ? [year.start_year] : [year.start_year, year.end_year];
+            let allBreaks = [];
+            years.forEach(yr => { allBreaks = allBreaks.concat(calcularSemanasDeReceso(yr)); });
+            return allBreaks;
         }
 
         // Los 18 festivos nacionales de un año calendario
