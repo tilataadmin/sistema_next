@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.07.09.10.30">
+    <meta name="page-version" content="26.7.9.1">
     <title>Generar Días Tilatá - SchoolNet</title>
 
     <!-- Bootstrap CSS -->
@@ -193,6 +193,24 @@
             </div>
         </div>
 
+        <!-- PRECARGADOR DE FESTIVOS -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-flag me-2"></i>Precargar festivos colombianos</h5>
+                <button type="button" class="btn btn-outline-primary" id="btnCalcularFestivos" onclick="calcularFestivos()">
+                    <i class="bi bi-calculator me-2"></i>Calcular festivos del año
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Calcula los 18 festivos nacionales (incluye Ley Emiliani y los que dependen de la Pascua)
+                    que caen dentro del año académico y los muestra para tu revisión. Nada se guarda hasta que
+                    confirmes. Solo afecta registros de tipo festivo (<code>holiday</code>) del calendario laboral.
+                </p>
+                <div id="festivosContainer"></div>
+            </div>
+        </div>
+
         <!-- LOG DE PROGRESO -->
         <div class="card" id="progressCard" style="display: none;">
             <div class="card-header">
@@ -257,7 +275,7 @@
 
                 const yearData = await supabaseRequest(
                     '/academic_years?year_id=eq.' + yearId +
-                    '&select=year_id,year_name,start_of_classes,end_of_classes,start_of_vacations,end_of_vacations,days_per_cycle&limit=1'
+                    '&select=year_id,year_name,start_month,start_year,end_month,end_year,start_of_classes,end_of_classes,start_of_vacations,end_of_vacations,days_per_cycle&limit=1'
                 );
                 if (!yearData || yearData.length === 0) {
                     throw new Error('No se encontró el año académico actual');
@@ -578,9 +596,187 @@
             document.getElementById('loading-overlay').classList.add('hidden');
         }
 
+        // ==========================================
+        // PRECARGADOR DE FESTIVOS COLOMBIANOS
+        // ==========================================
+
+        // Domingo de Resurrección (algoritmo anónimo gregoriano de Meeus/Jones/Butcher)
+        function computeEaster(year) {
+            const a = year % 19;
+            const b = Math.floor(year / 100);
+            const c = year % 100;
+            const d = Math.floor(b / 4);
+            const e = b % 4;
+            const f = Math.floor((b + 8) / 25);
+            const g = Math.floor((b - f + 1) / 3);
+            const h = (19 * a + b - d - g + 15) % 30;
+            const i = Math.floor(c / 4);
+            const k = c % 4;
+            const l = (32 + 2 * e + 2 * i - h - k) % 7;
+            const m = Math.floor((a + 11 * h + 22 * l) / 451);
+            const month = Math.floor((h + l - 7 * m + 114) / 31); // 3=marzo, 4=abril
+            const day = ((h + l - 7 * m + 114) % 31) + 1;
+            return new Date(year, month - 1, day);
+        }
+
+        // Ley Emiliani: si no cae lunes, se traslada al lunes siguiente
+        function toNextMonday(d) {
+            const r = new Date(d);
+            const dow = r.getDay(); // 0=Dom..6=Sáb, 1=Lun
+            const add = (dow === 1) ? 0 : ((8 - dow) % 7);
+            r.setDate(r.getDate() + add);
+            return r;
+        }
+
+        // Los 18 festivos nacionales de un año calendario
+        function getColombianHolidays(year) {
+            const list = [];
+            const push = (d, name) => list.push({ date: fmtDate(d), name: name });
+
+            const fijos = [
+                [0, 1, 'Año Nuevo'],
+                [4, 1, 'Día del Trabajo'],
+                [6, 20, 'Día de la Independencia'],
+                [7, 7, 'Batalla de Boyacá'],
+                [11, 8, 'Inmaculada Concepción'],
+                [11, 25, 'Navidad']
+            ];
+            fijos.forEach(x => push(new Date(year, x[0], x[1]), x[2]));
+
+            const emiliani = [
+                [0, 6, 'Reyes Magos'],
+                [2, 19, 'San José'],
+                [5, 29, 'San Pedro y San Pablo'],
+                [7, 15, 'Asunción de la Virgen'],
+                [9, 12, 'Día de la Raza'],
+                [10, 1, 'Todos los Santos'],
+                [10, 11, 'Independencia de Cartagena']
+            ];
+            emiliani.forEach(x => push(toNextMonday(new Date(year, x[0], x[1])), x[2]));
+
+            const easter = computeEaster(year);
+            push(addDays(easter, -3), 'Jueves Santo');
+            push(addDays(easter, -2), 'Viernes Santo');
+            push(toNextMonday(addDays(easter, 39)), 'Ascensión del Señor');
+            push(toNextMonday(addDays(easter, 60)), 'Corpus Christi');
+            push(toNextMonday(addDays(easter, 68)), 'Sagrado Corazón de Jesús');
+
+            return list;
+        }
+
+        async function calcularFestivos() {
+            const y = currentAcademicYear;
+            if (!y || !y.start_year || !y.end_year) {
+                showMessage('Falta información de meses/años del año académico', 'danger');
+                return;
+            }
+
+            // Ventana del año académico: primer día de start_month a último día de end_month
+            const winStart = new Date(y.start_year, y.start_month - 1, 1);
+            const winEnd = new Date(y.end_year, y.end_month - 1, new Date(y.end_year, y.end_month, 0).getDate());
+
+            let computed = [];
+            const years = (y.start_year === y.end_year) ? [y.start_year] : [y.start_year, y.end_year];
+            years.forEach(yr => { computed = computed.concat(getColombianHolidays(yr)); });
+            computed = computed.filter(h => {
+                const d = parseDate(h.date);
+                return d >= winStart && d <= winEnd;
+            });
+            computed.sort((a, b) => (a.date < b.date ? -1 : 1));
+
+            let existing = [];
+            try {
+                existing = await supabaseRequest(
+                    '/hr_non_work_days?select=non_work_day_id,start_date,description&day_type=eq.holiday&academic_year=eq.' +
+                    encodeURIComponent(y.year_name)
+                ) || [];
+            } catch (error) {
+                showMessage('Error leyendo festivos existentes: ' + error.message, 'danger');
+                return;
+            }
+
+            renderTablaFestivos(computed, existing);
+        }
+
+        function renderTablaFestivos(computed, existing) {
+            const existingDates = new Set(existing.map(e => e.start_date));
+            const computedDates = new Set(computed.map(c => c.date));
+            let rows = '';
+            let nuevos = 0;
+
+            computed.forEach(c => {
+                const existe = existingDates.has(c.date);
+                if (!existe) nuevos++;
+                const dow = parseDate(c.date).toLocaleDateString('es-CO', { weekday: 'long' });
+                const badge = existe
+                    ? '<span class="badge bg-secondary">Ya existe</span>'
+                    : '<span class="badge bg-success">Nuevo</span>';
+                const chk = existe
+                    ? ''
+                    : '<input type="checkbox" class="form-check-input festivo-chk" checked data-date="' + c.date + '" data-name="' + escapeHtml(c.name) + '">';
+                rows += '<tr><td class="text-center">' + chk + '</td><td>' + c.date + '</td><td>' + dow + '</td><td>' + escapeHtml(c.name) + '</td><td>' + badge + '</td></tr>';
+            });
+
+            existing.filter(e => !computedDates.has(e.start_date)).forEach(e => {
+                const dow = parseDate(e.start_date).toLocaleDateString('es-CO', { weekday: 'long' });
+                rows += '<tr class="table-warning"><td class="text-center">—</td><td>' + e.start_date + '</td><td>' + dow + '</td><td>' + escapeHtml(e.description || '(sin descripción)') + '</td><td><span class="badge bg-warning text-dark">Existente (no calculado)</span></td></tr>';
+            });
+
+            document.getElementById('festivosContainer').innerHTML =
+                '<div class="table-responsive"><table class="table table-sm table-hover align-middle">' +
+                '<thead class="table-light"><tr><th class="text-center" style="width:70px;">Incluir</th><th>Fecha</th><th>Día</th><th>Festivo</th><th>Estado</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table></div>' +
+                '<div class="d-flex justify-content-between align-items-center mt-2">' +
+                    '<small class="text-muted">' + computed.length + ' festivos calculados · ' + nuevos + ' nuevos por insertar</small>' +
+                    '<button type="button" class="btn btn-primary" id="btnInsertarFestivos" onclick="insertarFestivosSeleccionados()"' + (nuevos === 0 ? ' disabled' : '') + '>' +
+                        '<i class="bi bi-database-add me-2"></i>Insertar seleccionados</button>' +
+                '</div>';
+        }
+
+        async function insertarFestivosSeleccionados() {
+            const y = currentAcademicYear;
+            const checks = Array.from(document.querySelectorAll('.festivo-chk:checked'));
+            if (checks.length === 0) {
+                showMessage('No hay festivos seleccionados', 'warning');
+                return;
+            }
+
+            const rows = checks.map(c => ({
+                academic_year: y.year_name,
+                start_date: c.dataset.date,
+                end_date: c.dataset.date,
+                day_type: 'holiday',
+                description: c.dataset.name
+            }));
+
+            if (!confirm('Se insertarán ' + rows.length + ' festivos en el calendario laboral para el año ' + y.year_name + '.\n\n¿Continuar?')) {
+                return;
+            }
+
+            const btn = document.getElementById('btnInsertarFestivos');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Insertando...';
+
+            try {
+                await supabaseRequest('/hr_non_work_days', {
+                    method: 'POST',
+                    body: JSON.stringify(rows)
+                });
+                showMessage(rows.length + ' festivos insertados correctamente.', 'success');
+                await calcularFestivos(); // refresca: los insertados pasan a "Ya existe"
+            } catch (error) {
+                showMessage('Error insertando festivos: ' + error.message, 'danger');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-database-add me-2"></i>Insertar seleccionados';
+            }
+        }
+
+
         // Exponer funciones usadas por onclick
         window.generarDiasTilata = generarDiasTilata;
         window.reversarDiasTilata = reversarDiasTilata;
+        window.calcularFestivos = calcularFestivos;
+        window.insertarFestivosSeleccionados = insertarFestivosSeleccionados;
 
         console.log('🎉 Generar Días Tilatá cargado correctamente');
     </script>
