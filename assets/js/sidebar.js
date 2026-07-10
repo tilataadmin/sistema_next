@@ -619,6 +619,61 @@ const SIDEBAR_STYLES = `
         letter-spacing: 0.5px;
     }
 
+    /* ===== Nivel de categoría (paso 2) ===== */
+    .sn-cat { border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+    .sn-cat-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 14px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: rgba(255,255,255,0.5);
+        transition: background 0.15s, color 0.15s;
+        user-select: none;
+    }
+
+    .sn-cat-header:hover {
+        background: rgba(255,255,255,0.05);
+        color: rgba(255,255,255,0.78);
+    }
+
+    .sn-cat-header.sn-cat-open {
+        color: rgba(255,255,255,0.9);
+        background: rgba(255,255,255,0.04);
+    }
+
+    .sn-cat-name {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sn-cat-arrow {
+        font-size: 9px;
+        color: rgba(255,255,255,0.35);
+        transition: transform 0.2s;
+        flex-shrink: 0;
+    }
+
+    .sn-cat-header.sn-cat-open .sn-cat-arrow {
+        transform: rotate(90deg);
+    }
+
+    /* Contenedor de módulos dentro de una categoría (acordeón) */
+    .sn-cat-modules { display: none; }
+    .sn-cat-modules.sn-show { display: block; }
+
+    /* Módulo anidado en categoría: indentación sutil, mismo estilo de módulo */
+    .sn-cat-modules > .sn-mod > .sn-mod-header { padding-left: 22px; }
+    .sn-cat-modules .sn-mod-item { padding-left: 58px; }
+    .sn-cat-modules .sn-mod-item.sn-current { padding-left: 55px; }
+
     /* Botón toggle en navbar */
     .sn-toggle-btn {
         background: none;
