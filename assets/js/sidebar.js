@@ -575,6 +575,10 @@ const SIDEBAR_STYLES = `
         transform: rotate(90deg);
     }
 
+    /* Mi Espacio como enlace único (sin acordeón) */
+    .sn-mod-link { text-decoration: none; }
+    .sn-mod-link:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
     /* Items */
     .sn-mod-items {
         display: none;
@@ -719,6 +723,21 @@ const SIDEBAR_STYLES = `
 // Renderiza el bloque .sn-mod de un módulo (header + items).
 // Reutilizado tanto por módulos sueltos como por módulos dentro de categorías.
 function renderModuleHTML(mod, modPerms, currentPath, openModuleId) {
+    // Mi Espacio: enlace único al hub (/dashboard.html), sin acordeón.
+    // Se muestra si el usuario tiene al menos un permiso del módulo (ya filtrado
+    // por el llamador vía isModuleVisible). Sus acciones viven ahora en el hub.
+    if (mod.id === 'my-space') {
+        const isCurrent = currentPath.endsWith('/dashboard.html');
+        let html = '';
+        html += `<div class="sn-mod">`;
+        html += `<a href="/dashboard.html" class="sn-mod-header sn-mod-link ${isCurrent ? 'sn-active' : ''}">`;
+        html += `<span class="sn-mod-icon" style="background:${mod.color}"><i class="bi ${mod.icon}" style="font-size:12px"></i></span>`;
+        html += `<span class="sn-mod-name">${mod.name}</span>`;
+        html += `</a>`;
+        html += `</div>`;
+        return html;
+    }
+
     const isOpen = (openModuleId === mod.id);
     let html = '';
     html += `<div class="sn-mod">`;
@@ -730,16 +749,8 @@ function renderModuleHTML(mod, modPerms, currentPath, openModuleId) {
     html += `<div class="sn-mod-items ${isOpen ? 'sn-show' : ''}">`;
 
     if (mod.id === 'my-space') {
-        MY_SPACE_SUBSECTIONS.forEach(sub => {
-            const subPerms = modPerms.filter(p => sub.items.includes(p.name));
-            if (subPerms.length === 0) return;
-            html += `<div class="sn-subsection-label">${sub.label}</div>`;
-            subPerms.forEach(p => {
-                if (!p.url) return;
-                const isCurrent = currentPath.endsWith(p.url);
-                html += `<a href="${p.url}" class="sn-mod-item ${isCurrent ? 'sn-current' : ''}">${p.name}</a>`;
-            });
-        });
+        // (rama muerta: my-space ya retornó arriba; se conserva la estructura
+        //  del if/else para no alterar el manejo de los demás módulos)
     } else {
         let sortedPerms = modPerms;
         if (MODULE_ITEM_ORDER[mod.id]) {
