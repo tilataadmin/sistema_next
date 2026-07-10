@@ -48,6 +48,63 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'security', name: 'Seguridad', icon: 'bi-shield-lock', color: '#E24B4A' }
 ];
 
+// ==========================================
+// 1.b ESTRUCTURA DE CATEGORÍAS (nivel superior)
+// Define el orden vertical del primer nivel del menú:
+// módulos sueltos + categorías, con sus módulos en orden.
+// Los metadatos de cada módulo (name/icon/color) siguen
+// viniendo de SIDEBAR_MODULE_ORDER; esta estructura solo
+// define agrupación y orden. El render aún NO la usa (se
+// activa en el paso 3).
+// ==========================================
+
+const SIDEBAR_LAYOUT = [
+    { type: 'solo', id: 'my-space' },
+    { type: 'solo', id: 'planning' },
+    {
+        type: 'category',
+        id: 'students-families',
+        name: 'Estudiantes y familias',
+        modules: ['admissions', 'new-students', 'early-alerts', 'follow-ups', 'alumni']
+    },
+    {
+        type: 'category',
+        id: 'talent-development',
+        name: 'Talento y desarrollo',
+        modules: ['hr', 'training', 'teacher-eval']
+    },
+    {
+        type: 'category',
+        id: 'measurement',
+        name: 'Medición y evaluación institucional',
+        modules: ['indicators', 'surveys', 'institutional-eval']
+    },
+    {
+        type: 'category',
+        id: 'operations',
+        name: 'Operación',
+        modules: ['procedures', 'project-management', 'tte', 'events', 'services', 'attendance', 'environmental']
+    },
+    {
+        type: 'category',
+        id: 'administration',
+        name: 'Administración',
+        modules: ['budget', 'suppliers', 'contracts']
+    },
+    {
+        type: 'category',
+        id: 'tools',
+        name: 'Herramientas',
+        modules: ['community', 'knowledge', 'certificates']
+    },
+    {
+        type: 'category',
+        id: 'system',
+        name: 'Sistema',
+        modules: ['config', 'security']
+    }
+];
+
 const MY_SPACE_SUBSECTIONS = [
     { label: 'Personal', items: ['Ver mi perfil', 'Agendar recurrencias en días Tilatá'] },
     { label: 'Mis pendientes', items: ['Gestionar tareas', 'Ver mis solicitudes', 'Ejecutar procedimientos', 'Ejecutar formularios', 'Mis proveedores'] },
