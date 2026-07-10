@@ -48,6 +48,63 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'security', name: 'Seguridad', icon: 'bi-shield-lock', color: '#E24B4A' }
 ];
 
+// ==========================================
+// 1.b ESTRUCTURA DE CATEGORÍAS (nivel superior)
+// Define el orden vertical del primer nivel del menú:
+// módulos sueltos + categorías, con sus módulos en orden.
+// Los metadatos de cada módulo (name/icon/color) siguen
+// viniendo de SIDEBAR_MODULE_ORDER; esta estructura solo
+// define agrupación y orden. El render aún NO la usa (se
+// activa en el paso 3).
+// ==========================================
+
+const SIDEBAR_LAYOUT = [
+    { type: 'solo', id: 'my-space' },
+    { type: 'solo', id: 'planning' },
+    {
+        type: 'category',
+        id: 'students-families',
+        name: 'Estudiantes y familias',
+        modules: ['admissions', 'new-students', 'early-alerts', 'follow-ups', 'alumni']
+    },
+    {
+        type: 'category',
+        id: 'talent-development',
+        name: 'Talento y desarrollo',
+        modules: ['hr', 'training', 'teacher-eval']
+    },
+    {
+        type: 'category',
+        id: 'measurement',
+        name: 'Medición y evaluación',
+        modules: ['indicators', 'surveys', 'institutional-eval']
+    },
+    {
+        type: 'category',
+        id: 'operations',
+        name: 'Operación',
+        modules: ['procedures', 'project-management', 'tte', 'events', 'services', 'attendance', 'environmental']
+    },
+    {
+        type: 'category',
+        id: 'administration',
+        name: 'Administración',
+        modules: ['budget', 'suppliers', 'contracts']
+    },
+    {
+        type: 'category',
+        id: 'tools',
+        name: 'Herramientas',
+        modules: ['community', 'knowledge', 'certificates']
+    },
+    {
+        type: 'category',
+        id: 'system',
+        name: 'Sistema',
+        modules: ['config', 'security']
+    }
+];
+
 const MY_SPACE_SUBSECTIONS = [
     { label: 'Personal', items: ['Ver mi perfil', 'Agendar recurrencias en días Tilatá'] },
     { label: 'Mis pendientes', items: ['Gestionar tareas', 'Ver mis solicitudes', 'Ejecutar procedimientos', 'Ejecutar formularios', 'Mis proveedores'] },
@@ -317,6 +374,7 @@ const MODULE_ITEM_ORDER = {
         
 const SIDEBAR_CACHE_KEY = 'schoolnet_sidebar_permissions';
 const SIDEBAR_STATE_KEY = 'schoolnet_sidebar_state';
+const SIDEBAR_OPEN_CAT_KEY = 'sn_open_category';
 
 // ==========================================
 // 2. CARGA Y CACHE DE PERMISOS
@@ -517,6 +575,10 @@ const SIDEBAR_STYLES = `
         transform: rotate(90deg);
     }
 
+    /* Mi Espacio como enlace único (sin acordeón) */
+    .sn-mod-link { text-decoration: none; }
+    .sn-mod-link:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
     /* Items */
     .sn-mod-items {
         display: none;
@@ -562,6 +624,61 @@ const SIDEBAR_STYLES = `
         letter-spacing: 0.5px;
     }
 
+    /* ===== Nivel de categoría (paso 2) ===== */
+    .sn-cat { border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+    .sn-cat-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 14px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: rgba(255,255,255,0.5);
+        transition: background 0.15s, color 0.15s;
+        user-select: none;
+    }
+
+    .sn-cat-header:hover {
+        background: rgba(255,255,255,0.05);
+        color: rgba(255,255,255,0.78);
+    }
+
+    .sn-cat-header.sn-cat-open {
+        color: rgba(255,255,255,0.9);
+        background: rgba(255,255,255,0.04);
+    }
+
+    .sn-cat-name {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sn-cat-arrow {
+        font-size: 9px;
+        color: rgba(255,255,255,0.35);
+        transition: transform 0.2s;
+        flex-shrink: 0;
+    }
+
+    .sn-cat-header.sn-cat-open .sn-cat-arrow {
+        transform: rotate(90deg);
+    }
+
+    /* Contenedor de módulos dentro de una categoría (acordeón) */
+    .sn-cat-modules { display: none; }
+    .sn-cat-modules.sn-show { display: block; }
+
+    /* Módulo anidado en categoría: indentación sutil, mismo estilo de módulo */
+    .sn-cat-modules > .sn-mod > .sn-mod-header { padding-left: 22px; }
+    .sn-cat-modules .sn-mod-item { padding-left: 58px; }
+    .sn-cat-modules .sn-mod-item.sn-current { padding-left: 55px; }
+
     /* Botón toggle en navbar */
     .sn-toggle-btn {
         background: none;
@@ -603,76 +720,131 @@ const SIDEBAR_STYLES = `
 // 4. RENDERIZADO DEL SIDEBAR
 // ==========================================
 
-function buildSidebarHTML(permData) {
-    const currentPath = window.location.pathname;
-    let html = '';
-    let currentModuleId = null;
-
-    // Detectar módulo activo por URL
-    SIDEBAR_MODULE_ORDER.forEach(mod => {
-        const modPerms = permData.modules[mod.id];
-        if (!modPerms || modPerms.length === 0) return;
-        modPerms.forEach(p => {
-            if (p.url && currentPath.endsWith(p.url) || currentPath.includes(p.url)) {
-                currentModuleId = mod.id;
-            }
-        });
-    });
-
-   
-    // Recuperar estado del módulo expandido
-    const savedOpen = sessionStorage.getItem('sn_open_module');
-    const openModuleId = currentModuleId || savedOpen || null;
-
-    SIDEBAR_MODULE_ORDER.forEach(mod => {
-        const modPerms = permData.modules[mod.id];
-        if (!modPerms || modPerms.length === 0) return;
-
-        const isOpen = (openModuleId === mod.id);
-
+// Renderiza el bloque .sn-mod de un módulo (header + items).
+// Reutilizado tanto por módulos sueltos como por módulos dentro de categorías.
+function renderModuleHTML(mod, modPerms, currentPath, openModuleId) {
+    // Mi Espacio: enlace único al hub (/dashboard.html), sin acordeón.
+    // Se muestra si el usuario tiene al menos un permiso del módulo (ya filtrado
+    // por el llamador vía isModuleVisible). Sus acciones viven ahora en el hub.
+    if (mod.id === 'my-space') {
+        const isCurrent = currentPath.endsWith('/dashboard.html');
+        let html = '';
         html += `<div class="sn-mod">`;
-        html += `<div class="sn-mod-header ${isOpen ? 'sn-active' : ''}" data-module="${mod.id}">`;
+        html += `<a href="/dashboard.html" class="sn-mod-header sn-mod-link ${isCurrent ? 'sn-active' : ''}">`;
         html += `<span class="sn-mod-icon" style="background:${mod.color}"><i class="bi ${mod.icon}" style="font-size:12px"></i></span>`;
         html += `<span class="sn-mod-name">${mod.name}</span>`;
-        html += `<span class="sn-mod-arrow">▶</span>`;
+        html += `</a>`;
         html += `</div>`;
+        return html;
+    }
 
-        html += `<div class="sn-mod-items ${isOpen ? 'sn-show' : ''}">`;
+    const isOpen = (openModuleId === mod.id);
+    let html = '';
+    html += `<div class="sn-mod">`;
+    html += `<div class="sn-mod-header ${isOpen ? 'sn-active' : ''}" data-module="${mod.id}">`;
+    html += `<span class="sn-mod-icon" style="background:${mod.color}"><i class="bi ${mod.icon}" style="font-size:12px"></i></span>`;
+    html += `<span class="sn-mod-name">${mod.name}</span>`;
+    html += `<span class="sn-mod-arrow">▶</span>`;
+    html += `</div>`;
+    html += `<div class="sn-mod-items ${isOpen ? 'sn-show' : ''}">`;
 
-        if (mod.id === 'my-space') {
-            MY_SPACE_SUBSECTIONS.forEach(sub => {
-                const subPerms = modPerms.filter(p => sub.items.includes(p.name));
-                if (subPerms.length === 0) return;
-
-                html += `<div class="sn-subsection-label">${sub.label}</div>`;
-                subPerms.forEach(p => {
-                    if (!p.url) return;
-                    const isCurrent = currentPath.endsWith(p.url);
-                    const href = p.url;
-                    html += `<a href="${href}" class="sn-mod-item ${isCurrent ? 'sn-current' : ''}">${p.name}</a>`;
-                });
-            });
-        } else {
-            let sortedPerms = modPerms;
-            if (MODULE_ITEM_ORDER[mod.id]) {
-                const order = MODULE_ITEM_ORDER[mod.id];
-                sortedPerms = [...modPerms].sort((a, b) => {
-                    const ia = order.indexOf(a.name);
-                    const ib = order.indexOf(b.name);
-                    if (ia === -1 && ib === -1) return 0;
-                    if (ia === -1) return 1;
-                    if (ib === -1) return 1;
-                    return ia - ib;
-                });
-            }
-            sortedPerms.forEach(p => {
-                if (!p.url) return;
-                const isCurrent = currentPath.endsWith(p.url);
-                const href = p.url;
-                html += `<a href="${href}" class="sn-mod-item ${isCurrent ? 'sn-current' : ''}">${p.name}</a>`;
+    if (mod.id === 'my-space') {
+        // (rama muerta: my-space ya retornó arriba; se conserva la estructura
+        //  del if/else para no alterar el manejo de los demás módulos)
+    } else {
+        let sortedPerms = modPerms;
+        if (MODULE_ITEM_ORDER[mod.id]) {
+            const order = MODULE_ITEM_ORDER[mod.id];
+            sortedPerms = [...modPerms].sort((a, b) => {
+                const ia = order.indexOf(a.name);
+                const ib = order.indexOf(b.name);
+                if (ia === -1 && ib === -1) return 0;
+                if (ia === -1) return 1;
+                if (ib === -1) return 1;
+                return ia - ib;
             });
         }
+        sortedPerms.forEach(p => {
+            if (!p.url) return;
+            const isCurrent = currentPath.endsWith(p.url);
+            html += `<a href="${p.url}" class="sn-mod-item ${isCurrent ? 'sn-current' : ''}">${p.name}</a>`;
+        });
+    }
 
+    html += `</div></div>`;
+    return html;
+}
+
+function buildSidebarHTML(permData) {
+    const currentPath = window.location.pathname;
+
+    // Metadatos de módulo por id (name/icon/color) desde el catálogo
+    const modMeta = {};
+    SIDEBAR_MODULE_ORDER.forEach(m => { modMeta[m.id] = m; });
+
+    // Un módulo es visible si el usuario tiene al menos un permiso en él
+    const isModuleVisible = (id) => {
+        const p = permData.modules[id];
+        return !!(p && p.length > 0);
+    };
+
+    // Detectar módulo activo por URL (precedencia corregida vs. versión anterior)
+    let currentModuleId = null;
+    for (const m of SIDEBAR_MODULE_ORDER) {
+        const modPerms = permData.modules[m.id];
+        if (!modPerms || modPerms.length === 0) continue;
+        for (const p of modPerms) {
+            if (p.url && (currentPath.endsWith(p.url) || currentPath.includes(p.url))) {
+                currentModuleId = m.id;
+                break;
+            }
+        }
+        if (currentModuleId) break;
+    }
+
+    // Categoría que contiene el módulo activo (para auto-apertura)
+    let currentCategoryId = null;
+    if (currentModuleId) {
+        for (const entry of SIDEBAR_LAYOUT) {
+            if (entry.type === 'category' && entry.modules.includes(currentModuleId)) {
+                currentCategoryId = entry.id;
+                break;
+            }
+        }
+    }
+
+    // Estado guardado + auto-apertura por URL (la URL manda sobre lo guardado)
+    const savedOpenModule = sessionStorage.getItem('sn_open_module');
+    const savedOpenCat = sessionStorage.getItem(SIDEBAR_OPEN_CAT_KEY);
+    const openModuleId = currentModuleId || savedOpenModule || null;
+    const openCategoryId = currentCategoryId || savedOpenCat || null;
+
+    let html = '';
+
+    SIDEBAR_LAYOUT.forEach(entry => {
+        // Módulos sueltos (Mi Espacio, Planeación): se evalúan individualmente
+        if (entry.type === 'solo') {
+            const mod = modMeta[entry.id];
+            if (!mod || !isModuleVisible(entry.id)) return;
+            html += renderModuleHTML(mod, permData.modules[entry.id], currentPath, openModuleId);
+            return;
+        }
+
+        // Categorías: cascada de visibilidad — si ningún módulo es visible, se omite
+        const visibleModules = entry.modules.filter(isModuleVisible);
+        if (visibleModules.length === 0) return;
+
+        const catOpen = (openCategoryId === entry.id);
+
+        html += `<div class="sn-cat">`;
+        html += `<div class="sn-cat-header ${catOpen ? 'sn-cat-open' : ''}" data-category="${entry.id}">`;
+        html += `<span class="sn-cat-name">${entry.name}</span>`;
+        html += `<span class="sn-cat-arrow">▶</span>`;
+        html += `</div>`;
+        html += `<div class="sn-cat-modules ${catOpen ? 'sn-show' : ''}">`;
+        visibleModules.forEach(id => {
+            html += renderModuleHTML(modMeta[id], permData.modules[id], currentPath, openModuleId);
+        });
         html += `</div></div>`;
     });
 
@@ -766,14 +938,14 @@ function setupSidebarEvents(sidebarEl, backdrop) {
         toggleBtn.addEventListener('click', () => toggleSidebar(sidebarEl, backdrop));
     }
 
-    // Module headers (expand/collapse)
+    // Module headers (expand/collapse) — acordeón exclusivo global de módulos
     sidebarEl.querySelectorAll('.sn-mod-header').forEach(header => {
         header.addEventListener('click', () => {
             const moduleId = header.dataset.module;
             const items = header.nextElementSibling;
             const wasActive = header.classList.contains('sn-active');
 
-            // Cerrar todos
+            // Cerrar todos los módulos
             sidebarEl.querySelectorAll('.sn-mod-header').forEach(h => h.classList.remove('sn-active'));
             sidebarEl.querySelectorAll('.sn-mod-items').forEach(i => i.classList.remove('sn-show'));
 
@@ -784,6 +956,28 @@ function setupSidebarEvents(sidebarEl, backdrop) {
                 sessionStorage.setItem('sn_open_module', moduleId);
             } else {
                 sessionStorage.removeItem('sn_open_module');
+            }
+        });
+    });
+
+    // Category headers (expand/collapse) — acordeón exclusivo de categorías
+    sidebarEl.querySelectorAll('.sn-cat-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const catId = header.dataset.category;
+            const modules = header.nextElementSibling;
+            const wasOpen = header.classList.contains('sn-cat-open');
+
+            // Cerrar todas las categorías
+            sidebarEl.querySelectorAll('.sn-cat-header').forEach(h => h.classList.remove('sn-cat-open'));
+            sidebarEl.querySelectorAll('.sn-cat-modules').forEach(m => m.classList.remove('sn-show'));
+
+            // Abrir la clickeada (si no estaba abierta)
+            if (!wasOpen) {
+                header.classList.add('sn-cat-open');
+                modules.classList.add('sn-show');
+                sessionStorage.setItem(SIDEBAR_OPEN_CAT_KEY, catId);
+            } else {
+                sessionStorage.removeItem(SIDEBAR_OPEN_CAT_KEY);
             }
         });
     });
@@ -878,6 +1072,7 @@ if (document.readyState === 'loading') {
 window.clearSidebarCache = clearSidebarCache;
 window.injectSidebar = injectSidebar;
 window.MODULE_ITEM_ORDER = MODULE_ITEM_ORDER;
+window.MY_SPACE_SUBSECTIONS = MY_SPACE_SUBSECTIONS;
 
 // ==========================================
 // 8. ACTUALIZACIÓN AUTOMÁTICA DE BREADCRUMBS
