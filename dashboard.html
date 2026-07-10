@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="6.7.10.1">
+    <meta name="page-version" content="6.7.10.2">
     <title>Mi Espacio - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -330,7 +330,8 @@
             loadGroupTopics(workerEmail),
             loadTTERequests(workerEmail),
             loadServiceApprovals(workerId),
-            loadBudgetRequests(workerEmail)
+            loadBudgetRequests(workerEmail),
+            loadMySpaceAll(userId)
         ]);
     });
 
@@ -651,6 +652,97 @@
 
         } catch (error) {
             console.error('Error cargando accesos rápidos:', error);
+        }
+    }
+
+    // ==========================================
+    // TODO MI ESPACIO (derivado de permisos reales)
+    // Reusa el caché del sidebar y la estructura MY_SPACE_SUBSECTIONS
+    // expuesta por sidebar.js. Agrupa por subsección, ícono por grupo.
+    // ==========================================
+    async function loadMySpaceAll(userId) {
+        const container = document.getElementById('myspace-all-container');
+        if (!container) return;
+
+        // Reusa el caché de permisos del sidebar; espera si aún no está listo
+        if (!sessionStorage.getItem('schoolnet_sidebar_permissions')) {
+            await new Promise(resolve => {
+                const handler = () => resolve();
+                window.addEventListener('schoolnet:permissions-ready', handler, { once: true });
+                setTimeout(() => {
+                    window.removeEventListener('schoolnet:permissions-ready', handler);
+                    resolve();
+                }, 3000);
+            });
+        }
+
+        // La estructura de subsecciones es la fuente de verdad (expuesta por sidebar.js)
+        const subsections = window.MY_SPACE_SUBSECTIONS;
+        if (!Array.isArray(subsections)) {
+            console.warn('MY_SPACE_SUBSECTIONS no disponible; se omite "Todo mi espacio"');
+            return;
+        }
+
+        // Ícono por subsección (por label, con respaldo). Si un label cambia en
+        // sidebar.js, cae al ícono por defecto sin romper el render.
+        const SUBSECTION_ICONS = {
+            'Personal': 'bi-person-circle',
+            'Mis pendientes': 'bi-list-check',
+            'Mis ausencias y TTE': 'bi-calendar-check',
+            'Mi formación y evaluación': 'bi-mortarboard',
+            'Soporte': 'bi-headset'
+        };
+        const DEFAULT_ICON = 'bi-arrow-right-circle';
+
+        try {
+            const cached = sessionStorage.getItem('schoolnet_sidebar_permissions');
+            if (!cached) return;
+            const parsed = JSON.parse(cached);
+            if (parsed.userId !== userId || !parsed.data) return;
+
+            // Solo los permisos del módulo my-space (mismo criterio que el acordeón)
+            const myModulePerms = (parsed.data.modules && parsed.data.modules['my-space']) || [];
+            const permByName = {};
+            myModulePerms.forEach(p => {
+                if (p.name && p.url) permByName[p.name] = p;
+            });
+
+            // Construir grupos respetando el orden de subsecciones y de sus items
+            let html = '';
+            subsections.forEach(sub => {
+                const cards = sub.items.map(name => permByName[name]).filter(Boolean);
+                if (cards.length === 0) return;
+
+                const icon = SUBSECTION_ICONS[sub.label] || DEFAULT_ICON;
+
+                html += `<div class="myspace-group">`;
+                html += `<div class="myspace-group-label">${escapeHtml(sub.label)}</div>`;
+                html += `<div class="row g-2">`;
+                cards.forEach(p => {
+                    html += `
+                        <div class="col-6 col-md-4 col-lg-3">
+                            <a href="${p.url}" class="myspace-card">
+                                <i class="bi ${icon}"></i>
+                                <span>${escapeHtml(p.name)}</span>
+                            </a>
+                        </div>`;
+                });
+                html += `</div></div>`;
+            });
+
+            if (html === '') {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-grid-3x3-gap"></i>
+                        No hay acciones disponibles en tu espacio.
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = html;
+
+        } catch (error) {
+            console.error('Error cargando "Todo mi espacio":', error);
         }
     }
         
