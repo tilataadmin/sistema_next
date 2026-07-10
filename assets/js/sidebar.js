@@ -76,7 +76,7 @@ const SIDEBAR_LAYOUT = [
     {
         type: 'category',
         id: 'measurement',
-        name: 'Medición y evaluación institucional',
+        name: 'Medición y evaluación',
         modules: ['indicators', 'surveys', 'institutional-eval']
     },
     {
