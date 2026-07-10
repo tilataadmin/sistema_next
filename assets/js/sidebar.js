@@ -1061,6 +1061,7 @@ if (document.readyState === 'loading') {
 window.clearSidebarCache = clearSidebarCache;
 window.injectSidebar = injectSidebar;
 window.MODULE_ITEM_ORDER = MODULE_ITEM_ORDER;
+window.MY_SPACE_SUBSECTIONS = MY_SPACE_SUBSECTIONS;
 
 // ==========================================
 // 8. ACTUALIZACIÓN AUTOMÁTICA DE BREADCRUMBS
