@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.07.14.17.00">
+    <title>Plantillas de correo - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+
+    <style>
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex; justify-content: center; align-items: center; z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content { background: #ffffff; padding: 2rem; border-radius: 8px; text-align: center; }
+        .spinner {
+            border: 3px solid #f3f3f3; border-top: 3px solid #0d6efd;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin: 0 auto 1rem;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .plantilla-fila { cursor: pointer; }
+        .plantilla-fila:hover { background: #f8f9fa; }
+        .plantilla-fila.pendiente td:first-child { border-left: 3px solid #ffc107; }
+
+        .badge-envio { font-size: 0.72rem; font-weight: 500; }
+
+        #editor-cuerpo { height: 280px; background: #ffffff; }
+        .ql-toolbar { background: #f8f9fa; }
+
+        .variables-ayuda {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-size: 0.82rem;
+        }
+        .var-chip {
+            display: inline-block;
+            background: #e7f1ff;
+            color: #0a58ca;
+            border: 1px solid #b6d4fe;
+            border-radius: 4px;
+            padding: 0.1rem 0.4rem;
+            margin: 0.15rem 0.2rem 0.15rem 0;
+            font-family: monospace;
+            font-size: 0.78rem;
+            cursor: pointer;
+        }
+        .var-chip:hover { background: #cfe2ff; }
+
+        .preview-correo {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 1.25rem;
+            background: #ffffff;
+            min-height: 200px;
+        }
+        .preview-asunto {
+            font-weight: 600;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 0.6rem;
+            margin-bottom: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Inicio</a></li>
+                <li class="breadcrumb-item">Admisiones</li>
+                <li class="breadcrumb-item active" aria-current="page">Plantillas de correo</li>
+            </ol>
+        </nav>
+
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3"><i class="bi bi-envelope-paper me-2"></i>Plantillas de correo</h1>
+                <p class="text-muted mb-0">
+                    Correos que el módulo envía a las familias y al equipo. El conjunto de plantillas es fijo:
+                    se puede editar el contenido, no crear ni eliminar.
+                </p>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="alert alert-warning d-flex align-items-start gap-2" id="aviso-pendientes" style="display: none !important;">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <div>
+                <strong>Hay plantillas sin redactar.</strong>
+                Las marcadas en amarillo contienen texto de relleno. Si se envían así,
+                la familia recibirá un correo incompleto.
+            </div>
+        </div>
+
+        <div class="card mb-5">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Plantilla</th>
+                                <th>Asunto</th>
+                                <th>Envío</th>
+                                <th>Estado</th>
+                                <th class="text-end">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-plantillas">
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                    Cargando plantillas...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MODAL: EDITAR PLANTILLA -->
+    <div class="modal fade" id="modal-plantilla" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title mb-0" id="modal-titulo">Editar plantilla</h5>
+                        <code class="small text-muted" id="modal-key">—</code>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <form id="form-plantilla">
+                    <div class="modal-body">
+                        <input type="hidden" id="t-id">
+
+                        <ul class="nav nav-tabs mb-3" role="tablist">
+                            <li class="nav-item">
+                                <button class="nav-link active" data-bs-toggle="tab"
+                                        data-bs-target="#tab-editar" type="button">
+                                    <i class="bi bi-pencil me-1"></i>Editar
+                                </button>
+                            </li>
+                            <li class="nav-item">
+                                <button class="nav-link" data-bs-toggle="tab"
+                                        data-bs-target="#tab-preview" type="button" id="btn-tab-preview">
+                                    <i class="bi bi-eye me-1"></i>Vista previa
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content">
+
+                            <!-- EDITAR -->
+                            <div class="tab-pane fade show active" id="tab-editar">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-semibold" for="t-nombre">
+                                            Nombre de la plantilla <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="text" class="form-control form-control-sm" id="t-nombre" required>
+                                        <div class="form-text">Uso interno. No lo ve la familia.</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small fw-semibold" for="t-envio">Tipo de envío</label>
+                                        <input type="text" class="form-control form-control-sm" id="t-envio" disabled>
+                                        <div class="form-text">Lo determina el proceso.</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small fw-semibold d-block">Activa</label>
+                                        <div class="form-check form-switch mt-1">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="t-activa">
+                                            <label class="form-check-label small" for="t-activa">
+                                                Se envía cuando corresponde
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label small fw-semibold" for="t-asunto">
+                                        Asunto <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="text" class="form-control form-control-sm" id="t-asunto" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label small fw-semibold">Cuerpo del correo</label>
+                                    <div id="editor-cuerpo"></div>
+                                </div>
+
+                                <div class="variables-ayuda">
+                                    <div class="fw-semibold mb-1">
+                                        <i class="bi bi-braces me-1"></i>Variables disponibles
+                                    </div>
+                                    <div class="text-muted mb-2">
+                                        Se reemplazan por los datos reales al enviar. Haz clic para copiarlas.
+                                    </div>
+                                    <div id="lista-variables">—</div>
+                                </div>
+                            </div>
+
+                            <!-- PREVIEW -->
+                            <div class="tab-pane fade" id="tab-preview">
+                                <p class="text-muted small">
+                                    Así se verá el correo con datos de ejemplo.
+                                </p>
+                                <div class="preview-correo">
+                                    <div class="preview-asunto" id="preview-asunto">—</div>
+                                    <div id="preview-cuerpo">—</div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary btn-sm" id="btn-guardar-plantilla">
+                            <i class="bi bi-check-lg me-1"></i>Guardar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // Marcador que llevan las plantillas sin redactar.
+        const MARCA_PENDIENTE = '[Pendiente:';
+
+        // Datos de ejemplo para la vista previa.
+        const EJEMPLO = {
+            '{{nombre_aspirante}}':  'Laura Moncada Solórzano',
+            '{{nombre_familiar1}}':  'Vicky Solórzano',
+            '{{grado}}':             'Transición',
+            '{{año_academico}}':     '2026-2027',
+            '{{token_url}}':         'https://schoolnet.colegiotilata.edu.co/.../form.html?token=ejemplo',
+            '{{form_url}}':          'https://schoolnet.colegiotilata.edu.co/.../form.html',
+            '{{resultado_comite}}':  'Admitido'
+        };
+
+        let plantillas = [];
+        let sesionActual = null;
+        let modalPlantilla = null;
+        let quill = null;
+        let hidratando = false;
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Plantillas de correo');
+                if (!hasAccess) return;
+
+                sesionActual = getStoredSession();
+                if (!sesionActual) {
+                    showMessage('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                await inicializarPagina();
+
+            } catch (error) {
+                console.error('Error de inicialización:', error);
+                showMessage('Error de validación: ' + error.message, 'danger');
+            }
+        });
+
+        async function inicializarPagina() {
+            try {
+                mostrarLoading();
+
+                modalPlantilla = new bootstrap.Modal(document.getElementById('modal-plantilla'));
+                inicializarEditor();
+
+                await cargarPlantillas();
+
+                configurarEventos();
+                ocultarLoading();
+
+            } catch (error) {
+                console.error('Error en inicialización:', error);
+                showMessage('Error al cargar las plantillas: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        function inicializarEditor() {
+            quill = new Quill('#editor-cuerpo', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        [{ header: [2, 3, false] }],
+                        ['bold', 'italic', 'underline'],
+                        [{ list: 'ordered' }, { list: 'bullet' }],
+                        ['link'],
+                        ['clean']
+                    ]
+                }
+            });
+        }
+
+        // ==========================================
+        // CARGA
+        // ==========================================
+        async function cargarPlantillas() {
+            const datos = await supabaseRequest(
+                '/aap_email_templates?select=*&order=template_name.asc'
+            );
+
+            plantillas = datos || [];
+            renderizarTabla();
+        }
+
+        function esPendiente(p) {
+            return (p.body_html || '').includes(MARCA_PENDIENTE);
+        }
+
+        function renderizarTabla() {
+            const tbody = document.getElementById('tabla-plantillas');
+            const aviso = document.getElementById('aviso-pendientes');
+
+            const pendientes = plantillas.filter(esPendiente).length;
+            aviso.style.display = pendientes > 0 ? 'flex' : 'none';
+
+            if (plantillas.length === 0) {
+                tbody.innerHTML = `
+                    <tr><td colspan="5" class="text-center py-4 text-muted">
+                        No hay plantillas registradas. Deben sembrarse por SQL.
+                    </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = plantillas.map(p => {
+                const pendiente = esPendiente(p);
+                const badgeEnvio = p.send_type === 'automatico'
+                    ? '<span class="badge badge-envio bg-primary">Automático</span>'
+                    : '<span class="badge badge-envio bg-secondary">Manual</span>';
+
+                let estado;
+                if (!p.is_active) {
+                    estado = '<span class="badge bg-light text-dark border">Inactiva</span>';
+                } else if (pendiente) {
+                    estado = '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Sin redactar</span>';
+                } else {
+                    estado = '<span class="badge bg-success">Lista</span>';
+                }
+
+                return `
+                    <tr class="plantilla-fila ${pendiente ? 'pendiente' : ''}" data-id="${p.template_id}">
+                        <td>
+                            <div class="fw-semibold">${escapeHtml(p.template_name)}</div>
+                            <code class="small text-muted">${escapeHtml(p.template_key)}</code>
+                        </td>
+                        <td class="small">${escapeHtml(p.subject)}</td>
+                        <td>${badgeEnvio}</td>
+                        <td>${estado}</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-primary btn-editar" data-id="${p.template_id}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            tbody.querySelectorAll('.plantilla-fila').forEach(tr => {
+                tr.addEventListener('click', () => abrirModal(tr.dataset.id));
+            });
+        }
+
+        // ==========================================
+        // MODAL
+        // ==========================================
+        function abrirModal(templateId) {
+            const p = plantillas.find(x => x.template_id === templateId);
+            if (!p) return;
+
+            hidratando = true;
+
+            document.getElementById('modal-titulo').textContent = p.template_name;
+            document.getElementById('modal-key').textContent = p.template_key;
+            document.getElementById('t-id').value      = p.template_id;
+            document.getElementById('t-nombre').value  = p.template_name || '';
+            document.getElementById('t-asunto').value  = p.subject || '';
+            document.getElementById('t-activa').checked = !!p.is_active;
+            document.getElementById('t-envio').value =
+                p.send_type === 'automatico' ? 'Automático' : 'Manual';
+
+            quill.setText('');
+            quill.clipboard.dangerouslyPasteHTML(p.body_html || '');
+
+            pintarVariables(p.available_variables);
+
+            hidratando = false;
+
+            // Vuelve siempre a la pestaña de edición
+            const tabEditar = document.querySelector('[data-bs-target="#tab-editar"]');
+            bootstrap.Tab.getOrCreateInstance(tabEditar).show();
+
+            modalPlantilla.show();
+        }
+
+        function pintarVariables(texto) {
+            const cont = document.getElementById('lista-variables');
+
+            if (!texto) {
+                cont.innerHTML = '<span class="text-muted">Esta plantilla no usa variables.</span>';
+                return;
+            }
+
+            const vars = texto.split(',').map(v => v.trim()).filter(Boolean);
+            cont.innerHTML = vars.map(v =>
+                `<span class="var-chip" data-var="${escapeHtml(v)}">${escapeHtml(v)}</span>`
+            ).join('');
+
+            cont.querySelectorAll('.var-chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    navigator.clipboard.writeText(chip.dataset.var);
+                    showMessage(`Variable ${chip.dataset.var} copiada.`, 'info');
+                });
+            });
+        }
+
+        function pintarPreview() {
+            const asunto = document.getElementById('t-asunto').value || '';
+            const cuerpo = quill.root.innerHTML || '';
+
+            document.getElementById('preview-asunto').textContent = reemplazarVariables(asunto);
+            document.getElementById('preview-cuerpo').innerHTML   = reemplazarVariables(cuerpo);
+        }
+
+        function reemplazarVariables(texto) {
+            let salida = texto;
+            Object.keys(EJEMPLO).forEach(k => {
+                salida = salida.split(k).join(EJEMPLO[k]);
+            });
+            return salida;
+        }
+
+        // ==========================================
+        // GUARDAR
+        // ==========================================
+        async function guardarPlantilla(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-guardar-plantilla');
+            btn.disabled = true;
+
+            try {
+                const templateId = document.getElementById('t-id').value;
+
+                const payload = {
+                    template_name: document.getElementById('t-nombre').value.trim(),
+                    subject:       document.getElementById('t-asunto').value.trim(),
+                    body_html:     quill.root.innerHTML,
+                    is_active:     document.getElementById('t-activa').checked,
+                    updated_at:    new Date().toISOString()
+                };
+
+                await supabaseRequest(
+                    `/aap_email_templates?template_id=eq.${templateId}`,
+                    { method: 'PATCH', body: JSON.stringify(payload) }
+                );
+
+                modalPlantilla.hide();
+                showMessage('Plantilla guardada correctamente.', 'success');
+
+                await cargarPlantillas();
+
+            } catch (error) {
+                console.error('Error al guardar la plantilla:', error);
+                showMessage('Error al guardar: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ==========================================
+        // EVENTOS
+        // ==========================================
+        function configurarEventos() {
+            document.getElementById('form-plantilla').addEventListener('submit', guardarPlantilla);
+            document.getElementById('btn-tab-preview').addEventListener('click', pintarPreview);
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function escapeHtml(texto) {
+            if (texto === null || texto === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(texto);
+            return div.innerHTML;
+        }
+
+        function mostrarLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
