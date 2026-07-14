@@ -1,28 +1,27 @@
 # MÓDULO DE ADMISIONES — SchoolNet
 
 **Documento:** Especificación funcional y técnica del módulo de admisiones
-**Versión:** 0.8.1
+**Versión:** 0.9
 **Última actualización:** 14 de julio de 2026
-**Reemplaza:** v0.7 y v0.8 (ambos retirados)
-**Estado:** Fase 1 completada y verificada en DEV. Fase 2 sin iniciar.
+**Reemplaza:** v0.7, v0.8 y v0.8.1 (todos retirados)
+**Estado:** Fases 1, 2 y 3 completadas y verificadas en DEV. Fase 4 sin iniciar.
 
 ---
 
-## 0. QUÉ CAMBIA RESPECTO A v0.7
+## 0. QUÉ CAMBIA RESPECTO A v0.8.1
 
-El v0.7 era una especificación *de diseño*. El v0.8 documenta el esquema **como quedó efectivamente construido en DEV**, más las decisiones tomadas durante la Fase 2.
-
-Cambios sustantivos:
+El v0.9 recoge lo aprendido construyendo las fases 2 y 3. Todo lo de aquí está verificado contra código que funciona en DEV, no contra diseño.
 
 | # | Cambio | Sección |
 |---|---|---|
-| 1 | **Arranque desde cero.** No hay carga inicial de aspirantes. El módulo empieza vacío con el ciclo escolar nuevo. | 2.7 |
-| 2 | **`applicant-detail.html` ya no contiene documentos, sesiones ni financiero.** Esos tres viven en páginas satélite. | 9 |
-| 3 | **El tracker de pasos es de solo lectura para los pasos 4, 8, 10 y 11.** | 8.2 |
-| 4 | **El Paso 5 solo se habilita si `step4_submitted_at IS NOT NULL`.** | 8.2 |
-| 5 | **El bucket de documentos no se ha creado.** Decisión institucional pendiente. | 13 |
-| 6 | Permisos cargados como `inactive`; cada fase activa el suyo. | 9.4 |
-| 7 | Estado `aplazado`: falta definir la reactivación al año siguiente. | 12 |
+| 1 | **`supabaseRequest()` NO serializa el body.** Siempre `JSON.stringify()`. | 11 |
+| 2 | **`aap_contact_sources` exige desambiguación de FK.** Hay dos caminos desde `aap_applicants`. | 11 |
+| 3 | **El Paso 1 es de solo lectura** en el tracker. Corrección al v0.8.1. | 8.2 |
+| 4 | **`form-config.html` se elimina.** Absorbido por `module-config.html`. | 9 |
+| 5 | **Las plantillas de correo no se crean ni se borran.** Conjunto fijo de 11, sembrado por SQL. | 7.4 |
+| 6 | **Trigger `aap_applicants_create_steps`:** las 11 filas de pasos se crean solas al insertar un aspirante. | 3.9 |
+| 7 | **El motor de formularios no alcanza para el Paso 4.** Decisión bloqueante de la Fase 6. | 12.1 |
+| 8 | **`marketing_contacts` está vacía.** `upload-campaigns.html` nunca se ha usado. | 4 |
 
 ---
 
@@ -227,11 +226,54 @@ PRIMARY KEY (applicant_id, step_id)
 
 Un aspirante puede pasar por múltiples comités. El resultado **vigente** es el de `decided_at` más reciente.
 
+### 3.9 Trigger: creación automática de pasos
+
+Al insertar un aspirante, las 11 filas de `aap_applicant_steps` se crean solas en `Pendiente`.
+
+```sql
+CREATE OR REPLACE FUNCTION public.aap_create_applicant_steps()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.aap_applicant_steps (applicant_id, step_id, step_status)
+  SELECT NEW.applicant_id, s.step_id, 'Pendiente'
+  FROM public.aap_process_steps s
+  WHERE s.is_active = true
+  ON CONFLICT (applicant_id, step_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER aap_applicants_create_steps
+AFTER INSERT ON public.aap_applicants
+FOR EACH ROW EXECUTE FUNCTION public.aap_create_applicant_steps();
+```
+
+**Va como trigger y no en la aplicación** porque el aspirante nace desde tres lugares: registro manual, promoción de un lead de Base 0, y formulario público. Si la lógica vive en el JS hay que repetirla en tres sitios y alguno se olvida.
+
+**Supuesto explícito:** los 11 pasos son inmutables. `aap_process_steps.is_active` no se usa como interruptor operativo. Si alguien desactivara un paso, los aspirantes nuevos nacerían con 10 y los viejos seguirían con 11.
+
+**Verificado en DEV y en PROD.**
+
+### 3.10 Datos sembrados
+
+| Objeto | Contenido |
+|---|---|
+| `aap_process_steps` | 11 pasos |
+| `aap_committee_result_types` | 6 resultados |
+| `aap_module_config` | 1 fila (`form_is_open = false`) |
+| `aap_email_templates` | 11 plantillas con sus `template_key` |
+
+**Los cuatro están en DEV y en PROD.**
+
 ---
 
 ## 4. BASE 0 — LEADS DE REDES SOCIALES
 
-Los CSV siguen entrando por `upload-campaigns.html` a `marketing_campaigns` / `marketing_contacts` / `marketing_contact_campaigns`.
+Los CSV siguen entrando por `upload-campaigns.html` a `marketing_campaigns` / `marketing_contacts` / `marketing_contact_campaigns`. **`upload-campaigns.html` no se modifica**: las columnas nuevas tienen DEFAULT o son nullable, así que sus INSERT no se rompen.
+
+> **`marketing_contacts` está vacía en DEV y en PROD.** El módulo de campañas nunca ha entrado en operación, lo que significa que **`upload-campaigns.html` nunca se ha probado con datos reales**. Antes de la Fase 4 hay que subir un CSV real (Tráfico Perfil o Leads Meta Ads) en DEV y verificar que el parser funcione. Es una dependencia silenciosa: si está roto, `leads-review.html` va a esperar datos que nunca llegan.
+>
+> Lo bueno: no hay bandeja histórica que depurar. Los leads nuevos entran limpios con `validation_status = 'pendiente'`.
 
 **Pantalla nueva (`leads-review.html`, Fase 4):**
 
@@ -361,6 +403,38 @@ Por defecto son `required_deferred`: paz y salvo y último reporte del colegio a
                              (is_post_final_submission = true)
 ```
 
+### 7.4 Configuración del módulo y plantillas de correo
+
+**Una sola pantalla de configuración: `module-config.html`.** `form-config.html` fue eliminado. Las dos escribían sobre la misma fila única de `aap_module_config`, lo que era confuso y frágil.
+
+Secciones: estado del formulario público · años académicos habilitados · textos del Paso 1 · `form_id` y textos de autorizaciones del Paso 4 · rol de notificación del Paso 9.
+
+**Las plantillas de correo son un conjunto fijo de 11.** Se siembran por SQL con sus `template_key`. La pantalla (`email-templates.html`) permite editar *nombre, asunto, cuerpo y activar/desactivar*. **No permite crear, borrar ni renombrar la key.**
+
+Razón: `template_key` es un contrato con el código. `form.html` busca `inscripcion_confirmacion` por su key. Si el equipo pudiera crear plantillas, crearía una y esperaría que se enviara sola. Si pudiera renombrar la key, rompería el envío.
+
+| `template_key` | Envío | Estado |
+|---|---|---|
+| `inscripcion_confirmacion` | Automático | Redactada |
+| `token_reenvio_familia` | Automático | Redactada |
+| `token_reenvio_admin` | Manual | Redactada |
+| `contacto_enlace_formulario` | Manual | Redactada |
+| `paso3_informativo` | Manual | Redactada |
+| `paso4_invitacion` | Manual | Redactada |
+| `paso4_documento_subido` | Automático | Redactada |
+| `paso4_envio_final` | Automático | Redactada |
+| `sesion_invitacion_familia` | Automático | **Pendiente de contenido** |
+| `paso9_notificacion_resultado` | Manual | **Pendiente de contenido** |
+| `encuesta_desistimiento` | Automático | **Pendiente de contenido** |
+
+Las pendientes llevan el marcador `[Pendiente: ...]` en el cuerpo. La pantalla las detecta sola y las marca en amarillo con badge «Sin redactar». Cuando alguien borre el marcador, pasan a «Lista».
+
+**Variables:** sintaxis `{{variable}}`. Conjunto: `{{nombre_aspirante}}`, `{{nombre_familiar1}}`, `{{grado}}`, `{{año_academico}}`, `{{token_url}}`, `{{form_url}}`, `{{resultado_comite}}`.
+
+**Editor:** Quill 1.3.7 con `clipboard.dangerouslyPasteHTML()` para cargar el HTML.
+
+**Envío:** todos los correos salen por `sendNotification(to, subject, htmlContent, silent)` de `config.js`.
+
 ---
 
 ## 8. LA FICHA DEL ASPIRANTE
@@ -379,9 +453,9 @@ En Fase 2 los contadores no existen todavía (tablas vacías, sin lógica). La b
 
 | Pasos | Comportamiento |
 |---|---|
-| **1, 2, 3, 6, 7, 9** | Editables: estado, fecha, responsable, notas. |
+| **2, 3, 6, 7, 9** | Editables: estado, fecha, notas. `completed_by` se llena solo. |
 | **5** | Editable **solo si** `aap_applicants.step4_submitted_at IS NOT NULL`. Si es NULL: deshabilitado con el mensaje *"Requiere el envío final del proceso en línea."* |
-| **4, 8, 10, 11** | **Solo lectura.** Insignia fija. Su estado se deriva de otra lógica. |
+| **1, 4, 8, 10, 11** | **Solo lectura.** Insignia fija. Su estado se deriva de otra lógica. |
 
 **Los cuatro bloqueados llevan leyenda explicativa, no un candado mudo:**
 
@@ -406,28 +480,28 @@ Todas en `modules/admissions/`.
 
 `kindergartens.html` · `kindergarten-actions.html` · `fairs.html` · `contact-sources.html` · `referral-types.html` · `grade-age-ranges.html` · `upload-campaigns.html` · `loss-reasons.html` (se ajusta para filtrar por las 3 categorías)
 
-### 9.2 Nuevas o reescritas
+### 9.2 Estado de las pantallas
 
-| Archivo | Contenido | Fase |
-|---|---|---|
-| `applicants.html` | Lista con filtros por `lifecycle_status` | 2 |
-| `applicant-detail.html` | Datos + tracker de 11 pasos + barra de satélites | 2 |
-| `module-config.html` | `form_id` del Paso 4, textos de autorizaciones, rol de notificación | 3 |
-| `email-templates.html` | CRUD de plantillas + preview | 3 |
-| `leads-review.html` | Base 0: validar / siga / pare | 4 |
-| `form.html` | **Público.** Formulario del Paso 1 | 4 |
-| `form-config.html` | Configuración del Paso 1 + años disponibles | 4 |
-| `experiences.html` | Paso 2: tipos + eventos con fecha | 5 |
-| `documents-catalog.html` | Paso 4: catálogo de documentos | 6 |
-| `step4-form.html` | **Público.** Formulario extenso + carga de documentos | 6 |
-| `applicant-documents.html` | **Satélite.** Documentos del aspirante | 6 |
-| `applicant-financial.html` | **Satélite.** Semáforo + acuerdos financieros | 7 |
-| `session-types.html` | Tipos de sesión + roles autorizados | 8 |
-| `applicant-sessions.html` | **Satélite.** Observaciones y comité | 8 |
-| `admissions-reports.html` | Consultas y exportaciones | 10 |
-| `dashboard.html` | Tablero de control del módulo | 10 |
+| Archivo | Contenido | Fase | Estado |
+|---|---|---|---|
+| `applicants.html` | Lista con filtros por `lifecycle_status` + registro de contacto | 2 | ✅ DEV |
+| `applicant-detail.html` | Datos + tracker de 11 pasos + barra de satélites | 2 | ✅ DEV |
+| `module-config.html` | Configuración completa del módulo | 3 | ✅ DEV |
+| `email-templates.html` | Edición de las 11 plantillas | 3 | ✅ DEV |
+| `leads-review.html` | Base 0: validar / siga / pare | 4 | Pendiente |
+| `form.html` | **Público.** Formulario del Paso 1 | 4 | Pendiente |
+| `experiences.html` | Paso 2: tipos + eventos con fecha | 5 | Pendiente |
+| `documents-catalog.html` | Paso 4: catálogo de documentos | 6 | Pendiente |
+| `step4-form.html` | **Público.** Formulario extenso + documentos | 6 | Pendiente |
+| `applicant-documents.html` | **Satélite.** Documentos del aspirante | 6 | Pendiente |
+| `applicant-financial.html` | **Satélite.** Semáforo + acuerdos financieros | 7 | Pendiente |
+| `session-types.html` | Tipos de sesión + roles autorizados | 8 | Pendiente |
+| `applicant-sessions.html` | **Satélite.** Observaciones y comité | 8 | Pendiente |
+| `admissions-reports.html` | Consultas y exportaciones | 10 | Pendiente |
+| `dashboard.html` | Tablero de control del módulo | 10 | Pendiente |
 
 > **No hay `index.html`.** El tablero del módulo es `dashboard.html`.
+> **`form-config.html` fue eliminado.** Su contenido está en `module-config.html`.
 
 ### 9.3 Páginas satélite
 
@@ -439,17 +513,14 @@ Las tres satélites reciben `?applicant_id={uuid}` y validan que el aspirante ex
 
 **Regla:** un permiso solo se activa cuando su página existe. Si se activa antes, el sidebar muestra un ítem que lleva a un 404.
 
-**Activos (10)** — sus archivos existen en el repo:
+**Activos (12):**
 
-`Aspirantes` (`applicants.html`) · `Fuentes de contacto` · `Ferias de preescolares` · `Configuración del formulario` · `Nacimiento - grados` · `Gestionar acciones de jardines` · `Jardines infantiles` · `Razones de pérdida` · `Tipos de referidos` · `Subir archivos de campañas`
+`Aspirantes` · `Ficha individual del aspirante` · `Configuración general del módulo` · `Plantillas de correo` · `Fuentes de contacto` · `Ferias de preescolares` · `Nacimiento - grados` · `Gestionar acciones de jardines` · `Jardines infantiles` · `Razones de pérdida` · `Tipos de referidos` · `Subir archivos de campañas`
 
 **Inactivos, se activan al terminar su fase:**
 
 | Permiso | `url_path` | Activar en |
 |---|---|---|
-| Ficha individual del aspirante | `applicant-detail.html` | Fase 2 |
-| Configuración general del módulo | `module-config.html` | Fase 3 |
-| Plantillas de correo | `email-templates.html` | Fase 3 |
 | Revisión de leads | `leads-review.html` | Fase 4 |
 | Experiencias | `experiences.html` | Fase 5 |
 | Catálogo de documentos | `documents-catalog.html` | Fase 6 |
@@ -462,15 +533,15 @@ Las tres satélites reciben `?applicant_id={uuid}` y validan que el aspirante ex
 
 **Inactivos y sin `url_path` — no se reactivan nunca:**
 
-`Estados del proceso` · `Pasos del proceso` · `Gestión de pasos por aspirante` · `Vista de seguimiento del proceso`
+`Estados del proceso` · `Pasos del proceso` · `Gestión de pasos por aspirante` · `Vista de seguimiento del proceso` · `Configuración del formulario`
 
-Los cuatro apuntaban a páginas eliminadas o inexistentes. No se borran con DELETE por las FKs desde `role_permissions`; quedan desactivados y sin ruta.
+Apuntaban a páginas eliminadas o inexistentes. No se borran con DELETE por las FKs desde `role_permissions`; quedan desactivados y sin ruta.
 
 **Las páginas públicas (`form.html`, `step4-form.html`) no llevan permiso** y no llaman `validatePageAccess()`.
 
-**Después de activar un permiso:** limpiar `schoolnet_sidebar_permissions` de `sessionStorage`.
+**Después de activar un permiso:** limpiar `schoolnet_sidebar_permissions` de `sessionStorage`, o cerrar la pestaña y abrir una nueva.
 
-> **Advertencia para quien cargue permisos:** el bloque de la Fase 1 usó `ON CONFLICT DO UPDATE` y revivió tres permisos que ya habían sido desactivados a propósito. Antes de cualquier carga de permisos, hacer un SELECT previo y verificar contra esta tabla.
+> **Advertencia:** el bloque de permisos de la Fase 1 usó `ON CONFLICT DO UPDATE` y revivió tres permisos que ya habían sido desactivados a propósito. Antes de cualquier carga de permisos, hacer un SELECT previo y verificar contra esta tabla.
 
 ### 9.5 Eliminadas
 
@@ -508,12 +579,35 @@ Los cuatro apuntaban a páginas eliminadas o inexistentes. No se borran con DELE
 - SQL siempre primero en DEV (`spjzvpcsgbewxupjvmfm`), verificar con SELECT, luego replicar a PROD (`mrtuerkncqodhakuwjob`). Nunca al revés.
 - Antes de escribir SQL o código: consultar `DataBase.md` y `config.js`. La base viva puede diverger de la documentación.
 
-**PostgREST**
-- Firma: `supabaseRequest(endpoint, { method, body })`. **Nunca** pasar `headers` explícitamente — sobrescribe la API key inyectada.
+**PostgREST — las tres que nos costaron un error cada una**
+
+1. **`supabaseRequest()` NO serializa el body.** Lo pasa directo a `fetch`, que convierte el objeto a la cadena `"[object Object]"` y PostgREST responde `PGRST102 - Empty or invalid json`. **Siempre `JSON.stringify(payload)`.**
+
+   ```javascript
+   await supabaseRequest('/aap_applicants', {
+       method: 'POST',
+       body: JSON.stringify(payload)   // ← obligatorio
+   });
+   ```
+
+2. **`aap_contact_sources` exige desambiguación de FK.** Hay dos caminos desde `aap_applicants`: directo (`main_source_id`) y vía la N:N (`aap_applicant_sources`). PostgREST no sabe cuál quieres y responde `PGRST201`.
+
+   ```
+   aap_contact_sources!aap_applicants_main_source_fkey(source_name)
+   ```
+
+   `grades`, `academic_years`, `aap_referral_types`, `aap_kindergartens` y `aap_fairs` se referencian una sola vez y no necesitan desambiguación. **`aap_loss_reasons` sí** — está dos veces (`withdrawn_reason_id` y `not_admitted_reason_id`).
+
+3. **Nunca pasar `headers` explícitamente** — sobrescribe la API key inyectada.
+
+Además:
 - `Prefer: return=representation` ya viene en `getHeaders()`.
 - PATCH y DELETE **siempre** con filtro. Ej.: `?config_id=not.is.null`.
 - Sin cache-busters en la URL.
-- Desambiguación de FK: sintaxis `!nombre_constraint`.
+
+**Relaciones N:N** (`aap_applicant_sources`, `aap_form_available_years`): se reemplazan por completo — DELETE de todas las filas del padre, luego POST de las seleccionadas. Es el patrón usado y probado.
+
+**Escapado de HTML obligatorio.** El formulario público del Paso 1 escribe nombres directamente en las tablas que ve el equipo, sin autenticación. Todo lo que venga de la base y se pinte con `innerHTML` pasa por `escapeHtml()`.
 
 **Frontend**
 - Bootstrap 5.3 + Bootstrap Icons.
@@ -529,10 +623,37 @@ Los cuatro apuntaban a páginas eliminadas o inexistentes. No se borran con DELE
 
 ## 12. DECISIONES PENDIENTES
 
-### Bloquean fases específicas
+### 12.1 El motor de formularios no alcanza para el Paso 4 — BLOQUEA LA FASE 6
+
+El v0.7 asumió que el sistema de formularios dinámicos (`forms` / `form_fields` / `form_responses` / `procedure_instances`) servía tal cual para el Paso 4. **Lo revisé y no alcanza.** Cinco huecos, por gravedad:
+
+**1. No hay concepto de módulo o sección.** `form_fields` solo tiene `field_order`. No hay columna de agrupación. El Paso 4 son **8 módulos** con títulos y navegación paso a paso. Con el motor actual, las ~60 preguntas salen en una sola lista corrida. **Este es el hueco grande; los demás son parcheables.**
+
+**2. El pre-llenado no puede leer del aspirante.** `prefill_source` solo admite `user_name`, `user_email`, `current_date`. El v0.9 exige que los campos ya capturados en el Paso 1 salgan pre-llenados con su valor y editables. El motor solo sabe pre-llenar con datos del *usuario del sistema* — que en el Paso 4 no existe, porque la familia entra sin login.
+
+**3. `validation_rules` no tiene motor.** La columna jsonb existe. **Nada la lee.** El `exact_count: 3` de la pregunta de declaraciones hay que implementarlo desde cero.
+
+**4. El sub-bloque condicional funciona a medias.** `show_if_field_id` / `show_if_value` condiciona un campo a la vez. El Módulo 6 tiene un sub-bloque completo que aparece o desaparece entero. Se puede simular poniendo el mismo `show_if` en cada campo, pero es frágil.
+
+**5. No hay acceso por token.** `forms.standalone_is_public` hace el formulario público a secas. El Paso 4 necesita que la familia entre con su token y que las respuestas queden atadas a *su* aspirante.
+
+**Opciones:**
+
+| | Qué implica | Riesgo |
+|---|---|---|
+| **(a) Extender el motor** | Agregar secciones, ampliar `prefill_source`, escribir el motor de `validation_rules`, montar acceso por token. | Toca `forms` y `form_fields`, que usan otros módulos. Cualquier error se propaga fuera de admisiones. |
+| **(b) Página propia** | `step4-form.html` con los 8 módulos escritos en el HTML. Respuestas igual en `form_responses` / `procedure_instances`. | El formulario deja de ser configurable. |
+| **(c) Híbrido** | Motor dinámico para observaciones y comité. Página propia para el Paso 4. | Dos caminos que mantener. |
+
+**Recomendación: (c).** El formulario del Paso 4 tiene contenido institucional cerrado — 8 módulos, ~60 preguntas, aprobados. No cambia cada semestre. Hacerlo dinámico es pagar el costo de un motor genérico para un formulario único y estable. En cambio los formularios de observación **sí** varían por tipo (EAE, dirección de sección, rectoría) y los define cada área: ahí el motor dinámico gana.
+
+**Consecuencia si se elige (b) o (c):** el select de «Formulario del proceso en línea» en `module-config.html` deja de tener sentido y se elimina de la pantalla.
+
+### 12.2 Otras decisiones pendientes
 
 | # | Pendiente | Quién decide | Bloquea |
 |---|---|---|---|
+| 0 | **Rol de notificación (Paso 9).** Sigue en «Sin asignar» en `aap_module_config`. Es quien dispara la notificación del resultado del comité — típicamente rectoría o dirección académica, no necesariamente admisiones. | Rectoría | Fase 9 |
 | 1 | **Reactivación de aplazados.** Un aspirante `aplazado` debe poder reactivarse el año siguiente. ¿Se reactiva el mismo registro (cambia `target_academic_year_id` y vuelve a `en_proceso`)? ¿Se conserva el historial de pasos o se reinicia? ¿Se conserva el resultado del comité anterior? | Desarrollos + Admisiones | Fase 8 |
 | 2 | **Anulación administrativa de pasos bloqueados.** Permiso propio, con auditoría. | Desarrollos | Fase 9 |
 | 3 | Textos oficiales de las dos autorizaciones del Paso 4. Deben validarse legalmente. | Rectoría / asesoría jurídica | Fase 6 |
@@ -581,18 +702,27 @@ Esto **no es un riesgo nuevo** de este módulo (aplica ya a la pantalla de login
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| **1** | Esquema completo en DEV. Permisos cargados y saneados. | ✅ Completada y verificada |
-| **2** | `applicants.html` + `applicant-detail.html` | Sin iniciar |
-| **3** | `module-config.html` + `email-templates.html` | Pendiente |
-| **4** | `leads-review.html` + `form.html` + `form-config.html` | Pendiente |
+| **1** | Esquema, trigger, datos sembrados, permisos | ✅ **DEV + PROD** |
+| **2** | `applicants.html` + `applicant-detail.html` | ✅ DEV |
+| **3** | `module-config.html` + `email-templates.html` | ✅ DEV |
+| **4** | `leads-review.html` + `form.html` | ← Siguiente |
 | **5** | `experiences.html` (Paso 2) + check del Paso 3 | Pendiente |
-| **6** | `documents-catalog.html` + `step4-form.html` + `applicant-documents.html` + **bucket** | Pendiente. **Bloqueada por 13.1.** |
+| **6** | `documents-catalog.html` + `step4-form.html` + `applicant-documents.html` + bucket | **Bloqueada por 12.1 y 13.1** |
 | **7** | `applicant-financial.html` (Paso 5 + acuerdos) | Pendiente |
-| **8** | `session-types.html` + `applicant-sessions.html` (Pasos 6, 7, 8) | Pendiente. **Bloqueada por 12.1.** |
+| **8** | `session-types.html` + `applicant-sessions.html` (Pasos 6, 7, 8) | **Bloqueada por 12.2 #1** |
 | **9** | Pasos 9, 10 y 11 en la ficha. Desistimientos. | Pendiente |
 | **10** | `admissions-reports.html` + `dashboard.html` + encuestas | Pendiente |
 
-**PROD:** la Fase 1 sigue solo en DEV. La replicación a PROD se hace cuando la Fase 2 esté verificada, en un solo script consolidado.
+**Estado de PROD:** el esquema completo, el trigger y los datos sembrados (11 pasos, 6 resultados, fila de config, 11 plantillas) **ya están en PROD**. Los HTML no — siguen solo en la rama `developmen`.
+
+**Antes del despliegue a PROD** hay que verificar que el trigger `aap_applicants_create_steps` esté allá. Un script de CREATE TABLE no lo arrastra; es un objeto aparte. Si falta, cada aspirante nuevo nace sin sus 11 pasos y la ficha sale vacía sin dar error.
+
+```sql
+SELECT tgname FROM pg_trigger
+WHERE tgrelid = 'public.aap_applicants'::regclass AND NOT tgisinternal;
+```
+
+**Recomendación:** no desplegar a PROD hasta cerrar la Fase 4. Un `applicants.html` sin formulario público es una libreta de contactos; no vale congelar el esquema por eso.
 
 ---
 
@@ -605,4 +735,5 @@ Esto **no es un riesgo nuevo** de este módulo (aplica ya a la pantalla de login
 | Abril 2026 | 0.6 | Estructura del formulario del Paso 4. Catálogo de documentos. |
 | Julio 2026 | 0.7 | Especificación cerrada. Tabla única de aspirante. Reutilización de `procedure_instances`. Modelo de datos completo. |
 | Julio 2026 | 0.8 | Esquema como quedó construido en DEV. Arranque desde cero (sin migración). Páginas satélite. Tracker de solo lectura para pasos 4, 8, 10 y 11. Bucket sin crear. Reactivación de aplazados identificada como decisión crítica. |
-| **Julio 2026** | **0.8.1** | **Permisos saneados y documentados con su fase de activación.** Se desactivaron 4 permisos que apuntaban a páginas eliminadas o inexistentes (incluido `applicant-process.html`, que no existe en el diseño). Se desactivaron 3 permisos de páginas aún no construidas. El tablero del módulo es `dashboard.html`, no `index.html`. Constraints de la Fase 1 verificados: nada pendiente en el esquema. |
+| Julio 2026 | 0.8.1 | Permisos saneados y documentados con su fase de activación. Se desactivaron 4 permisos que apuntaban a páginas eliminadas o inexistentes (incluido `applicant-process.html`, que no existe en el diseño). Se desactivaron 3 permisos de páginas aún no construidas. El tablero del módulo es `dashboard.html`, no `index.html`. Constraints de la Fase 1 verificados. |
+| **Julio 2026** | **0.9** | **Fases 2 y 3 construidas y verificadas en DEV.** Trigger de creación de pasos. Tres convenciones de PostgREST aprendidas a golpes (`JSON.stringify` obligatorio, desambiguación de `aap_contact_sources`, escapado de HTML). Paso 1 pasa a solo lectura; transición `inscrito → en_proceso` automatizada. `form-config.html` eliminado. Plantillas de correo como conjunto fijo. **Identificado que el motor de formularios no alcanza para el Paso 4** — decisión bloqueante de la Fase 6. `marketing_contacts` vacía: `upload-campaigns.html` nunca probado. |
