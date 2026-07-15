@@ -1,27 +1,27 @@
 # MÓDULO DE ADMISIONES — SchoolNet
 
 **Documento:** Especificación funcional y técnica del módulo de admisiones
-**Versión:** 0.9
-**Última actualización:** 14 de julio de 2026
-**Reemplaza:** v0.7, v0.8 y v0.8.1 (todos retirados)
-**Estado:** Fases 1, 2 y 3 completadas y verificadas en DEV. Fase 4 sin iniciar.
+**Versión:** 0.10
+**Última actualización:** 15 de julio de 2026
+**Reemplaza:** v0.7, v0.8, v0.8.1 y v0.9 (todos retirados)
+**Estado:** Fases 1, 2, 3 completadas en DEV. Fase 4 parcial: `form.html` (Paso 1) completo; `leads-review.html` en espera del equipo de admisiones.
 
 ---
 
-## 0. QUÉ CAMBIA RESPECTO A v0.8.1
+## 0. QUÉ CAMBIA RESPECTO A v0.9
 
-El v0.9 recoge lo aprendido construyendo las fases 2 y 3. Todo lo de aquí está verificado contra código que funciona en DEV, no contra diseño.
+El v0.10 recoge la construcción del formulario público del Paso 1 (`form.html`) y tres decisiones de seguridad que tomó su diseño. Todo verificado contra código que funciona en DEV.
 
 | # | Cambio | Sección |
 |---|---|---|
-| 1 | **`supabaseRequest()` NO serializa el body.** Siempre `JSON.stringify()`. | 11 |
-| 2 | **`aap_contact_sources` exige desambiguación de FK.** Hay dos caminos desde `aap_applicants`. | 11 |
-| 3 | **El Paso 1 es de solo lectura** en el tracker. Corrección al v0.8.1. | 8.2 |
-| 4 | **`form-config.html` se elimina.** Absorbido por `module-config.html`. | 9 |
-| 5 | **Las plantillas de correo no se crean ni se borran.** Conjunto fijo de 11, sembrado por SQL. | 7.4 |
-| 6 | **Trigger `aap_applicants_create_steps`:** las 11 filas de pasos se crean solas al insertar un aspirante. | 3.9 |
-| 7 | **El motor de formularios no alcanza para el Paso 4.** Decisión bloqueante de la Fase 6. | 12.1 |
-| 8 | **`marketing_contacts` está vacía.** `upload-campaigns.html` nunca se ha usado. | 4 |
+| 1 | **Deduplicación diferida.** El formulario público NO lee `aap_applicants`. Solo inserta. La detección de duplicados pasa al lado del equipo. | 5.2 |
+| 2 | **Modo edición por token** implementado y probado. Lectura filtrada por `access_token`, nunca la tabla entera. | 5.3 |
+| 3 | **Flag `SCHOOLNET_PUBLIC_PAGE`** en `config.js`: las páginas públicas no cargan navbar ni sidebar. | 11 |
+| 4 | **Recuperación de token:** no se hace desde el cliente. Se resuelve desde la ficha (botón de reenvío). | 5.3 |
+| 5 | **Correo de confirmación** integrado: `sendNotification` con la plantilla `inscripcion_confirmacion`. No bloqueante. | 5.3 |
+| 6 | El formulario del Paso 1 **no pide jardín**: es dato interno que asigna el equipo. | 5.1 |
+
+**Herencia del v0.9 que sigue vigente:** las tres convenciones de PostgREST (`JSON.stringify` obligatorio, desambiguación de `aap_contact_sources`, escapado de HTML), el trigger de creación de pasos, el motor de formularios insuficiente para el Paso 4 (decisión bloqueante de la Fase 6), y `marketing_contacts` vacía.
 
 ---
 
@@ -274,6 +274,8 @@ Los CSV siguen entrando por `upload-campaigns.html` a `marketing_campaigns` / `m
 > **`marketing_contacts` está vacía en DEV y en PROD.** El módulo de campañas nunca ha entrado en operación, lo que significa que **`upload-campaigns.html` nunca se ha probado con datos reales**. Antes de la Fase 4 hay que subir un CSV real (Tráfico Perfil o Leads Meta Ads) en DEV y verificar que el parser funcione. Es una dependencia silenciosa: si está roto, `leads-review.html` va a esperar datos que nunca llegan.
 >
 > Lo bueno: no hay bandeja histórica que depurar. Los leads nuevos entran limpios con `validation_status = 'pendiente'`.
+>
+> **`leads-review.html` queda en espera** hasta que el equipo de admisiones se reintegre y pruebe `upload-campaigns.html` con un CSV real. No tiene sentido construir la pantalla de revisión antes de confirmar que la carga funciona y de ver la forma real de los datos.
 
 **Pantalla nueva (`leads-review.html`, Fase 4):**
 
@@ -317,34 +319,49 @@ Formulario público único, sin login. Reemplaza los tres formularios de Google 
 
 Únicos campos condicionales: #23 y #24, visibles si #22 = Sí.
 
-### 5.2 Deduplicación
+### 5.2 Deduplicación diferida (decisión v0.10)
 
-Al enviar, el formulario busca en `aap_applicants` una coincidencia por:
+**El formulario público NO lee `aap_applicants`.** Solo inserta.
 
-> `applicant_birthdate` igual **Y** (`familiar1_email` o `familiar2_email` coincide con cualquiera de los dos correos enviados)
+Razón de seguridad: con RLS desactivada y el `anon key` visible en el navegador, un formulario público que pudiera hacer `SELECT` sobre `aap_applicants` permitiría a cualquiera leer **toda la base de aspirantes** — nombres de menores, correos, teléfonos — abriendo la consola. La deduplicación automática del v0.9 (buscar coincidencia por fecha + correo antes de insertar) exigía justamente ese SELECT. Se descarta.
 
-- **Coincidencia:** completa ese registro (de `contacto` a `inscrito`). No crea uno nuevo. Lo marca en `general_notes` para revisión del equipo.
-- **Sin coincidencia:** crea registro nuevo con `origin = 'formulario'` y `lifecycle_status = 'inscrito'`.
+**Nuevo comportamiento:** el formulario siempre crea registro nuevo con `origin = 'formulario'` y `lifecycle_status = 'inscrito'`. La detección de duplicados se hace **del lado del equipo**, en `applicants.html`, como una alerta "estos dos registros podrían ser el mismo aspirante". El equipo ya revisa los inscritos de todas formas.
 
-Esto evita el duplicado clásico: admisiones registra a la familia por teléfono, y la familia después llena el formulario por su cuenta sin usar el enlace.
+El caso que esto cubre (familia registrada por teléfono que luego llena el formulario sin usar el enlace) es real pero poco frecuente, y resolverlo del lado del equipo es mucho más barato que exponer la base de menores al internet abierto.
 
-**Caso límite conocido:** hermanos gemelos con la misma fecha de nacimiento y los mismos correos colisionan. Si aparece en la práctica, hay que agregar el nombre a la llave.
+**Pendiente de construir:** la alerta de posibles duplicados en `applicants.html`. No urge — sin inscripciones reales todavía no hay duplicados. Se construye cuando el módulo entre en operación.
 
-### 5.3 Comportamiento
+### 5.3 Comportamiento — implementado y probado
 
-**Envío:** genera `access_token`, congela `step1_submission`, marca `step1_submitted_at`, crea la fila del paso 1 en `aap_applicant_steps` como `Completado`, envía la plantilla `inscripcion_confirmacion` con el token.
+**Página pública.** No llama `validatePageAccess()`, no requiere sesión, no muestra navbar ni sidebar (ver flag `SCHOOLNET_PUBLIC_PAGE` en el capítulo 11).
 
-**Edición posterior:** con el token, sin login, **solo mientras `lifecycle_status = 'inscrito'`**. Al pasar a `en_proceso` se bloquea. El snapshot nunca se modifica.
+**Estado cerrado.** Si `aap_module_config.form_is_open = false`, muestra el mensaje de cierre y no renderiza el formulario.
 
-**Recuperación de token:** la familia ingresa un correo (Familiar 1 o 2); si coincide, recibe el token (`token_reenvio_familia`).
+**Envío (registro nuevo):**
+1. Genera `access_token` con `crypto.randomUUID()`.
+2. Inserta en `aap_applicants` con `lifecycle_status = 'inscrito'`, `origin = 'formulario'`.
+3. Congela `step1_submission` (jsonb con todo lo enviado, incluidos los medios seleccionados).
+4. Inserta los medios en `aap_applicant_sources` (N:N).
+5. Marca el Paso 1 como `Completado` en `aap_applicant_steps` (las 11 filas ya existen por el trigger).
+6. Envía la plantilla `inscripcion_confirmacion` con el `token_url` por `sendNotification`. **No bloqueante:** si el correo falla, la inscripción ya quedó guardada.
 
-**Reenvío por administradores:** desde la ficha (`token_reenvio_admin`), con auditoría.
+**Modo edición (`?token=...`):**
+- Consulta **solo** por `access_token=eq.{token}`. El token es un UUID v4 (122 bits): imposible de adivinar o enumerar. Sin token no devuelve nada; con token válido, un único registro. Seguro incluso con el `anon key` público.
+- Si el token no existe → pantalla "Enlace no válido".
+- Si el aspirante ya avanzó (`lifecycle_status != 'inscrito'`) → datos en **solo lectura** con mensaje "Tu inscripción está en revisión".
+- Si está `inscrito` → carga los datos, muestra banner de edición, y el envío hace **PATCH filtrado por token** en vez de INSERT.
+- El PATCH **nunca toca** `step1_submission` (snapshot inmutable), `lifecycle_status`, ni ningún campo de proceso. Solo datos de inscripción.
+- Los medios se releen del snapshot (`step1_submission.medios_seleccionados`), porque el formulario público no lee la tabla N:N.
 
-**Inscripción de hermanos:** botón que precarga Familiar 1 y Familiar 2.
+**Recuperación de token (decisión v0.10):** **no** se hace desde el cliente — buscar por correo implicaría leer la tabla. Se resuelve desde la ficha del aspirante con el botón de reenvío (`token_reenvio_admin`), que es una acción del equipo con sesión. En el formulario público solo se indica a la familia que contacte a admisiones si perdió su enlace.
 
-**Estado del formulario:** abrible/cerrable desde `aap_module_config.form_is_open`.
+**No pide jardín.** El jardín de referencia es dato interno que asigna el equipo; no se le pregunta a la familia.
+
+**Reenvío por administradores** e **inscripción de hermanos** (precarga de Familiar 1 y 2): pendientes, se agregan cuando el equipo lo requiera.
 
 ---
+
+## 6. PASO 2---
 
 ## 6. PASO 2 — EXPERIENCIAS
 
@@ -488,8 +505,8 @@ Todas en `modules/admissions/`.
 | `applicant-detail.html` | Datos + tracker de 11 pasos + barra de satélites | 2 | ✅ DEV |
 | `module-config.html` | Configuración completa del módulo | 3 | ✅ DEV |
 | `email-templates.html` | Edición de las 11 plantillas | 3 | ✅ DEV |
-| `leads-review.html` | Base 0: validar / siga / pare | 4 | Pendiente |
-| `form.html` | **Público.** Formulario del Paso 1 | 4 | Pendiente |
+| `form.html` | **Público.** Formulario del Paso 1 (envío + edición por token) | 4 | ✅ DEV |
+| `leads-review.html` | Base 0: validar / siga / pare | 4 | ⏸ Espera equipo de admisiones |
 | `experiences.html` | Paso 2: tipos + eventos con fecha | 5 | Pendiente |
 | `documents-catalog.html` | Paso 4: catálogo de documentos | 6 | Pendiente |
 | `step4-form.html` | **Público.** Formulario extenso + documentos | 6 | Pendiente |
@@ -612,8 +629,15 @@ Además:
 **Frontend**
 - Bootstrap 5.3 + Bootstrap Icons.
 - **Sin gradientes en ningún elemento.** Solo colores sólidos.
-- Páginas internas: `initializePage()` + `validatePageAccess('<permiso>')`.
-- Páginas públicas: **no** llaman `validatePageAccess()`.
+- Páginas internas: `validatePageAccess('<permiso>')`.
+- **Páginas públicas** (`form.html`, y luego `step4-form.html`): declaran `window.SCHOOLNET_PUBLIC_PAGE = true` **antes** de cargar `config.js`. Esto evita que `injectUserNavbar()` monte el navbar y el sidebar internos. No llaman `validatePageAccess()`.
+
+  ```html
+  <script>window.SCHOOLNET_PUBLIC_PAGE = true;</script>
+  <script src="../../assets/js/config.js"></script>
+  ```
+
+  El cambio en `config.js` es aditivo (una condición al inicio de `injectUserNavbar`) y no afecta las 250+ páginas internas. `injectUserNavbar` ya se protegía sola cuando no hay sesión; el flag lo hace explícito y robusto ante usuarios con sesión que abren una página pública.
 - Correos: `sendNotification(to, subject, htmlContent, silent)`.
 - Storage: seguir `GUIA_SUPABASE_STORAGE_SIN_AUTH.md`.
 - Quill 1.3.7 para editores de texto enriquecido.
@@ -705,7 +729,7 @@ Esto **no es un riesgo nuevo** de este módulo (aplica ya a la pantalla de login
 | **1** | Esquema, trigger, datos sembrados, permisos | ✅ **DEV + PROD** |
 | **2** | `applicants.html` + `applicant-detail.html` | ✅ DEV |
 | **3** | `module-config.html` + `email-templates.html` | ✅ DEV |
-| **4** | `leads-review.html` + `form.html` | ← Siguiente |
+| **4** | `form.html` (Paso 1: envío + edición por token) ✅ DEV · `leads-review.html` ⏸ espera equipo | Parcial |
 | **5** | `experiences.html` (Paso 2) + check del Paso 3 | Pendiente |
 | **6** | `documents-catalog.html` + `step4-form.html` + `applicant-documents.html` + bucket | **Bloqueada por 12.1 y 13.1** |
 | **7** | `applicant-financial.html` (Paso 5 + acuerdos) | Pendiente |
@@ -722,7 +746,7 @@ SELECT tgname FROM pg_trigger
 WHERE tgrelid = 'public.aap_applicants'::regclass AND NOT tgisinternal;
 ```
 
-**Recomendación:** no desplegar a PROD hasta cerrar la Fase 4. Un `applicants.html` sin formulario público es una libreta de contactos; no vale congelar el esquema por eso.
+**Recomendación:** el formulario público (`form.html`) ya funciona en DEV. Cuando se decida desplegar a PROD, verificar antes: (a) que el trigger esté en PROD, (b) que `config.js` en PROD tenga el flag `SCHOOLNET_PUBLIC_PAGE`, (c) que `form_is_open` arranque en `false` para no abrir el formulario por accidente. **El enlace de token no funciona a través del preview de Vercel** (muro de autenticación de deployment); la prueba de punta a punta del modo edición solo es fiable en producción o con sesión de Vercel activa.
 
 ---
 
@@ -736,4 +760,5 @@ WHERE tgrelid = 'public.aap_applicants'::regclass AND NOT tgisinternal;
 | Julio 2026 | 0.7 | Especificación cerrada. Tabla única de aspirante. Reutilización de `procedure_instances`. Modelo de datos completo. |
 | Julio 2026 | 0.8 | Esquema como quedó construido en DEV. Arranque desde cero (sin migración). Páginas satélite. Tracker de solo lectura para pasos 4, 8, 10 y 11. Bucket sin crear. Reactivación de aplazados identificada como decisión crítica. |
 | Julio 2026 | 0.8.1 | Permisos saneados y documentados con su fase de activación. Se desactivaron 4 permisos que apuntaban a páginas eliminadas o inexistentes (incluido `applicant-process.html`, que no existe en el diseño). Se desactivaron 3 permisos de páginas aún no construidas. El tablero del módulo es `dashboard.html`, no `index.html`. Constraints de la Fase 1 verificados. |
-| **Julio 2026** | **0.9** | **Fases 2 y 3 construidas y verificadas en DEV.** Trigger de creación de pasos. Tres convenciones de PostgREST aprendidas a golpes (`JSON.stringify` obligatorio, desambiguación de `aap_contact_sources`, escapado de HTML). Paso 1 pasa a solo lectura; transición `inscrito → en_proceso` automatizada. `form-config.html` eliminado. Plantillas de correo como conjunto fijo. **Identificado que el motor de formularios no alcanza para el Paso 4** — decisión bloqueante de la Fase 6. `marketing_contacts` vacía: `upload-campaigns.html` nunca probado. |
+| Julio 2026 | 0.9 | **Fases 2 y 3 construidas y verificadas en DEV.** Trigger de creación de pasos. Tres convenciones de PostgREST aprendidas a golpes (`JSON.stringify` obligatorio, desambiguación de `aap_contact_sources`, escapado de HTML). Paso 1 pasa a solo lectura; transición `inscrito → en_proceso` automatizada. `form-config.html` eliminado. Plantillas de correo como conjunto fijo. **Identificado que el motor de formularios no alcanza para el Paso 4** — decisión bloqueante de la Fase 6. `marketing_contacts` vacía: `upload-campaigns.html` nunca probado. |
+| **15 jul 2026** | **0.10** | **Formulario público del Paso 1 (`form.html`) completo y probado en DEV:** envío con correo de confirmación, y modo edición por token con las tres reglas de seguridad (lectura filtrada por token, bloqueo si el aspirante avanzó, snapshot inmutable). **Deduplicación diferida** — el formulario ya no lee `aap_applicants`, la detección de duplicados pasa al equipo. **Flag `SCHOOLNET_PUBLIC_PAGE`** en `config.js` para páginas públicas sin navbar. Recuperación de token vía equipo, no cliente. `leads-review.html` en espera del equipo de admisiones. |
