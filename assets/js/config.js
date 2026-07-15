@@ -2080,6 +2080,10 @@ function createChangePasswordModalHTML() {
 
 // Función para inyectar el navbar automáticamente
 function injectUserNavbar() {
+    // Páginas públicas (formularios de familias) no llevan interfaz interna.
+    if (window.SCHOOLNET_PUBLIC_PAGE) {
+        return;
+    }
     // Solo inyectar si hay sesión activa
     const session = getStoredSession();
     if (!session || !session.user) {
