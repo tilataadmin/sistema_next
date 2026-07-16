@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.15.1">
+    <meta name="page-version" content="26.7.16.1">
     <title>Inscripción — Colegio Tilatá</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -329,6 +329,20 @@
                     </div>
                 </div>
 
+                <!-- EXPERIENCIA -->
+                <div class="form-card" id="card-experiencia" style="display:none;">
+                    <div class="seccion-titulo">Conoce el colegio</div>
+                    <p class="text-muted small">
+                        Te invitamos a participar en una de nuestras experiencias para conocer el
+                        Colegio Tilatá. Puedes elegir una ahora o coordinarla más adelante con el
+                        equipo de admisiones.
+                    </p>
+                    <label class="form-label" for="f-experiencia">Experiencia a la que deseas asistir</label>
+                    <select class="form-select" id="f-experiencia">
+                        <option value="">Prefiero coordinarla después</option>
+                    </select>
+                </div>
+
                 <!-- ENVIAR -->
                 <div class="form-card">
                     <div id="error-envio" class="alert alert-danger" style="display:none;"></div>
@@ -431,6 +445,8 @@
 
             fuentesCache = fuentes || [];
 
+            // Eventos abiertos a inscripción, de hoy en adelante.
+            await cargarEventosDisponibles();
             // Años
             const selAnio = document.getElementById('f-anio');
             (aniosHab || []).forEach(a => {
@@ -586,6 +602,38 @@
             return '';
         }
 
+        async function cargarEventosDisponibles() {
+            const hoy = new Date().toISOString().slice(0, 10);
+            const eventos = await supabaseRequest(
+                '/aap_experience_events?select=event_id,event_date,event_time,event_location,' +
+                'aap_experience_types(type_name)' +
+                '&is_open_for_registration=eq.true&event_status=eq.Programada' +
+                '&event_date=gte.' + hoy + '&order=event_date.asc'
+            );
+
+            if (!eventos || eventos.length === 0) return;
+
+            const sel = document.getElementById('f-experiencia');
+            const MESES_L = ['enero','febrero','marzo','abril','mayo','junio',
+                             'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+            eventos.forEach(ev => {
+                const tipo = ev.aap_experience_types ? ev.aap_experience_types.type_name : 'Experiencia';
+                const p = ev.event_date.split('-');
+                const fecha = `${parseInt(p[2],10)} de ${MESES_L[parseInt(p[1],10)-1]}`;
+                const hora = ev.event_time ? ' · ' + ev.event_time.slice(0,5) : '';
+                const lugar = ev.event_location ? ' · ' + ev.event_location : '';
+
+                const opt = document.createElement('option');
+                opt.value = ev.event_id;
+                opt.textContent = `${tipo} — ${fecha}${hora}${lugar}`;
+                sel.appendChild(opt);
+            });
+
+            // Solo se muestra la sección si hay eventos disponibles.
+            document.getElementById('card-experiencia').style.display = 'block';
+        }
+
         // ==========================================
         // TEXTOS Y ESTADOS
         // ==========================================
@@ -724,6 +772,15 @@
                     });
                 }
 
+                // Inscripción a experiencia (opcional).
+                const eventoElegido = val('f-experiencia');
+                if (eventoElegido) {
+                    await supabaseRequest('/aap_applicant_experiences', {
+                        method: 'POST',
+                        body: JSON.stringify({ applicant_id: nuevoId, event_id: eventoElegido })
+                    });
+                }
+
                 // Marcar el Paso 1 como completado.
                 await marcarPaso1(nuevoId);
 
@@ -790,6 +847,27 @@
                 if (medios.length > 0) {
                     const filas = medios.map(sid => ({ applicant_id: aspiranteEdicion.applicant_id, source_id: sid }));
                     await supabaseRequest('/aap_applicant_sources', { method: 'POST', body: JSON.stringify(filas) });
+                }
+
+                // Inscripción a experiencia: la familia solo puede AGREGAR una desde
+                // el formulario, no cambiar la que el equipo pueda haberle asignado.
+                // Solo se inserta si eligió una y no tiene ya inscripción a ese evento.
+                const eventoElegidoEd = val('f-experiencia');
+                if (eventoElegidoEd) {
+                    const yaInscrito = await supabaseRequest(
+                        '/aap_applicant_experiences?select=applicant_experience_id' +
+                        '&applicant_id=eq.' + aspiranteEdicion.applicant_id +
+                        '&event_id=eq.' + eventoElegidoEd + '&limit=1'
+                    );
+                    if (!yaInscrito || yaInscrito.length === 0) {
+                        await supabaseRequest('/aap_applicant_experiences', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                applicant_id: aspiranteEdicion.applicant_id,
+                                event_id: eventoElegidoEd
+                            })
+                        });
+                    }
                 }
 
                 // Confirmación en pantalla
