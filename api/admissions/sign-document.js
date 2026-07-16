@@ -63,7 +63,6 @@ async function firmarUrl(path) {
     const res = await fetch(`${STORAGE_API}/object/sign/${BUCKET}/${path}`, {
         method: 'POST',
         headers: {
-            'apikey': SERVICE_KEY,
             'Authorization': `Bearer ${SERVICE_KEY}`,
             'Content-Type': 'application/json'
         },
