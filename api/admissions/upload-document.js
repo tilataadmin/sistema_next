@@ -128,6 +128,19 @@ module.exports = async function handler(req, res) {
         return res.status(500).json({ success: false, error: 'Servidor sin configurar (falta service key)' });
     }
 
+    // DIAGNÓSTICO TEMPORAL - quitar después
+    if (req.body && req.body.diagnostico === true) {
+        let refKey = 'ilegible';
+        let refUrl = SUPABASE_URL;
+        try {
+            refKey = JSON.parse(Buffer.from(SERVICE_KEY.split('.')[1], 'base64').toString()).ref;
+        } catch (e) { refKey = 'error: ' + e.message; }
+        return res.status(200).json({
+            proyecto_de_la_service_key: refKey,
+            supabase_url: refUrl,
+            largo_de_la_key: SERVICE_KEY.length
+        });
+    }
     try {
         const {
             user_id,
