@@ -71,7 +71,6 @@ async function subirArchivo(path, buffer, contentType) {
     const res = await fetch(`${STORAGE_API}/object/${BUCKET}/${path}`, {
         method: 'POST',
         headers: {
-            'apikey': SERVICE_KEY,
             'Authorization': `Bearer ${SERVICE_KEY}`,
             'Content-Type': contentType,
             'x-upsert': 'false'
