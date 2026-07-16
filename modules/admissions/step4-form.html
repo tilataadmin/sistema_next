@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.07.16.14.00">
+    <meta name="page-version" content="26.07.16.15.00">
     <title>Proceso en línea — Colegio Tilatá</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -14,11 +14,8 @@
         .form-wrap { max-width: 820px; margin: 0 auto; padding: 1.5rem 1rem 5rem; }
 
         .form-card {
-            background: #ffffff;
-            border-radius: 10px;
-            border: 1px solid #e3e7eb;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
+            background: #ffffff; border-radius: 10px; border: 1px solid #e3e7eb;
+            padding: 2rem; margin-bottom: 1.5rem;
         }
         .form-header { text-align: center; padding: 2rem 1rem 1rem; }
         .form-header h1 { font-size: 1.5rem; font-weight: 700; }
@@ -40,6 +37,14 @@
             background: #eef4ff; border-left: 3px solid #0d6efd;
             border-radius: 4px; padding: 0.85rem 1rem;
         }
+
+        .doc-fila {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap;
+        }
+        .doc-fila:last-child { border-bottom: none; }
+        .doc-info { flex: 1; min-width: 220px; }
+        .doc-nombre { font-weight: 500; }
 
         .estado-mensaje { text-align: center; padding: 3rem 1.5rem; }
         .estado-mensaje i { font-size: 3rem; }
@@ -76,34 +81,27 @@
             <p class="text-muted mb-0">Colegio Tilatá</p>
         </div>
 
-        <!-- ESTADO: TOKEN INVÁLIDO -->
         <div class="form-card estado-mensaje" id="pantalla-token-invalido" style="display:none;">
             <i class="bi bi-x-circle text-danger"></i>
             <h4 class="mt-3">Enlace no válido</h4>
             <p class="text-muted">El enlace que usaste no corresponde a ningún proceso. Verifica que copiaste la dirección completa desde tu correo.</p>
         </div>
 
-        <!-- ESTADO: SIN TOKEN -->
         <div class="form-card estado-mensaje" id="pantalla-sin-token" style="display:none;">
             <i class="bi bi-link-45deg text-secondary"></i>
             <h4 class="mt-3">Falta el enlace de acceso</h4>
             <p class="text-muted">Para diligenciar el proceso en línea debes abrir el enlace que te envió el equipo de admisiones a tu correo.</p>
         </div>
 
-        <!-- ESTADO: YA ENVIADO -->
         <div class="form-card estado-mensaje" id="pantalla-enviado" style="display:none;">
             <i class="bi bi-check-circle-fill text-success"></i>
             <h4 class="mt-3">Proceso en línea enviado</h4>
             <p class="text-muted">Recibimos tu proceso en línea. Si necesitas actualizar algún documento, comunícate con el equipo de admisiones.</p>
         </div>
 
-        <!-- FORMULARIO -->
         <form id="formulario" style="display:none;" onsubmit="return false;">
-
             <div id="contenedor-modulos"></div>
-
             <div id="error-envio" class="alert alert-danger" style="display:none;"></div>
-
             <div class="barra-acciones">
                 <span class="aviso-guardado" id="aviso-guardado" style="display:none;">
                     <i class="bi bi-check2-circle me-1"></i>Borrador guardado
@@ -115,7 +113,6 @@
                     <i class="bi bi-send me-1"></i>Enviar proceso
                 </button>
             </div>
-
         </form>
 
     </div>
@@ -125,11 +122,14 @@
 
     <script>
         // Página PÚBLICA con acceso por token (igual que form.html del Paso 1).
-        // No requiere sesión. Guardado de borrador sin validación; envío final con validación.
+        // Guardado de borrador sin validación; envío final con validación.
 
         const STEP4_FORM_ID = 10;
+        const UPLOAD_ENDPOINT = '/api/admissions/upload-document';
+        const MIME_PERMITIDOS = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+        const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+        const SEP_VALORES = ' || ';
 
-        // Estructura de módulos (form_fields no tiene columna de módulo).
         const MODULOS = [
             { titulo: '1. Autorizaciones para el inicio del proceso', desde: 1,  hasta: 2  },
             { titulo: '2. Información inicial',                        desde: 3,  hasta: 14 },
@@ -148,12 +148,20 @@
             auth_centrales_riesgo: 'step4_credit_bureau_text'
         };
 
+        const OBLIGACION_LABELS = {
+            required:          { texto: 'Obligatorio',          clase: 'bg-danger' },
+            required_deferred: { texto: 'Puede entregarse luego', clase: 'bg-warning text-dark' },
+            optional:          { texto: 'Opcional',             clase: 'bg-secondary' }
+        };
+
         let tokenActual = null;
         let aspirante = null;
         let campos = [];
         let configTextos = {};
         let esPreescolar = false;
-        let instanceId = null;   // procedure_instances.instance_id
+        let instanceId = null;
+        let documentosCatalogo = [];   // requeridos aplicables al grado
+        let documentosCargados = [];   // ya subidos por el aspirante
 
         // ==========================================
         // INICIO
@@ -184,9 +192,12 @@
                 determinarNivel();
                 renderModulos();
 
-                // Instancia + respuestas guardadas (reanudar)
                 await prepararInstancia();
                 if (instanceId) await hidratarRespuestasGuardadas();
+
+                // Documentos (módulo 8)
+                await cargarDocumentos();
+                renderDocumentos();
 
                 aplicarCondicionales();
                 configurarBotones();
@@ -247,13 +258,11 @@
             esPreescolar = (go !== null && go !== undefined && go <= 0);
         }
 
-        // Reutiliza la instancia si ya existe; si no, la crea y marca step4_started_at.
         async function prepararInstancia() {
             if (aspirante.step4_instance_id) {
                 instanceId = aspirante.step4_instance_id;
                 return;
             }
-
             const creado = await supabaseRequest('/procedure_instances', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -315,7 +324,136 @@
         }
 
         // ==========================================
-        // RENDER
+        // DOCUMENTOS (módulo 8)
+        // ==========================================
+        async function cargarDocumentos() {
+            const catalogo = await supabaseRequest(
+                '/aap_required_documents' +
+                '?select=document_id,document_name,obligation_type,document_order,aap_required_document_grades(grade_id)' +
+                '&is_active=eq.true&order=document_order.asc.nullslast,document_name.asc'
+            );
+            const grado = aspirante.target_grade_id;
+            documentosCatalogo = (catalogo || []).filter(doc => {
+                if (!grado) return true;
+                const grados = (doc.aap_required_document_grades || []).map(g => g.grade_id);
+                return grados.length === 0 || grados.includes(grado);
+            });
+
+            const cargados = await supabaseRequest(
+                '/aap_applicant_documents' +
+                '?select=applicant_document_id,document_id,file_name,uploaded_at' +
+                '&applicant_id=eq.' + aspirante.applicant_id
+            );
+            documentosCargados = cargados || [];
+        }
+
+        function renderDocumentos() {
+            const cont = document.getElementById('docs-container');
+            if (!cont) return;
+
+            if (documentosCatalogo.length === 0) {
+                cont.innerHTML = '<div class="text-muted small">No hay documentos requeridos para tu grado.</div>';
+                return;
+            }
+
+            let html = '<div class="modulo-sub mt-3">Documentos requeridos. Formatos: PDF, JPG, PNG o WEBP (máx. 10 MB).</div>';
+            documentosCatalogo.forEach(doc => {
+                const ob = OBLIGACION_LABELS[doc.obligation_type] || { texto: doc.obligation_type, clase: 'bg-light text-dark' };
+                const cargado = documentosCargados.some(u => u.document_id === doc.document_id);
+                const estado = cargado
+                    ? '<span class="badge bg-success">Cargado</span>'
+                    : '<span class="badge bg-secondary">Pendiente</span>';
+
+                html += `
+                    <div class="doc-fila" id="docfila-${doc.document_id}">
+                        <div class="doc-info">
+                            <div class="doc-nombre">${escapeHtml(doc.document_name)}</div>
+                            <span class="badge ${ob.clase}">${escapeHtml(ob.texto)}</span>
+                            <span id="docestado-${doc.document_id}" class="ms-1">${estado}</span>
+                        </div>
+                        <div>
+                            <input type="file" id="docfile-${doc.document_id}" style="display:none"
+                                   accept=".pdf,.jpg,.jpeg,.png,.webp">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    onclick="document.getElementById('docfile-${doc.document_id}').click()">
+                                <i class="bi bi-upload me-1"></i>${cargado ? 'Reemplazar' : 'Subir'}
+                            </button>
+                        </div>
+                    </div>`;
+            });
+
+            cont.innerHTML = html;
+
+            documentosCatalogo.forEach(doc => {
+                const input = document.getElementById('docfile-' + doc.document_id);
+                if (input) {
+                    input.addEventListener('change', () => subirDocumento(doc.document_id, input));
+                }
+            });
+        }
+
+        async function subirDocumento(documentId, input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            if (file.type && !MIME_PERMITIDOS.includes(file.type)) {
+                mostrarError('Tipo de archivo no permitido. Usa PDF, JPG, PNG o WEBP.');
+                input.value = '';
+                return;
+            }
+            if (file.size > MAX_SIZE) {
+                mostrarError('El archivo supera el límite de 10 MB.');
+                input.value = '';
+                return;
+            }
+            ocultarError();
+
+            const estadoEl = document.getElementById('docestado-' + documentId);
+            if (estadoEl) estadoEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Subiendo...';
+
+            try {
+                const base64 = await fileToBase64(file);
+                const res = await fetch(UPLOAD_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        applicant_id: aspirante.applicant_id,
+                        file_base64: base64,
+                        file_name: file.name,
+                        mime_type: file.type || null,
+                        document_id: documentId,
+                        uploaded_by_family: true,
+                        is_post_final_submission: false
+                    })
+                });
+                let data = {};
+                try { data = await res.json(); } catch (e) {}
+                if (!res.ok || !data.success) throw new Error(data.error || ('HTTP ' + res.status));
+
+                // Refrescar lista de cargados y re-render
+                await cargarDocumentos();
+                renderDocumentos();
+
+            } catch (error) {
+                console.error('Error al subir documento:', error);
+                mostrarError('No pudimos subir el documento. Intenta de nuevo.');
+                if (estadoEl) estadoEl.innerHTML = '<span class="badge bg-secondary">Pendiente</span>';
+            } finally {
+                input.value = '';
+            }
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ==========================================
+        // RENDER DE MÓDULOS Y CAMPOS
         // ==========================================
         function renderModulos() {
             const cont = document.getElementById('contenedor-modulos');
@@ -326,14 +464,14 @@
                     c.field_order >= mod.desde && c.field_order <= mod.hasta &&
                     !(esPreescolar && ORDENES_SOLO_PRIMARIA.includes(c.field_order))
                 );
-                if (camposMod.length === 0) return;
+                if (camposMod.length === 0 && mod.desde !== 50) return;
 
                 html += '<div class="form-card">';
                 html += `<div class="modulo-titulo">${escapeHtml(mod.titulo)}</div>`;
-                if (mod.desde === 50) {
-                    html += '<div class="modulo-sub">Los documentos requeridos se cargarán en esta sección (se integra en el siguiente paso).</div>';
-                }
                 camposMod.forEach(c => { html += renderCampo(c); });
+                if (mod.desde === 50) {
+                    html += '<div id="docs-container" class="mt-2"><div class="modulo-sub">Cargando documentos...</div></div>';
+                }
                 html += '</div>';
             });
 
@@ -380,9 +518,7 @@
             } else if (c.field_type === 'checkbox') {
                 const opts = Array.isArray(c.field_options) ? c.field_options : [];
                 const exact = c.validation_rules && c.validation_rules.exact_count;
-                if (exact) {
-                    inner += `<div class="text-muted small mb-2">Selecciona exactamente ${exact}.</div>`;
-                }
+                if (exact) inner += `<div class="text-muted small mb-2">Selecciona exactamente ${exact}.</div>`;
                 inner += '<div>';
                 opts.forEach((op, i) => {
                     const id = `ff-${c.field_id}-${i}`;
@@ -401,7 +537,7 @@
         }
 
         // ==========================================
-        // CONDICIONALES (show_if, con convenio __NOT__)
+        // CONDICIONALES
         // ==========================================
         function valorDeCampo(fieldId) {
             const radio = document.querySelector(`input[name="ff-${fieldId}"]:checked`);
@@ -416,7 +552,6 @@
                 if (!c.show_if_field_id) return;
                 const wrap = document.getElementById(`wrap-${c.field_id}`);
                 if (!wrap) return;
-
                 const valorPadre = valorDeCampo(c.show_if_field_id);
                 let mostrar;
                 if (typeof c.show_if_value === 'string' && c.show_if_value.startsWith('__NOT__')) {
@@ -436,9 +571,7 @@
             setInput('colegio_actual_nombre', aspirante.current_school);
             setInput('motivo_cambio',         aspirante.change_reason);
             setInput('referido_nombre',       aspirante.referral_person_name);
-            if (aspirante.is_referred === false) {
-                marcarRadioPorValor('referido_tipo', 'No vengo referido');
-            }
+            if (aspirante.is_referred === false) marcarRadioPorValor('referido_tipo', 'No vengo referido');
         }
 
         function campoPorNombre(nombre) { return campos.find(c => c.field_name === nombre) || null; }
@@ -460,7 +593,7 @@
         }
 
         // ==========================================
-        // RECOLECCIÓN DE RESPUESTAS
+        // RECOLECCIÓN Y GUARDADO
         // ==========================================
         function valoresDeCampo(c) {
             if (c.field_type === 'informative_text') return [];
@@ -476,10 +609,7 @@
             return v === '' ? [] : [v];
         }
 
-        // Delimitador para unir múltiples valores (checkbox) en una sola fila.
-        // La tabla tiene índice único (instance_id, field_id): un campo = una fila.
-        const SEP_VALORES = ' || ';
-
+        // Una fila por campo (la tabla tiene índice único instance_id+field_id).
         function construirFilasRespuestas() {
             const filas = [];
             campos.forEach(c => {
@@ -494,17 +624,11 @@
             return filas;
         }
 
-        // ==========================================
-        // GUARDADO (reemplazo completo por instancia)
-        // ==========================================
         async function guardarRespuestas() {
             await supabaseRequest('/form_responses?instance_id=eq.' + instanceId, { method: 'DELETE' });
             const filas = construirFilasRespuestas();
             if (filas.length > 0) {
-                await supabaseRequest('/form_responses', {
-                    method: 'POST',
-                    body: JSON.stringify(filas)
-                });
+                await supabaseRequest('/form_responses', { method: 'POST', body: JSON.stringify(filas) });
             }
         }
 
@@ -538,29 +662,20 @@
         async function enviarProceso() {
             ocultarError();
             const val = validarEnvio();
-            if (!val.ok) {
-                mostrarError(val.mensaje);
-                return;
-            }
+            if (!val.ok) { mostrarError(val.mensaje); return; }
 
             const btn = document.getElementById('btn-enviar');
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
 
             try {
-                // 1. Guardar todo
                 await guardarRespuestas();
 
-                // 2. Instancia a completada
                 await supabaseRequest('/procedure_instances?instance_id=eq.' + instanceId, {
                     method: 'PATCH',
-                    body: JSON.stringify({
-                        instance_status: 'completed',
-                        completed_at: new Date().toISOString()
-                    })
+                    body: JSON.stringify({ instance_status: 'completed', completed_at: new Date().toISOString() })
                 });
 
-                // 3. Marcar envío en el aspirante
                 await supabaseRequest(
                     '/aap_applicants?access_token=eq.' + encodeURIComponent(tokenActual),
                     {
@@ -573,7 +688,6 @@
                     }
                 );
 
-                // 4. Marcar el Paso 4 del tracker como Completado
                 await marcarPaso4();
 
                 document.getElementById('formulario').style.display = 'none';
@@ -588,7 +702,6 @@
             }
         }
 
-        // El trigger crea las 11 filas; aquí se marca la del Paso 4 como Completado.
         async function marcarPaso4() {
             try {
                 const pasos = await supabaseRequest(
@@ -625,7 +738,7 @@
         }
 
         function validarEnvio() {
-            // 1. Autorizaciones: ambas deben ser "Sí autorizo"
+            // 1. Autorizaciones
             const habeas = valorPorNombre('auth_habeas_data');
             const centrales = valorPorNombre('auth_centrales_riesgo');
             if (habeas !== 'Sí autorizo' || centrales !== 'Sí autorizo') {
@@ -636,7 +749,7 @@
                 };
             }
 
-            // 2. Declaraciones: exactamente el número exigido
+            // 2. Declaraciones
             const decl = campoPorNombre('fam_declaraciones');
             if (decl && esVisible(decl)) {
                 const exact = decl.validation_rules && decl.validation_rules.exact_count;
@@ -652,18 +765,25 @@
                 if (!c.is_required) return;
                 if (c.field_type === 'informative_text') return;
                 if (c.field_name === 'auth_habeas_data' || c.field_name === 'auth_centrales_riesgo') return;
-                if (c.field_name === 'fam_declaraciones') return; // ya validado arriba
+                if (c.field_name === 'fam_declaraciones') return;
                 if (!esVisible(c)) return;
                 if (valoresDeCampo(c).length === 0) faltantes.push(c.field_label);
             });
-
             if (faltantes.length > 0) {
                 const lista = faltantes.slice(0, 5).map(t => '• ' + escapeHtml(t)).join('<br>');
                 const extra = faltantes.length > 5 ? `<br>… y ${faltantes.length - 5} más.` : '';
-                return {
-                    ok: false,
-                    mensaje: `Faltan campos obligatorios por responder:<br>${lista}${extra}`
-                };
+                return { ok: false, mensaje: `Faltan campos obligatorios por responder:<br>${lista}${extra}` };
+            }
+
+            // 4. Documentos obligatorios (required) cargados
+            const docsFaltantes = documentosCatalogo
+                .filter(d => d.obligation_type === 'required')
+                .filter(d => !documentosCargados.some(u => u.document_id === d.document_id))
+                .map(d => d.document_name);
+            if (docsFaltantes.length > 0) {
+                const lista = docsFaltantes.slice(0, 5).map(t => '• ' + escapeHtml(t)).join('<br>');
+                const extra = docsFaltantes.length > 5 ? `<br>… y ${docsFaltantes.length - 5} más.` : '';
+                return { ok: false, mensaje: `Faltan documentos obligatorios por cargar en la sección de documentación:<br>${lista}${extra}` };
             }
 
             return { ok: true };
@@ -683,18 +803,14 @@
             return [aspirante.applicant_first_name, aspirante.applicant_last_name_1, aspirante.applicant_last_name_2]
                 .filter(Boolean).join(' ').trim();
         }
-
         function mostrarError(msg) {
             const box = document.getElementById('error-envio');
             box.innerHTML = msg;
             box.style.display = 'block';
             box.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        function ocultarError() {
-            document.getElementById('error-envio').style.display = 'none';
-        }
+        function ocultarError() { document.getElementById('error-envio').style.display = 'none'; }
         function ocultarLoading() { document.getElementById('loading').classList.add('hidden'); }
-
         function escapeHtml(texto) {
             if (texto === null || texto === undefined) return '';
             const div = document.createElement('div');
