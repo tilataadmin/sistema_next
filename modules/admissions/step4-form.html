@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.07.16.15.00">
+    <meta name="page-version" content="26.7.16.5">
     <title>Proceso en línea — Colegio Tilatá</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -228,7 +228,9 @@
                 '?select=applicant_id,applicant_first_name,applicant_last_name_1,applicant_last_name_2,' +
                 'target_grade_id,lifecycle_status,step4_started_at,step4_submitted_at,step4_instance_id,' +
                 'step1_submission,current_school,change_reason,is_referred,referral_person_name,' +
-                'grades!aap_applicants_target_grade_fkey(grade_order)' +
+                'familiar1_full_name,familiar1_email,' +
+                'grades!aap_applicants_target_grade_fkey(grade_name,grade_order),' +
+                'academic_years!aap_applicants_target_year_fkey(year_name)' +
                 '&access_token=eq.' + encodeURIComponent(tokenActual) + '&limit=1'
             );
             if (datos && datos.length > 0) aspirante = datos[0];
@@ -690,6 +692,9 @@
 
                 await marcarPaso4();
 
+                // Notificaciones (no bloqueantes; el envío ya quedó guardado)
+                await notificarEnvioFinal();
+
                 document.getElementById('formulario').style.display = 'none';
                 document.getElementById('pantalla-enviado').style.display = 'block';
                 window.scrollTo(0, 0);
@@ -726,6 +731,59 @@
                 );
             } catch (err) {
                 console.error('No se pudo marcar el Paso 4:', err);
+            }
+        }
+
+        // ==========================================
+        // NOTIFICACIONES DE ENVÍO FINAL (no bloqueantes)
+        // ==========================================
+        async function notificarEnvioFinal() {
+            const nombreAsp     = nombreAspirante();
+            const gradoNombre   = aspirante.grades ? aspirante.grades.grade_name : '';
+            const anioNombre    = aspirante.academic_years ? aspirante.academic_years.year_name : '';
+            const familiar      = aspirante.familiar1_full_name || '';
+            const correoFamilia = aspirante.familiar1_email || '';
+
+            // (a) Aviso interno a admisiones, con la plantilla paso4_envio_final.
+            try {
+                const plantillas = await supabaseRequest(
+                    '/aap_email_templates?select=subject,body_html,is_active' +
+                    '&template_key=eq.paso4_envio_final&limit=1'
+                );
+                if (plantillas && plantillas.length > 0 && plantillas[0].is_active) {
+                    const p = plantillas[0];
+                    const reemplazos = {
+                        '{{nombre_aspirante}}': nombreAsp,
+                        '{{nombre_familiar1}}': familiar,
+                        '{{grado}}': gradoNombre,
+                        '{{año_academico}}': anioNombre
+                    };
+                    let asunto = p.subject, cuerpo = p.body_html;
+                    Object.keys(reemplazos).forEach(k => {
+                        asunto = asunto.split(k).join(reemplazos[k]);
+                        cuerpo = cuerpo.split(k).join(reemplazos[k]);
+                    });
+                    await sendNotification('admisiones@colegiotilata.edu.co', asunto, cuerpo, true);
+                }
+            } catch (err) {
+                console.error('No se pudo notificar a admisiones:', err);
+            }
+
+            // (d) Acuse a la familia.
+            try {
+                if (correoFamilia) {
+                    const asunto = 'Confirmación: proceso en línea recibido — Colegio Tilatá';
+                    const cuerpo =
+                        `<p>Hola ${escapeHtml(familiar || 'familia')},</p>` +
+                        `<p>Confirmamos que recibimos el proceso de admisión en línea de ` +
+                        `<strong>${escapeHtml(nombreAsp)}</strong>.</p>` +
+                        `<p>El equipo de admisiones continuará con las siguientes etapas y se comunicará contigo. ` +
+                        `Si necesitas actualizar algún documento, escríbenos a admisiones@colegiotilata.edu.co.</p>` +
+                        `<p>Gracias,<br>Equipo de Admisiones — Colegio Tilatá</p>`;
+                    await sendNotification(correoFamilia, asunto, cuerpo, true);
+                }
+            } catch (err) {
+                console.error('No se pudo enviar el acuse a la familia:', err);
             }
         }
 
