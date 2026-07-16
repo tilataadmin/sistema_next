@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.07.16.09.00">
+    <meta name="page-version" content="26.7.16.2">
     <title>Experiencias - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -277,8 +277,35 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer">
+                <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btn-inscribir-aspirante">
+                        <i class="bi bi-person-plus me-1"></i>Inscribir aspirante
+                    </button>
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: INSCRIBIR ASPIRANTE -->
+    <div class="modal fade" id="modal-inscribir" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Inscribir aspirante al evento</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label small fw-semibold" for="busca-aspirante">
+                        Buscar por nombre o apellido
+                    </label>
+                    <input type="text" class="form-control form-control-sm mb-3" id="busca-aspirante"
+                           placeholder="Escribe al menos 2 caracteres...">
+                    <div id="resultados-busqueda" style="max-height: 320px; overflow-y: auto;">
+                        <div class="text-muted small text-center py-3">
+                            Escribe para buscar aspirantes.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -715,6 +742,118 @@
         }
 
         // ==========================================
+        // INSCRIPCIÓN INTERNA DE ASPIRANTES
+        // ==========================================
+        let modalInscribir = null;
+        let debounceBusqueda = null;
+
+        function abrirModalInscribir() {
+            if (!modalInscribir) modalInscribir = new bootstrap.Modal(document.getElementById('modal-inscribir'));
+            document.getElementById('busca-aspirante').value = '';
+            document.getElementById('resultados-busqueda').innerHTML =
+                '<div class="text-muted small text-center py-3">Escribe para buscar aspirantes.</div>';
+            modalInscribir.show();
+            setTimeout(() => document.getElementById('busca-aspirante').focus(), 300);
+        }
+
+        async function buscarAspirantes(texto) {
+            const cont = document.getElementById('resultados-busqueda');
+
+            if (texto.length < 2) {
+                cont.innerHTML = '<div class="text-muted small text-center py-3">Escribe al menos 2 caracteres.</div>';
+                return;
+            }
+
+            cont.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></div>';
+
+            // Busca en nombres y apellidos. El patrón va URL-encoded.
+            const patron = encodeURIComponent('*' + texto + '*');
+            const filtro =
+                `or=(applicant_first_name.ilike.${patron},` +
+                `applicant_last_name_1.ilike.${patron},` +
+                `applicant_last_name_2.ilike.${patron})`;
+
+            const datos = await supabaseRequest(
+                '/aap_applicants?select=applicant_id,applicant_first_name,' +
+                'applicant_last_name_1,applicant_last_name_2,lifecycle_status,' +
+                'grades(grade_name)&' + filtro + '&order=applicant_last_name_1.asc&limit=15'
+            );
+
+            renderizarResultados(datos || []);
+        }
+
+        function renderizarResultados(aspirantes) {
+            const cont = document.getElementById('resultados-busqueda');
+
+            if (aspirantes.length === 0) {
+                cont.innerHTML = '<div class="text-muted small text-center py-3">No se encontraron aspirantes.</div>';
+                return;
+            }
+
+            // IDs ya inscritos en este evento, para no ofrecerlos de nuevo.
+            const inscritos = asistentesActuales
+                .map(a => a.aap_applicants && a.applicant_id_ref)
+                .filter(Boolean);
+
+            cont.innerHTML = aspirantes.map(a => {
+                const nombre = [a.applicant_last_name_1, a.applicant_last_name_2, '·', a.applicant_first_name]
+                    .filter(Boolean).join(' ');
+                const grado = a.grades ? a.grades.grade_name : '—';
+                return `
+                    <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                        <div>
+                            <div class="small fw-semibold">${escapeHtml(nombre)}</div>
+                            <div class="text-muted" style="font-size: 0.75rem;">${escapeHtml(grado)}</div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary btn-add-asp" data-id="${a.applicant_id}">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>`;
+            }).join('');
+
+            cont.querySelectorAll('.btn-add-asp').forEach(btn => {
+                btn.addEventListener('click', () => inscribirAspirante(btn.dataset.id, btn));
+            });
+        }
+
+        async function inscribirAspirante(applicantId, btn) {
+            btn.disabled = true;
+            try {
+                // Evita duplicados: la tabla tiene UNIQUE (applicant_id, event_id).
+                const yaEsta = await supabaseRequest(
+                    '/aap_applicant_experiences?select=applicant_experience_id' +
+                    '&applicant_id=eq.' + applicantId +
+                    '&event_id=eq.' + eventoActual.event_id + '&limit=1'
+                );
+                if (yaEsta && yaEsta.length > 0) {
+                    showMessage('Ese aspirante ya está inscrito en este evento.', 'info');
+                    btn.disabled = false;
+                    return;
+                }
+
+                await supabaseRequest('/aap_applicant_experiences', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        applicant_id: applicantId,
+                        event_id: eventoActual.event_id,
+                        created_by: sesionActual.user_id
+                    })
+                });
+
+                showMessage('Aspirante inscrito al evento.', 'success');
+                modalInscribir.hide();
+
+                // Recarga la lista de asistentes del evento abierto.
+                await abrirModalAsistencia(eventoActual.event_id);
+
+            } catch (error) {
+                console.error('Error al inscribir:', error);
+                showMessage('No se pudo inscribir el aspirante: ' + error.message, 'danger');
+                btn.disabled = false;
+            }
+        }
+
+        // ==========================================
         // EVENTOS DE UI
         // ==========================================
         function configurarEventos() {
@@ -726,6 +865,14 @@
 
             // Al cerrar el modal de asistencia, recargar eventos para refrescar contadores.
             document.getElementById('modal-asistencia').addEventListener('hidden.bs.modal', cargarEventos);
+
+            // Buscador de aspirantes para inscripción interna.
+            document.getElementById('btn-inscribir-aspirante').addEventListener('click', abrirModalInscribir);
+            document.getElementById('busca-aspirante').addEventListener('input', function () {
+                clearTimeout(debounceBusqueda);
+                const texto = this.value.trim();
+                debounceBusqueda = setTimeout(() => buscarAspirantes(texto), 300);
+            });
         }
 
         // ==========================================
