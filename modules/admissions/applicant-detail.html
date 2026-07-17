@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.14.2">
+    <meta name="page-version" content="26.7.17.1">
     <title>Ficha del aspirante - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -618,6 +618,9 @@
 
             // Pintar el color del semáforo vigente (no bloqueante)
             pintarSemaforoFicha();
+
+            // Pintar el contador de documentos (no bloqueante)
+            pintarContadorDocumentos();
         }
 
         // Muestra en la tarjeta "Financiero" el color de la revisión más reciente,
@@ -650,6 +653,51 @@
                 console.error('No se pudo cargar el semáforo financiero:', err);
                 // El enlace ya quedó activo; el color simplemente no se muestra.
             }
+        }
+
+        // Cuenta documentos cargados vs. requeridos para el grado del aspirante.
+        // Denominador: documentos activos del grado con obligation_type
+        // 'required' o 'required_deferred' (excluye 'optional').
+        // No bloqueante: retorna null si no hay grado o si la consulta falla.
+        async function getDocumentsCount(applicantId, targetGradeId) {
+            if (!applicantId || !targetGradeId) return null;
+            try {
+                const requeridos = await supabaseRequest(
+                    `/aap_required_document_grades?grade_id=eq.${encodeURIComponent(targetGradeId)}` +
+                    `&select=document_id,aap_required_documents!inner(is_active,obligation_type)` +
+                    `&aap_required_documents.is_active=eq.true` +
+                    `&aap_required_documents.obligation_type=in.(required,required_deferred)`
+                );
+                const requeridosIds = new Set((requeridos || []).map(r => r.document_id));
+                const required = requeridosIds.size;
+
+                const cargados = await supabaseRequest(
+                    `/aap_applicant_documents?applicant_id=eq.${encodeURIComponent(applicantId)}&select=document_id`
+                );
+                const cargadosIds = new Set(
+                    (cargados || []).map(c => c.document_id).filter(id => id && requeridosIds.has(id))
+                );
+
+                return { uploaded: cargadosIds.size, required };
+            } catch (e) {
+                console.error('Contador de documentos no disponible:', e);
+                return null;
+            }
+        }
+
+        // Muestra en la tarjeta "Documentos" cuántos documentos requeridos del
+        // grado ya se cargaron. No bloqueante: si falla o el aspirante no tiene
+        // grado, se conserva la leyenda "Ver y subir documentos".
+        async function pintarContadorDocumentos() {
+            const satDoc = document.getElementById('sat-documentos');
+            if (!satDoc) return;
+            const estadoSatDoc = satDoc.querySelector('.sat-estado');
+            if (!estadoSatDoc) return;
+
+            const conteo = await getDocumentsCount(applicantId, aspirante.target_grade_id);
+            if (!conteo || conteo.required === 0) return; // se queda la leyenda actual
+
+            estadoSatDoc.textContent = `${conteo.uploaded} de ${conteo.required} cargados`;
         }
 
         function pintarFormulario() {
