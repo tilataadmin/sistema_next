@@ -122,6 +122,13 @@
             </div>
         </div>
 
+        <!-- EMBUDO -->
+        <div class="card mb-4"><div class="card-body">
+            <h6 class="fw-semibold mb-1">Embudo (aproximado)</h6>
+            <p class="text-muted small mb-3">Los desistidos se ubican según el paso en que desistieron. La conversión real por paso vive en Reportes.</p>
+            <div id="g-embudo"></div>
+        </div></div>
+
         <!-- GRÁFICAS -->
         <div class="row g-3 mb-5">
             <div class="col-12 col-lg-6">
@@ -166,6 +173,14 @@
                     <div id="g-desistimientos"></div>
                 </div></div>
             </div>
+
+            <div class="col-12 col-lg-6">
+                <div class="card h-100"><div class="card-body">
+                    <h6 class="fw-semibold mb-3">Desistimientos por paso</h6>
+                    <div id="g-desistimientos-paso"></div>
+                </div></div>
+            </div>
+            
             <div class="col-12 col-lg-6">
                 <div class="card h-100"><div class="card-body">
                     <h6 class="fw-semibold mb-3">Aspirantes registrados por mes</h6>
@@ -232,9 +247,10 @@
                 const [asp, rev] = await Promise.all([
                     supabaseRequest(
                         '/aap_applicants?select=lifecycle_status,origin,is_referred,created_at,' +
-                        'target_grade_id,target_academic_year_id,withdrawn_reason_id,' +
+                        'target_grade_id,target_academic_year_id,withdrawn_reason_id,withdrawn_step_id,' +
                         'grades(grade_name,grade_order),academic_years(year_name,year_order),' +
-                        'aap_loss_reasons!aap_applicants_withdrawn_reason_fkey(reason_name)'
+                        'aap_loss_reasons!aap_applicants_withdrawn_reason_fkey(reason_name),' +
+                        'aap_process_steps(step_order,step_name)'
                     ),
                     supabaseRequest(
                         '/aap_financial_reviews?select=applicant_id,review_light,reviewed_at' +
@@ -346,6 +362,34 @@
                 .map(([label, value]) => ({ label, value }))
                 .sort((a, b) => b.value - a.value));
 
+            // Desistimientos por paso (usa withdrawn_step_id)
+            const desPasoMap = new Map();
+            aspirantes.filter(a => a.lifecycle_status === 'desistido').forEach(a => {
+                let etiqueta, orden;
+                if (a.aap_process_steps) {
+                    orden = a.aap_process_steps.step_order;
+                    etiqueta = orden + '. ' + a.aap_process_steps.step_name;
+                } else {
+                    orden = 999;
+                    etiqueta = 'Sin especificar';
+                }
+                const prev = desPasoMap.get(etiqueta) || { value: 0, orden };
+                prev.value += 1;
+                desPasoMap.set(etiqueta, prev);
+            });
+            renderBarras('g-desistimientos-paso', [...desPasoMap.entries()]
+                .map(([label, o]) => ({ label, value: o.value, orden: o.orden }))
+                .sort((a, b) => a.orden - b.orden));
+
+            // Embudo aproximado (ubica desistidos por su paso de salida)
+            const prof = aspirantes.map(profundidad);
+            renderEmbudo(
+                total,
+                prof.filter(p => p >= 1).length,
+                prof.filter(p => p >= 2).length,
+                prof.filter(p => p >= 3).length
+            );
+
             // Registros por mes
             const mesMap = new Map();
             aspirantes.forEach(a => {
@@ -392,6 +436,53 @@
                         </div>
                         <div class="barra-canal">
                             <div class="barra-relleno" style="width:${pct}%${fondo}"></div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function profundidad(a) {
+            switch (a.lifecycle_status) {
+                case 'contacto':    return 0;
+                case 'inscrito':    return 1;
+                case 'en_proceso':  return 2;
+                case 'matriculado': return 3;
+                case 'aplazado':    return 2; // pasó por comité
+                case 'no_admitido': return 2; // pasó por comité
+                case 'desistido': {
+                    const orden = a.aap_process_steps ? a.aap_process_steps.step_order : null;
+                    if (orden === null) return 1;           // sin especificar → cuenta como inscrito
+                    return orden >= 2 ? 2 : 1;
+                }
+                default: return 0;
+            }
+        }
+
+        function pct(parte, total) {
+            if (!total) return 0;
+            return Math.round((parte / total) * 100);
+        }
+
+        function renderEmbudo(total, inscritos, enProceso, matriculados) {
+            const cont = document.getElementById('g-embudo');
+            if (!cont) return;
+            const etapas = [
+                { label: 'Contactos',    value: total,        sub: 'punto de entrada' },
+                { label: 'Inscritos',    value: inscritos,    sub: pct(inscritos, total) + '% de contactos' },
+                { label: 'En proceso',   value: enProceso,    sub: pct(enProceso, inscritos) + '% de inscritos' },
+                { label: 'Matriculados', value: matriculados, sub: pct(matriculados, enProceso) + '% de en proceso' }
+            ];
+            const max = Math.max(total, 1);
+            cont.innerHTML = etapas.map(e => {
+                const w = Math.round((e.value / max) * 100);
+                return `
+                    <div class="barra-fila">
+                        <div class="barra-top">
+                            <span class="barra-rotulo">${escapeHtml(e.label)} · ${escapeHtml(e.sub)}</span>
+                            <span class="barra-valor">${e.value}</span>
+                        </div>
+                        <div class="barra-canal">
+                            <div class="barra-relleno" style="width:${w}%"></div>
                         </div>
                     </div>`;
             }).join('');
