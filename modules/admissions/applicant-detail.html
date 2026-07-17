@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.17.1">
+    <meta name="page-version" content="26.7.17.2">
     <title>Ficha del aspirante - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -124,12 +124,18 @@
                     <span class="text-muted small" id="subtitulo-aspirante">—</span>
                 </div>
             </div>
-            <div class="col-auto">
+            <div class="col-auto d-flex gap-2">
+                <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btn-desistir">
+                    <i class="bi bi-x-circle me-1"></i>Marcar desistimiento
+                </button>
                 <a href="applicants.html" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-arrow-left me-1"></i>Volver al listado
                 </a>
             </div>
         </div>
+
+        <!-- BANNER DE DESISTIMIENTO (visible solo si el aspirante desistió) -->
+        <div id="banner-desistido" class="alert alert-danger d-none" role="alert"></div>
 
         <!-- BARRA DE SATÉLITES -->
         <div class="satelites mb-4">
@@ -407,6 +413,51 @@
         </div>
     </div>
 
+    <!-- MODAL: MARCAR DESISTIMIENTO -->
+    <div class="modal fade" id="modal-desistir" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-x-circle me-2 text-danger"></i>Marcar desistimiento</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="form-desistir">
+                    <div class="modal-body">
+                        <p class="small text-muted">
+                            El aspirante pasará a estado <strong>Desistido</strong>, que es terminal.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label small" for="des-causa">Causa <span class="text-danger">*</span></label>
+                            <select class="form-select form-select-sm" id="des-causa" required>
+                                <option value="">— Selecciona una causa —</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small" for="des-paso">Paso en el que desiste</label>
+                            <select class="form-select form-select-sm" id="des-paso">
+                                <option value="">— Sin especificar —</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small" for="des-colegio">Colegio destino</label>
+                            <input type="text" class="form-control form-control-sm" id="des-colegio">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small" for="des-notas">Notas</label>
+                            <textarea class="form-control form-control-sm" id="des-notas" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-danger btn-sm" id="btn-guardar-desistir">
+                            <i class="bi bi-x-circle me-1"></i>Confirmar desistimiento
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
 
@@ -452,6 +503,9 @@
         let gradosCache = [], aniosCache = [], fuentesCache = [],
             referidosCache = [], jardinesCache = [], feriasCache = [];
 
+        let razonesDesistimientoCache = [];
+        let modalDesistir = null;
+
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
@@ -485,6 +539,7 @@
             try {
                 mostrarLoading();
                 modalPaso = new bootstrap.Modal(document.getElementById('modal-paso'));
+                modalDesistir = new bootstrap.Modal(document.getElementById('modal-desistir'));
 
                 await cargarCatalogos();
                 await cargarAspirante();
@@ -556,7 +611,8 @@
         async function cargarAspirante() {
             const select = [
                 '*',
-                'aap_applicant_sources(source_id)'
+                'aap_applicant_sources(source_id)',
+                'aap_loss_reasons!aap_applicants_withdrawn_reason_fkey(reason_name)'
             ].join(',');
 
             const datos = await supabaseRequest(
@@ -621,6 +677,9 @@
 
             // Pintar el contador de documentos (no bloqueante)
             pintarContadorDocumentos();
+            // Ajustar botón/banner de desistimiento
+            pintarEstadoDesistimiento();
+            
         }
 
         // Muestra en la tarjeta "Financiero" el color de la revisión más reciente,
@@ -996,11 +1055,124 @@
         }
 
         // ==========================================
+        // DESISTIMIENTO
+        // ==========================================
+        // Ajusta el botón y el banner según el estado del aspirante.
+        function pintarEstadoDesistimiento() {
+            const btn = document.getElementById('btn-desistir');
+            const banner = document.getElementById('banner-desistido');
+            const activos = ['contacto', 'inscrito', 'en_proceso'];
+
+            if (aspirante.lifecycle_status === 'desistido') {
+                if (btn) btn.classList.add('d-none');
+                if (banner) {
+                    const causa = aspirante.aap_loss_reasons
+                        ? aspirante.aap_loss_reasons.reason_name : '—';
+                    const partes = [`<strong>Aspirante desistido.</strong> Causa: ${escapeHtml(causa)}`];
+                    if (aspirante.withdrawn_at)
+                        partes.push(`Fecha: ${formatearFecha(aspirante.withdrawn_at)}`);
+                    if (aspirante.withdrawn_destination_school)
+                        partes.push(`Colegio destino: ${escapeHtml(aspirante.withdrawn_destination_school)}`);
+                    if (aspirante.withdrawn_notes)
+                        partes.push(`Notas: ${escapeHtml(aspirante.withdrawn_notes)}`);
+                    banner.innerHTML = partes.join(' &middot; ');
+                    banner.classList.remove('d-none');
+                }
+            } else {
+                if (banner) banner.classList.add('d-none');
+                if (btn) {
+                    if (activos.includes(aspirante.lifecycle_status)) btn.classList.remove('d-none');
+                    else btn.classList.add('d-none');
+                }
+            }
+        }
+
+        async function cargarRazonesDesistimiento() {
+            if (razonesDesistimientoCache.length === 0) {
+                try {
+                    razonesDesistimientoCache = await supabaseRequest(
+                        '/aap_loss_reasons?select=reason_id,reason_name' +
+                        '&reason_category=eq.desistimiento&is_active=eq.true&order=reason_name.asc'
+                    ) || [];
+                } catch (e) {
+                    console.error('No se pudieron cargar las causas de desistimiento:', e);
+                    razonesDesistimientoCache = [];
+                }
+            }
+            const sel = document.getElementById('des-causa');
+            sel.innerHTML = '<option value="">— Selecciona una causa —</option>';
+            razonesDesistimientoCache.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.reason_id;
+                opt.textContent = r.reason_name;
+                sel.appendChild(opt);
+            });
+        }
+
+        function abrirModalDesistimiento() {
+            document.getElementById('des-causa').value = '';
+            document.getElementById('des-colegio').value = '';
+            document.getElementById('des-notas').value = '';
+
+            const selPaso = document.getElementById('des-paso');
+            selPaso.innerHTML = '<option value="">— Sin especificar —</option>';
+            pasos.forEach(p => {
+                if (!p.aap_process_steps) return;
+                const opt = document.createElement('option');
+                opt.value = p.step_id;
+                opt.textContent = `${p.aap_process_steps.step_order}. ${p.aap_process_steps.step_name}`;
+                selPaso.appendChild(opt);
+            });
+
+            cargarRazonesDesistimiento().then(() => modalDesistir.show());
+        }
+
+        async function guardarDesistimiento(e) {
+            e.preventDefault();
+            const causaId = getVal('des-causa');
+            if (!causaId) {
+                showMessage('La causa del desistimiento es obligatoria.', 'warning');
+                return;
+            }
+            const btn = document.getElementById('btn-guardar-desistir');
+            btn.disabled = true;
+            try {
+                const payload = {
+                    lifecycle_status:             'desistido',
+                    withdrawn_at:                 new Date().toISOString(),
+                    withdrawn_reason_id:          causaId,
+                    withdrawn_step_id:            getVal('des-paso'),
+                    withdrawn_destination_school: getVal('des-colegio'),
+                    withdrawn_notes:              getVal('des-notas'),
+                    withdrawn_by:                 sesionActual.user_id,
+                    updated_at:                   new Date().toISOString()
+                };
+
+                await supabaseRequest(`/aap_applicants?applicant_id=eq.${applicantId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload)
+                });
+
+                modalDesistir.hide();
+                showMessage('Aspirante marcado como desistido.', 'success');
+                await cargarAspirante();
+
+            } catch (error) {
+                console.error('Error al marcar desistimiento:', error);
+                showMessage('Error al marcar desistimiento: ' + error.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ==========================================
         // EVENTOS
         // ==========================================
         function configurarEventos() {
             document.getElementById('form-datos').addEventListener('submit', guardarDatos);
             document.getElementById('form-paso').addEventListener('submit', guardarPaso);
+            document.getElementById('btn-desistir').addEventListener('click', abrirModalDesistimiento);
+            document.getElementById('form-desistir').addEventListener('submit', guardarDesistimiento);
         }
 
         // ==========================================
