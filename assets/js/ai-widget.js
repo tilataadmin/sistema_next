@@ -35,8 +35,11 @@
 
         .rigo-panel {
             position: fixed; top: 0; right: -420px; width: 400px; max-width: 90vw;
-            height: 100vh; background: white; z-index: 10001;
+            height: 100vh;
+            height: 100dvh;
+            background: white; z-index: 10001;
             display: flex; flex-direction: column;
+            overflow: hidden;
             box-shadow: -4px 0 20px rgba(0,0,0,0.15);
             transition: right 0.3s ease;
         }
@@ -55,7 +58,9 @@
         .rigo-close:hover { color: white; }
 
         .rigo-messages {
-            flex: 1; overflow-y: auto; padding: 16px;
+            flex: 1 1 auto; min-height: 0;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: 16px;
             display: flex; flex-direction: column; gap: 12px;
         }
 
@@ -127,6 +132,21 @@
             font-size: 12px; cursor: pointer; padding: 2px 8px; border-radius: 4px;
         }
         .rigo-new-chat:hover { color: white; background: rgba(255,255,255,0.15); }
+
+        /* ===== MÓVILES ===== */
+        @media (max-width: 768px) {
+            .rigo-panel {
+                width: 100%; max-width: 100%; right: -100%;
+            }
+            .rigo-messages { padding: 12px; }
+            .rigo-msg { max-width: 92%; }
+            .rigo-input-area {
+                padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
+            }
+            .rigo-input {
+                font-size: 16px;
+            }
+        }
     `;
     document.head.appendChild(style);
 
