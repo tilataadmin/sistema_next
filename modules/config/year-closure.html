@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.2.3">
+    <meta name="page-version" content="26.7.27.1">
     <title>Cierre de Año Académico - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1816,7 +1816,7 @@
             if (inputStart) wizardData._editedStartDate = inputStart.value || null;
             if (inputEnd) wizardData._editedEndDate = inputEnd.value || null;
             
-            // Contar asignaciones académicas activas del año que se cierra (para duplicación)
+            // Contar asignaciones académicas activas del año que se cierra (origen)
             if (wizardData._assignmentsToDuplicateCount === undefined) {
                 try {
                     const asignsExistentes = await supabaseRequest(
@@ -1827,9 +1827,24 @@
                     console.warn('No se pudo contar asignaciones a duplicar:', e.message);
                     wizardData._assignmentsToDuplicateCount = null; // desconocido
                 }
-                // Por defecto se duplica, salvo que sepamos que no hay nada que duplicar
-                wizardData._duplicarAsignaciones = (wizardData._assignmentsToDuplicateCount !== 0);
             }
+            
+            // Contar asignaciones activas que YA tiene el año entrante (destino).
+            // No se cachea: el usuario puede volver al paso 3 y cambiar el año entrante.
+            try {
+                const asignsDestino = await supabaseRequest(
+                    '/academic_assignments?select=assignment_id&academic_year_id=eq.' + wizardData.newCurrentYearId + '&assignment_status=eq.active'
+                );
+                wizardData._assignmentsInTargetCount = (asignsDestino || []).length;
+            } catch (e) {
+                console.warn('No se pudo contar asignaciones del año entrante:', e.message);
+                wizardData._assignmentsInTargetCount = null; // desconocido
+            }
+            
+            // Se duplica solo si hay algo que copiar Y el destino está vacío.
+            // Si el conteo del destino es desconocido (null), NO se duplica: ante la duda, no tocar.
+            wizardData._duplicarAsignaciones = (wizardData._assignmentsToDuplicateCount !== 0)
+                                            && (wizardData._assignmentsInTargetCount === 0);
             
             // Calcular resumen
             const totales = calcularTotalesParaResumen();
@@ -1891,7 +1906,26 @@
             
             // Bloque de duplicación de asignaciones académicas
             const nDup = wizardData._assignmentsToDuplicateCount;
-            if (nDup === 0) {
+            const nTarget = wizardData._assignmentsInTargetCount;
+            if (nTarget > 0) {
+                html += `
+                    <div class="card mb-3 border-warning">
+                        <div class="card-header bg-warning bg-opacity-25">
+                            <strong><i class="bi bi-shield-check me-2"></i>Asignaciones académicas — no se duplicarán</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2 small">
+                                El año entrante <strong>${escapeHtml(wizardData.newCurrentYearData?.year_name || '?')}</strong>
+                                ya tiene <strong>${nTarget}</strong> asignación(es) académica(s) activa(s).
+                            </p>
+                            <p class="mb-0 small text-muted">
+                                La duplicación se omite para no alterar esa planeación existente.
+                                El cierre continúa normalmente con el resto de los pasos.
+                            </p>
+                        </div>
+                    </div>
+                `;
+            } else if (nDup === 0) {
                 html += `
                     <div class="card mb-3 border-secondary">
                         <div class="card-header bg-light">
@@ -2287,8 +2321,7 @@
                         );
                         
                         if (yaExistentes && yaExistentes.length > 0) {
-                            log('⚠ El año entrante ya tiene asignaciones activas. Se omite la duplicación.', 'warning');
-                            errores.push('Duplicación de asignaciones omitida: el año entrante ya tenía asignaciones activas.');
+                            log('• El año entrante ya tiene asignaciones activas. Se omite la duplicación (comportamiento esperado).', 'info');
                         } else {
                             // Leer todas las asignaciones activas del año que se cierra
                             const origen = await supabaseRequest(
