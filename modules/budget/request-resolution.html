@@ -432,7 +432,7 @@
                     <div id="emptyStateHistory" class="empty-state d-none">
                         <i class="bi bi-clock-history" style="color:#6c757d;"></i>
                         <h4>Sin histórico</h4>
-                        <p>Aún no has resuelto solicitudes en este año presupuestal.</p>
+                        <p>Aún no has resuelto solicitudes.</p>
                     </div>
                 </div>
 
@@ -498,6 +498,8 @@
         let currentView = 'pending';
         let currentUserEmail = null;
         let modalDetalle;
+        let currentBudgetYearId = null;        // año presupuestal vigente (system_config)
+        let yearNamesById = new Map();         // year_id -> year_name, para el badge de año
 
         // ===== ELEMENTOS DEL DOM =====
         const elementos = {
@@ -522,6 +524,9 @@
                 
                 // Obtener email del usuario actual
                 await obtenerEmailUsuario();
+                
+                // Cargar contexto de años presupuestales
+                await cargarContextoAnios();
                 
                 // Cargar solicitudes pendientes e histórico en paralelo
                 await Promise.all([
@@ -555,24 +560,33 @@
             elementos.usuarioInfo.classList.remove('d-none');
         }
 
+        // Las solicitudes se muestran sin filtrar por año: esta pantalla es una bandeja
+        // de trabajo y ocultar pendientes de otro año presupuestal las dejaría sin resolver.
+        // El año se señaliza con un badge cuando no es el vigente.
+        async function cargarContextoAnios() {
+            const configData = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
+            currentBudgetYearId = (configData.length > 0) ? configData[0].current_budget_year_id : null;
+
+            const years = await supabaseRequest('/academic_years?select=year_id,year_name');
+            yearNamesById = new Map((years || []).map(y => [y.year_id, y.year_name]));
+        }
+
+        // Devuelve el badge de año solo cuando la solicitud no es del año vigente.
+        function badgeAnio(yearId) {
+            if (!yearId || yearId === currentBudgetYearId) return '';
+            const nombre = yearNamesById.get(yearId) || 'otro año';
+            return `<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;" title="Solicitud de un año presupuestal distinto al vigente">${escapeHtml(nombre)}</span>`;
+        }
+
         async function cargarSolicitudesPendientes() {
             elementos.loadingTable.classList.remove('d-none');
             elementos.tableWrapper.classList.add('d-none');
             elementos.emptyState.classList.add('d-none');
         
             try {
-                // Obtener año presupuestal activo
-                const configQuery = 'system_config?select=current_budget_year_id&limit=1';
-                const configData = await supabaseRequest('/' + configQuery);
-                
-                if (configData.length === 0 || !configData[0].current_budget_year_id) {
-                    throw new Error('No hay año presupuestal activo configurado');
-                }
-                
-                const currentBudgetYearId = configData[0].current_budget_year_id;
-                
-                // Consultar solicitudes pendientes dirigidas al usuario actual del año presupuestal activo
-                const query = `execution_requests?select=request_id,assignment_id,requested_value,request_details,requested_at,workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,email),budget_assignments!inner(academic_year_id,approved_value,executed_value,budget_items(item_name,budget_categories(category_name)),workers!budget_assignments_worker_id_fkey!inner(email))&request_status=eq.pending&budget_assignments.workers.email=eq.${currentUserEmail}&budget_assignments.academic_year_id=eq.${currentBudgetYearId}&order=requested_at.desc`;
+                // Histórico completo de solicitudes resueltas dirigidas al usuario,
+                // sin filtrar por año presupuestal.
+                const query = `execution_requests?select=request_id,assignment_id,requested_value,request_details,requested_at,responded_at,request_status,workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,email),budget_assignments!inner(academic_year_id,budget_items(item_name,budget_categories(category_name)),workers!budget_assignments_worker_id_fkey!inner(email))&request_status=neq.pending&budget_assignments.workers.email=eq.${currentUserEmail}&order=responded_at.desc`;
                 const data = await supabaseRequest('/' + query);
                 
                 // Procesar datos
@@ -590,6 +604,7 @@
                         solicitante_email: worker?.email || '',
                         rubro_name: assignment?.budget_items?.budget_categories?.category_name || 'Sin rubro',
                         sub_item_name: assignment?.budget_items?.item_name || 'Sin nombre',
+                        academic_year_id: assignment?.academic_year_id || null,
                         approved_value: assignment?.approved_value || 0,
                         executed_value: assignment?.executed_value || 0,
                         disponible: (assignment?.approved_value || 0) - (assignment?.executed_value || 0)
@@ -643,7 +658,7 @@
                     <td class="col-solicitante">${escapeHtml(solicitud.solicitante_nombre)}</td>
                     <td class="col-fecha">${formatearFechaHora(solicitud.requested_at)}</td>
                     <td class="col-rubro">${escapeHtml(solicitud.rubro_name)}</td>
-                    <td class="col-subitem">${escapeHtml(solicitud.sub_item_name)}</td>
+                    <td class="col-subitem">${escapeHtml(solicitud.sub_item_name)}${badgeAnio(solicitud.academic_year_id)}</td>
                     <td class="col-disponible">
                         <span class="indicador-disponible ${esSobreEjecucion ? 'insuficiente' : 'suficiente'}" 
                               title="${esSobreEjecucion ? 'Presupuesto insuficiente - Requerirá sobreejecución' : 'Presupuesto suficiente'}"></span>
@@ -710,18 +725,9 @@
             emptyStateHistory.classList.add('d-none');
 
             try {
-                // Obtener año presupuestal activo
-                const configQuery = 'system_config?select=current_budget_year_id&limit=1';
-                const configData = await supabaseRequest('/' + configQuery);
-
-                if (configData.length === 0 || !configData[0].current_budget_year_id) {
-                    throw new Error('No hay año presupuestal activo configurado');
-                }
-
-                const currentBudgetYearId = configData[0].current_budget_year_id;
-
-                // Consultar solicitudes NO pendientes dirigidas al usuario actual del año presupuestal activo
-                const query = `execution_requests?select=request_id,assignment_id,requested_value,request_details,requested_at,responded_at,request_status,workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,email),budget_assignments!inner(academic_year_id,budget_items(item_name,budget_categories(category_name)),workers!budget_assignments_worker_id_fkey!inner(email))&request_status=neq.pending&budget_assignments.workers.email=eq.${currentUserEmail}&budget_assignments.academic_year_id=eq.${currentBudgetYearId}&order=responded_at.desc`;
+                // Todas las solicitudes pendientes dirigidas al usuario, sin filtrar por
+                // año presupuestal. El año se señaliza en la tabla cuando no es el vigente.
+                const query = `execution_requests?select=request_id,assignment_id,requested_value,request_details,requested_at,workers!execution_requests_worker_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,email),budget_assignments!inner(academic_year_id,approved_value,executed_value,budget_items(item_name,budget_categories(category_name)),workers!budget_assignments_worker_id_fkey!inner(email))&request_status=eq.pending&budget_assignments.workers.email=eq.${currentUserEmail}&order=requested_at.desc`;
                 const data = await supabaseRequest('/' + query);
 
                 historicoData = (data || []).map(solicitud => {
@@ -738,7 +744,8 @@
                         solicitante_nombre: construirNombreCompleto(worker),
                         solicitante_email: worker?.email || '',
                         rubro_name: assignment?.budget_items?.budget_categories?.category_name || 'Sin rubro',
-                        sub_item_name: assignment?.budget_items?.item_name || 'Sin nombre'
+                        sub_item_name: assignment?.budget_items?.item_name || 'Sin nombre',
+                        academic_year_id: assignment?.academic_year_id || null
                     };
                 });
 
@@ -796,7 +803,7 @@
                     <td class="col-solicitante">${escapeHtml(solicitud.solicitante_nombre)}</td>
                     <td class="col-fecha">${formatearFechaHora(solicitud.requested_at)}</td>
                     <td class="col-rubro">${escapeHtml(solicitud.rubro_name)}</td>
-                    <td class="col-subitem">${escapeHtml(solicitud.sub_item_name)}</td>
+                    <td class="col-subitem">${escapeHtml(solicitud.sub_item_name)}${badgeAnio(solicitud.academic_year_id)}</td>
                     <td class="col-detalle">
                         <div class="${tieneDetalleCompleto ? 'detalle-corto' : ''}"
                              ${tieneDetalleCompleto ? `data-bs-toggle="modal" data-bs-target="#modalDetalle"` : ''}>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.28.10.30">
+    <meta name="page-version" content="26.7.28.1">
     <title>Asignación Académica - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -119,6 +119,12 @@
 
         <div id="alertContainer"></div>
 
+        <!-- Aviso de año cerrado (solo lectura) -->
+        <div id="avisoAnioCerrado" class="alert alert-warning d-none">
+            <i class="bi bi-lock-fill me-2"></i>
+            <span id="avisoAnioCerradoTexto"></span>
+        </div>
+
         <!-- Barra de filtros -->
         <div class="filter-bar mb-4">
             <div class="row g-3 align-items-end">
@@ -180,6 +186,7 @@
         let hayCambios = false;
         let currentUserId = null;
         let cambiosIngles = {}; // clave: subject_id → boolean
+        let anioSeleccionadoCerrado = false; // true si el año elegido está académicamente cerrado
 
         // ==========================================
         // INICIALIZACIÓN
@@ -211,15 +218,19 @@
         // ==========================================
         async function cargarAniosAcademicos() {
             try {
+               // Vigente y cerrados (excluye años futuros aún no iniciados).
+                // Los años cerrados son consultables pero NO editables (ver anioSeleccionadoCerrado).
                 aniosAcademicos = await supabaseRequest(
-                    '/academic_years?select=year_id,year_name,is_current&year_status=eq.active&order=year_order.desc'
+                    '/academic_years?select=year_id,year_name,is_current,year_status&year_status=in.(active,closed)&order=year_order.desc'
                 );
 
                 const select = document.getElementById('selectAnio');
                 select.innerHTML = '<option value="">Seleccione año</option>';
                 aniosAcademicos.forEach(a => {
-                    const current = a.is_current ? ' (Actual)' : '';
-                    select.innerHTML += `<option value="${a.year_id}" ${a.is_current ? 'selected' : ''}>${a.year_name}${current}</option>`;
+                    let etiqueta = '';
+                    if (a.is_current) etiqueta = ' (Actual)';
+                    else if (a.year_status === 'closed') etiqueta = ' (cerrado)';
+                    select.innerHTML += `<option value="${a.year_id}" ${a.is_current ? 'selected' : ''}>${a.year_name}${etiqueta}</option>`;
                 });
 
                 console.log(`✅ ${aniosAcademicos.length} años académicos cargados`);
@@ -280,6 +291,19 @@
         async function onCambioFiltros() {
             const anioId = document.getElementById('selectAnio').value;
             const gradoId = document.getElementById('selectGrado').value;
+
+            // Determinar si el año seleccionado está cerrado (solo lectura)
+            const anio = aniosAcademicos.find(a => a.year_id === anioId);
+            anioSeleccionadoCerrado = !!(anio && anio.year_status === 'closed');
+
+            const aviso = document.getElementById('avisoAnioCerrado');
+            if (anioSeleccionadoCerrado) {
+                document.getElementById('avisoAnioCerradoTexto').textContent =
+                    'El año ' + anio.year_name + ' está cerrado. La asignación académica se muestra en modo consulta y no puede modificarse.';
+                aviso.classList.remove('d-none');
+            } else {
+                aviso.classList.add('d-none');
+            }
 
             if (!anioId || !gradoId) {
                 document.getElementById('gridContainer').innerHTML = `
@@ -419,6 +443,7 @@
                         <td class="p-1">
                             <select class="form-select form-select-sm ${isAssigned}"
                                     id="sel_${key}"
+                                    ${anioSeleccionadoCerrado ? 'disabled' : ''}
                                     onchange="onCambioAsignacion('${s.subject_id}', '${c.course_id}', this)">
                                 <option value="">— Sin asignar —</option>
                                 ${generarOpcionesDocentes(currentWorker)}
@@ -432,6 +457,7 @@
                         <input type="checkbox" class="form-check-input"
                                id="eng_${s.subject_id}"
                                ${s.is_english ? 'checked' : ''}
+                               ${anioSeleccionadoCerrado ? 'disabled' : ''}
                                onchange="onCambioIngles('${s.subject_id}', this.checked)"
                                title="Asignatura impartida en inglés">
                     </td>`;
@@ -440,6 +466,7 @@
                 html += `
                     <td class="text-center p-1">
                         <button class="btn btn-outline-secondary btn-apply-all"
+                                ${anioSeleccionadoCerrado ? 'disabled' : ''}
                                 onclick="aplicarATodos('${s.subject_id}')"
                                 title="Aplicar el docente del primer curso a todos los demás">
                             <i class="bi bi-arrow-right-circle me-1"></i>Aplicar a todos
@@ -525,7 +552,7 @@
             }
 
             const hayIngles = Object.keys(cambiosIngles).length > 0;
-            document.getElementById('btnGuardar').disabled = !hayCambios && !hayIngles;
+            document.getElementById('btnGuardar').disabled = anioSeleccionadoCerrado || (!hayCambios && !hayIngles);
             actualizarEstadisticas();
         }
 
@@ -538,6 +565,13 @@
 
             if (!anioId || !gradoId) {
                 showMessage('Seleccione año y grado', 'warning');
+                return;
+            }
+
+            // Salvaguarda: el guardado borra y reinserta las asignaciones del año.
+            // Sobre un año cerrado eso destruiría el registro histórico.
+            if (anioSeleccionadoCerrado) {
+                showMessage('El año seleccionado está cerrado. No se pueden modificar sus asignaciones.', 'warning');
                 return;
             }
 

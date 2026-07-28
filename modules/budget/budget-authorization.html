@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.10.13.15">
+    <meta name="page-version" content="26.7.28.1">
     <title>Autorización de Presupuesto - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -270,6 +270,12 @@
         <!-- CONTENEDOR DE ALERTAS -->
         <div id="alertContainer"></div>
 
+        <!-- Aviso de año cerrado (solo lectura) -->
+        <div id="avisoAnioCerrado" class="alert alert-warning d-none">
+            <i class="bi bi-lock-fill me-2"></i>
+            <span id="avisoAnioCerradoTexto"></span>
+        </div>
+
         <!-- Sección de filtros -->
         <div class="filters-section">
             <h3><i class="bi bi-funnel me-2"></i>Filtros de Búsqueda</h3>
@@ -509,7 +515,7 @@
                 
                 // Cargar años académicos
                 console.log('📅 Cargando años académicos...');
-                const aniosData = await supabaseRequest('/academic_years?select=year_id,year_name,year_order&order=year_order.desc');
+                const aniosData = await supabaseRequest('/academic_years?select=year_id,year_name,year_order,year_status&order=year_order.desc');
                 datosCompletos.anios = aniosData || [];
                 console.log('✅ Años cargados:', datosCompletos.anios.length);
                 await cargarSelectAnios();
@@ -552,7 +558,9 @@
             datosCompletos.anios.forEach(anio => {
                 const option = document.createElement('option');
                 option.value = anio.year_id;
-                option.textContent = anio.year_name;
+                option.textContent = anio.year_status === 'closed'
+                    ? anio.year_name + ' (cerrado)'
+                    : anio.year_name;
                 
                 // Preseleccionar si es el año presupuestal actual
                 if (currentBudgetYearId && anio.year_id === currentBudgetYearId) {
@@ -565,6 +573,25 @@
             // Disparar el evento change si se preseleccionó un año
             if (currentBudgetYearId) {
                 elementos.selectAnio.dispatchEvent(new Event('change'));
+            }
+        }
+
+        // El presupuesto aprobado de un año cerrado no se modifica: approved_value es la
+        // línea base contra la cual ya se ejecutó gasto real. Consulta sí, escritura no.
+        let anioSeleccionadoCerrado = false;
+
+        function actualizarEstadoAnioSeleccionado() {
+            const yearId = elementos.selectAnio.value;
+            const anio = datosCompletos.anios.find(a => a.year_id === yearId);
+            anioSeleccionadoCerrado = !!(anio && anio.year_status === 'closed');
+
+            const aviso = document.getElementById('avisoAnioCerrado');
+            if (anioSeleccionadoCerrado) {
+                document.getElementById('avisoAnioCerradoTexto').textContent =
+                    'El año ' + anio.year_name + ' está cerrado. El presupuesto aprobado se muestra en modo consulta y no puede modificarse.';
+                aviso.classList.remove('d-none');
+            } else {
+                aviso.classList.add('d-none');
             }
         }
 
@@ -848,6 +875,12 @@
          * Guarda el registro actual
          */
         async function guardarRegistro() {
+            // Salvaguarda: approved_value de un año cerrado no se modifica.
+            if (anioSeleccionadoCerrado) {
+                showMessage('El año seleccionado está cerrado. No se puede modificar el presupuesto aprobado.', 'warning');
+                return false;
+            }
+
             if (!registroModificado) {
                 showMessage('No hay cambios para guardar', 'info');
                 return true;
@@ -946,11 +979,14 @@
         function actualizarEstadoBotones() {
             const totalRegistros = datosCompletos.asignacionesFiltradas.length;
             
+            actualizarEstadoAnioSeleccionado();
+            elementos.fieldValorAprobado.disabled = anioSeleccionadoCerrado;
+            
             elementos.btnAnterior.disabled = registroActual === 0;
             elementos.btnSiguiente.disabled = registroActual === totalRegistros - 1;
             elementos.btnPrimerRegistro.disabled = registroActual === 0;
             elementos.btnUltimoRegistro.disabled = registroActual === totalRegistros - 1;
-            elementos.btnGuardar.disabled = !registroModificado;
+            elementos.btnGuardar.disabled = anioSeleccionadoCerrado || !registroModificado;
             
             // Mostrar/ocultar indicador de modificado
             if (registroModificado) {
