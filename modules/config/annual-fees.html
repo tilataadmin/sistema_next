@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.11.09.10.35">
+    <meta name="page-version" content="26.7.28.1">
     <title>Tarifas Anuales - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -102,6 +102,12 @@
         <!-- CONTENEDOR DE ALERTAS -->
         <div id="alertContainer"></div>
 
+        <!-- Aviso de año cerrado (solo lectura) -->
+        <div id="avisoAnioCerrado" class="alert alert-warning d-none">
+            <i class="bi bi-lock-fill me-2"></i>
+            <span id="avisoAnioCerradoTexto"></span>
+        </div>
+
         <!-- SELECTOR DE AÑO ACADÉMICO -->
         <div class="card mb-4">
             <div class="card-body">
@@ -189,6 +195,8 @@
         let currentYearId = null;
         let gradesData = [];
         let feesData = [];
+        let aniosAcademicos = [];              // catálogo de años cargado en el selector
+        let anioSeleccionadoCerrado = false;   // true si el año elegido está cerrado (solo lectura)
         
         // ==========================================
         // INICIALIZACIÓN
@@ -254,6 +262,8 @@
                     showMessage('No hay años académicos disponibles', 'warning');
                     return;
                 }
+
+                aniosAcademicos = years;
                 
                 // Llenar el select
                 const yearSelect = document.getElementById('yearSelect');
@@ -279,6 +289,7 @@
                 // Si hay un año actual seleccionado, cargar sus datos
                 if (currentYearFound) {
                     currentYearId = yearSelect.value;
+                    actualizarEstadoAnioSeleccionado(currentYearId);
                     await cargarTarifasPorAno(currentYearId);
                 }
                 
@@ -287,6 +298,26 @@
             } catch (error) {
                 console.error('❌ Error cargando años académicos:', error);
                 showMessage('Error al cargar años académicos: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // ESTADO DEL AÑO SELECCIONADO (editable / solo lectura)
+        // ==========================================
+        // Las tarifas se definen antes de que inicie el año y se facturan durante él.
+        // Modificarlas después del cierre alteraría la base de cálculo de un periodo
+        // ya cobrado, por lo que un año cerrado queda en solo lectura.
+        function actualizarEstadoAnioSeleccionado(yearId) {
+            const anio = aniosAcademicos.find(a => a.year_id === yearId);
+            anioSeleccionadoCerrado = !!(anio && anio.year_status === 'closed');
+
+            const aviso = document.getElementById('avisoAnioCerrado');
+            if (anioSeleccionadoCerrado) {
+                document.getElementById('avisoAnioCerradoTexto').textContent =
+                    'El año ' + anio.year_name + ' está cerrado. Las tarifas se muestran en modo consulta y no pueden modificarse.';
+                aviso.classList.remove('d-none');
+            } else {
+                aviso.classList.add('d-none');
             }
         }
         
@@ -310,6 +341,7 @@
             }
             
             currentYearId = selectedYearId;
+            actualizarEstadoAnioSeleccionado(selectedYearId);
             await cargarTarifasPorAno(selectedYearId);
         }
         
@@ -471,6 +503,12 @@
                 
                 tbody.appendChild(row);
             });
+
+            // Año cerrado: toda la tabla en solo lectura
+            if (anioSeleccionadoCerrado) {
+                tbody.querySelectorAll('input').forEach(i => i.disabled = true);
+                tbody.querySelectorAll('.btn-save-fee').forEach(b => b.disabled = true);
+            }
         }
         
         // ==========================================
@@ -521,6 +559,12 @@
         // GUARDAR TARIFA
         // ==========================================
         async function guardarTarifa(gradeId, gradeName) {
+            // Salvaguarda: no se admiten cambios sobre un año cerrado.
+            if (anioSeleccionadoCerrado) {
+                showMessage('El año seleccionado está cerrado. No se pueden modificar sus tarifas.', 'warning');
+                return;
+            }
+
             try {
                 const btn = event.target.closest('button');
                 const originalContent = btn.innerHTML;
