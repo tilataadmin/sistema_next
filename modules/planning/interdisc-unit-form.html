@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.9.8">
+    <meta name="page-version" content="26.7.28.1">
     <title>Unidad interdisciplinaria PAI - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -1091,11 +1091,14 @@ async function cargarUnidad() {
     unitData = data[0];
 
     const [yr, trimRows] = await Promise.all([
-        supabaseRequest(`/academic_years?select=year_name,trimesters_count,days_per_cycle&year_id=eq.${unitData.academic_year_id}&limit=1`),
+        supabaseRequest(`/academic_years?select=year_name,year_status,trimesters_count,days_per_cycle&year_id=eq.${unitData.academic_year_id}&limit=1`),
         supabaseRequest(`/academic_year_trimesters?select=trimester_number,cycles_count&year_id=eq.${unitData.academic_year_id}&order=trimester_number.asc`)
     ]);
     if (yr && yr.length > 0) {
         unitData._year_name = yr[0].year_name;
+        // year_status determina la editabilidad: un año cerrado deja la unidad
+        // en solo lectura (ver docs/modules/planing/referente.md).
+        unitData._year_status = yr[0].year_status;
         yearDaysPerCycle = yr[0].days_per_cycle || 6;
     }
     yearTrimesterCycles = trimRows || [];
@@ -1124,6 +1127,13 @@ async function cargarUnitBody() {
 // CONTROL DE ACCESO
 // ============================================================
 async function canEdit() {
+    // COMPUERTA PREVIA: si el año académico está cerrado, nadie edita.
+    // Prevalece sobre todos los caminos de permiso, incluido el creador.
+    if (unitData._year_status === 'closed') {
+        console.log('🔒 canEdit: año académico cerrado → solo lectura para todos');
+        return false;
+    }
+
     // 1) Es el creador
     if (unitData.created_by === currentWorkerId) {
         console.log('✅ canEdit: creador');
@@ -1192,7 +1202,10 @@ function aplicarModoSoloLectura() {
     const banner = document.createElement('div');
     banner.className = 'alert alert-warning d-flex align-items-center';
     banner.style.cssText = 'margin:1rem 0;border-radius:6px;';
-    banner.innerHTML = '<i class="bi bi-eye me-2" style="font-size:1.25rem;"></i><div><strong>Modo solo lectura</strong><br><small>Puede consultar esta unidad pero no editarla.</small></div>';
+    const anioCerrado = unitData && unitData._year_status === 'closed';
+    banner.innerHTML = anioCerrado
+        ? `<i class="bi bi-lock-fill me-2" style="font-size:1.25rem;"></i><div><strong>Año académico cerrado</strong><br><small>El año ${escapeHtml(unitData._year_name || '')} está cerrado. Esta unidad se conserva como registro histórico y no admite modificaciones.</small></div>`
+        : '<i class="bi bi-eye me-2" style="font-size:1.25rem;"></i><div><strong>Modo solo lectura</strong><br><small>Puede consultar esta unidad pero no editarla.</small></div>';
     const pc = document.getElementById('page-content');
     if (pc) pc.insertBefore(banner, pc.firstChild);
 }
