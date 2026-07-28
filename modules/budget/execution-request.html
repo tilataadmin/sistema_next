@@ -459,20 +459,9 @@
                                     <div class="col-md-6">
                                         <label for="recurrenceMonths" class="form-label">
                                             Número de meses (incluido el actual)
+                                            <i class="bi bi-info-circle text-muted" id="recurrenceMonthsHint" title=""></i>
                                         </label>
-                                        <select id="recurrenceMonths" class="form-select">
-                                            <option value="2">2 meses</option>
-                                            <option value="3">3 meses</option>
-                                            <option value="4">4 meses</option>
-                                            <option value="5">5 meses</option>
-                                            <option value="6">6 meses</option>
-                                            <option value="7">7 meses</option>
-                                            <option value="8">8 meses</option>
-                                            <option value="9">9 meses</option>
-                                            <option value="10">10 meses</option>
-                                            <option value="11">11 meses</option>
-                                            <option value="12" selected>12 meses</option>
-                                        </select>
+                                        <select id="recurrenceMonths" class="form-select"></select>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label">Valor total programado</label>
@@ -1367,6 +1356,14 @@
                 });
             }
             
+            // Salvaguarda: descartar cualquier mes posterior al último mes del año
+            // presupuestal seleccionado. La asignación pertenece a un año concreto y
+            // no puede recibir cargos de meses que corresponden al año siguiente.
+            if (selectedYear && selectedYear.end_month && selectedYear.end_year) {
+                const indiceFin = (selectedYear.end_year * 12) + (selectedYear.end_month - 1);
+                return meses.filter(m => ((m.anio * 12) + m.mes) <= indiceFin);
+            }
+            
             return meses;
         }
 
@@ -1464,26 +1461,73 @@
             }, { once: true });
         }
 
-        // La recurrencia mensual proyecta hacia adelante desde la fecha actual,
-        // por lo que solo tiene sentido sobre el año presupuestal vigente.
-        function configurarRecurrenciaSegunAnio() {
-            const esAnioVigente = selectedYearId === currentBudgetYearId;
-            
-            if (esAnioVigente) {
-                elementos.recurrenceSection.classList.remove('d-none');
-                elementos.recurrenceUnavailable.classList.add('d-none');
-                return;
+        // Meses que quedan entre el mes actual y el último mes del año presupuestal
+        // seleccionado, ambos inclusive. Devuelve 0 si el año ya terminó.
+        function calcularMesesDisponiblesRecurrencia() {
+            if (!selectedYear || !selectedYear.end_month || !selectedYear.end_year) {
+                return 0;
             }
             
+            const ahora = new Date();
+            const indiceActual = (ahora.getFullYear() * 12) + ahora.getMonth();
+            const indiceFin = (selectedYear.end_year * 12) + (selectedYear.end_month - 1);
+            
+            return Math.max(0, indiceFin - indiceActual + 1);
+        }
+
+        function poblarOpcionesRecurrencia(maxMeses) {
+            const tope = Math.min(maxMeses, 12);
+            let html = '';
+            
+            for (let i = 2; i <= tope; i++) {
+                html += `<option value="${i}"${i === tope ? ' selected' : ''}>${i} meses</option>`;
+            }
+            
+            elementos.recurrenceMonths.innerHTML = html;
+            
+            const hint = document.getElementById('recurrenceMonthsHint');
+            if (hint) {
+                hint.title = 'La recurrencia no puede exceder el último mes del año presupuestal ' +
+                             selectedYear.year_name + ' (' + MESES[selectedYear.end_month - 1] +
+                             ' ' + selectedYear.end_year + ').';
+            }
+        }
+
+        function ocultarSeccionRecurrencia(mensaje) {
             elementos.enableRecurrence.checked = false;
             elementos.recurrenceOptions.classList.add('d-none');
             elementos.recurrenceSection.classList.add('d-none');
-            
-            elementos.recurrenceUnavailableText.textContent =
-                'La programación de recurrencia mensual solo está disponible sobre el año presupuestal vigente (' +
-                currentBudgetYear.year_name + '). Sobre ' + selectedYear.year_name +
-                ' únicamente se pueden crear solicitudes individuales.';
+            elementos.recurrenceUnavailableText.textContent = mensaje;
             elementos.recurrenceUnavailable.classList.remove('d-none');
+        }
+
+        // La recurrencia solo se permite sobre el año presupuestal vigente y nunca
+        // puede proyectarse más allá del último mes de ese año.
+        function configurarRecurrenciaSegunAnio() {
+            if (selectedYearId !== currentBudgetYearId) {
+                ocultarSeccionRecurrencia(
+                    'La programación de recurrencia mensual solo está disponible sobre el año presupuestal vigente (' +
+                    currentBudgetYear.year_name + '). Sobre ' + selectedYear.year_name +
+                    ' únicamente se pueden crear solicitudes individuales.'
+                );
+                return;
+            }
+            
+            const disponibles = calcularMesesDisponiblesRecurrencia();
+            
+            if (disponibles < 2) {
+                const ultimoMes = MESES[selectedYear.end_month - 1] + ' ' + selectedYear.end_year;
+                ocultarSeccionRecurrencia(
+                    'La recurrencia no está disponible: el año presupuestal ' + selectedYear.year_name +
+                    ' termina en ' + ultimoMes + ' y no quedan meses suficientes para programarla. ' +
+                    'Puede crear una solicitud individual.'
+                );
+                return;
+            }
+            
+            poblarOpcionesRecurrencia(disponibles);
+            elementos.recurrenceSection.classList.remove('d-none');
+            elementos.recurrenceUnavailable.classList.add('d-none');
         }
 
         function limpiarFormularioModal() {
@@ -1497,7 +1541,6 @@
             // Limpiar recurrencia
             elementos.enableRecurrence.checked = false;
             elementos.recurrenceOptions.classList.add('d-none');
-            elementos.recurrenceMonths.value = '12';
             elementos.recurrencePreview.innerHTML = '';
             elementos.recurrenceWarning.classList.add('d-none');
             elementos.totalRecurrenceValue.textContent = '$0';
