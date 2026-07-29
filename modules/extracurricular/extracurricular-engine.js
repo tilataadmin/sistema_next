@@ -140,4 +140,213 @@ function ecAdvertenciasCalendario(startISO, endISO, insumos) {
     return avisos;
 }
 
+// ==========================================
+// MOTOR DE PRECIOS
+//
+// Reglas (ver especificación v1.2, sección 6):
+//   aporte = valor × multiplicador ÷ divisor
+//   multiplicador = sesiones de la actividad si time_base='session'; 1 si 'season'
+//   divisor:
+//     allocation_base='per_student'                  -> 1
+//     allocation_base='prorated' y scope='activity'  -> mínimo de la actividad
+//     allocation_base='prorated' y scope='season'    -> suma de los mínimos
+//
+// La combinación scope='season' + time_base='session' está prohibida
+// por restricción de base, así que time_base='session' implica scope='activity'.
+// ==========================================
+
+// ¿Este concepto aplica a esta actividad?
+// applies_to_modality nulo significa "aplica a todas".
+function ecConceptoAplica(concepto, actividad) {
+    if (!concepto.is_active) return false;
+    if (!concepto.applies_to_modality) return true;
+    return concepto.applies_to_modality === actividad.modality;
+}
+
+// Sesiones de una actividad = suma de las sesiones de los días que ocupa.
+function ecSesionesActividad(actividad, sesionesPorDia) {
+    let total = 0;
+    for (const d of actividad.dias) {
+        const s = sesionesPorDia[d];
+        if (s === null || s === undefined) return null; // día sin calcular
+        total += s;
+    }
+    return total;
+}
+
+/*
+  Calcula el precio de todas las actividades de una temporada.
+
+  actividades: [{ activity_id, activity_name, modality, min_students, dias: [1,4] }]
+  conceptos:   filas de svc_extracurricular_cost_concepts
+  costosPropios: [{ activity_id, concept_id, concept_value }]
+  sesionesPorDia: { 1: 18, 3: 19, 4: 17 }
+
+  Devuelve el desglose completo, no solo el total, para que la pantalla
+  pueda mostrar el mismo cuadro del anexo de la especificación.
+*/
+function ecCalcularPrecios(actividades, conceptos, costosPropios, sesionesPorDia) {
+    const errores = [];
+
+    // Índice de valores propios: 'activity_id|concept_id' -> valor
+    const propios = {};
+    (costosPropios || []).forEach(c => {
+        propios[`${c.activity_id}|${c.concept_id}`] = parseFloat(c.concept_value);
+    });
+
+    // Divisor de los conceptos de ámbito temporada
+    const sumaMinimos = actividades.reduce((acc, a) => acc + (a.min_students || 0), 0);
+    if (sumaMinimos <= 0) {
+        errores.push('La suma de los mínimos es cero. No se puede repartir ningún concepto de temporada.');
+    }
+
+    const resultado = actividades.map(act => {
+        const detalle = { ...act, sesiones: null, conceptos: [], precio: null, errores: [] };
+
+        const sesiones = ecSesionesActividad(act, sesionesPorDia);
+        if (sesiones === null) {
+            detalle.errores.push('Hay días sin sesiones calculadas.');
+            return detalle;
+        }
+        detalle.sesiones = sesiones;
+
+        if (!act.min_students || act.min_students <= 0) {
+            detalle.errores.push('El cupo mínimo debe ser mayor que cero.');
+            return detalle;
+        }
+
+        let precio = 0;
+
+        conceptos.forEach(con => {
+            if (!ecConceptoAplica(con, act)) return;
+
+            const clave = `${act.activity_id}|${con.concept_id}`;
+            const tienePropio = Object.prototype.hasOwnProperty.call(propios, clave);
+            const valor = tienePropio
+                ? propios[clave]
+                : (con.default_value === null || con.default_value === undefined ? null : parseFloat(con.default_value));
+
+            if (valor === null || isNaN(valor)) {
+                detalle.errores.push(`El concepto "${con.concept_name}" no tiene valor propio ni valor por defecto.`);
+                return;
+            }
+
+            const multiplicador = (con.time_base === 'session') ? sesiones : 1;
+
+            let divisor;
+            if (con.allocation_base === 'per_student') {
+                divisor = 1;
+            } else if (con.scope === 'activity') {
+                divisor = act.min_students;
+            } else {
+                divisor = sumaMinimos;
+            }
+
+            if (!divisor || divisor <= 0) {
+                detalle.errores.push(`El concepto "${con.concept_name}" tiene divisor cero.`);
+                return;
+            }
+
+            // Se redondea cada aporte al peso, para que el desglose que ve
+            // el coordinador sume exactamente el precio publicado.
+            const aporte = Math.round(valor * multiplicador / divisor);
+            precio += aporte;
+
+            detalle.conceptos.push({
+                concept_id: con.concept_id,
+                concept_name: con.concept_name,
+                scope: con.scope,
+                time_base: con.time_base,
+                allocation_base: con.allocation_base,
+                origen: tienePropio ? 'propio' : 'defecto',
+                valor: valor,
+                multiplicador: multiplicador,
+                divisor: divisor,
+                aporte: aporte
+            });
+        });
+
+        detalle.precio = (detalle.errores.length === 0) ? precio : null;
+        return detalle;
+    });
+
+    return { sumaMinimos, actividades: resultado, errores };
+}
+
+// Las tres opciones que ve la familia (especificación 6.7)
+function ecOpcionesTarifa(precio, sesiones, tarifaVinculada, tarifaNoVinculada) {
+    return {
+        sinTransporte: precio,
+        conTransporteVinculada: precio + Math.round(sesiones * tarifaVinculada),
+        conTransporteNoVinculada: precio + Math.round(sesiones * tarifaNoVinculada)
+    };
+}
+
+// ==========================================
+// AUTOPRUEBA — reproduce el anexo de la especificación v1.2
+// Ejecutar en la consola del navegador: ecAutoprueba()
+// No toca la base de datos.
+// ==========================================
+
+function ecAutoprueba() {
+    const sesionesPorDia = { 1: 18, 3: 19, 4: 17 };
+
+    const conceptos = [
+        { concept_id: 'c1', concept_name: 'Honorarios instructor', scope: 'activity', time_base: 'session', allocation_base: 'prorated', default_value: 180000, applies_to_modality: 'instructor', is_active: true },
+        { concept_id: 'c2', concept_name: 'Refrigerio instructor', scope: 'activity', time_base: 'session', allocation_base: 'prorated', default_value: 12000, applies_to_modality: 'instructor', is_active: true },
+        { concept_id: 'c3', concept_name: 'Coordinador', scope: 'season', time_base: 'season', allocation_base: 'prorated', default_value: 3000000, applies_to_modality: null, is_active: true },
+        { concept_id: 'c4', concept_name: 'Recordatorios', scope: 'season', time_base: 'season', allocation_base: 'per_student', default_value: 35000, applies_to_modality: null, is_active: true },
+        { concept_id: 'c5', concept_name: 'Tarifa del tercero', scope: 'activity', time_base: 'season', allocation_base: 'per_student', default_value: null, applies_to_modality: 'partner', is_active: true }
+    ];
+
+    const actividades = [
+        { activity_id: 'a1', activity_name: 'Ajedrez', modality: 'instructor', min_students: 10, dias: [1, 4] },
+        { activity_id: 'a2', activity_name: 'Cerámica', modality: 'partner', min_students: 10, dias: [3] }
+    ];
+    // Diez actividades de relleno para llegar a la suma de mínimos = 120 del anexo
+    for (let i = 3; i <= 12; i++) {
+        actividades.push({ activity_id: 'a' + i, activity_name: 'Relleno ' + i, modality: 'instructor', min_students: 10, dias: [1] });
+    }
+
+    const costosPropios = [
+        { activity_id: 'a2', concept_id: 'c5', concept_value: 240000 }
+    ];
+
+    const r = ecCalcularPrecios(actividades, conceptos, costosPropios, sesionesPorDia);
+    const ajedrez = r.actividades.find(a => a.activity_id === 'a1');
+    const ceramica = r.actividades.find(a => a.activity_id === 'a2');
+
+    const opAjedrez = ecOpcionesTarifa(ajedrez.precio, ajedrez.sesiones, 15650, 19000);
+    const opCeramica = ecOpcionesTarifa(ceramica.precio, ceramica.sesiones, 15650, 19000);
+
+    const casos = [
+        ['Suma de los mínimos', r.sumaMinimos, 120],
+        ['Ajedrez — sesiones', ajedrez.sesiones, 35],
+        ['Ajedrez — precio', ajedrez.precio, 732000],
+        ['Ajedrez — con transporte vinculada', opAjedrez.conTransporteVinculada, 1279750],
+        ['Ajedrez — con transporte no vinculada', opAjedrez.conTransporteNoVinculada, 1397000],
+        ['Cerámica — sesiones', ceramica.sesiones, 19],
+        ['Cerámica — precio', ceramica.precio, 300000],
+        ['Cerámica — con transporte vinculada', opCeramica.conTransporteVinculada, 597350],
+        ['Cerámica — con transporte no vinculada', opCeramica.conTransporteNoVinculada, 661000],
+        ['Cerámica — conceptos aplicados', ceramica.conceptos.length, 3]
+    ];
+
+    let fallos = 0;
+    console.log('%c AUTOPRUEBA DEL MOTOR DE PRECIOS ', 'background:#993556;color:#fff;font-weight:bold');
+    casos.forEach(([nombre, obtenido, esperado]) => {
+        const ok = obtenido === esperado;
+        if (!ok) fallos++;
+        console.log(`${ok ? '✅' : '❌'} ${nombre}: ${obtenido}${ok ? '' : ' (esperado ' + esperado + ')'}`);
+    });
+
+    console.table(ajedrez.conceptos.map(c => ({
+        Concepto: c.concept_name, Valor: c.valor, Mult: c.multiplicador, Div: c.divisor, Aporte: c.aporte
+    })));
+
+    console.log(fallos === 0 ? '%c TODAS LAS PRUEBAS PASARON ' : `%c ${fallos} PRUEBA(S) FALLARON `,
+        fallos === 0 ? 'background:#1D9E75;color:#fff' : 'background:#E24B4A;color:#fff');
+    return fallos === 0;
+}
+
 console.log('✅ Motor de extracurriculares cargado');
