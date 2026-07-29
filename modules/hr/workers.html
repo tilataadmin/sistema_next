@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.7.15.1">
+    <meta name="page-version" content="2026.7.29.3">
     <title>Trabajadores</title>
     
     <!-- Bootstrap CSS -->
@@ -2466,7 +2466,14 @@
                             supabaseRequest(`/project_participants?worker_email=eq.${oldEmail}`, {
                                 method: 'PATCH',
                                 body: JSON.stringify({ worker_email: newEmail })
-                            }).catch(err => console.warn('⚠️ project_participants:', err.message))
+                            }).catch(err => console.warn('⚠️ project_participants:', err.message)),
+
+                            // budget_assignments: se filtra por worker_id, no por el correo viejo,
+                            // porque ese correo puede haber sido reasignado a otra persona.
+                            supabaseRequest(`/budget_assignments?worker_id=eq.${currentEditingWorkerId}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ worker_email_legacy: newEmail, updated_at: new Date().toISOString() })
+                            }).catch(err => console.warn('⚠️ budget_assignments:', err.message))
                         ];
                         
                         await Promise.all(cascadeUpdates);
@@ -3132,15 +3139,28 @@
                 }
 
                 
+                const fullName = `${workerData.worker_last_name_1} ${workerData.worker_last_name_2 || ''} ${workerData.worker_first_name}`.trim();
+
                 document.getElementById('transferOriginName').textContent = fullName;
                 document.getElementById('transferOriginEmail').textContent = workerData.email;
 
                 // =============================================
                 // 1) ASIGNACIONES PRESUPUESTALES
                 // =============================================
-                const budgetAssignments = await supabaseRequest(
-                    `/budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,assignment_status&worker_id=eq.${workerId}&order=assignment_category.asc`
-                );
+                // Solo el año presupuestal vigente: los años cerrados son historial
+                // y no deben reasignarse a quien no los gestionó.
+                const budgetYearConfig = await supabaseRequest('/system_config?select=current_budget_year_id&limit=1');
+                const budgetYearId = (budgetYearConfig && budgetYearConfig.length > 0)
+                    ? budgetYearConfig[0].current_budget_year_id
+                    : null;
+
+                if (!budgetYearId) {
+                    showMessage('No hay año presupuestal vigente configurado. No se transferirán asignaciones presupuestales.', 'warning');
+                }
+
+                const budgetAssignments = budgetYearId ? await supabaseRequest(
+                    `/budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,assignment_status&worker_id=eq.${workerId}&academic_year_id=eq.${budgetYearId}&assignment_status=eq.active&order=assignment_category.asc`
+                ) : [];
                 const budgetCount = budgetAssignments ? budgetAssignments.length : 0;
                 document.getElementById('transferCountBudget').textContent = budgetCount;
 
@@ -3458,8 +3478,9 @@
                         }).join('');
 
                 // Guardar datos para la confirmación
-                window._transferData = {
+               window._transferData = {
                     originWorkerData: workerData,
+                    budgetYearId,
                     budgetCount,
                     listaTareas,
                     listaProyectos,
@@ -3532,11 +3553,18 @@
                 // =============================================
                 // 1) PRESUPUESTO
                 // =============================================
-                if (data.budgetCount > 0) {
+                if (data.budgetCount > 0 && data.budgetYearId) {
                     try {
                         await supabaseRequest(
-                            `/budget_assignments?worker_id=eq.${currentTransferWorkerId}`,
-                            { method: 'PATCH', body: JSON.stringify({ worker_id: destinationWorkerId }) }
+                            `/budget_assignments?worker_id=eq.${currentTransferWorkerId}&academic_year_id=eq.${data.budgetYearId}&assignment_status=eq.active`,
+                            {
+                                method: 'PATCH',
+                                body: JSON.stringify({
+                                    worker_id: destinationWorkerId,
+                                    worker_email_legacy: destEmail,
+                                    updated_at: new Date().toISOString()
+                                })
+                            }
                         );
                         resultados.exitos += data.budgetCount;
                         console.log(`✅ ${data.budgetCount} asignaciones presupuestales transferidas`);
