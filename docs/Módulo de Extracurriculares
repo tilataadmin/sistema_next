@@ -1,32 +1,51 @@
 # Módulo de Extracurriculares — Especificación de diseño
 
 **Sistema:** SchoolNet — Colegio Tilatá
-**Repos:** `tilataadmin/sistema_next` (frontend) · Google Apps Script (portal de familias)
-**Versión:** 1.0
-**Fecha:** 28 de julio de 2026
-**Estado:** Diseño en construcción. **No apto para implementar todavía** — ver sección 13 (decisiones pendientes).
+**Repo:** `tilataadmin/sistema_next`
+**Versión:** 1.2
+**Fecha:** 29 de julio de 2026
+**Estado:** **Fases 0 a 4 construidas y verificadas.** Pendientes las fases 5 a 7 (pantallas).
+**Reemplaza a:** v1.1 del 29 de julio de 2026
+
+> **Qué cambió respecto a la v1.1.** Este documento incorpora ocho ajustes surgidos durante la construcción del modelo de datos, tres de los cuales se apartan deliberadamente de lo que la v1.1 especificaba. Todos están marcados y justificados. Se agrega además la sección 9, con las cinco validaciones de publicación que no viven en ninguna restricción de base y que la pantalla de temporadas debe implementar.
 
 ---
 
 ## 0. Cómo usar este documento
 
-Este documento consolida las decisiones tomadas en la conversación de diseño. Es la fuente de verdad para la construcción posterior.
-
-Reglas de trabajo para la fase de implementación:
+Fuente de verdad para la construcción. Reglas de trabajo:
 
 - **DEV primero, verificar, luego PROD.**
 - **SQL antes que frontend.** Una sentencia a la vez, con `SELECT` de verificación después de cada una.
+- **Al correr una verificación de estado, indicar contra cuál proyecto se corrió.** DEV y PROD pueden tener contenido distinto aunque el esquema sea idéntico.
 - **Ediciones buscables** con Ctrl+F (el equipo edita por el editor web de GitHub, sin entorno local).
 - **Toda tabla nueva** debe incluir `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` explícito.
-- **Sin gradientes** en la interfaz.
-- `supabaseRequest(endpoint, { method, body })` — nunca `headers` explícitos.
+- **Sin gradientes** en la interfaz. Solo colores sólidos.
+- `supabaseRequest(endpoint, { method, body })` — nunca `headers` explícitos, nunca cache-busters.
 - Contradicciones entre este documento y la base de datos **se reportan, no se resuelven unilateralmente**.
-
-Este documento **no contiene SQL ni código**. El DDL se entregará por separado, paso a paso, previa aprobación.
 
 ---
 
-## 1. Propósito y alcance
+## 1. Estado de implementación
+
+| Fase | Contenido | DEV | PROD |
+|---|---|---|---|
+| 0 | Retiro de la página de Servicios y limpieza de datos | ✅ | ✅ |
+| 1 | DDL sobre tablas existentes | ✅ | ✅ |
+| 2 | Ocho tablas nuevas | ✅ | ✅ |
+| 3 | Disparador de liberación de días | ✅ | ✅ |
+| 4 | Nueve permisos + registro en `sidebar.js` | ✅ | Permisos pendientes |
+| 5 | Pantallas 1 a 4 (parametrización, oferta, inscripciones) | — | — |
+| 6 | Pantallas 5 a 7 (asistencia, rutas, registro diario) | — | — |
+| 7 | Pantallas 8 y 9 (Tesorería, reportes) | — | — |
+
+`sidebar.js` está modificado en la rama `developmen`; llega a producción cuando se mezcle a `main`.
+
+**Prueba funcional del disparador ejecutada en DEV** con datos ficticios, luego eliminados. Tres escenarios verificados: valor total autosuficiente ($1.279.750, coincide con el anexo), rechazo del cruce de días, y liberación de días al retirar con reinscripción posterior exitosa. **No se ha ejecutado en PROD**; conviene al menos confirmar que el disparador existe y está habilitado.
+
+---
+
+## 2. Propósito y alcance
 
 Gestionar la oferta, inscripción, costeo, transporte y asistencia de las actividades extracurriculares del colegio.
 
@@ -34,8 +53,7 @@ Gestionar la oferta, inscripción, costeo, transporte y asistencia de las activi
 
 - Parametrización de temporadas, días, actividades y conceptos de costo.
 - Cálculo del precio de cada actividad y del cargo de transporte.
-- Inscripción por parte de las familias desde el portal.
-- Gestión de grupos, reubicaciones y retiros por parte del coordinador.
+- Inscripción y gestión de grupos, reubicaciones y retiros por parte del coordinador.
 - Consulta para Tesorería.
 - Configuración de rutas y registro diario de cumplimiento.
 - Registro de asistencia.
@@ -45,37 +63,87 @@ Gestionar la oferta, inscripción, costeo, transporte y asistencia de las activi
 - **Facturación y recaudo.** Se hacen en Phidias. SchoolNet entrega la información; no cobra.
 - **Portal para instructores.** Los instructores no son usuarios de SchoolNet.
 - **Registro de abordaje al bus.** No se registra quién sube; solo asistencia a la actividad.
-- **Mantenimiento de la vinculación con el operador de transporte.** Es un dato que el colegio maneja fuera del sistema.
+- **Mantenimiento de la vinculación con el operador de transporte.**
+
+**Diferido:**
+
+- **Portal de familias.** La inscripción desde `families.html` y los endpoints de Apps Script quedan fuera de esta entrega. Ver sección 12.
 
 ---
 
-## 2. Ubicación en la plataforma
+## 3. Ubicación en la plataforma
 
-**Módulo nuevo**, `id = extracurricular`, dentro del grupo **OPERACIÓN** del sidebar.
-
-Ubicación sugerida dentro del grupo: **inmediatamente después de Servicios**.
+**Módulo** `id = extracurricular`, ubicado **inmediatamente después de Servicios**.
 
 > Eventos → Servicios → **Extracurriculares** → Asistencia
 
-**Razón de la ubicación:** comparte con Servicios la tabla de temporadas y toda la operación de transporte, y es vecino natural de Eventos (convocatoria, inscripción, asistencia) y de Asistencia. La cara que ven las familias vive en el portal, que no es parte del sidebar, por lo que el módulo interno es de naturaleza operativa.
+**Convención de nombre:** minúscula, consistente con `services`, `budget`, `config`, aunque la `GUIA_CREAR_NUEVOS_MODULOS.md` sugiera CamelCase. Excepción documentada.
 
-**Convención de nombre del módulo:** se usa `extracurricular` en minúscula para ser consistente con los módulos existentes en `sidebar.js` (`services`, `budget`, `config`), aunque la `GUIA_CREAR_NUEVOS_MODULOS.md` sugiera CamelCase. Se documenta la excepción.
+### 3.1 Identidad visual
 
-Pendiente definir ícono y color (ver sección 13).
+| Atributo | Valor |
+|---|---|
+| Ícono | `bi-palette` |
+| Color | `#993556` |
+
+`#993556` también lo usa `teacher-eval` en el grupo *Talento y desarrollo*. La reutilización entre grupos es la norma en esta paleta: `#1D9E75` aparece cuatro veces y `#378ADD` dos, incluso dentro del mismo grupo. Lo que importaba era romper la secuencia de azules entre Servicios (`#378ADD`) y Asistencia (`#185FA5`).
+
+### 3.2 Estructura real del sidebar — corrección importante
+
+`sidebar.js` tiene **dos estructuras**, y el registro del módulo exige tocar ambas:
+
+- **`SIDEBAR_MODULE_ORDER`** — catálogo de metadatos: `id`, `name`, `icon`, `color`.
+- **`SIDEBAR_LAYOUT`** — agrupación en categorías y orden vertical del primer nivel.
+
+**`buildSidebarHTML()` itera sobre `SIDEBAR_LAYOUT`, no sobre `SIDEBAR_MODULE_ORDER`.** Un módulo registrado solo en el catálogo **no se renderiza nunca**. Extracurriculares va dentro de la categoría `operations`:
+
+```javascript
+modules: ['procedures', 'project-management', 'tte', 'events', 'services', 'extracurricular', 'attendance', 'environmental']
+```
+
+> El comentario de `SIDEBAR_LAYOUT` en el código afirma que *"el render aún NO la usa (se activa en el paso 3)"*. Está obsoleto: sí la usa. Vale corregirlo en algún commit de mantenimiento.
+
+Se retiró además `'Extracurriculares'` del bloque `'services'` de `MODULE_ITEM_ORDER`, que había quedado como referencia muerta.
+
+### 3.3 Nota de usabilidad
+
+En el menú, siete de los nueve ítems se truncan por ancho. Lo que se corta es el sufijo *"de extracurriculares"*, que el encabezado del módulo ya provee. Lo que sobrevive —*Gestionar temporadas*, *Conceptos de costo*, *Gestionar actividades*…— distingue inequívocamente. El sufijo gana su lugar en la pantalla de asignación de permisos, donde los nueve conviven con doscientos de otros módulos sin contexto. Se acepta el truncamiento.
 
 ---
 
-## 3. Modelo conceptual
+## 4. Prerrequisito ejecutado: retiro de la página de Servicios
+
+Existía el permiso `Extracurriculares` (`a3a24dbb-7bc6-4847-b0c1-03f8fc4c5298`), módulo `services`, activo, apuntando a `/modules/services/extracurricular.html`, y la página correspondiente, funcional en código pero **no productiva**.
+
+**No podían convivir.** Esa página ejecutaba, al guardar un ciclo, un borrado total de los días del ciclo antes de reinsertarlos. Con `sessions_count` poblado, habría destruido las sesiones congeladas de la temporada y con ellas el respaldo de todos los precios publicados.
+
+**Ejecutado:**
+
+| # | Acción | Estado |
+|---|---|---|
+| 1 | Permiso a `permission_status = 'inactive'` y `url_path = NULL`. Registro conservado | ✅ DEV y PROD |
+| 2 | Eliminación de `/modules/services/extracurricular.html` | ✅ |
+| 3 | Borrado de datos en `daily_records` → `vehicle_configs` → `cycle_days` → `cycles` | ✅ DEV y PROD |
+
+> **Nota de ejecución:** el conteo inicial se leyó contra PROD, que estaba vacío. DEV tenía una temporada de febrero de 2026 con tres días, tres configuraciones de vehículos y tres registros diarios, residuo de la página retirada. Se borraron al detectarlos. De ahí la regla añadida en la sección 0 sobre indicar el proyecto en cada verificación.
+
+`svc_transport_rates_extracurricular` se conserva con sus dos filas.
+
+> El nombre `Extracurriculares` queda ocupado permanentemente por el permiso retirado, dado que `permissions.permission_name` tiene unicidad global. Ninguno de los nueve permisos nuevos lo reutiliza.
+
+---
+
+## 5. Modelo conceptual
 
 ```
 Año académico
   └── Temporada (2 por año: "2026-2027 I", "2026-2027 II")
         ├── Días de la semana habilitados (típicamente 3)
-        │     └── Sesiones (número de días lectivos de ese día en la temporada)
+        │     └── Sesiones (días lectivos de ese día en la temporada)
         ├── Conceptos de costo
         ├── Tarifas de transporte (vinculado / no vinculado)
         └── Actividades
-              ├── Días (subconjunto de los días de la temporada: 1 o 2)
+              ├── Días (subconjunto de los días de la temporada)
               ├── Grados a los que aplica (N:N)
               ├── Cupos (mínimo y máximo)
               ├── Modalidad (instructor propio / alianza con tercero)
@@ -85,31 +153,25 @@ Año académico
                     └── Asistencia diaria
 ```
 
-### 3.1 Temporada
+### 5.1 Temporada
 
-Dos por año académico, una por semestre. Tiene fecha de apertura de inscripciones, cierre de inscripciones, inicio de temporada y fin de temporada.
+Dos por año académico. La temporada **es** la tabla existente `svc_extracurricular_cycles`; no se creó tabla paralela. De `cycle_id` ya colgaban la configuración de vehículos y el registro diario de rutas, y el cruce valioso es "cuántos inscritos hay el lunes / cuántos vehículos necesito el lunes".
 
-**Decisión clave:** la temporada **es** la tabla existente `svc_extracurricular_cycles`. No se crea una tabla paralela de temporadas.
+**Formato del nombre:** `2026-2027 I` y `2026-2027 II`, con unicidad sobre `(academic_year_id, cycle_name)`.
 
-De `cycle_id` ya cuelgan la configuración de vehículos y el registro diario de rutas. Un calendario paralelo dejaría la oferta de actividades y la operación del bus en universos incomunicados, cuando el cruce valioso es precisamente "cuántos inscritos hay el lunes / cuántos vehículos necesito el lunes".
+### 5.2 Días de la temporada
 
-### 3.2 Días de la temporada
+`svc_extracurricular_cycle_days`, llave primaria `(cycle_id, day_of_week)`, `day_of_week` entre 1 y 7.
 
-Los días de la semana en que hay extracurriculares. Usualmente tres, pero parametrizable por temporada. Ya existe en `svc_extracurricular_cycle_days`, con llave primaria `(cycle_id, day_of_week)` y `day_of_week` entre 1 y 7.
+### 5.3 Actividades
 
-### 3.3 Actividades
-
-Cada actividad pertenece a una temporada y tiene nombre, descripción, foto, modalidad, nombre del instructor, cupo mínimo, cupo máximo, un subconjunto de los días de la temporada (1 o 2), y los grados a los que se ofrece.
-
-**Restricción garantizada por la base de datos:** una actividad solo puede usar días que estén habilitados en su temporada. Se logra con una llave foránea compuesta contra `svc_extracurricular_cycle_days`, sin validación en JavaScript.
+Nombre, descripción, foto, modalidad, instructor, cupo mínimo y máximo, subconjunto de los días de la temporada, y grados a los que se ofrece.
 
 ---
 
-## 4. Modelo de costeo
+## 6. Modelo de costeo
 
-### 4.1 Principio general
-
-El costo por estudiante de cada concepto se calcula así:
+### 6.1 Principio general
 
 ```
 aporte por estudiante = valor
@@ -117,7 +179,7 @@ aporte por estudiante = valor
                         ÷ divisor de reparto
 ```
 
-El **divisor de reparto** no es un dato que se digite: se deduce de dos atributos del concepto.
+El **divisor de reparto** se deduce de dos atributos del concepto:
 
 | Ámbito | Reparto | Divisor | Ejemplos |
 |---|---|---|---|
@@ -125,30 +187,29 @@ El **divisor de reparto** no es un dato que se digite: se deduce de dos atributo
 | Temporada | Prorrateo | **suma de los mínimos de todas las actividades de la temporada** | coordinador, desayuno de bienvenida |
 | Cualquiera | Por estudiante | 1 (no se divide) | recordatorios, tarifa del tercero por estudiante |
 
-**Por qué el ámbito es indispensable.** Los honorarios del instructor son un costo *de cada actividad*: hay uno por actividad y se cubre con los estudiantes de esa actividad. El coordinador es *uno solo para todo el programa*. Si el valor del coordinador se dividiera entre el mínimo de cada actividad, se recaudaría multiplicado por el número de actividades:
+**Por qué el ámbito es indispensable.** Los honorarios del instructor son un costo *de cada actividad*. El coordinador es *uno solo para todo el programa*. Dividir el coordinador entre el mínimo de cada actividad multiplicaría el recaudo por el número de actividades:
 
-> Coordinador $3.000.000 al semestre, 12 actividades con mínimo 10 estudiantes cada una.
-> Dividido entre el mínimo de cada actividad (10): $300.000 por estudiante → recaudo de $36.000.000.
-> Dividido entre la suma de los mínimos (120): $25.000 por estudiante → recaudo de $3.000.000. ✅
+> Coordinador $3.000.000, 12 actividades con mínimo 10.
+> Entre el mínimo de cada actividad (10): $300.000 c/u → $36.000.000. ❌
+> Entre la suma de los mínimos (120): $25.000 c/u → $3.000.000. ✅
 
-Sin el atributo de ámbito, el sistema no puede saber cuál de los dos divisores aplica.
+### 6.2 Combinación prohibida — ámbito temporada + base sesión
 
-### 4.2 La modalidad no gobierna la aritmética
+**Restricción de base:** `svc_extracurricular_cost_concepts_scope_time_check` impide `scope = 'season'` con `time_base = 'session'`.
 
-Existen dos modalidades de actividad:
+**Razón.** Esa combinación no tiene divisor definido: un concepto de temporada no pertenece a ninguna actividad, y las sesiones difieren por día (18 el lunes, 19 el miércoles, 17 el jueves). Se evaluó definirlo como la suma de las sesiones de todos los días habilitados, pero el caso de uso que lo motivaba —costos globales que se causan cada día, como enfermería o vigilancia— **no aplica en Tilatá**: ese personal ya está cubierto por su horario laboral y cargarlo a extracurriculares sería cobrarlo dos veces.
 
-1. **Instructor propio** — se le paga un valor por sesión diaria, igual para todas las actividades, parametrizable.
-2. **Alianza con tercero** — una persona jurídica cobra un valor por estudiante, propio de cada actividad.
+**Efecto útil:** el motor de cálculo queda con un caso menos. Un concepto de temporada siempre se multiplica por 1.
 
-El cobro del tercero **entra por la misma puerta** que los recordatorios: ámbito actividad, base temporada, reparto por estudiante. No requiere lógica propia.
+Si algún día se habilita, es un `DROP CONSTRAINT` más la definición de la regla.
 
-La modalidad se conserva como atributo para reportes y para **filtrar qué conceptos aplican** (una actividad de tercero no paga honorarios de instructor), pero el motor de cálculo no la lee.
+### 6.3 La modalidad no gobierna la aritmética
 
-### 4.3 Cálculo de sesiones
+Dos modalidades: **instructor propio** (valor por sesión diaria, igual para todas) y **alianza con tercero** (valor por estudiante, propio de cada actividad).
 
-Las sesiones son los **días lectivos** de cada día de la semana dentro del rango de la temporada.
+El cobro del tercero entra por la misma puerta que los recordatorios: ámbito actividad, base temporada, reparto por estudiante. La modalidad se conserva para reportes y para **filtrar qué conceptos aplican**, pero el motor de cálculo no la lee.
 
-> **Aclaración de vocabulario:** en SchoolNet, "día Tilatá" es el número del ciclo rotativo (1 a `academic_years.days_per_cycle`, por defecto 6), no un día de la semana. Las extracurriculares se organizan por día de semana. Cuando en este documento se dice "sesión", se entiende **día lectivo**.
+### 6.4 Cálculo de sesiones
 
 ```
 sesiones de un día de la semana =
@@ -157,114 +218,102 @@ sesiones de un día de la semana =
     − hr_non_work_days
 ```
 
-**Hallazgo importante:** *no existe en la base de datos una tabla de días lectivos.* Se revisaron las 411 tablas del esquema. La función "Generar días Tilatá" produce eventos en Google Calendar (`tilata_recurring_*`), no filas consultables en Postgres. Las fuentes disponibles para derivar el conteo son:
+> **Vocabulario:** en SchoolNet, "día Tilatá" es el número del ciclo rotativo (1 a `academic_years.days_per_cycle`), no un día de semana. Aquí "sesión" significa **día lectivo**.
 
-| Tabla | Aporta |
-|---|---|
-| `academic_years` | `start_of_classes`, `end_of_classes`, `days_per_cycle`, `cycles`, vacaciones |
-| `pedagogical_days` | fechas de jornadas pedagógicas, por `year_id` |
-| `hr_non_work_days` | festivos y recesos (`day_type`: `holiday`, `paid_break`, `unpaid_break`, `virtual_day`) |
+**No existe tabla canónica de días lectivos.** "Generar días Tilatá" produce eventos en Google Calendar, no filas consultables. Las fuentes son `academic_years`, `pedagogical_days` y `hr_non_work_days`.
 
-**Decisión adoptada:** el sistema **calcula** las sesiones al momento de publicar la temporada, **las muestra al administrador y le permite ajustarlas** antes de congelar. Las fuentes de calendario son imperfectas y el coordinador conoce excepciones que la base no registra (una salida pedagógica que se come un jueves, por ejemplo). Un número derivado pero editable es más confiable que uno derivado e inmodificable.
+**`virtual_day` no cuenta como sesión.** Queda cubierto por la fórmula, que resta la totalidad de `hr_non_work_days`. En un día virtual no hay extracurricular presencial, ni instructor a quien pagar, ni bus. Contarlo inflaría el precio con una sesión que no se presta.
 
-El conteo se almacena **por día de la semana**, no global. Un festivo que cae lunes reduce las sesiones de las actividades de lunes y no toca las de miércoles; los precios divergen legítimamente por calendario.
+**El conteo es calculado pero editable.** El sistema lo calcula al publicar, lo muestra y permite ajustarlo antes de congelar. Las fuentes de calendario son imperfectas y el coordinador conoce excepciones que la base no registra. Esto absorbe además cualquier caso excepcional de actividad dictada en día virtual.
 
-### 4.4 Precio de la actividad
+Se almacena **por día de la semana**, no global: un festivo que cae lunes reduce las sesiones de las actividades de lunes y no toca las de miércoles.
+
+### 6.5 Precio de la actividad
 
 ```
-precio de la actividad = Σ aportes por estudiante de todos los conceptos aplicables
+precio = Σ aportes por estudiante de todos los conceptos aplicables
 ```
 
-Conceptos aplicables = los de ámbito temporada + los de ámbito actividad compatibles con su modalidad.
+Conceptos aplicables = los de ámbito temporada + los de ámbito actividad compatibles con su modalidad. Las sesiones de la actividad = suma de las sesiones de los días que ocupa.
 
-Las sesiones de la actividad = suma de las sesiones de los días que ocupa.
+**Los precios quedan acoplados entre sí.** Como los conceptos de temporada se reparten entre la suma de los mínimos, agregar una actividad, quitarla o cambiarle el mínimo mueve el precio de todas. **La oferta se cierra completa, se calcula en una pasada y se publica de una vez.**
 
-**Cada actividad tiene su propio precio.** Difieren por mínimo, por días y por modalidad.
+### 6.6 Cargo de transporte
 
-**Consecuencia operativa:** como los conceptos de ámbito temporada se reparten entre la suma de los mínimos, **los precios quedan acoplados entre sí**. Agregar una actividad, quitarla o cambiarle el mínimo mueve el precio de todas las demás. No es posible costear y publicar actividad por actividad: **la oferta se cierra completa, se calcula en una pasada y se publica de una vez.**
-
-### 4.5 Cargo de transporte
-
-El transporte **no se cuelga de la actividad, se cuelga del día**. El bus sale el lunes con todos los niños del lunes, sin importar en qué actividad estén. Es un **cargo separado y opcional**, sumado solo a quien lo solicita.
-
-**Modelo adoptado: tarifa unitaria digitada por recorrido y por estudiante.**
+El transporte **se cuelga del día, no de la actividad**. El bus sale el lunes con todos los niños del lunes. Es un cargo separado y opcional.
 
 ```
 cargo de transporte = tarifa unitaria × sesiones de los días de su actividad
 ```
 
-**Por qué digitada y no proyectada.** Se descartó proyectar pasajeros por día y armar la flota anticipadamente: al momento de inscribir no se sabe cuántos estudiantes tomarán ruta ni qué vehículos asignará el operador, y la familia necesita un valor firme en pantalla.
+**Tarifa unitaria digitada, no proyectada.** Al inscribir no se sabe cuántos estudiantes tomarán ruta ni qué vehículos asignará el operador, y la familia necesita un valor firme. El operador no agrega vehículos vacíos por un estudiante adicional: ajusta capacidad. `svc_transport_rates_extracurricular` sirve como **referencia visual**:
 
-**Por qué es seguro.** El operador no agrega vehículos vacíos por un estudiante adicional: ajusta capacidad (cambia un 19 por un 24). El costo por asiento que efectivamente paga el colegio se mueve en una franja estrecha, no en escalones. La tabla `svc_transport_rates_extracurricular` sirve como **referencia visual** para fijar la tarifa:
-
-| Capacidad | Valor recorrido | Por asiento lleno | Al 85% de ocupación |
+| Capacidad | Valor recorrido | Por asiento lleno | Al 85% |
 |---|---|---|---|
 | 19 | $260.000 | $13.684 | $16.100 |
 | 24 | $310.000 | $12.917 | $15.200 |
 
 *(valores de ejemplo)*
 
-El coordinador digita un valor —típicamente el promedio de la columna al 85%, ~$15.650— que absorbe la variabilidad de la mezcla de flota. Si se usan más buses grandes que pequeños, sobra.
+**No hay mínimo de inscritos para abrir ruta.**
 
-**No hay mínimo de inscritos para abrir ruta**, precisamente porque el operador dimensiona a la demanda.
-
-### 4.6 Las tres opciones de tarifa
-
-La familia ve, **por cada actividad**, tres valores:
+### 6.7 Las tres opciones de tarifa
 
 | Opción | Valor |
 |---|---|
 | 1 — Sin transporte | precio de la actividad |
-| 2 — Con transporte, familia vinculada al operador | precio de la actividad + (tarifa vinculada × sesiones) |
-| 3 — Con transporte, familia NO vinculada al operador | precio de la actividad + (tarifa no vinculada × sesiones) |
+| 2 — Con transporte, familia vinculada | precio + (tarifa vinculada × sesiones) |
+| 3 — Con transporte, familia NO vinculada | precio + (tarifa no vinculada × sesiones) |
 
-Se parametrizan **dos valores absolutos independientes** por temporada, no un valor más un porcentaje de recargo. Se valida que la tarifa no vinculada sea mayor o igual a la vinculada.
+**Dos valores absolutos independientes**, no un valor más un porcentaje. Se valida que la no vinculada sea ≥ la vinculada.
 
-**Origen del diferencial (contexto, no afecta el cálculo):** el operador no le cobra más al colegio por los estudiantes no vinculados. La retribución que el operador entrega al colegio (rutas asociadas al número de estudiantes vinculados) sería mayor si esas familias se afiliaran. El mayor valor de la opción 3 es una **compensación**, no un costo.
+**Origen del diferencial:** el operador no le cobra más al colegio por estudiantes no vinculados; la retribución que entrega al colegio sería mayor si esas familias se afiliaran. El mayor valor de la opción 3 es una **compensación**, no un costo.
 
-> **Consecuencia de diseño:** ese diferencial **no debe entrar en el modelo de costeo**. Si se registrara como un costo más, los reportes de cierre mostrarían un déficit permanente inexistente, al comparar recaudo real contra un costo que nadie factura. Por eso se modela como dos tarifas independientes digitadas, y no como tarifa base más recargo derivado.
+> **Por eso no entra en el modelo de costeo.** Registrarlo como costo mostraría un déficit permanente inexistente en los reportes de cierre.
 
-### 4.7 Declaración y validación de la vinculación
+### 6.8 Declaración y validación de la vinculación
 
-La familia **declara** en el portal si toma ruta y bajo cuál de las dos condiciones. El colegio **valida** manualmente contra su información del operador. No se carga la vinculación como dato maestro del sistema.
+La familia **declara**; el colegio **valida** manualmente contra su información del operador.
 
-**Precaución de congelamiento:** la inscripción congela **ambas tarifas** de la temporada —vinculada y no vinculada— más un señalador de cuál aplica. Así, corregir una declaración equivocada solo mueve el señalador, sin recalcular ni ir a buscar la tarifa histórica.
+**La inscripción congela ambas tarifas** más un señalador de cuál aplica, para que corregir una declaración solo mueva el señalador.
 
-**El riesgo de la autodeclaración es financiero y acotado, no operativo.** La flota se dimensiona con quienes declaran tomar ruta, dato que la familia informa sin ambigüedad; la vinculación solo afecta el recaudo. Nadie se queda sin asiento por una declaración errada.
+**El riesgo es financiero y acotado, no operativo.** La flota se dimensiona con quienes declaran tomar ruta; la vinculación solo afecta el recaudo.
 
-### 4.8 Congelamiento
+### 6.9 Congelamiento
 
-Al publicar la temporada se congelan las sesiones por día, los precios de las actividades y las dos tarifas de transporte. Al inscribir se congelan en la fila de inscripción, siguiendo el patrón ya establecido en el módulo de servicios (`frozen_rate_value`).
+Al publicar se congelan sesiones por día, precios de actividades y las dos tarifas. Al inscribir se congelan en la fila de inscripción.
 
-### 4.9 Riesgo conocido: el coordinador queda parcialmente descubierto
+### 6.10 Cobertura del faltante cuando una actividad no abre
 
-El precio se publica antes de saber qué actividades alcanzan el mínimo. Si el reparto de los conceptos de ámbito temporada se hizo entre 120 estudiantes y dos actividades no abren, esos 20 nunca aportaron su parte.
+**El colegio lo asume.** Sin margen de seguridad ni reparto restringido.
 
-Salidas posibles: asumir el faltante, incorporar un margen de seguridad en el cálculo, o repartir solo entre los mínimos de las actividades que históricamente siempre abren. **Decisión pendiente** (sección 13).
+**Argumento aritmético.** El modelo divide entre la **suma de los mínimos**, no entre los inscritos reales. Si se inscriben 150 en lugar de 120, el colegio recauda $3.750.000 para un costo de $3.000.000: sobran $750.000, que compensan el faltante de $500.000 del escenario de dos actividades caídas.
+
+El modelo ya está sesgado a favor del colegio siempre que la inscripción real supere la suma de los mínimos, que es el caso normal. Un margen de seguridad cobraría dos veces el mismo riesgo; repartir solo entre las que siempre abren exige un histórico inexistente y crea un subsidio oculto entre actividades.
 
 ---
 
-## 5. Flujo operativo
+## 7. Flujo operativo
 
-| # | Paso | Responsable | Estado de la temporada |
+| # | Paso | Responsable | Estado |
 |---|---|---|---|
-| 1 | Parametrización: temporada, días, sesiones, conceptos de costo, tarifas de transporte | Coordinador | `draft` |
-| 2 | Creación de la oferta: actividades, días, grados, cupos, modalidad, costos propios | Coordinador | `draft` |
+| 1 | Parametrización: temporada, días, sesiones, conceptos, tarifas | Coordinador | `draft` |
+| 2 | Creación de la oferta: actividades, días, grados, cupos, modalidad, costos | Coordinador | `draft` |
 | 3 | **Publicación**: se calculan y congelan sesiones, precios y tarifas | Coordinador | `draft` → `published` |
-| 4 | Inscripción por las familias desde el portal | Familias | `published` |
+| 4 | Inscripción | Coordinador | `published` |
 | 5 | **Cierre de inscripciones** | Coordinador | `published` → `enrollment_closed` |
 | 6 | Validación de la vinculación con el operador | Coordinador | `enrollment_closed` |
-| 7 | Cierre de actividades sin mínimo + reubicaciones (proceso humano, con recálculo y notificación) | Coordinador | `enrollment_closed` |
-| 8 | Entrega a Tesorería (consulta en interfaz) | Tesorería | `enrollment_closed` → `delivered` |
-| 9 | Configuración de rutas con el operador: vehículos y capacidades por día | Coordinador | `delivered` |
-| 10 | Operación diaria: asistencia + banderazo de rutas efectivamente realizadas | Coordinador | `delivered` |
+| 7 | Cierre de actividades sin mínimo + reubicaciones | Coordinador | `enrollment_closed` |
+| 8 | Entrega a Tesorería | Tesorería | `enrollment_closed` → `delivered` |
+| 9 | Configuración de rutas con el operador | Coordinador | `delivered` |
+| 10 | Operación diaria: asistencia + banderazo de rutas | Coordinador | `delivered` |
 | 11 | Cierre de temporada y reportes de conciliación | Coordinador | `delivered` → `closed` |
 
-### 5.1 Reglas del flujo
+### 7.1 Reglas del flujo
 
-**No se bloquea por cupo durante la inscripción.** El máximo es indicativo. El balanceo de grupos es un proceso humano del coordinador, conversado con las familias. Esta decisión elimina el problema de concurrencia por el último cupo y simplifica el endpoint de inscripción.
+**No se bloquea por cupo.** El máximo es indicativo; el balanceo es proceso humano. Elimina el problema de concurrencia por el último cupo.
 
-**Sí se bloquea por cruce de días.** Un estudiante puede inscribirse en varias actividades, pero no en dos que compartan un día.
+**Sí se bloquea por cruce de días.**
 
 | Caso | Resultado |
 |---|---|
@@ -272,218 +321,390 @@ Salidas posibles: asumir el faltante, incorporar un margen de seguridad en el c�
 | A (lunes) + F (martes y jueves) | ✅ Procede |
 | A (lunes) + E (lunes y martes) | ❌ Se cruza el lunes |
 
-**El orden importa.** Validación de vinculación → reubicaciones y recálculo → entrega a Tesorería. Facturar antes obliga a notas crédito por cada movimiento posterior. El sistema debe advertir al coordinador si mueve a alguien después del estado `delivered`.
+**No hay tope de actividades por estudiante.** El límite lo impone la regla de no cruce: tantas actividades como días habilitados tenga la temporada. Lo garantiza el índice único sobre `(cycle_id, student_id, day_of_week)`.
 
-**Toda reubicación recalcula.** Cambiar a un estudiante de actividad cambia sus sesiones y por tanto su cargo de transporte, y probablemente el precio de la actividad. La pantalla del coordinador debe mostrar **el valor antes y después** al momento de mover, y disparar notificación a la familia.
+**El orden importa.** Validación → reubicaciones y recálculo → entrega a Tesorería. El sistema debe advertir si se mueve a alguien después de `delivered`.
 
-**El retiro no se expone en el portal.** La familia conversa con el coordinador y este actualiza el sistema y notifica a Tesorería. La inscripción se marca como anulada; nunca se borra.
+**Toda reubicación recalcula.** La pantalla debe mostrar **el valor antes y después** y disparar notificación.
 
-**Actividad que no abre.** Si tras las reubicaciones quedan estudiantes inscritos en una actividad que no alcanzó el mínimo, al cerrarla se notifica a esas familias.
+**El retiro no se expone a las familias.** Se marca como anulada; nunca se borra.
+
+**Retiro posterior a `delivered`:** nota crédito en Phidias. SchoolNet registra y notifica; **sin lógica de reversa**.
+
+### 7.2 El cierre de inscripciones puede ser posterior al inicio de la temporada
+
+**No se agregó restricción de base.** Se permite que la ventana de inscripción se extienda a los primeros días. Queda como advertencia en pantalla, no como bloqueo.
+
+> **Consecuencia pendiente de decidir — ver sección 16.** Un estudiante que se inscribe con la temporada empezada paga sesiones que no recibirá, porque el precio se congela al publicar sobre el total del semestre.
+
+### 7.3 Reversibilidad de estados
+
+Principio: **una transición hacia atrás se permite salvo que deje datos inconsistentes.**
+
+| Transición | Tratamiento |
+|---|---|
+| `published` → `draft` | **Bloqueada si existe al menos una inscripción.** Permitida si hay cero |
+| `enrollment_closed` → `published` | Libre |
+| `delivered` → `enrollment_closed` | Permitida con confirmación explícita |
+| `closed` → `delivered` | Permitida con confirmación explícita |
+
+**Por qué `published → draft` es el único caso duro.** Publicar congela valores que al inscribir se copian a la fila de inscripción. Volver a borrador con inscripciones y republicar con precios distintos deja dos generaciones de precio conviviendo, sin manera de detectarlo en el cierre.
+
+**En pantalla:** badge de estado y **botones explícitos** para las transiciones, nunca un desplegable.
 
 ---
 
-## 6. Modelo de datos
+## 8. Modelo de datos
 
-### 6.1 Tablas existentes que se reutilizan
+### 8.1 Tablas existentes reutilizadas
 
-| Tabla | Rol en el módulo | Cambios |
+| Tabla | Rol | Cambios |
 |---|---|---|
-| `svc_extracurricular_cycles` | **La temporada** | Agregar columnas (6.2) |
-| `svc_extracurricular_cycle_days` | Días de la semana habilitados | Agregar conteo de sesiones |
+| `svc_extracurricular_cycles` | **La temporada** | 7 columnas nuevas, 1 eliminada, 6 restricciones nuevas |
+| `svc_extracurricular_cycle_days` | Días habilitados | `sessions_count` + restricción |
 | `svc_extracurricular_vehicle_configs` | Flota acordada con el operador (paso 9) | Sin cambios |
-| `svc_extracurricular_daily_records` | Banderazo diario de rutas (paso 10) | Sin cambios |
-| `svc_transport_rates_extracurricular` | Tabla de referencia de tarifas por capacidad | Sin cambios |
-| `academic_years` | Año académico y fechas del calendario | Sin cambios |
-| `pedagogical_days`, `hr_non_work_days` | Insumo del conteo de sesiones | Sin cambios |
-| `grades` | Grados a los que aplica cada actividad | Sin cambios |
-| `students`, `courses` | Estudiantes y su grado, vía `course_id → grade_id` | Sin cambios |
-| `families`, `family_members` | Resolución de hijos por correo en el portal | Sin cambios |
-| `users` | Autoría de acciones internas | Sin cambios |
+| `svc_extracurricular_daily_records` | Banderazo diario (paso 10) | Sin cambios |
+| `svc_transport_rates_extracurricular` | Referencia de tarifas por capacidad | Sin cambios |
+| `academic_years`, `pedagogical_days`, `hr_non_work_days` | Calendario y sesiones | Sin cambios |
+| `grades` | Grados. `grade_id` es **uuid** | Sin cambios |
+| `students`, `courses` | `students.student_id` es **integer**, sin `DEFAULT` | Sin cambios |
+| `families`, `family_members` | Resolución de hijos (fase de portal) | Sin cambios |
+| `users` | Autoría. `user_id` es **uuid** | Sin cambios |
 
-**Cambio de papel de `svc_extracurricular_vehicle_configs`:** deja de ser insumo de proyección y pasa a **registrar lo que el operador efectivamente armó**, para conciliar contra `svc_extracurricular_daily_records` al cierre. Su estructura ya lo permite: no tiene restricción de unicidad sobre `(cycle_id, day_of_week)`, así que admite flota mixta (un bus de 24 más uno de 19 el mismo día) como filas separadas. `effective_from` permite cambios de flota a mitad de temporada.
+**Cambio de papel de `svc_extracurricular_vehicle_configs`:** de insumo de proyección a **registro de lo que el operador efectivamente armó**, para conciliar contra `daily_records` al cierre. No tiene unicidad sobre `(cycle_id, day_of_week)`, así que admite flota mixta como filas separadas; `effective_from` permite cambios a mitad de temporada.
 
-**Nota:** la data existente en estas tablas puede eliminarse; quedaron construidas y sin uso productivo.
+### 8.2 `svc_extracurricular_cycles`
 
-### 6.2 Columnas nuevas en tablas existentes
+**Columnas nuevas:**
 
-**`svc_extracurricular_cycles`**
+| Columna | Tipo | Nulo | Notas |
+|---|---|---|---|
+| `enrollment_start_date` | date | sí | Apertura de inscripciones |
+| `enrollment_end_date` | date | sí | Cierre de inscripciones |
+| `season_status` | varchar | **no**, default `'draft'` | Cinco valores |
+| `transport_rate_linked` | numeric | sí | Tarifa por recorrido, vinculada |
+| `transport_rate_unlinked` | numeric | sí | Tarifa por recorrido, no vinculada |
+| `published_at` | timestamptz | sí | Momento del congelamiento |
+| `published_by` | uuid | sí | FK a `users(user_id)` |
 
-| Columna | Tipo | Notas |
-|---|---|---|
-| `enrollment_start_date` | date | Apertura de inscripciones |
-| `enrollment_end_date` | date | Cierre de inscripciones |
-| `season_status` | varchar | `draft` / `published` / `enrollment_closed` / `delivered` / `closed` |
-| `transport_rate_linked` | numeric | Tarifa por recorrido, familia vinculada |
-| `transport_rate_unlinked` | numeric | Tarifa por recorrido, familia no vinculada. Debe ser ≥ la vinculada |
-| `published_at`, `published_by` | timestamptz, uuid | Momento del congelamiento |
+Solo `season_status` va `NOT NULL`: una temporada en borrador legítimamente no tiene todavía fechas de inscripción, tarifas ni publicación.
 
-**`svc_extracurricular_cycle_days`**
+**Columna eliminada:** `is_active`. Duplicaba el propósito de `season_status` y podía contradecirla. Se eliminó, en lugar de reinterpretarse, porque tras retirar la página de Servicios no quedó código que la consumiera.
 
-| Columna | Tipo | Notas |
-|---|---|---|
-| `sessions_count` | integer | Sesiones calculadas y ajustadas por el administrador; se congela al publicar |
+**Restricciones nuevas:**
 
-### 6.3 Tablas nuevas
+| Nombre | Definición |
+|---|---|
+| `..._name_unique` | `UNIQUE (academic_year_id, cycle_name)` |
+| `..._published_by_fkey` | `FOREIGN KEY (published_by) REFERENCES users(user_id)` |
+| `..._season_status_check` | Cinco valores admitidos |
+| `..._enrollment_dates_check` | `enrollment_end_date >= enrollment_start_date` |
+| `..._rate_linked_check` | `transport_rate_linked >= 0` |
+| `..._rate_unlinked_check` | `transport_rate_unlinked >= transport_rate_linked` |
 
-**`svc_extracurricular_activities`** — la actividad ofertada
+> **Las restricciones de comparación no muerden con valores nulos.** En SQL, `NULL >= NULL` es desconocido, no falso, y un `CHECK` solo rechaza lo explícitamente falso. Una temporada en borrador pasa sin problema. **La validación de completitud al publicar es responsabilidad de la aplicación** (sección 9).
+
+`start_date` y `end_date` ya existían y son el inicio y fin de temporada.
+
+### 8.3 `svc_extracurricular_cycle_days`
+
+| Columna | Tipo | Nulo | Notas |
+|---|---|---|---|
+| `sessions_count` | integer | sí | Calculado y ajustable; se congela al publicar |
+
+**Nulo a propósito, sin defecto en cero.** Nulo dice *"no se ha calculado"*; cero diría *"se calculó y no hay sesiones ese día"*, que es un estado real aunque patológico. Con defecto en cero, publicar sin pasar por el cálculo produciría precios multiplicados por cero sin ningún error visible. Con nulo, la multiplicación devuelve nulo y el problema aparece de inmediato.
+
+Restricción `..._sessions_check`: `sessions_count >= 0`.
+
+### 8.4 Tablas nuevas
+
+#### `svc_extracurricular_activities`
 
 | Columna | Notas |
 |---|---|
-| `activity_id` | PK |
+| `activity_id` | PK, uuid |
 | `cycle_id` | FK a la temporada |
 | `activity_name` | Único dentro de la temporada |
-| `activity_description` | Texto para la oferta |
-| `photo_url` | Supabase Storage, bucket de lectura pública |
+| `activity_description`, `photo_url` | |
 | `modality` | `instructor` / `partner` |
-| `instructor_name` | Texto libre. Los instructores no son trabajadores ni usuarios del sistema |
-| `min_students`, `max_students` | Cupos. `max ≥ min` |
+| `instructor_name` | Texto libre. Los instructores no son trabajadores ni usuarios |
+| `min_students`, `max_students` | `min > 0`, `max >= min` |
 | `activity_status` | `draft` / `offered` / `open` / `not_opened` / `cancelled` |
-| `frozen_price` | Precio congelado al publicar |
-| `display_order` | Orden en la oferta |
+| `frozen_price` | **Nulo hasta publicar** |
+| `display_order` | |
 
-> **Sobre el estado:** un booleano de "activa" no alcanza. Son tres cosas distintas: *se muestra en la oferta*, *se abrió porque cumplió el mínimo*, y *fue cancelada*. Por eso un campo de estado y no una bandera.
+**`min_students > 0`, no `>= 0`.** Un mínimo en cero produciría división por cero en el prorrateo. La base lo impide antes de que el motor de cálculo tenga que defenderse.
 
-**`svc_extracurricular_activity_days`** — días que ocupa cada actividad
+**`frozen_price` nulo, no cero**, por la misma razón que `sessions_count`: una actividad que se escapara del cálculo aparecería a $0 sin error visible.
+
+**Andamiaje:** `..._cycle_unique UNIQUE (activity_id, cycle_id)`. Parece redundante frente a la PK, pero PostgreSQL exige unicidad sobre la combinación destino de toda llave foránea compuesta. Sin este único, las llaves de `activity_days` y `activity_costs` no se pueden crear.
+
+> **Sobre el estado:** un booleano de "activa" no alcanza. Son tres cosas distintas: *se muestra en la oferta*, *se abrió porque cumplió el mínimo*, y *fue cancelada*.
+
+#### `svc_extracurricular_activity_days`
 
 | Columna | Notas |
 |---|---|
 | `activity_id`, `cycle_id`, `day_of_week` | PK `(activity_id, day_of_week)` |
 
-Lleva `cycle_id` denormalizado para permitir dos llaves foráneas compuestas: una contra `svc_extracurricular_cycle_days (cycle_id, day_of_week)` —que garantiza que el día esté habilitado en la temporada— y otra contra la actividad, que garantiza que el `cycle_id` sea el de su propia actividad. **La regla queda garantizada por la base de datos, no por JavaScript.**
+**Dos llaves foráneas que trabajan en pareja.** La primera ata `(activity_id, cycle_id)` a la actividad, forzando que el `cycle_id` sea el de su propia actividad. La segunda ata `(cycle_id, day_of_week)` a los días habilitados de la temporada. El efecto combinado: **una actividad solo puede usar días habilitados en su propia temporada**, garantizado por la base y no por JavaScript.
 
-**`svc_extracurricular_activity_grades`** — grados a los que se ofrece (N:N)
+**Los borrados van en direcciones distintas a propósito.** `ON DELETE CASCADE` hacia la actividad: borrar una actividad en borrador se lleva sus días. Sin cascada hacia los días de la temporada: quitar un jueves con actividades de jueves **falla**, y la pantalla debe traducir ese error.
+
+**Lo que no impide:** un tope de dos días por actividad requeriría un disparador. No se agregó: una temporada de tres días podría legítimamente tener una actividad de tres días. Validación de pantalla.
+
+#### `svc_extracurricular_activity_grades`
 
 | Columna | Notas |
 |---|---|
 | `activity_id`, `grade_id` | PK compuesta. FK a `grades` |
 
-**`svc_extracurricular_cost_concepts`** — catálogo de conceptos de costo de la temporada
+Cascada hacia la actividad; sin cascada hacia `grades`, que es catálogo maestro.
+
+> **Para la pantalla de actividades:** `grades` tiene `academic_year_id`, es decir, los grados están versionados por año. El selector debe filtrar por el año de la temporada, o aparecerán mezclados los de años anteriores. No se impuso por llave foránea porque arrastraría `academic_year_id` a esta tabla, que no lo necesita para nada más.
+
+#### `svc_extracurricular_cost_concepts`
 
 | Columna | Notas |
 |---|---|
 | `concept_id` | PK |
-| `cycle_id` | FK a la temporada |
-| `concept_name` | "Honorarios instructor", "Coordinador", "Refrigerio instructor", "Recordatorios" |
+| `cycle_id` | FK a la temporada, `ON DELETE CASCADE` |
+| `concept_name` | Único dentro de la temporada |
 | `scope` | `activity` / `season` |
 | `time_base` | `session` / `season` |
 | `allocation_base` | `prorated` / `per_student` |
-| `default_value` | Valor por defecto |
-| `applies_to_modality` | `instructor` / `partner` / nulo (aplica a todas). **Filtro, no aritmética** |
-| `is_active` | |
+| `default_value` | **Nulo admitido**: "cada actividad pone el suyo" |
+| `applies_to_modality` | `instructor` / `partner` / nulo (todas). **Filtro, no aritmética** |
+| `is_active`, `display_order` | |
 
-**`svc_extracurricular_activity_costs`** — valores propios de una actividad
+Más `..._scope_time_check` (sección 6.2) y `..._cycle_unique UNIQUE (concept_id, cycle_id)` como andamiaje.
+
+**`default_value` nulo** significa que el valor lo pone cada actividad — el caso de la tarifa del tercero. Los honorarios del instructor sí tienen defecto porque son iguales para todas. De ahí la validación 4 de la sección 9.
+
+**`applies_to_modality` nulo** significa "aplica a todas". La restricción no estorba: un `CHECK` con `IN` sobre nulo da desconocido, no falso.
+
+#### `svc_extracurricular_activity_costs`
 
 | Columna | Notas |
 |---|---|
-| `activity_id`, `concept_id`, `concept_value` | Único por par. Solo cuando el valor difiere del defecto |
+| `activity_id`, `concept_id` | PK compuesta |
+| `cycle_id` | **Desvío respecto a la v1.1** |
+| `concept_value` | `NOT NULL`, `>= 0` |
 
-Necesaria porque la tarifa del tercero es distinta en cada actividad, mientras que los honorarios del instructor son iguales para todas. El cálculo usa el valor propio si existe, y el defecto si no.
+> **Desvío deliberado.** La v1.1 describía tres columnas. Sin `cycle_id`, nada impedía asignarle a una actividad de la temporada I un concepto de costo de la temporada II: las dos llaves foráneas serían válidas por separado y el registro entraría sin protesta. El precio se calcularía con un valor de otro semestre y no habría manera de detectarlo salvo desconfiando de los números. Con `cycle_id` compartido entre ambas llaves compuestas, la combinación es imposible. Es el mismo mecanismo que la v1.1 ya adoptaba para `activity_days`; se aplicó donde también hacía falta.
 
-**`svc_extracurricular_enrollments`** — la inscripción
+`concept_value` va `NOT NULL`: la tabla existe solo para guardar valores propios. Si no hay valor propio, no hay fila y el cálculo usa el defecto.
+
+Cascada en ambas direcciones: ni las actividades ni los conceptos son catálogo institucional.
+
+#### `svc_extracurricular_enrollments`
 
 | Columna | Notas |
 |---|---|
 | `enrollment_id` | PK |
-| `activity_id`, `cycle_id` | `cycle_id` denormalizado para el control de cruce |
+| `activity_id`, `cycle_id` | FK compuesta a la actividad |
 | `student_id` | FK a `students`. **Entero, no uuid** |
-| `transport_option` | `none` / `linked` / `unlinked` — lo declarado por la familia |
+| `transport_option` | `none` / `linked` / `unlinked`. Lo declarado |
 | `validated_transport_option` | Lo confirmado por el colegio |
-| `transport_validated`, `validated_by`, `validated_at` | Trazabilidad de la validación |
-| `enrollment_channel` | `portal` / `admin` |
-| `declared_by_email` | Correo del familiar que inscribió |
-| `frozen_activity_price` | |
-| `frozen_transport_rate_linked`, `frozen_transport_rate_unlinked` | **Ambas**, para que corregir la validación no obligue a recalcular |
-| `frozen_sessions` | Sesiones de los días de esta actividad |
+| `transport_validated`, `validated_by`, `validated_at` | Trazabilidad |
+| `enrollment_channel` | `portal` / `admin`. En esta fase siempre `admin` |
+| `declared_by_email` | Opcional en esta fase |
+| `frozen_activity_price` | **`NOT NULL`** |
+| `frozen_transport_rate_linked`, `frozen_transport_rate_unlinked` | **`NOT NULL`, ambas** |
+| `frozen_sessions` | **`NOT NULL`, `> 0`** |
 | `enrollment_status` | `active` / `withdrawn` / `reassigned` / `not_opened` |
 | `withdrawn_at`, `withdrawn_by`, `withdrawal_reason` | |
 
-Único por `(activity_id, student_id)`.
+Únicos: `(activity_id, student_id)` y el andamiaje `(enrollment_id, cycle_id, student_id, activity_id)`.
 
-> **Autoría:** las familias no tienen `user_id`. Por eso la autoría se registra con canal más correo del familiar, y no con la FK a `users` que usa el resto del sistema.
+**Los cuatro campos congelados van `NOT NULL`** porque la fila debe ser autosuficiente: el valor total se calcula sin consultar ninguna otra tabla. Si alguno pudiera quedar nulo, el total saldría nulo sin aviso. Como la inscripción solo ocurre después de publicar, los cuatro valores existen siempre. De ahí la validación 3 de la sección 9: las dos tarifas deben estar digitadas aunque sean cero.
 
-> **Valor total** = `frozen_activity_price` + (`frozen_sessions` × la tarifa que corresponda según la opción validada). La fila es autosuficiente.
+**`frozen_sessions > 0`.** Una inscripción con cero sesiones no significa nada y produciría un cargo de transporte de cero sin que nadie lo note. Aquí vive además la solución al tema de la inscripción tardía (sección 16): el número se congela por fila, así que prorratear no exige cambiar ninguna tabla.
 
-**`svc_extracurricular_enrollment_days`** — días ocupados por cada inscripción
+**`..._withdrawal_check`:** `enrollment_status <> 'withdrawn' OR withdrawn_at IS NOT NULL`.
+
+**Lo que deliberadamente no se restringió:** que `validated_transport_option` coincida con `transport_option` mientras `transport_validated` sea falso; que `validated_at` esté lleno si la validación es verdadera; que el estudiante pertenezca a un grado ofertado. Son reglas de proceso, no de integridad, y encerrarlas en la base haría que corregir un error de digitación exigiera un orden específico de actualizaciones.
+
+> **Autoría:** las familias no tienen `user_id`. Por eso se registra canal más correo del familiar, y no la FK a `users` que usa el resto del sistema.
+
+#### `svc_extracurricular_enrollment_days`
 
 | Columna | Notas |
 |---|---|
-| `enrollment_id`, `cycle_id`, `student_id`, `day_of_week` | |
+| `enrollment_id`, `cycle_id`, `student_id` | |
+| `activity_id` | **Desvío respecto a la v1.1** |
+| `day_of_week` | PK `(enrollment_id, day_of_week)` |
 
-**Esta tabla es el mecanismo que impide el cruce de días.** Al inscribir se inserta una fila por cada día de la actividad. Un índice único sobre `(cycle_id, student_id, day_of_week)` hace **imposible** que un estudiante quede en dos actividades del mismo día, aunque el portal envíe una solicitud inconsistente o el usuario tenga la pantalla desactualizada.
+**`..._no_overlap UNIQUE (cycle_id, student_id, day_of_week)` es el corazón del módulo.** Un estudiante, una temporada, un día: una sola fila. Cualquier intento de doble inscripción en el mismo día choca contra el índice, venga de donde venga.
 
-Efecto secundario valioso: como un estudiante solo puede ocupar un día una vez, **el cargo de transporte no puede duplicarse** para el mismo día. Un niño en dos actividades de días distintos paga los dos buses, que es lo correcto.
+Efecto secundario valioso: **el cargo de transporte no puede duplicarse** para el mismo día. Un niño en dos actividades de días distintos paga los dos buses, que es lo correcto.
 
-`student_id` y `cycle_id` van denormalizados porque el índice único los necesita en la misma fila. Al retirar o reubicar, **las filas de días se eliminan**; solo las inscripciones activas ocupan día.
+> **Desvío deliberado.** La v1.1 describía cuatro columnas. Con ellas, la base garantizaba que un estudiante no ocupara dos veces el mismo día, pero **no que el día ocupado fuera un día de su actividad**. Insertar un miércoles para una inscripción de ajedrez de lunes y jueves habría sido aceptado: el estudiante queda bloqueado un día al que no asiste, no puede inscribirse en otra cosa, y el diagnóstico es difícil porque todo se ve consistente. Con `activity_id` atado por partida doble —a la inscripción y a los días de la actividad— eso se vuelve imposible.
 
-**`svc_extracurricular_attendance`** — asistencia a la actividad
+Sin cascada hacia `activity_days`: quitarle un día a una actividad con inscritos **falla**. Correcto, y la pantalla debe traducirlo.
+
+**Errores que la pantalla de inscripciones debe distinguir.** Ambos llegan como `23505` con el nombre de la restricción en el mensaje:
+
+| Restricción | Mensaje al usuario |
+|---|---|
+| `..._no_overlap` | "El estudiante ya tiene una actividad ese día" |
+| `..._activity_student_unique` | "El estudiante ya está inscrito en esta actividad" |
+
+#### `svc_extracurricular_attendance`
 
 | Columna | Notas |
 |---|---|
 | `attendance_id` | PK |
-| `enrollment_id` | FK |
+| `enrollment_id` | FK, sin cascada |
 | `attendance_date` | Único por `(enrollment_id, attendance_date)` |
 | `attendance_status` | `present` / `absent` / `excused` |
 | `notes` | |
-| `recorded_by` | FK a `users` |
+| `recorded_by` | uuid, FK a `users`, **admite nulo** |
+
+Más el índice `idx_svc_extracurricular_attendance_date` sobre `attendance_date`.
+
+**El índice no es decorativo.** La pantalla se organiza por fecha, y el único de `(enrollment_id, attendance_date)` no sirve porque la fecha va en segunda posición. Sin él, cada carga recorrería la tabla completa. Con dos temporadas al año, doce actividades y cien inscritos, se acumulan miles de filas por año.
+
+> **Por qué la asistencia NO se ata a `enrollment_days`.** Se consideró y se descartó: sería una trampa. El disparador de la sección 8.5 borra las filas de días cuando la inscripción sale de `active`. Si la asistencia dependiera de ellas, con cascada **retirar a un estudiante borraría su historial de asistencia**, de forma irreversible y silenciosa; sin cascada, **retirar a un estudiante con asistencia registrada sería imposible**. La regla que hace de `enrollment_days` un buen control de cruce —existe solo mientras la inscripción está activa— es la que lo inhabilita como referencia histórica. **Los datos volátiles no sirven de ancla para los permanentes.**
+>
+> La alternativa era denormalizar `activity_id` y atar contra `activity_days`, que sí es estable. No se hizo: el costo de un error aquí es un registro de asistencia en un día equivocado —molesto, corregible, visible— y no un cargo mal cobrado ni un día bloqueado sin explicación.
+
+### 8.5 Liberación de días ocupados
+
+**Regla:** existe una fila en `svc_extracurricular_enrollment_days` **si y solo si** la inscripción tiene `enrollment_status = 'active'`.
+
+Cualquier salida de `active` —`withdrawn`, `reassigned`, `not_opened`— elimina las filas de días. Es lo que permite que el estudiante de una actividad que no abrió se reubique en otra del mismo día (paso 7 del flujo).
+
+**Implementación:** función `fn_extracurricular_release_days()` y disparador `trg_extracurricular_release_days`, `AFTER UPDATE OF enrollment_status`, con la condición en la cláusula `WHEN`.
+
+**Por qué la condición va en `WHEN` y no dentro de la función.** PostgreSQL la evalúa antes de invocar el código: en un `UPDATE` masivo que no toque el estado, la función no se ejecuta ni una vez. Con la condición adentro, se invocaría una vez por fila para no hacer nada.
+
+**Por qué disparador y no código de frontend:**
+
+- **Consistencia de filosofía.** Es la misma decisión que las llaves foráneas compuestas: la regla la garantiza la base.
+- **Operaciones masivas.** El cierre de una actividad sin mínimo es un solo `UPDATE`. Sin disparador habría que recorrer inscripción por inscripción desde el navegador, y cualquier interrupción deja el proceso a medias.
+- **Ausencia de transacciones.** PostgREST no da transacciones entre peticiones HTTP. Si el frontend borra días y luego actualiza el estado y falla en medio, queda una inscripción activa sin días —recuperable—. Al revés, queda una inscripción anulada bloqueando un día **para siempre**, sin explicación visible. El disparador elimina esa ventana.
+
+**Reubicación:** dos operaciones. Anular la vieja —el disparador libera el día— y crear la nueva. Si la segunda falla, el estudiante queda sin actividad pero con el día libre: el estado recuperable.
+
+**Reactivación:** volver a `active` **no repone los días**. La aplicación debe reinsertarlos, y fallará si otro tomó el día. Ese fallo es correcto y necesita mensaje claro.
 
 ---
 
-## 7. Pantallas y permisos
+## 9. Validaciones de publicación — responsabilidad de la aplicación
 
-Módulo `extracurricular`. Orden propuesto para `MODULE_ITEM_ORDER` en `sidebar.js`:
+**Ninguna de estas cinco vive en una restricción de base**, por las razones explicadas en 8.2. La pantalla de temporadas debe verificarlas todas antes de permitir la transición `draft → published`. Si alguna falla, el sistema publicaría precios en cero o nulos sin protestar.
 
-| # | Permiso | Página | Contenido |
+| # | Validación | Consecuencia de omitirla |
+|---|---|---|
+| 1 | Ningún día de la temporada con `sessions_count` nulo | Precios nulos en las actividades de ese día |
+| 2 | `enrollment_start_date` y `enrollment_end_date` digitadas | Ventana de inscripción indefinida |
+| 3 | `transport_rate_linked` y `transport_rate_unlinked` digitadas, aunque sean cero | La inscripción falla: son `NOT NULL` en la fila congelada |
+| 4 | Todo concepto aplicable con `default_value` o valor propio en `activity_costs` | Aporte nulo que contamina la suma del precio |
+| 5 | Toda actividad en estado `offered` con `frozen_price` calculado | Actividad publicada a $0 o con precio nulo |
+
+Se recomienda que la pantalla muestre estas cinco como una lista de verificación visible, no como una alerta al fallar. El coordinador debe ver qué falta antes de intentar publicar.
+
+---
+
+## 10. Pantallas y permisos
+
+| # | `permission_name` | `url_path` | Contenido |
 |---|---|---|---|
-| 1 | Gestionar temporadas | `seasons.html` | Temporada, días, sesiones, tarifas de transporte, publicación |
-| 2 | Conceptos de costo | `cost-concepts.html` | Catálogo de conceptos con ámbito, base temporal y base de reparto |
-| 3 | Gestionar actividades | `activities.html` | Oferta, días, grados, cupos, modalidad, instructor, foto, costos propios |
-| 4 | Gestionar inscripciones | `enrollments.html` | Ver inscritos, mover, retirar, validar vinculación, cerrar actividades sin mínimo |
-| 5 | Registrar asistencia | `attendance.html` | Por fecha, con todas las actividades del día |
-| 6 | Configurar rutas | `routes.html` | Flota por día acordada con el operador |
-| 7 | Registro diario de rutas | `daily-routes.html` | Banderazo de rutas realizadas / canceladas |
-| 8 | Consulta de Tesorería | `treasury.html` | Solo lectura: grupos, tarifa validada y valor por estudiante. Exportación a Excel opcional |
-| 9 | Reportes de extracurriculares | `reports.html` | Proyectado contra ejecutado, pasajeros por día, cierre |
+| 1 | Gestionar temporadas de extracurriculares | `/modules/extracurricular/seasons.html` | Temporada, días, sesiones, tarifas, publicación |
+| 2 | Conceptos de costo de extracurriculares | `/modules/extracurricular/cost-concepts.html` | Catálogo con ámbito, base temporal y reparto |
+| 3 | Gestionar actividades extracurriculares | `/modules/extracurricular/activities.html` | Oferta, días, grados, cupos, modalidad, foto, costos propios |
+| 4 | Gestionar inscripciones a extracurriculares | `/modules/extracurricular/enrollments.html` | Inscribir, mover, retirar, validar vinculación, cerrar sin mínimo |
+| 5 | Registrar asistencia a extracurriculares | `/modules/extracurricular/attendance.html` | Por fecha, con todas las actividades del día |
+| 6 | Configurar rutas de extracurriculares | `/modules/extracurricular/routes.html` | Flota por día acordada con el operador |
+| 7 | Registro diario de rutas de extracurriculares | `/modules/extracurricular/daily-routes.html` | Banderazo de rutas realizadas / canceladas |
+| 8 | Consulta de Tesorería de extracurriculares | `/modules/extracurricular/treasury.html` | Solo lectura: grupos, tarifa validada, valor por estudiante |
+| 9 | Reportes de extracurriculares | `/modules/extracurricular/reports.html` | Proyectado contra ejecutado, pasajeros por día, cierre |
 
-**La consulta de Tesorería es página aparte** con permiso propio, porque la tesorera no debe ver el resto del módulo. La granularidad de permisos del sistema es por página.
+### 10.1 Atributos de los nueve registros
+
+| Campo | Valor |
+|---|---|
+| `permission_module` | `extracurricular` |
+| `permission_type` | `admin` |
+| `permission_status` | `active` |
+| `is_universal` | `false` |
+| `url_manual` | `NULL` |
+
+**Sobre `permission_type`:** el valor dominante en el sistema es `admin`, aplicado incluso a páginas de consulta. Los pocos `read` y `write` no siguen criterio consistente. Se adoptó `admin` por consistencia con lo existente.
+
+**Sobre `url_manual`:** la mayoría de los registros lo tiene en nulo; los que lo tienen lleno repiten el `url_path`, lo que parece error de carga y no convención.
+
+### 10.2 Nombres largos: razón
+
+`permissions.permission_name` tiene **unicidad global**. `Registrar asistencia` ya está ocupado por el módulo `attendance`, y `Extracurriculares` por el permiso retirado. Además son los nombres que ve el administrador en la pantalla de asignación, donde conviven con los de todos los módulos.
+
+### 10.3 Notas de diseño
+
+**La consulta de Tesorería es página aparte** con permiso propio: la tesorera no debe ver el resto del módulo. La granularidad de permisos del sistema es por página.
 
 **La pantalla de asistencia se organiza por fecha, no por actividad.** Un lunes pueden correr cinco actividades simultáneas y el coordinador no está en cinco lugares; registra a posteriori con lo que le reporten los instructores. Sirve para control de gestión, no para saber en tiempo real quién está en el colegio.
 
+### 10.4 Asignación a roles
+
+**Fuera del alcance del desarrollo.** La creación de roles y la asignación de permisos las maneja administración desde `/modules/security/`.
+
+### 10.5 Recordatorio operativo
+
+El sidebar cachea permisos en `sessionStorage` bajo `schoolnet_sidebar_permissions`. Debe limpiarse después de cualquier cambio de permisos.
+
 ---
 
-## 8. Portal de familias
+## 11. Almacenamiento de fotos
 
-La inscripción ocurre en `families.html`, página pública en la raíz, sin `config.js` y sin sesión de SchoolNet. Se comunica **exclusivamente** con Google Apps Script, que usa `service_role` del lado servidor. La página nunca habla con Supabase directamente.
+Bucket de Supabase Storage con **lectura pública**. Aunque el portal esté diferido, se crea público desde ya: cambiarlo después es un ajuste menor y así el portal no tropieza cuando llegue.
+
+> **Recordatorio:** los buckets **no se transfieren en los restores PROD→DEV** —solo las políticas RLS sobre `storage.objects`—. Debe crearse manualmente en cada ambiente.
+
+---
+
+## 12. Portal de familias — diferido
+
+**Fuera del alcance de esta entrega.** Se documenta el diseño para la fase siguiente.
+
+La inscripción ocurriría en `families.html`, página pública sin `config.js` ni sesión de SchoolNet, comunicándose **exclusivamente** con Google Apps Script, que usa `service_role` del lado servidor.
 
 > **Por qué GAS y no el patrón del formulario público de admisiones.** Ese formulario habla directo con Supabase porque solo inserta y nunca lee. Extracurriculares necesita leer *qué hijos tiene esta familia*, y hacerlo con `anon key` sin RLS expondría la base de estudiantes completa.
 
-### 8.1 Endpoints nuevos en el Apps Script
+### 12.1 Endpoints previstos
 
 | Endpoint | Función |
 |---|---|
-| `get_extracurricular_offer` | Temporada con inscripciones abiertas, actividades filtradas por los grados de los hijos, con sus días y sus tres valores |
-| `enroll_student` | Valida ventana de inscripción, valida no cruce, inserta inscripción y días |
-| `get_my_enrollments` | Inscripciones vigentes de los hijos de la familia |
+| `get_extracurricular_offer` | Temporada abierta, actividades filtradas por los grados de los hijos, con días y tres valores |
+| `enroll_student` | Valida ventana, valida no cruce, inserta inscripción y días |
+| `get_my_enrollments` | Inscripciones vigentes de los hijos |
 
 Cadena de resolución del grado: `family_members.email → families → students.family_id → students.course_id → courses.grade_id → grades`.
 
 > **Ojo con las llaves:** `students.student_id` es entero y `students.family_id` es entero contra `families.family_code`, no contra un uuid.
 
-### 8.2 Comportamiento del portal
+### 12.2 Comportamiento previsto
 
-- **Solo lectura y alta.** La familia inscribe y consulta; no cancela. Por eso el portal debe mostrar una **pantalla de confirmación antes de enviar** —resumen de actividad, días y valor— para reducir las inscripciones por error, que solo el coordinador puede corregir.
-- **Sesión de 60 minutos.** Si vence a mitad del flujo, el GAS debe responder con un error de sesión distinguible de un error de negocio, para que el portal pida el código de nuevo en vez de mostrar un fallo genérico.
-- **Doble envío.** El índice único de días y el único de `(activity_id, student_id)` protegen la integridad; el GAS debe traducir ese conflicto a un mensaje comprensible y no a un error crudo.
-- **Sin control de cupo.** La inscripción procede aunque se supere el máximo.
+- **Solo lectura y alta.** Pantalla de confirmación antes de enviar, con resumen de actividad, días y valor.
+- **Sesión de 60 minutos**, con error de sesión distinguible del error de negocio.
+- **Doble envío** protegido por los índices únicos; el GAS traduce el conflicto a mensaje comprensible.
+- **Sin control de cupo.**
 
-### 8.3 Prerrequisito bloqueante
+### 12.3 Prerrequisito bloqueante para esa fase
 
-**El portal solo funciona en DEV.** `portal_access_codes` y `portal_sessions` no existen en PROD y las Script Properties apuntan a DEV. Antes de que una familia real pueda inscribir a un hijo hay que cerrar la replicación del portal a PROD. Es trabajo del portal, no de este módulo, pero condiciona la fecha de salida.
+`portal_access_codes` y `portal_sessions` no existen en PROD y las Script Properties apuntan a DEV.
+
+### 12.4 Impacto en esta entrega
+
+- Inscripción únicamente desde `enrollments.html`, con `enrollment_channel = 'admin'`.
+- `declared_by_email` opcional.
+- El modelo de datos **no cambia**: todas las columnas del portal existen ya.
 
 ---
 
-## 9. Notificaciones
+## 13. Notificaciones
 
-Todas por `sendNotification()` de Apps Script, desde `desarrollos@colegiotilata.edu.co`. Destinatarios: los correos registrados en `family_members` de la familia del estudiante.
+Por `sendNotification()` de Apps Script, desde `desarrollos@colegiotilata.edu.co`. Destinatarios: los correos de `family_members` de la familia del estudiante.
 
 | Evento | Destinatario | Contenido |
 |---|---|---|
@@ -494,56 +715,90 @@ Todas por `sendNotification()` de Apps Script, desde `desarrollos@colegiotilata.
 
 ---
 
-## 10. Reportes
+## 14. Reportes
 
-**Conteo de pasajeros por día de la semana**, al cerrar inscripciones. Es exactamente el dato que el operador necesita para armar las rutas. Debe existir desde la primera temporada.
+**Conteo de pasajeros por día de la semana**, al cerrar inscripciones. Es el dato que el operador necesita para armar rutas. Debe existir desde la primera temporada.
 
-**Proyectado contra ejecutado**, al cerrar temporada. `svc_extracurricular_daily_records` guarda pasajeros y vehículos reales por fecha, y `frozen_rate_value` el valor comprometido. Permite comparar recaudo contra costo real y calibrar la tarifa unitaria de la temporada siguiente, que deja de ser una derivación teórica.
+**Proyectado contra ejecutado**, al cerrar temporada. Compara recaudo contra costo real y calibra la tarifa unitaria de la siguiente.
 
-**Sesiones proyectadas contra sesiones dictadas.** Es la única forma de saber si el costeo funcionó, dado que el precio se congela antes de que empiece la temporada y no se ajusta si se cancelan días.
+**Sesiones proyectadas contra sesiones dictadas.** Única forma de saber si el costeo funcionó, dado que el precio se congela antes de empezar y no se ajusta si se cancelan días.
 
----
-
-## 11. Almacenamiento de fotos
-
-Las fotos de las actividades van a Supabase Storage, en un bucket de **lectura pública** porque las consume el portal sin autenticación.
-
-> **Recordatorio:** los buckets de Storage **no se transfieren en los restores PROD→DEV** —solo las políticas RLS sobre `storage.objects`—. El bucket debe crearse manualmente en cada ambiente.
+**Cobertura de los conceptos de temporada.** Compara lo recaudado (inscritos reales × aporte) contra el costo real. Cuantifica el faltante o excedente de 6.10 y calibra los mínimos de la siguiente temporada.
 
 ---
 
-## 12. Riesgos y deuda conocida
+## 15. Riesgos y deuda conocida
 
 | # | Riesgo | Comentario |
 |---|---|---|
-| 1 | `hr_non_work_days` no se une por `year_id` | Su llave de año es `academic_year` varchar(20). El cruce depende de coincidencia exacta de cadena. Deuda existente |
-| 2 | No existe tabla canónica de días lectivos | Serviría a asistencia, planeación y transporte. Debe abordarse como pieza de infraestructura institucional aparte, no como subproducto de este módulo |
-| 3 | Cobertura parcial de los costos de temporada | Si actividades no abren, la parte del coordinador de esos estudiantes queda sin cubrir |
-| 4 | Precios acoplados | Cambiar el mínimo de una actividad mueve el precio de todas. Obliga a publicar la oferta completa de una vez |
+| 1 | `hr_non_work_days` no se une por `year_id` | Su llave de año es `academic_year` varchar(20). Deuda existente del sistema |
+| 2 | No existe tabla canónica de días lectivos | Pieza de infraestructura institucional, no subproducto de este módulo |
+| 3 | Cobertura parcial de los costos de temporada | Decisión tomada (6.10). Cuantificado y monitoreado con el reporte de cobertura |
+| 4 | Precios acoplados | Obliga a publicar la oferta completa de una vez |
 | 5 | Autodeclaración de la vinculación | Riesgo financiero, no operativo. Se mitiga con la validación del paso 6 |
-| 6 | `audit_log.user_display_name` registra `'DB: postgres'` | Deuda sistémica del sistema, no de este módulo |
-| 7 | Denormalización en `enrollment_days` | `student_id` y `cycle_id` repetidos para sostener el índice único. Requiere disciplina al retirar y reubicar |
+| 6 | `audit_log.user_display_name` registra `'DB: postgres'` | `SET LOCAL` no persiste entre peticiones en el pool de PostgREST. Deuda sistémica |
+| 7 | Denormalización en `enrollment_days` | Cuatro columnas denormalizadas. **Mitigado** por el disparador y las llaves compuestas |
+| 8 | Nombre `Extracurriculares` inutilizable | Ocupado por el permiso retirado. Sin impacto funcional |
+| 9 | Reactivación de inscripciones | Exige reinsertar días desde la aplicación y puede fallar. El fallo es correcto pero necesita mensaje claro |
+| 10 | Las cinco validaciones de publicación son responsabilidad de la aplicación | Sección 9. Si se omiten, el sistema publica precios nulos o en cero sin protestar |
+| 11 | Comentario obsoleto en `sidebar.js` | Afirma que `SIDEBAR_LAYOUT` no se usa en el render. Sí se usa |
 
 ---
 
-## 13. Decisiones pendientes
+## 16. Pendiente abierto
 
-| # | Decisión | Quién decide |
-|---|---|---|
-| 1 | ¿`virtual_day` cuenta como sesión? Un día virtual es lectivo, pero no hay extracurricular presencial ni instructor ni bus | Institucional |
-| 2 | Cobertura del faltante cuando una actividad no abre: asumirlo, margen de seguridad, o repartir solo entre actividades que siempre abren | Institucional |
-| 3 | Ícono y color del módulo. No repetir `#378ADD` (Servicios) ni `#D85A30` (Eventos) | Técnica / UX |
-| 4 | ¿Hay tope de actividades por estudiante, más allá de la regla de no cruce de días? | Institucional |
-| 5 | Formato del nombre de temporada ("2026-2027 I" u otro) | Institucional |
-| 6 | ¿Qué ocurre con un retiro posterior a la entrega a Tesorería? Nota crédito en Phidias, presumiblemente | Institucional |
-| 7 | Replicación del portal de familias a PROD — **bloqueante para salida a producción** | Técnica |
+**Inscripción posterior al inicio de la temporada.**
+
+Se decidió (7.2) permitir que el cierre de inscripciones se extienda a los primeros días de la temporada. Consecuencia: un estudiante que entra en la tercera semana paga sesiones que no va a recibir, porque el precio se congela al publicar sobre el total del semestre.
+
+Tres salidas, sin decidir:
+
+- **Cobrar completo.** Defendible: los costos fijos —coordinador, recordatorios— ya se causaron, y los honorarios del instructor están prorrateados sobre el mínimo, no sobre asistencia real.
+- **Prorratear todo sobre las sesiones restantes.** Más justo para la familia, pero descuadra el prorrateo: el instructor cobra igual y el faltante lo absorbe el colegio.
+- **Prorratear solo los conceptos por sesión y cobrar completos los de temporada.** Conceptualmente correcto, y el más difícil de explicarle a una familia.
+
+**El modelo de datos soporta las tres.** `frozen_sessions` vive en la fila de inscripción y no se deriva de la actividad, así que la inscripción tardía puede congelar un número distinto sin tocar ninguna tabla. La decisión es de la pantalla de inscripciones, fase 5.
 
 ---
 
-## 14. Anexo — Ejemplo numérico completo
+## 17. Bitácora de decisiones
+
+### 17.1 Cerradas en la v1.1
+
+| # | Decisión | Resolución | Sección |
+|---|---|---|---|
+| 1 | ¿`virtual_day` cuenta como sesión? | No. Excluido por la fórmula, sin parametrización | 6.4 |
+| 2 | Cobertura del faltante cuando una actividad no abre | El colegio lo asume | 6.10 |
+| 3 | Ícono y color del módulo | `bi-palette`, `#993556` | 3.1 |
+| 4 | ¿Tope de actividades por estudiante? | No. El límite es la regla de no cruce | 7.1 |
+| 5 | Formato del nombre de temporada | `2026-2027 I` / `2026-2027 II`, con único | 5.1 |
+| 6 | Retiro posterior a `delivered` | Nota crédito en Phidias, sin lógica de reversa | 7.1 |
+| 7 | Portal de familias | Diferido. Modelo de datos se crea completo igual | 12 |
+| 8 | Tipo de `published_by` / `validated_by` | `uuid` con FK a `users(user_id)` | 8.1 |
+| 9 | Perfiles que reciben los permisos | Los asigna administración | 10.4 |
+| 10 | Datos existentes en las tablas reutilizadas | Eliminados en ambos ambientes. Tarifas conservadas | 4 |
+| 11 | Reversibilidad de estados | Todas salvo `published → draft` con inscripciones | 7.3 |
+| 12 | Días ocupados en `not_opened` | Se liberan. Regla general por disparador | 8.5 |
+
+### 17.2 Cerradas durante la construcción
+
+| # | Decisión | Resolución | Sección |
+|---|---|---|---|
+| 13 | Ámbito temporada + base sesión | **Prohibido** por restricción. El caso de uso no aplica en Tilatá | 6.2 |
+| 14 | Cierre de inscripciones posterior al inicio | **Permitido.** Sin restricción de base; advertencia en pantalla | 7.2 |
+| 15 | `cycle_id` en `activity_costs` | **Agregado.** Desvío de la v1.1, para impedir cruce de temporadas | 8.4 |
+| 16 | `activity_id` en `enrollment_days` | **Agregado.** Desvío de la v1.1, para impedir días fantasma | 8.4 |
+| 17 | ¿Atar la asistencia a `enrollment_days`? | **No.** Los datos volátiles no sirven de ancla para los permanentes | 8.4 |
+| 18 | Índice por fecha en asistencia | **Agregado.** La pantalla consulta por fecha | 8.4 |
+| 19 | Andamiajes de unicidad | Tres restricciones únicas redundantes con las PK, exigidas por PostgreSQL para las llaves compuestas | 8.4 |
+| 20 | Registro del módulo en el sidebar | Debe ir en `SIDEBAR_LAYOUT`, no solo en `SIDEBAR_MODULE_ORDER` | 3.2 |
+
+---
+
+## 18. Anexo — Ejemplo numérico completo
 
 **Temporada:** 2026-2027 I. Días: lunes, miércoles, jueves.
-**Sesiones calculadas:** lunes 18, miércoles 19, jueves 17.
+**Sesiones:** lunes 18, miércoles 19, jueves 17.
 
 **Conceptos de costo:**
 
@@ -554,11 +809,9 @@ Las fotos de las actividades van a Supabase Storage, en un bucket de **lectura p
 | Coordinador | temporada | temporada | prorrateo | $3.000.000 |
 | Recordatorios | temporada | temporada | por estudiante | $35.000 |
 
-**Oferta:** 12 actividades, mínimo 10 estudiantes cada una → suma de los mínimos = **120**.
+**Oferta:** 12 actividades, mínimo 10 cada una → suma de los mínimos = **120**.
 
-**Actividad "Ajedrez"** — lunes y jueves, modalidad instructor, mínimo 10.
-
-Sesiones = 18 + 17 = **35**
+**Actividad "Ajedrez"** — lunes y jueves, instructor, mínimo 10. Sesiones = 18 + 17 = **35**
 
 | Concepto | Cálculo | Aporte |
 |---|---|---|
@@ -566,9 +819,9 @@ Sesiones = 18 + 17 = **35**
 | Refrigerio instructor | $12.000 × 35 ÷ 10 | $42.000 |
 | Coordinador | $3.000.000 ÷ 120 | $25.000 |
 | Recordatorios | $35.000 × 1 | $35.000 |
-| | **Precio de la actividad** | **$732.000** |
+| | **Precio** | **$732.000** |
 
-**Tarifas de transporte de la temporada:** vinculada $15.650, no vinculada $19.000 *(ejemplo)*.
+**Tarifas de transporte:** vinculada $15.650, no vinculada $19.000 *(ejemplo)*.
 
 | Opción | Cálculo | Valor publicado |
 |---|---|---|
@@ -576,16 +829,16 @@ Sesiones = 18 + 17 = **35**
 | 2 — Con transporte, vinculada | $732.000 + ($15.650 × 35) | **$1.279.750** |
 | 3 — Con transporte, no vinculada | $732.000 + ($19.000 × 35) | **$1.397.000** |
 
-**Actividad "Cerámica"** — solo miércoles, modalidad alianza con tercero ($240.000 por estudiante), mínimo 12.
+> **Verificado en la prueba funcional del disparador:** una inscripción sembrada con estos valores devolvió `frozen_activity_price + (frozen_sessions × frozen_transport_rate_linked) = 1279750`, calculado sin consultar la temporada ni la actividad. Confirma que la fila de inscripción es autosuficiente.
 
-Sesiones = **19**. No aplican honorarios ni refrigerio de instructor (filtrados por modalidad).
+**Actividad "Cerámica"** — solo miércoles, alianza con tercero ($240.000 por estudiante), mínimo 12. Sesiones = **19**. No aplican honorarios ni refrigerio (filtrados por modalidad).
 
 | Concepto | Cálculo | Aporte |
 |---|---|---|
 | Tarifa del tercero | $240.000 × 1 | $240.000 |
 | Coordinador | $3.000.000 ÷ 120 | $25.000 |
 | Recordatorios | $35.000 × 1 | $35.000 |
-| | **Precio de la actividad** | **$300.000** |
+| | **Precio** | **$300.000** |
 
 | Opción | Cálculo | Valor publicado |
 |---|---|---|
@@ -593,7 +846,15 @@ Sesiones = **19**. No aplican honorarios ni refrigerio de instructor (filtrados 
 | 2 — Con transporte, vinculada | $300.000 + ($15.650 × 19) | **$597.350** |
 | 3 — Con transporte, no vinculada | $300.000 + ($19.000 × 19) | **$661.000** |
 
-Un estudiante inscrito en Ajedrez (lunes y jueves) y Cerámica (miércoles) **no se cruza** y paga ambos, con transporte de los tres días si lo solicita en las dos inscripciones.
+Un estudiante en Ajedrez (lunes y jueves) y Cerámica (miércoles) **no se cruza** y paga ambos, con transporte de los tres días si lo solicita en las dos inscripciones.
+
+**Verificación de la cobertura del coordinador (6.10):**
+
+| Escenario | Inscritos reales | Recaudo | Costo | Diferencia |
+|---|---|---|---|---|
+| Todas abren, inscripción al mínimo | 120 | $3.000.000 | $3.000.000 | $0 |
+| Dos actividades no abren, resto al mínimo | 100 | $2.500.000 | $3.000.000 | **−$500.000** |
+| Todas abren, inscripción por encima del mínimo | 150 | $3.750.000 | $3.000.000 | **+$750.000** |
 
 ---
 

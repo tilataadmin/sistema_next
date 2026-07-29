@@ -36,6 +36,7 @@ const SIDEBAR_MODULE_ORDER = [
     { id: 'admissions', name: 'Admisiones', icon: 'bi-person-plus-fill', color: '#D4537E' },
     { id: 'events', name: 'Eventos', icon: 'bi-calendar-event', color: '#D85A30' },
     { id: 'services', name: 'Servicios', icon: 'bi-bus-front', color: '#378ADD' },
+    { id: 'extracurricular', name: 'Extracurriculares', icon: 'bi-palette', color: '#993556' },
     { id: 'attendance', name: 'Asistencia', icon: 'bi-check2-square', color: '#185FA5' },
     { id: 'environmental', name: 'Gestión Ambiental', icon: 'bi-tree', color: '#1D9E75' },
     { id: 'suppliers', name: 'Proveedores', icon: 'bi-building', color: '#888780' },
@@ -83,7 +84,7 @@ const SIDEBAR_LAYOUT = [
         type: 'category',
         id: 'operations',
         name: 'Operación',
-        modules: ['procedures', 'project-management', 'tte', 'events', 'services', 'attendance', 'environmental']
+        modules: ['procedures', 'project-management', 'tte', 'events', 'services', 'extracurricular', 'attendance', 'environmental']
     },
     {
         type: 'category',
@@ -262,11 +263,21 @@ const MODULE_ITEM_ORDER = {
         'Registro de costos de eventos',
         'Atención a familias por admisiones',
         'Tiqueteras',
-        'Extracurriculares',
         'Transporte de personal',
         'Aprobaciones de servicios',
         'Gestión de mantenimiento',
       'Reportes de servicios'
+    ],
+    'extracurricular': [
+        'Gestionar temporadas de extracurriculares',
+        'Conceptos de costo de extracurriculares',
+        'Gestionar actividades extracurriculares',
+        'Gestionar inscripciones a extracurriculares',
+        'Registrar asistencia a extracurriculares',
+        'Configurar rutas de extracurriculares',
+        'Registro diario de rutas de extracurriculares',
+        'Consulta de Tesorería de extracurriculares',
+        'Reportes de extracurriculares'
     ],
     'environmental': [
         'Gestionar especies de árboles',
