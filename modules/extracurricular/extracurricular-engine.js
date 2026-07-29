@@ -155,6 +155,15 @@ function ecAdvertenciasCalendario(startISO, endISO, insumos) {
 // por restricción de base, así que time_base='session' implica scope='activity'.
 // ==========================================
 
+// Unidad de redondeo del precio final, en pesos.
+// Decisión institucional: los precios se publican en miles, redondeando hacia arriba.
+const EC_UNIDAD_REDONDEO = 1000;
+
+// Redondea hacia arriba al múltiplo de EC_UNIDAD_REDONDEO.
+function ecRedondear(valor) {
+    return Math.ceil(valor / EC_UNIDAD_REDONDEO) * EC_UNIDAD_REDONDEO;
+}
+
 // ¿Este concepto aplica a esta actividad?
 // applies_to_modality nulo significa "aplica a todas".
 function ecConceptoAplica(concepto, actividad) {
@@ -247,8 +256,8 @@ function ecCalcularPrecios(actividades, conceptos, costosPropios, sesionesPorDia
                 return;
             }
 
-            // Se redondea cada aporte al peso, para que el desglose que ve
-            // el coordinador sume exactamente el precio publicado.
+            // Los aportes se redondean solo al peso, para mostrarlos sin decimales.
+            // El redondeo a miles se aplica al total, no a cada línea.
             const aporte = Math.round(valor * multiplicador / divisor);
             precio += aporte;
 
@@ -266,7 +275,15 @@ function ecCalcularPrecios(actividades, conceptos, costosPropios, sesionesPorDia
             });
         });
 
-        detalle.precio = (detalle.errores.length === 0) ? precio : null;
+        if (detalle.errores.length === 0) {
+            detalle.precioSinRedondear = precio;
+            detalle.precio = ecRedondear(precio);
+            detalle.ajusteRedondeo = detalle.precio - precio;
+        } else {
+            detalle.precioSinRedondear = null;
+            detalle.precio = null;
+            detalle.ajusteRedondeo = null;
+        }
         return detalle;
     });
 
@@ -331,6 +348,26 @@ function ecAutoprueba() {
         ['Cerámica — con transporte no vinculada', opCeramica.conTransporteNoVinculada, 661000],
         ['Cerámica — conceptos aplicados', ceramica.conceptos.length, 3]
     ];
+
+    // Escenario adicional: mínimo que no divide exacto, para verificar el redondeo.
+    // Honorarios:    180000 × 18 ÷ 7 = 462857,14 -> 462857
+    // Coordinador:   3000000 ÷ 7     = 428571,43 -> 428571
+    // Recordatorios:                                 35000
+    // Suma de aportes = 926428  ->  hacia arriba a miles = 927000  (ajuste 572)
+    // Honorarios: 180000 × 18 ÷ 13 = 249230,77 -> 249000
+    // Coordinador: 3000000 ÷ 13 = 230769,23 -> 231000
+    // Recordatorios: 35000 -> 35000    Total esperado: 515000
+    const rRed = ecCalcularPrecios(
+        [{ activity_id: 'x1', activity_name: 'Impar', modality: 'instructor', min_students: 7, dias: [1] }],
+        conceptos.filter(c => c.concept_id !== 'c2'),
+        [],
+        sesionesPorDia
+    );
+    const impar = rRed.actividades[0];
+    casos.push(['Redondeo — suma de aportes', impar.precioSinRedondear, 926428]);
+    casos.push(['Redondeo — precio publicado', impar.precio, 927000]);
+    casos.push(['Redondeo — múltiplo de mil', impar.precio % 1000, 0]);
+    casos.push(['Redondeo — ajuste mostrado', impar.ajusteRedondeo, 572]);
 
     let fallos = 0;
     console.log('%c AUTOPRUEBA DEL MOTOR DE PRECIOS ', 'background:#993556;color:#fff;font-weight:bold');
