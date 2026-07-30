@@ -104,11 +104,20 @@ function ecCalcularSesiones(startISO, endISO, diasHabilitados, insumos) {
     const cur = ecFecha(startISO);
     const fin = ecFecha(endISO);
 
+    // Las semanas de receso no están en ninguna tabla: se calculan.
+    // Se derivan de los años calendario que cruza la temporada, no del año
+    // académico, para no depender de columnas que esta función no recibe.
+    const recesos = calMapaFechasReceso(
+        parseInt(startISO.slice(0, 4), 10),
+        parseInt(endISO.slice(0, 4), 10)
+    );
+
     while (cur <= fin) {
         const dow = ecDiaSemana(cur);
         if (resultado[dow]) {
             const iso = ecISO(cur);
-            const exc = insumos.excluidas[iso];
+            const exc = insumos.excluidas[iso]
+                || (recesos[iso] ? { tipo: 'break', descripcion: recesos[iso] } : null);
             if (exc) {
                 resultado[dow].excluidos.push({ fecha: iso, tipo: exc.tipo, descripcion: exc.descripcion });
             } else {
