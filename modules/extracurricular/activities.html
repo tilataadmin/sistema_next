@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.3">
+    <meta name="page-version" content="26.7.30.5">
     <title>Actividades Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -45,6 +45,8 @@
         .chip-falta { background-color: #fde2e1; color: #8c2f2d; font-weight: 500; }
         .celda-valor { width: 170px; }
         .fila-sin-valor { background-color: #fff5f5; }
+        .precio-final { font-size: 1.15rem; font-weight: 600; color: #7d2b46; }
+        .tabla-desglose td, .tabla-desglose th { font-size: 0.85rem; }
         .fila-incompleta td { background-color: #fffaf0; }
         .seleccion-box { border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 0.75rem; max-height: 210px; overflow-y: auto; }
     </style>
@@ -135,6 +137,25 @@
                             <tbody id="tbody-actividades"></tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0">
+                        <i class="bi bi-calculator me-2"></i>Precios estimados
+                    </h5>
+                    <button class="btn btn-ec btn-sm" onclick="calcularPrecios()">
+                        <i class="bi bi-calculator me-1"></i>Calcular precios
+                    </button>
+                </div>
+                <div class="card-body">
+                    <p class="hint mb-3">
+                        Estimación sobre las actividades en la oferta. Nada se guarda: el precio se congela al publicar
+                        la temporada. Si algo cambia después de calcular —un mínimo, un valor, una sesión— hay que volver
+                        a calcular.
+                    </p>
+                    <div id="resultado-precios"></div>
                 </div>
             </div>
 
@@ -377,7 +398,7 @@
         async function cargarTemporadas() {
             try {
                 const data = await supabaseRequest(
-                    '/svc_extracurricular_cycles?select=cycle_id,cycle_name,start_date,end_date,season_status,academic_year_id,academic_years(year_name)&order=start_date.desc'
+                    '/svc_extracurricular_cycles?select=cycle_id,cycle_name,start_date,end_date,season_status,academic_year_id,transport_rate_linked,transport_rate_unlinked,academic_years(year_name)&order=start_date.desc'
                 );
                 cacheTemporadas = data || [];
 
@@ -1187,6 +1208,168 @@
                 console.error('❌ Error guardando costos:', err);
                 showMessage('Error al guardar los costos: ' + (err.message || ''), 'danger');
             }
+        }
+
+        // ==========================================
+        // PRECIOS ESTIMADOS
+        // Solo lectura. El congelado ocurre al publicar, en seasons.html.
+        // ==========================================
+
+        // El divisor de los conceptos de temporada son las actividades EN LA OFERTA.
+        // Las de borrador no entran: una actividad a medio armar no puede estar
+        // moviendo el precio de las demás mientras el coordinador la piensa.
+        function calcularPrecios() {
+            const cont = document.getElementById('resultado-precios');
+            const ofertadas = cacheActividades.filter(a => a.activity_status === 'offered');
+
+            if (ofertadas.length === 0) {
+                cont.innerHTML = '<div class="alert alert-warning py-2 px-3 mb-0" style="font-size:0.85rem;"><i class="bi bi-exclamation-triangle me-1"></i>Ninguna actividad está en la oferta. No hay nada que calcular.</div>';
+                return;
+            }
+            if (cacheConceptos.length === 0) {
+                cont.innerHTML = '<div class="alert alert-warning py-2 px-3 mb-0" style="font-size:0.85rem;"><i class="bi bi-exclamation-triangle me-1"></i>La temporada no tiene conceptos de costo.</div>';
+                return;
+            }
+
+            const sesionesPorDia = {};
+            diasTemporada.forEach(d => { sesionesPorDia[d.day_of_week] = d.sessions_count; });
+
+            let res;
+            try {
+                res = ecCalcularPrecios(
+                    ofertadas.map(a => ({
+                        activity_id: a.activity_id,
+                        activity_name: a.activity_name,
+                        modality: a.modality,
+                        min_students: a.min_students,
+                        dias: a.dias
+                    })),
+                    cacheConceptos,
+                    cacheCostos,
+                    sesionesPorDia
+                );
+            } catch (e) {
+                console.error('❌ Error calculando precios:', e);
+                cont.innerHTML = `<div class="alert alert-danger py-2 px-3 mb-0" style="font-size:0.85rem;">Error al calcular: ${escaparHTML(e.message)}</div>`;
+                return;
+            }
+
+            renderPrecios(res, ofertadas.length);
+        }
+
+        function renderPrecios(res, cuantas) {
+            const cont = document.getElementById('resultado-precios');
+            const tv = temporadaSel.transport_rate_linked;
+            const tnv = temporadaSel.transport_rate_unlinked;
+            const hayTarifas = tv !== null && tv !== undefined && tnv !== null && tnv !== undefined;
+
+            let html = `<div class="alert alert-light border py-2 px-3 mb-3" style="font-size:0.85rem;">
+                <i class="bi bi-info-circle me-1"></i>Divisor de los conceptos de temporada:
+                <strong>${res.sumaMinimos}</strong>, la suma de los mínimos de las ${cuantas} actividades en la oferta.
+            </div>`;
+
+            if (res.errores.length > 0) {
+                html += res.errores.map(e =>
+                    `<div class="alert alert-danger py-2 px-3 mb-3" style="font-size:0.85rem;"><i class="bi bi-x-circle me-1"></i>${escaparHTML(e)}</div>`
+                ).join('');
+            }
+
+            res.actividades.forEach((d, idx) => {
+                const idCol = 'desglose-' + idx;
+                const conError = d.errores.length > 0;
+
+                html += `
+                <div class="card mb-2">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                                <strong>${escaparHTML(d.activity_name)}</strong>
+                                <span class="chip ms-2">${MODALIDAD_TXT[d.modality] || d.modality}</span>
+                                <span class="chip">Mínimo ${d.min_students}</span>
+                                <span class="chip">${d.sesiones === null ? 'Sesiones sin calcular' : d.sesiones + ' sesiones'}</span>
+                            </div>
+                            <div class="text-end">
+                                ${conError
+                                    ? '<span class="text-danger fw-bold">Sin precio</span>'
+                                    : `<span class="precio-final">${fmtCOP(d.precio)}</span>`}
+                                ${conError ? '' : `<button class="btn btn-sm btn-outline-secondary ms-2" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#${idCol}">
+                                    <i class="bi bi-list-columns-reverse"></i> Desglose</button>`}
+                            </div>
+                        </div>`;
+
+                if (conError) {
+                    html += '<ul class="mb-0 mt-2 text-danger" style="font-size:0.85rem;">' +
+                        d.errores.map(e => `<li>${escaparHTML(e)}</li>`).join('') + '</ul>';
+                } else {
+                    html += `
+                        <div class="collapse mt-3" id="${idCol}">
+                            <div class="table-responsive">
+                                <table class="table table-sm tabla-desglose mb-2">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Concepto</th>
+                                            <th class="text-end">Valor</th>
+                                            <th class="text-center">×</th>
+                                            <th class="text-center">÷</th>
+                                            <th class="text-end">Aporte por estudiante</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${d.conceptos.map(c => `
+                                            <tr>
+                                                <td>${escaparHTML(c.concept_name)}
+                                                    <span class="hint">· ${c.origen === 'propio' ? 'valor propio' : 'por defecto'}</span></td>
+                                                <td class="text-end">${fmtCOP(c.valor)}</td>
+                                                <td class="text-center hint">${c.multiplicador}</td>
+                                                <td class="text-center hint">${c.divisor}</td>
+                                                <td class="text-end">${fmtCOP(c.aporte)}</td>
+                                            </tr>`).join('')}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="4" class="text-end hint">Suma de aportes</td>
+                                            <td class="text-end">${fmtCOP(d.precioSinRedondear)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="4" class="text-end hint">Ajuste por redondeo al millar</td>
+                                            <td class="text-end hint">${fmtCOP(d.ajusteRedondeo)}</td>
+                                        </tr>
+                                        <tr class="fw-bold">
+                                            <td colspan="4" class="text-end">Precio</td>
+                                            <td class="text-end">${fmtCOP(d.precio)}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                            ${hayTarifas ? renderOpcionesTarifa(d, tv, tnv) : `
+                            <div class="hint"><i class="bi bi-info-circle me-1"></i>La temporada no tiene tarifas de transporte digitadas, así que no se pueden mostrar las tres opciones que ve la familia.</div>`}
+                        </div>`;
+                }
+
+                html += '</div></div>';
+            });
+
+            cont.innerHTML = html;
+        }
+
+        // Las tres opciones de la sección 6.7. El transporte se suma al precio,
+        // no entra al prorrateo: es un cobro por estudiante y por sesión.
+        function renderOpcionesTarifa(d, tv, tnv) {
+            const o = ecOpcionesTarifa(d.precio, d.sesiones, parseFloat(tv), parseFloat(tnv));
+            return `
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr><th>Opción para la familia</th><th class="text-end">Total</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Sin transporte</td><td class="text-end">${fmtCOP(o.sinTransporte)}</td></tr>
+                            <tr><td>Con transporte · ruta vinculada <span class="hint">(${fmtCOP(parseFloat(tv))} × ${d.sesiones})</span></td><td class="text-end">${fmtCOP(o.conTransporteVinculada)}</td></tr>
+                            <tr><td>Con transporte · sin ruta <span class="hint">(${fmtCOP(parseFloat(tnv))} × ${d.sesiones})</span></td><td class="text-end">${fmtCOP(o.conTransporteNoVinculada)}</td></tr>
+                        </tbody>
+                    </table>
+                </div>`;
         }
 
         // ==========================================
