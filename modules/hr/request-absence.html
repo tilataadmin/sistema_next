@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.3">
+    <meta name="page-version" content="26.7.30.5">
     <title>Solicitar Ausencia - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -573,8 +573,9 @@
                     SUPABASE_CONFIG.anonKey
                 );
                 console.log('✅ Cliente de Supabase inicializado');
-                await loadHRConfig();
+               await loadHRConfig();
                 await loadCategories();
+                await loadAcademicYearWindow();
                 
                 // Ahora cargar lo que depende de hrConfig
                 await Promise.all([
@@ -665,6 +666,38 @@
             } catch (error) {
                 console.error('Error al cargar trabajadores:', error);
                 throw error;
+            }
+        }
+
+        // Ventana del año escolar para efectos de saldos (agosto a julio).
+        // Usa start_month/start_year, NO las fechas de clases de estudiantes.
+        let academicYearWindow = { start: null, end: null };
+
+        async function loadAcademicYearWindow() {
+            try {
+                const config = await supabaseRequest('/system_config?select=current_academic_year_id&limit=1');
+                const yearId = (config && config.length) ? config[0].current_academic_year_id : null;
+                if (!yearId) {
+                    console.warn('⚠️ No hay año académico vigente en system_config');
+                    return;
+                }
+
+                const years = await supabaseRequest(
+                    '/academic_years?select=year_name,start_month,start_year,end_month,end_year&year_id=eq.' + yearId
+                );
+                if (!years || !years.length) return;
+
+                const y = years[0];
+                const start = y.start_year + '-' + String(y.start_month).padStart(2, '0') + '-01';
+                const lastDay = new Date(y.end_year, y.end_month, 0);
+                const end = lastDay.getFullYear() + '-' +
+                    String(lastDay.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(lastDay.getDate()).padStart(2, '0');
+
+                academicYearWindow = { start, end };
+                console.log('📆 Ventana de saldos ' + y.year_name + ':', academicYearWindow);
+            } catch (error) {
+                console.error('Error cargando ventana del año escolar:', error);
             }
         }
 
@@ -845,10 +878,14 @@
                 
                 console.log(`📊 Ajustes ${adjustmentType}:`, adjustments);
                 
-                // Obtener consumo de ausencias aprobadas
-                const requestsData = await supabaseRequest(
-                    '/hr_absence_requests?worker_id=eq.' + workerId + '&status=eq.approved&select=' + totalField + ',category_id'
-                );
+                // Obtener consumo de ausencias aprobadas DEL AÑO ESCOLAR VIGENTE
+                let requestsUrl = '/hr_absence_requests?worker_id=eq.' + workerId +
+                    '&status=eq.approved&select=' + totalField + ',category_id';
+                if (academicYearWindow.start && academicYearWindow.end) {
+                    requestsUrl += '&start_date=gte.' + academicYearWindow.start +
+                                   '&start_date=lte.' + academicYearWindow.end;
+                }
+                const requestsData = await supabaseRequest(requestsUrl);
                 
                 let consumed = 0;
                 if (requestsData && requestsData.length > 0) {
