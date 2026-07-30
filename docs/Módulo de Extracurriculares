@@ -2,10 +2,10 @@
 
 **Sistema:** SchoolNet — Colegio Tilatá
 **Repo:** `tilataadmin/sistema_next`
-**Versión:** 1.6
+**Versión:** 1.7
 **Fecha:** 30 de julio de 2026
-**Estado:** Fases 0 a 4 completas. **Fase 5 completa salvo `enrollments.html`**, que ya no está bloqueada.
-**Reemplaza a:** v1.5 del 30 de julio de 2026
+**Estado:** Fases 0 a 4 completas. **Fase 5 construida completa.** `enrollments.html` etapa 1 escrita y **sin probar**.
+**Reemplaza a:** v1.6 del 30 de julio de 2026
 
 ---
 
@@ -29,27 +29,40 @@ Esta parte existe para que quien retome el trabajo —incluido quien lo escribi�
 | 5 | `seasons.html` etapa 4 — publicación y transiciones | ✅ | — |
 | 5 | `cost-concepts.html` | ✅ | — |
 | 5 | `activities.html` etapas 1-3 — CRUD, costos propios, precios | ✅ | — |
-| 5 | `enrollments.html` | ❌ **siguiente** | — |
+| 5 | `enrollments.html` etapa 1 — inscribir y retirar | ⚠️ **escrita, sin probar** | — |
+| 5 | `enrollments.html` etapa 2 — validación de transporte y reubicación | ❌ | — |
 | 6 | `attendance.html`, `routes.html`, `daily-routes.html` | ❌ | — |
 | 7 | `treasury.html`, `reports.html` | ❌ | — |
 
 ## 2. Lo primero al retomar
 
-### 2.1 Siguiente pantalla: `enrollments.html`
+### 2.1 Lo primero: probar `enrollments.html`
 
-Toda la fase 5 está construida y probada en DEV salvo la inscripción. El ciclo completo —crear temporada, marcar días, calcular sesiones, definir conceptos, armar actividades, digitar costos, calcular precios, publicar y revertir— funciona de punta a punta.
+**La pantalla está escrita y nunca se ha ejecutado un alta.** Es lo único de la fase 5 sin verificar.
 
-**La v1.5 daba esta pantalla por bloqueada. No lo está** (ver 3.1 replanteada).
+**Bloqueo trivial para la prueba:** la ventana de inscripción de la temporada `2026-2027 I` va del 10 de agosto al 10 de septiembre de 2026, y hoy es 30 de julio. La pantalla advierte y no bloquea, así que se puede probar igual, pero conviene ajustar las fechas para probar también el camino normal.
 
-Lo que `enrollments.html` debe resolver:
+**Además, la temporada quedó en borrador** tras la prueba de reversa del 30 de julio. Hay que volver a publicarla: una temporada en borrador ni siquiera aparece en el selector de inscripciones.
 
-- Inscribir con `enrollment_channel = 'admin'`, congelando precio, tarifas y sesiones
-- **Bloquear el cruce de días** (sección 6.1), que es la única restricción real de inscripción
-- Registrar la opción de transporte declarada y su validación posterior
-- Reubicaciones con recálculo, mostrando el valor antes y después
-- Retiros, que se marcan y nunca se borran
+**Guion de prueba:**
 
-**Prueba de publicación ejecutada el 30 de julio de 2026 y aprobada.** Las siete verificaciones responden, el botón se deshabilita con cualquiera en rojo, los precios calculados coincidieron exactamente con los estimados en `activities.html` (247.000 y 457.000), el congelado escribió `frozen_price`, `published_at` y `published_by`, las otras dos pantallas quedaron de solo lectura, y la reversa devolvió todo a borrador limpiando los precios.
+1. Ajustar la ventana de inscripción y publicar la temporada.
+2. Inscribir un estudiante en Minichef. Verificar que el valor congelado corresponda al precio más el transporte según la opción declarada.
+3. Intentar inscribir al **mismo** estudiante en Externa 1. Debe aparecer bloqueado en la lista con el motivo, sin poder seleccionarse. Minichef es miércoles y Externa 1 es jueves, así que **no se cruzan**: para probar el cruce hay que agregarle un día común a una de las dos, o crear una tercera actividad en miércoles.
+4. Verificar en `svc_extracurricular_enrollment_days` que quedaron las filas de los días de la actividad.
+5. Retirar con motivo. Verificar que el disparador borró las filas de días y que el estudiante vuelve a aparecer disponible.
+
+### 2.1.1 Decisión tomada, pendiente de implementar: inscribir por función de base de datos
+
+**Habrá dos caminos de escritura hacia las mismas tablas:** `enrollments.html` para las excepciones del coordinador, y el portal de familias vía Apps Script para el volumen.
+
+Inscribir son dos escrituras que deben ocurrir juntas —la inscripción y sus días— y PostgREST no da transacciones entre peticiones HTTP. `enrollments.html` hoy imita la atomicidad: si el segundo `INSERT` falla, borra la inscripción recién creada. Funciona, pero **cuando exista el portal esa misma lógica quedaría escrita dos veces, en dos lenguajes distintos.** Es el patrón que costó una sesión completa con las semanas de receso.
+
+**Resolución: una función `fn_extracurricular_enroll(...)`** que reciba estudiante, actividad y opción de transporte, congele precio, tarifas y sesiones, e inserte inscripción y días en una sola transacción. La llaman por RPC tanto la pantalla como Apps Script.
+
+Se aparta de la decisión 21, que optó por JavaScript. No la contradice: aquella era sobre un cálculo puro, esta es sobre una transacción.
+
+**Se implementa después de probar la pantalla**, no antes: si el flujo tiene algo mal pensado, es mejor descubrirlo antes de encapsularlo en la base.
 
 ### 2.2 Prueba ejecutada: el descuento de fechas no lectivas
 
@@ -668,10 +681,10 @@ Se recomienda que la pantalla muestre las seis como **lista de verificación vis
 
 | # | `permission_name` | `url_path` | Estado |
 |---|---|---|---|
-| 1 | Gestionar temporadas de extracurriculares | `seasons.html` | Etapas 1-3 ✅, etapa 4 ❌ |
-| 2 | Conceptos de costo de extracurriculares | `cost-concepts.html` | ❌ |
-| 3 | Gestionar actividades extracurriculares | `activities.html` | ❌ |
-| 4 | Gestionar inscripciones a extracurriculares | `enrollments.html` | ❌ |
+| 1 | Gestionar temporadas de extracurriculares | `seasons.html` | ✅ completa |
+| 2 | Conceptos de costo de extracurriculares | `cost-concepts.html` | ✅ |
+| 3 | Gestionar actividades extracurriculares | `activities.html` | ✅ |
+| 4 | Gestionar inscripciones a extracurriculares | `enrollments.html` | ⚠️ etapa 1 sin probar |
 | 5 | Registrar asistencia a extracurriculares | `attendance.html` | ❌ |
 | 6 | Configurar rutas de extracurriculares | `routes.html` | ❌ |
 | 7 | Registro diario de rutas de extracurriculares | `daily-routes.html` | ❌ |
@@ -742,7 +755,19 @@ Cadena de resolución: `family_members.email → families → students.family_id
 
 `portal_access_codes` y `portal_sessions` no existen en PROD y las Script Properties apuntan a DEV.
 
-### 12.3 Impacto en esta entrega
+### 12.3 Papel de `enrollments.html` frente al portal
+
+**No se vinculan.** `families.html` es una página pública sin `config.js` ni sesión, que habla exclusivamente con Apps Script; la familia nunca toca `enrollments.html` ni el cliente de Supabase del navegador. Son **dos caminos de escritura independientes hacia las mismas tablas**, y `enrollment_channel` existe para distinguirlos.
+
+Cuando el portal esté vivo, `enrollments.html` queda para dos cosas:
+
+**Excepciones a cargo del coordinador.** La familia sin acceso al portal o que llama en vez de entrar; las inscripciones fuera de ventana, que el portal rechazaría; los retiros, que la sección 6.1 dice que no se exponen a las familias; y las reubicaciones cuando una actividad no alcanza el mínimo.
+
+**La vista operativa.** Quién va en qué actividad, si se alcanzó el mínimo, quién declaró transporte. Eso el portal no lo da.
+
+> **Ajuste de diseño previsto.** La etapa 1 presenta las actividades como tarjetas para escoger una a la vez. Sirve para inscribir, que es lo que se tuvo en mente al construirla. **No sirve para la pregunta diaria del coordinador cuando el portal cargue el volumen** —"¿cuáles actividades van a abrir?"—, porque obliga a entrar y salir de cada una. Debe convertirse en una tabla con conteos, sin perder el acceso al detalle. Se posterga hasta que exista el portal: hoy no hay volumen que justifique el rediseño.
+
+### 12.4 Impacto en esta entrega
 
 Inscripción únicamente desde `enrollments.html` con `enrollment_channel = 'admin'`; `declared_by_email` opcional. **El modelo de datos no cambia**: todas las columnas del portal existen ya.
 
@@ -867,6 +892,13 @@ Por `sendNotification()` de Apps Script, desde `desarrollos@colegiotilata.edu.co
 | 41 | ¿La reversa borra los `frozen_price`? | **Sí.** Un precio congelado en una temporada que volvió a borrador es un número que nadie sabría si sigue vigente |
 | 42 | ¿Dónde vive la lista de verificación? | **Visible siempre** en la tarjeta de publicación, no como alerta al fallar. El botón se deshabilita mientras alguna falle |
 | 43 | Tarifario de transporte | **Cerrada.** Tiene pantalla en `config.html`, no se vincula al año académico y no necesita hacerlo. Ver 3.2 |
+| 46 | ¿Temporadas en borrador en el selector de inscripciones? | **No aparecen.** Sin precios congelados no hay nada que copiar a la inscripción |
+| 47 | ¿Qué estados de temporada admiten altas? | **Solo `published`.** Los demás quedan de consulta: mover a alguien después de cerrar inscripciones desordena lo entregado |
+| 48 | ¿Bloquear fuera de la ventana de inscripción? | **No, advertir.** El canal administrativo existe para los casos que la ventana pública no cubre |
+| 49 | ¿Qué hacer si fallan los días tras crear la inscripción? | **Deshacerla en el acto.** La 7.5 dice que es recuperable, y lo es, pero ocupa cupo sin ocupar día. Si el deshacer también falla, se dice explícitamente |
+| 50 | ¿Motivo de retiro obligatorio? | **Sí en la pantalla**, aunque la columna admita nulo. Un retiro sin explicación es un registro que nadie sabrá interpretar después |
+| 51 | ¿Dónde se resuelve el cobro de quien entra tarde? | **En Tesorería.** La pantalla lo dice en texto, para que quien registra no espere que el sistema lo resuelva |
+| 52 | Inscripción por función de base de datos | **Sí**, tras probar la pantalla. Ver 2.1.1 |
 
 ## 17. Anexo — Ejemplo numérico
 
