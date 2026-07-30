@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- VERSIÓN DE LA PÁGINA - Actualizar en cada modificación -->
-    <meta name="page-version" content="25.11.03.06.25">
+    <meta name="page-version" content="26.7.30.1">
     
     <title>Ajustar Saldos - SchoolNet</title>
     
@@ -363,6 +363,9 @@
                 
                 // PASO 3: Configurar formulario
                 setupForm();
+
+                // PASO 4: Ventana del año escolar (debe cargar antes de calcular saldos)
+                await loadAcademicYearWindow();
                 
             } catch (error) {
                 console.error('❌ Error en inicialización:', error);
@@ -487,6 +490,51 @@
         }
 
         // ==========================================
+        // VENTANA DEL AÑO ESCOLAR PARA SALDOS
+        // ==========================================
+        let academicYearWindow = { start: null, end: null };
+
+        function getTodayColombia() {
+            const now = new Date();
+            const colombiaTime = new Date(now.getTime() + (now.getTimezoneOffset() - 300) * 60000);
+            return colombiaTime.getFullYear() + '-' +
+                String(colombiaTime.getMonth() + 1).padStart(2, '0') + '-' +
+                String(colombiaTime.getDate()).padStart(2, '0');
+        }
+
+        async function loadAcademicYearWindow() {
+            try {
+                const years = await supabaseRequest(
+                    '/academic_years?select=year_name,start_month,start_year,end_month,end_year&order=year_order.asc',
+                    { method: 'GET' }
+                );
+                if (!years || !years.length) return;
+
+                const hoy = getTodayColombia();
+
+                for (const y of years) {
+                    if (!y.start_month || !y.start_year || !y.end_month || !y.end_year) continue;
+
+                    const start = y.start_year + '-' + String(y.start_month).padStart(2, '0') + '-01';
+                    const lastDay = new Date(y.end_year, y.end_month, 0);
+                    const end = lastDay.getFullYear() + '-' +
+                        String(lastDay.getMonth() + 1).padStart(2, '0') + '-' +
+                        String(lastDay.getDate()).padStart(2, '0');
+
+                    if (hoy >= start && hoy <= end) {
+                        academicYearWindow = { start, end };
+                        console.log('📆 Ventana de saldos ' + y.year_name + ':', academicYearWindow);
+                        return;
+                    }
+                }
+
+                console.warn('⚠️ Ningún año escolar contiene la fecha de hoy. Los saldos no se filtrarán por año.');
+            } catch (error) {
+                console.error('Error cargando ventana del año escolar:', error);
+            }
+        }
+
+        // ==========================================
         // CÁLCULO DE SALDOS
         // ==========================================
         async function loadCurrentBalances() {
@@ -511,11 +559,14 @@
                     }
                 });
                 
-                // Obtener ausencias aprobadas que consumen del saldo
-                const absences = await supabaseRequest(
-                    '/hr_absence_requests?select=total_hours,total_days,category_id&worker_id=eq.' + selectedWorker.worker_id + '&status=eq.approved',
-                    { method: 'GET' }
-                );
+                // Obtener ausencias aprobadas del año escolar vigente que consumen del saldo
+                let absencesUrl = '/hr_absence_requests?select=total_hours,total_days,category_id&worker_id=eq.' +
+                    selectedWorker.worker_id + '&status=eq.approved';
+                if (academicYearWindow.start && academicYearWindow.end) {
+                    absencesUrl += '&start_date=gte.' + academicYearWindow.start +
+                                   '&start_date=lte.' + academicYearWindow.end;
+                }
+                const absences = await supabaseRequest(absencesUrl, { method: 'GET' });
                 
                 // Obtener categorías para saber cuáles consumen del saldo
                 const categories = await supabaseRequest(
