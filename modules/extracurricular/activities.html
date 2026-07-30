@@ -41,6 +41,10 @@
 
         .chip { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 0.3rem; background-color: #f1f3f5; color: #495057; white-space: nowrap; display: inline-block; margin: 0.1rem 0.15rem 0.1rem 0; }
         .chip-dia { background-color: #f8e8ee; color: #7d2b46; }
+        .chip-ok { background-color: #d1f0e0; color: #14683f; }
+        .chip-falta { background-color: #fde2e1; color: #8c2f2d; font-weight: 500; }
+        .celda-valor { width: 170px; }
+        .fila-sin-valor { background-color: #fff5f5; }
         .fila-incompleta td { background-color: #fffaf0; }
         .seleccion-box { border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 0.75rem; max-height: 210px; overflow-y: auto; }
     </style>
@@ -123,6 +127,7 @@
                                     <th>Días</th>
                                     <th>Grados</th>
                                     <th class="text-center">Cupos</th>
+                                    <th>Costos</th>
                                     <th>Estado</th>
                                     <th class="text-end">Acciones</th>
                                 </tr>
@@ -241,10 +246,51 @@
         </div>
     </div>
 
+    <!-- MODAL COSTOS -->
+    <div class="modal fade" id="modal-costos" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modal-costos-title">
+                        <i class="bi bi-cash-coin me-2"></i>Costos
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="costos-cabecera" class="mb-3"></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Concepto</th>
+                                    <th>Ámbito</th>
+                                    <th>Se multiplica por</th>
+                                    <th>Se divide entre</th>
+                                    <th class="text-end">Por defecto</th>
+                                    <th class="celda-valor">Valor propio</th>
+                                    <th class="text-end">Se usará</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-costos"></tbody>
+                        </table>
+                    </div>
+                    <div class="hint mt-2">
+                        Deje el valor propio vacío para que la actividad use el valor por defecto del concepto.
+                        Borrar el valor propio no es lo mismo que poner cero: cero es un costo que no se cobra.
+                    </div>
+                    <div id="costos-aviso" class="mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    <button type="button" class="btn btn-ec" id="btn-guardar-costos" onclick="guardarCostos()">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- SCRIPTS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/config.js"></script>
-    <script src="calendario-escolar.js"></script>
     <script src="extracurricular-engine.js"></script>
 
     <script>
@@ -257,7 +303,11 @@
         let diasTemporada = [];     // svc_extracurricular_cycle_days de la temporada
         let cacheGrados = [];       // grados del año académico de la temporada
         let cacheActividades = [];
+        let cacheConceptos = [];    // conceptos de costo de la temporada
+        let cacheCostos = [];       // valores propios ya digitados
         let modalActividad = null;
+        let modalCostos = null;
+        let actividadCostos = null; // actividad abierta en el modal de costos
 
         const ESTADOS = {
             draft:             { texto: 'Borrador',                clase: 'estado-draft' },
@@ -308,6 +358,7 @@
                 currentUser = session.user;
 
                 modalActividad = new bootstrap.Modal(document.getElementById('modal-actividad'));
+                modalCostos = new bootstrap.Modal(document.getElementById('modal-costos'));
 
                 mostrarLoading();
                 await cargarTemporadas();
@@ -364,6 +415,7 @@
                 mostrarLoading();
                 await cargarDiasTemporada();
                 await cargarGrados();
+                await cargarConceptos();
                 await cargarActividades();
                 renderInfoTemporada();
                 panel.classList.remove('d-none');
@@ -412,9 +464,73 @@
         }
 
         // ==========================================
+        // CONCEPTOS Y COSTOS
+        // ==========================================
+        async function cargarConceptos() {
+            const data = await supabaseRequest(
+                `/svc_extracurricular_cost_concepts?select=*&cycle_id=eq.${temporadaSel.cycle_id}` +
+                '&order=display_order.asc.nullslast,concept_name.asc'
+            );
+            cacheConceptos = data || [];
+        }
+
+        async function cargarCostos() {
+            const data = await supabaseRequest(
+                `/svc_extracurricular_activity_costs?select=activity_id,concept_id,concept_value&cycle_id=eq.${temporadaSel.cycle_id}`
+            );
+            cacheCostos = data || [];
+        }
+
+        // Misma regla que ecConceptoAplica() en el motor. Se repite aquí porque la
+        // pantalla necesita decidir qué mostrar antes de que haya cálculo alguno;
+        // si las dos divergen, la pantalla pediría valores que el motor ignora.
+        function conceptoAplica(concepto, actividad) {
+            if (!concepto.is_active) return false;
+            if (!concepto.applies_to_modality) return true;
+            return concepto.applies_to_modality === actividad.modality;
+        }
+
+        function conceptosDeActividad(actividad) {
+            return cacheConceptos.filter(c => conceptoAplica(c, actividad));
+        }
+
+        function valorPropio(activityId, conceptId) {
+            const f = cacheCostos.find(c => c.activity_id === activityId && c.concept_id === conceptId);
+            return f ? parseFloat(f.concept_value) : null;
+        }
+
+        // Un concepto sin valor propio y sin valor por defecto rompe el cálculo.
+        // Es la validación 4 de publicación, adelantada para que no aparezca
+        // por primera vez cuando el coordinador intente publicar.
+        function conceptosSinValor(actividad) {
+            return conceptosDeActividad(actividad).filter(c => {
+                if (valorPropio(actividad.activity_id, c.concept_id) !== null) return false;
+                return c.default_value === null || c.default_value === undefined;
+            });
+        }
+
+        const fmtCOP = v => (v === null || v === undefined || isNaN(v))
+            ? '—'
+            : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+
+        function chipCostos(a) {
+            const aplican = conceptosDeActividad(a);
+            if (aplican.length === 0) {
+                return '<span class="chip">Sin conceptos</span>';
+            }
+            const faltan = conceptosSinValor(a).length;
+            const propios = aplican.filter(c => valorPropio(a.activity_id, c.concept_id) !== null).length;
+            if (faltan > 0) {
+                return `<span class="chip chip-falta">Falta ${faltan} de ${aplican.length}</span>`;
+            }
+            return `<span class="chip chip-ok">${aplican.length} listos${propios > 0 ? ` · ${propios} propio${propios === 1 ? '' : 's'}` : ''}</span>`;
+        }
+
+        // ==========================================
         // ACTIVIDADES
         // ==========================================
         async function cargarActividades() {
+            await cargarCostos();
             const data = await supabaseRequest(
                 `/svc_extracurricular_activities?select=*,svc_extracurricular_activity_days(day_of_week),svc_extracurricular_activity_grades(grade_id)` +
                 `&cycle_id=eq.${temporadaSel.cycle_id}&order=display_order.asc.nullslast,activity_name.asc`
@@ -456,7 +572,7 @@
 
             const tbody = document.getElementById('tbody-actividades');
             if (cacheActividades.length === 0) {
-                tbody.innerHTML = emptyRow(8, 'No hay actividades en esta temporada');
+                tbody.innerHTML = emptyRow(9, 'No hay actividades en esta temporada');
                 return;
             }
 
@@ -488,8 +604,13 @@
                         <td>${chipsDias}</td>
                         <td>${chipsGrados}</td>
                         <td class="text-center hint">${a.min_students} – ${a.max_students}</td>
+                        <td>${chipCostos(a)}</td>
                         <td>${badgeActividad(a.activity_status)}</td>
                         <td class="text-end text-nowrap">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="abrirModalCostos('${a.activity_id}')"
+                                title="Valores de costo de esta actividad">
+                                <i class="bi bi-cash-coin"></i>
+                            </button>
                             ${editable && esBorrador ? `
                             <button class="btn btn-sm btn-outline-success" onclick="cambiarEstado('${a.activity_id}','offered')"
                                 title="${faltan.length > 0 ? 'Falta: ' + faltan.join(', ') : 'Incluir en la oferta'}"
@@ -531,6 +652,15 @@
             const sinCalcular = diasTemporada.filter(d => d.sessions_count === null || d.sessions_count === undefined);
             if (sinCalcular.length > 0) {
                 avisos.push(`<i class="bi bi-exclamation-triangle me-1"></i>${sinCalcular.map(d => EC_DIAS_NOMBRE[d.day_of_week]).join(', ')} sin sesiones calculadas. Las actividades de esos días no podrán tener precio. Se resuelve en Temporadas.`);
+            }
+
+            if (cacheConceptos.length === 0) {
+                avisos.push('<i class="bi bi-exclamation-triangle me-1"></i>La temporada no tiene conceptos de costo. Sin ellos ninguna actividad puede tener precio. Se definen en Conceptos de costo de extracurriculares.');
+            } else {
+                const sinValor = cacheActividades.filter(a => conceptosSinValor(a).length > 0);
+                if (sinValor.length > 0) {
+                    avisos.push(`<i class="bi bi-exclamation-triangle me-1"></i>${sinValor.length} actividad${sinValor.length === 1 ? '' : 'es'} con conceptos sin valor: ${sinValor.map(a => escaparHTML(a.activity_name)).join(', ')}. Publicar exige que ningún concepto aplicable quede sin valor propio ni por defecto.`);
+                }
             }
 
             const incompletas = cacheActividades.filter(a => a.activity_status === 'draft' && faltantesParaOferta(a).length > 0);
@@ -888,6 +1018,174 @@
             } else {
                 console.error('❌ Error guardando actividad:', err);
                 showMessage('Error al guardar: ' + m, 'danger');
+            }
+        }
+
+        // ==========================================
+        // COSTOS POR ACTIVIDAD
+        // ==========================================
+        const SCOPE_TXT     = { activity: 'De la actividad', season: 'De la temporada' };
+        const TIME_BASE_TXT = { session: 'Sesiones', season: '1 (temporada)' };
+
+        function textoDivisor(scope, allocation) {
+            if (allocation === 'per_student') return '1 · nadie lo divide';
+            if (scope === 'activity')         return 'Mínimo de la actividad';
+            return 'Suma de los mínimos';
+        }
+
+        // Sesiones de la actividad = suma de las sesiones de sus días.
+        // Devuelve null si algún día no tiene sesiones calculadas, igual que el motor.
+        function sesionesActividad(a) {
+            let total = 0;
+            for (const d of a.dias) {
+                const dia = diasTemporada.find(x => x.day_of_week === d);
+                const s = dia ? dia.sessions_count : null;
+                if (s === null || s === undefined) return null;
+                total += s;
+            }
+            return total;
+        }
+
+        function abrirModalCostos(id) {
+            const a = cacheActividades.find(x => x.activity_id === id);
+            if (!a) return;
+            actividadCostos = a;
+
+            const editable = esEditable();
+            document.getElementById('modal-costos-title').innerHTML =
+                `<i class="bi bi-cash-coin me-2"></i>Costos de ${escaparHTML(a.activity_name)}`;
+
+            const ses = sesionesActividad(a);
+            document.getElementById('costos-cabecera').innerHTML = `
+                <div class="hint">
+                    <span class="chip">${MODALIDAD_TXT[a.modality] || a.modality}</span>
+                    <span class="chip">Mínimo ${a.min_students}</span>
+                    <span class="chip">${ses === null ? 'Sesiones sin calcular' : ses + ' sesiones'}</span>
+                    ${a.dias.map(d => `<span class="chip chip-dia">${EC_DIAS_NOMBRE[d]}</span>`).join('')}
+                </div>`;
+
+            document.getElementById('btn-guardar-costos').classList.toggle('d-none', !editable);
+            renderCostos(a, editable);
+            modalCostos.show();
+        }
+
+        function renderCostos(a, editable) {
+            const aplican = conceptosDeActividad(a);
+            const tbody = document.getElementById('tbody-costos');
+            const aviso = document.getElementById('costos-aviso');
+
+            const noAplican = cacheConceptos.length - aplican.length;
+            aviso.innerHTML = noAplican > 0
+                ? `<div class="hint"><i class="bi bi-info-circle me-1"></i>${noAplican} concepto${noAplican === 1 ? '' : 's'} de la temporada no aplica${noAplican === 1 ? '' : 'n'} a esta actividad, por modalidad o por estar inactivo${noAplican === 1 ? '' : 's'}.</div>`
+                : '';
+
+            if (aplican.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="bi bi-cash-coin"></i>Ningún concepto de costo aplica a esta actividad</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = aplican.map(c => {
+                const propio = valorPropio(a.activity_id, c.concept_id);
+                const tieneDefecto = c.default_value !== null && c.default_value !== undefined;
+                const efectivo = propio !== null ? propio : (tieneDefecto ? parseFloat(c.default_value) : null);
+                const sinValor = efectivo === null;
+
+                return `
+                    <tr class="${sinValor ? 'fila-sin-valor' : ''}">
+                        <td><strong>${escaparHTML(c.concept_name)}</strong></td>
+                        <td class="hint">${SCOPE_TXT[c.scope] || c.scope}</td>
+                        <td class="hint">${TIME_BASE_TXT[c.time_base] || c.time_base}</td>
+                        <td class="hint">${textoDivisor(c.scope, c.allocation_base)}</td>
+                        <td class="text-end hint">${tieneDefecto ? fmtCOP(parseFloat(c.default_value)) : '<span class="text-danger">Ninguno</span>'}</td>
+                        <td>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control input-costo" min="0" step="any"
+                                    data-concept="${c.concept_id}"
+                                    value="${propio !== null ? propio : ''}"
+                                    placeholder="${tieneDefecto ? 'Usa el defecto' : 'Obligatorio'}"
+                                    ${editable ? '' : 'disabled'}>
+                            </div>
+                        </td>
+                        <td class="text-end">
+                            ${sinValor
+                                ? '<span class="text-danger">Sin valor</span>'
+                                : `${fmtCOP(efectivo)}<div class="hint">${propio !== null ? 'propio' : 'por defecto'}</div>`}
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        // El guardado va concepto por concepto porque la llave primaria es
+        // (activity_id, concept_id): existe fila o no existe, no hay id propio.
+        // Vaciar el campo borra la fila, que es la forma de decir "usa el defecto".
+        async function guardarCostos() {
+            if (!esEditable() || !actividadCostos) return;
+            const a = actividadCostos;
+
+            const filas = [...document.querySelectorAll('.input-costo')];
+            const operaciones = [];
+
+            for (const input of filas) {
+                const conceptId = input.dataset.concept;
+                const txt = input.value.trim();
+                const existente = cacheCostos.find(c => c.activity_id === a.activity_id && c.concept_id === conceptId);
+
+                if (txt === '') {
+                    if (existente) operaciones.push({ tipo: 'borrar', conceptId });
+                    continue;
+                }
+
+                const valor = parseFloat(txt);
+                if (isNaN(valor) || valor < 0) {
+                    showMessage('Los valores de costo deben ser números positivos.', 'warning');
+                    return;
+                }
+                if (existente) {
+                    if (parseFloat(existente.concept_value) !== valor) {
+                        operaciones.push({ tipo: 'actualizar', conceptId, valor });
+                    }
+                } else {
+                    operaciones.push({ tipo: 'crear', conceptId, valor });
+                }
+            }
+
+            if (operaciones.length === 0) {
+                modalCostos.hide();
+                return;
+            }
+
+            try {
+                mostrarLoading();
+                for (const op of operaciones) {
+                    const filtro = `activity_id=eq.${a.activity_id}&concept_id=eq.${op.conceptId}`;
+                    if (op.tipo === 'borrar') {
+                        await supabaseRequest(`/svc_extracurricular_activity_costs?${filtro}`, { method: 'DELETE' });
+                    } else if (op.tipo === 'actualizar') {
+                        await supabaseRequest(`/svc_extracurricular_activity_costs?${filtro}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ concept_value: op.valor, updated_at: new Date().toISOString() })
+                        });
+                    } else {
+                        await supabaseRequest('/svc_extracurricular_activity_costs', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                activity_id: a.activity_id,
+                                concept_id: op.conceptId,
+                                cycle_id: temporadaSel.cycle_id,
+                                concept_value: op.valor
+                            })
+                        });
+                    }
+                }
+                modalCostos.hide();
+                showMessage(`Costos de "${a.activity_name}" actualizados`, 'success');
+                await cargarActividades();
+                ocultarLoading();
+            } catch (err) {
+                ocultarLoading();
+                console.error('❌ Error guardando costos:', err);
+                showMessage('Error al guardar los costos: ' + (err.message || ''), 'danger');
             }
         }
 
