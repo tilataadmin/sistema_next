@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.5">
+    <meta name="page-version" content="26.7.31.1">
     <title>Temporadas de Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1182,7 +1182,7 @@
                     <button class="btn btn-outline-warning btn-sm" onclick="revertirPublicacion()">
                         <i class="bi bi-arrow-counterclockwise me-1"></i>Devolver a borrador
                     </button>
-                    <div class="hint mt-2">Solo es posible mientras no existan inscripciones.</div>`;
+                    <div class="hint mt-2">Solo mientras no existan inscripciones activas, y nunca después de entregar a Tesorería.</div>`;
                 return;
             }
 
@@ -1277,7 +1277,11 @@
             }
         }
 
-        // Decisión 11: la reversa se permite salvo que ya existan inscripciones.
+        // Decisión 62: la reversa se permite con inscripciones anuladas, con
+        // advertencia, y se bloquea si hay alguna activa o si la temporada estuvo
+        // entregada a Tesorería. Una inscripción anulada no se factura, así que no
+        // produce dos generaciones de precio conviviendo; una entregada sí es un
+        // hecho contable que el reporte de cierre no podría explicar.
         // Se limpia frozen_price para que no quede un precio huérfano que nadie
         // sabría si sigue vigente.
         async function revertirPublicacion() {
@@ -1286,19 +1290,44 @@
             try {
                 mostrarLoading();
                 const insc = await supabaseRequest(
-                    `/svc_extracurricular_enrollments?select=enrollment_id&cycle_id=eq.${temporadaSel.cycle_id}&limit=1`
+                    `/svc_extracurricular_enrollments?select=enrollment_status&cycle_id=eq.${temporadaSel.cycle_id}`
                 );
                 ocultarLoading();
 
-                if (insc && insc.length > 0) {
-                    showMessage('No se puede devolver a borrador: la temporada ya tiene inscripciones.', 'warning');
+                const filas    = insc || [];
+                const activas  = filas.filter(i => i.enrollment_status === 'active').length;
+                const anuladas = filas.length - activas;
+
+                if (activas > 0) {
+                    showMessage(
+                        `No se puede devolver a borrador: la temporada tiene ${activas} ` +
+                        `inscripción(es) activa(s). Retírelas primero si de verdad hay que republicar.`,
+                        'warning');
                     return;
+                }
+
+                // La columna existe desde la v1.8 pero todavía no la escribe nadie:
+                // las transiciones a delivered no están construidas. La condición
+                // queda lista para cuando lo estén.
+                if (temporadaSel.delivered_at) {
+                    showMessage(
+                        'No se puede devolver a borrador: la temporada ya estuvo entregada a Tesorería. ' +
+                        'Republicar con otro divisor dejaría el reporte de cierre sin explicación posible.',
+                        'warning');
+                    return;
+                }
+
+                let aviso = '';
+                if (anuladas > 0) {
+                    aviso = `\n\nOJO: quedan ${anuladas} inscripción(es) anulada(s). Sus valores ` +
+                            `congelados sobreviven a la reversa y dejarán de corresponder a la ` +
+                            `parametrización de la temporada.`;
                 }
 
                 if (!confirm(
                     `¿Devolver "${temporadaSel.cycle_name}" a borrador?\n\n` +
                     `Se borran los precios congelados de todas las actividades. Habrá que volver a publicar ` +
-                    `para recalcularlos.`
+                    `para recalcularlos.` + aviso
                 )) return;
 
                 mostrarLoading();
