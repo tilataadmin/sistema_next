@@ -2,10 +2,10 @@
 
 **Sistema:** SchoolNet — Colegio Tilatá
 **Repo:** `tilataadmin/sistema_next`
-**Versión:** 1.7
-**Fecha:** 30 de julio de 2026
-**Estado:** Fases 0 a 4 completas. **Fase 5 construida completa.** `enrollments.html` etapa 1 escrita y **sin probar**.
-**Reemplaza a:** v1.6 del 30 de julio de 2026
+**Versión:** 1.8
+**Fecha:** 31 de julio de 2026
+**Estado:** Fases 0 a 4 completas. **Fase 5 completa y probada de punta a punta en DEV.** La inscripción pasó a una función transaccional de base de datos, `fn_extracurricular_enroll`, que `enrollments.html` ya consume y que el portal de familias consumirá sin reescribirla.
+**Reemplaza a:** v1.7 del 30 de julio de 2026
 
 ---
 
@@ -29,40 +29,55 @@ Esta parte existe para que quien retome el trabajo —incluido quien lo escribi�
 | 5 | `seasons.html` etapa 4 — publicación y transiciones | ✅ | — |
 | 5 | `cost-concepts.html` | ✅ | — |
 | 5 | `activities.html` etapas 1-3 — CRUD, costos propios, precios | ✅ | — |
-| 5 | `enrollments.html` etapa 1 — inscribir y retirar | ⚠️ **escrita, sin probar** | — |
+| 5 | `fn_extracurricular_enroll` — inscripción transaccional | ✅ **probada** | ❌ **pendiente** |
+| 5 | Columna `enrolled_by` en `svc_extracurricular_enrollments` | ✅ | ❌ **pendiente** |
+| 5 | `enrollments.html` etapa 1 — inscribir y retirar | ✅ **probada** | — |
 | 5 | `enrollments.html` etapa 2 — validación de transporte y reubicación | ❌ | — |
 | 6 | `attendance.html`, `routes.html`, `daily-routes.html` | ❌ | — |
 | 7 | `treasury.html`, `reports.html` | ❌ | — |
 
 ## 2. Lo primero al retomar
 
-### 2.1 Lo primero: probar `enrollments.html`
+### 2.1 Lo primero: documentar y replicar
 
-**La pantalla está escrita y nunca se ha ejecutado un alta.** Es lo único de la fase 5 sin verificar.
+**La etapa 1 de `enrollments.html` quedó probada de punta a punta el 31 de julio de 2026, y la inscripción se movió a una función de base de datos.** No queda nada sin verificar en la fase 5.
 
-**Bloqueo trivial para la prueba:** la ventana de inscripción de la temporada `2026-2027 I` va del 10 de agosto al 10 de septiembre de 2026, y hoy es 30 de julio. La pantalla advierte y no bloquea, así que se puede probar igual, pero conviene ajustar las fechas para probar también el camino normal.
+Lo que sigue, en orden defendible:
 
-**Además, la temporada quedó en borrador** tras la prueba de reversa del 30 de julio. Hay que volver a publicarla: una temporada en borrador ni siquiera aparece en el selector de inscripciones.
+1. **Replicar a PROD** lo que está probado (sección 2.4). Es lo único que hoy separa a producción de tener el módulo utilizable.
+2. **Ajustar el candado de reversa** y agregar `delivered_at` (sección 3.4).
+3. **Etapa 2 de `enrollments.html`**: validación de la vinculación de transporte y reubicación.
+4. **Portal de familias**, que dejó de ser el trabajo grande que era: la escritura ya está resuelta en la base.
 
-**Guion de prueba:**
+### 2.1.1 Implementado: inscripción por función de base de datos
 
-1. Ajustar la ventana de inscripción y publicar la temporada.
-2. Inscribir un estudiante en Minichef. Verificar que el valor congelado corresponda al precio más el transporte según la opción declarada.
-3. Intentar inscribir al **mismo** estudiante en Externa 1. Debe aparecer bloqueado en la lista con el motivo, sin poder seleccionarse. Minichef es miércoles y Externa 1 es jueves, así que **no se cruzan**: para probar el cruce hay que agregarle un día común a una de las dos, o crear una tercera actividad en miércoles.
-4. Verificar en `svc_extracurricular_enrollment_days` que quedaron las filas de los días de la actividad.
-5. Retirar con motivo. Verificar que el disparador borró las filas de días y que el estudiante vuelve a aparecer disponible.
+**Construida y probada el 31 de julio de 2026.** Ver la especificación completa en la sección 7.6 de la Parte II.
 
-### 2.1.1 Decisión tomada, pendiente de implementar: inscribir por función de base de datos
+El razonamiento que la motivó sigue vigente y conviene conservarlo: inscribir son dos escrituras que deben ocurrir juntas —la inscripción y sus días— y PostgREST no da transacciones entre peticiones HTTP. `enrollments.html` imitaba la atomicidad borrando la inscripción recién creada si el segundo `INSERT` fallaba. Funcionaba, pero cuando existiera el portal esa misma lógica habría quedado escrita dos veces, en dos lenguajes distintos.
 
-**Habrá dos caminos de escritura hacia las mismas tablas:** `enrollments.html` para las excepciones del coordinador, y el portal de familias vía Apps Script para el volumen.
-
-Inscribir son dos escrituras que deben ocurrir juntas —la inscripción y sus días— y PostgREST no da transacciones entre peticiones HTTP. `enrollments.html` hoy imita la atomicidad: si el segundo `INSERT` falla, borra la inscripción recién creada. Funciona, pero **cuando exista el portal esa misma lógica quedaría escrita dos veces, en dos lenguajes distintos.** Es el patrón que costó una sesión completa con las semanas de receso.
-
-**Resolución: una función `fn_extracurricular_enroll(...)`** que reciba estudiante, actividad y opción de transporte, congele precio, tarifas y sesiones, e inserte inscripción y días en una sola transacción. La llaman por RPC tanto la pantalla como Apps Script.
+**Resultado:** `enrollments.html` ya no envía ningún valor de dinero. Envía estudiante, actividad, opción de transporte, canal y correo declarante; el servidor deriva precio, tarifas y sesiones. La pantalla quedó reducida a pedir, mostrar y traducir errores.
 
 Se aparta de la decisión 21, que optó por JavaScript. No la contradice: aquella era sobre un cálculo puro, esta es sobre una transacción.
 
-**Se implementa después de probar la pantalla**, no antes: si el flujo tiene algo mal pensado, es mejor descubrirlo antes de encapsularlo en la base.
+### 2.1.2 Guion de prueba ejecutado
+
+Nueve caminos, todos contra DEV el 31 de julio de 2026. Se conserva porque es el guion de regresión cuando la función cambie.
+
+| # | Caso | Resultado esperado | Verificado |
+|---|---|---|---|
+| 1 | Alta normal con transporte vinculado | Valores congelados, días insertados, sin advertencias | ✅ |
+| 2 | Cruce de días | `El estudiante ya tiene una actividad ese día` | ✅ |
+| 3 | **Atomicidad tras el cruce** | Cero filas huérfanas: la inscripción alcanzó a insertarse y se deshizo sola | ✅ |
+| 4 | Misma actividad dos veces | `El estudiante ya está inscrito en esta actividad` | ✅ |
+| 5 | Fuera de ventana, canal distinto de `admin` | Rechazo | ✅ |
+| 6 | Fuera de ventana, canal `admin` | Alta creada + una advertencia | ✅ |
+| 7 | Fuera de ventana **y** temporada iniciada, canal `admin` | Alta creada + **dos** advertencias independientes | ✅ |
+| 8 | Grado no admitido por la actividad | Rechazo | ✅ |
+| 9 | Llamada desde `enrollments.html` por RPC | Alta creada, advertencia visible en pantalla, `enrolled_by` poblado | ✅ |
+
+Los casos 3, 5 y 8 son los que no existían en el guion de la v1.7 y son los que justifican la función: ninguno de los tres lo garantizaba la pantalla.
+
+> **Sobre el caso 3.** Es el punto entero del ejercicio. El bloque `BEGIN ... EXCEPTION` de PL/pgSQL crea una subtransacción: cuando falla el `INSERT` de los días, el de la inscripción se deshace solo. Verificado contando las inscripciones del estudiante después del error: una, no dos.
 
 ### 2.2 Prueba ejecutada: el descuento de fechas no lectivas
 
@@ -102,6 +117,23 @@ Es la sexta validación de publicación (sección 9 de la Parte II).
 - **Verificar el disparador**: `SELECT tgname, tgenabled FROM pg_trigger WHERE tgrelid = 'svc_extracurricular_enrollments'::regclass AND NOT tgisinternal;`
 - **Mezclar `developmen` a `main`** para que `sidebar.js` llegue a producción.
 - Los archivos nuevos de la v1.4: `calendario-escolar.js`, `cost-concepts.html`, `activities.html`, y las correcciones a `extracurricular-engine.js` y `seasons.html`.
+- **La columna `enrolled_by`** en `svc_extracurricular_enrollments` (v1.8).
+- **La función `fn_extracurricular_enroll`** (v1.8). Es el mismo `CREATE OR REPLACE FUNCTION` corrido en DEV, sin cambios: no contiene identificadores propios de un ambiente.
+- **`enrollments.html`** con la llamada por RPC.
+
+> **Orden obligatorio en PROD:** primero la columna, después la función, después la pantalla. La función escribe en `enrolled_by`; si la columna no existe, falla al primer uso y el mensaje no señala la causa.
+
+### 2.5 Datos de prueba que quedaron en DEV
+
+**Estado al cierre del 31 de julio de 2026.** Conviene limpiarlos antes de dar el módulo por productivo, o al menos saber que están ahí.
+
+| Qué | Detalle |
+|---|---|
+| Temporada `2026-2027 I` | `published`. Ventana **10 de agosto – 10 de septiembre**, inicio **1 de septiembre**, ambos restaurados tras las pruebas |
+| Actividad `Futbol` | Creada el 31 de julio para probar el cruce. Lunes y miércoles, mínimo 10, 24 sesiones, $393.000 |
+| Inscripciones | Cuatro, todas de prueba: tres en Fútbol y una en Externa 1 |
+
+> **La creación de `Futbol` movió los precios de toda la oferta**, porque el divisor de los conceptos de temporada pasó de 18 a 28. Minichef bajó de $247.000 a $243.000 y Externa 1 de $457.000 a $453.000, **exactamente $4.000 cada una**. Esa caída idéntica es la firma correcta del prorrateo por suma de mínimos: si hubiera sido distinta entre las dos, el reparto se estaría dividiendo entre el mínimo propio de cada actividad, que es un error difícil de ver a simple vista. Vale la pena conservar la observación como prueba de regresión del acoplamiento de 5.5.
 
 ## 3. Decisiones abiertas
 
@@ -150,7 +182,41 @@ La tabla de referencia hace el puente dividiendo entre la capacidad y mostrando 
 - **`generar-dias-tilata.html` conserva su propia copia de las reglas de festivos y recesos.** Debe migrarse a `calendario-escolar.js`. Mientras no lo haga, hay dos implementaciones de la misma regla que pueden divergir. La migración es mecánica: borrar las copias locales y llamar a las funciones con prefijo `cal`.
 - **Defecto de despliegue, no de código.** El arreglo de `requiereTemporada()` en `seasons.html` se dio por aplicado el 30 de julio y **nunca llegó al archivo**. Durante horas el botón "Guardar tarifas" no hizo nada —`ReferenceError` antes del `try`, sin `catch`, sin mensaje— y solo se detectó cuando la validación 3 de publicación lo delató. **Lección: una edición no está aplicada hasta que se verifica en el archivo.** El `updated_at` de la fila es la prueba objetiva: si no cambió, el `PATCH` no salió.
 - **`step` en los campos numéricos.** `step="50"` en las tarifas de transporte de `seasons.html` no significa "las flechas suben de a 50": el navegador rechaza cualquier valor que no sea múltiplo. Una tarifa de $15.675 no se podría digitar. Mismo defecto corregido en `cost-concepts.html`.
+- **Los mensajes de la interfaz se autodescartan.** Para una confirmación está bien; para la advertencia de inscripción fuera de plazo, no: es información que el coordinador puede necesitar diez segundos después. Durante la prueba del 31 de julio la advertencia se disparó correctamente y el operador no alcanzó a verla. Conviene que las advertencias de inscripción no se borren solas, o que el texto viaje dentro del mismo mensaje de éxito en vez de competir con él.
+- **La línea secundaria de la tabla de inscritos.** Muestra `precio + transporte` incluso en las filas sin transporte, donde no hay nada que sumar, y en las que sí lo tienen no dice cuánto es —que es justo el número que una familia preguntaría—. Debería mostrar el desglose real o desaparecer en el caso sin transporte.
+- **El mensaje de `_activity_student_unique` no es alcanzable desde la pantalla.** El filtro de candidatos impide seleccionar a alguien ya inscrito. Quedó probado por RPC directo; si algún día el filtro cambia, ese texto lleva tiempo sin ejercitarse.
 - **Ajenos al módulo, detectados de paso en DEV:** `phidias_auto_sync_enabled` quedó en `true` después del clon, con la URL y el token de producción — el sincronizador de DEV consultaría el Phidias real del colegio. Y el token de Phidias en `system_config` conviene rotarlo.
+
+### 3.4 El candado de reversa cuenta inscripciones sin mirar su estado
+
+**Hallazgo del 31 de julio de 2026.** La sección 6.3 dice que `published → draft` está *"bloqueada si existe al menos una inscripción"*, sin distinguir estado, y `seasons.html` lo implementó literal. Retirar las tres inscripciones de prueba no destrabó la reversa; hubo que borrarlas físicamente.
+
+**El criterio debería ser "cero inscripciones activas", pero no basta por sí solo.** La razón del candado es que publicar congela valores que se copian a la fila de inscripción, y republicar con precios distintos deja dos generaciones conviviendo sin manera de detectarlas al cierre. Una inscripción anulada no se factura, así que no genera esa convivencia.
+
+**Lo que el criterio no cubre:** una inscripción anulada **que ya se entregó a Tesorería** sí es un hecho contable. Salió en el archivo de entrega, pudo facturarse y tener nota crédito. Si la temporada revierte y republica con otro divisor, el reporte de *proyectado contra ejecutado* mezcla generaciones y nadie puede explicar el número.
+
+Y ese caso es alcanzable: `delivered → enrollment_closed` y `enrollment_closed → published` están ambas permitidas con confirmación, así que se puede llegar a `published` con historia de entrega y cero activas.
+
+**Propuesta, pendiente de implementar:**
+
+| Situación | Tratamiento |
+|---|---|
+| Cero inscripciones de cualquier tipo | Reversa libre |
+| Solo inscripciones anuladas, temporada nunca entregada | Reversa **con advertencia explícita** que diga cuántas anuladas quedan y que sus valores congelados dejarán de corresponder a la parametrización |
+| Al menos una inscripción activa | **Bloqueada** |
+| La temporada estuvo en `delivered` alguna vez | **Bloqueada** |
+
+**Prerrequisito de esquema:** la última fila no se puede evaluar hoy. Existen `published_at` y `published_by`, pero **no hay `delivered_at` ni bitácora de transiciones**. Hay que agregar la columna, y conviene hacerlo antes de la primera entrega real: una temporada ya entregada no se puede reconstruir hacia atrás.
+
+> La fila de inscripción sobrevive a la reversa porque es autosuficiente por diseño (7.4), no porque nadie se dé cuenta. Esa autosuficiencia es lo que hace posible la advertencia en vez del bloqueo.
+
+### 3.5 El `DataBase.md` del proyecto estaba desactualizado
+
+**Detectado el 31 de julio de 2026, antes de escribir `fn_extracurricular_enroll`.** El catálogo de esquema que vive en el proyecto tenía la versión de `svc_extracurricular_cycles` **anterior a la fase 1** —con `is_active`, sin `season_status` ni las seis columnas nuevas— y **no contenía ninguna de las ocho tablas de la fase 2**.
+
+Escribir contra ese catálogo habría producido una función que congela dinero contra columnas que no existen. Se resolvió consultando `information_schema.columns` directamente en DEV.
+
+**Regla que queda:** antes de escribir código que dependa del esquema de este módulo, verificar contra la base, no contra el archivo. Y regenerar el `DataBase.md` cuando se replique la fase 5 a PROD.
 
 ---
 
@@ -560,7 +626,9 @@ Más `..._scope_time_check` (sección 5.2) y `..._cycle_unique` como andamiaje.
 
 #### `svc_extracurricular_enrollments`
 
-`enrollment_id` (PK), `activity_id`, `cycle_id`, `student_id`, `transport_option`, `validated_transport_option`, `transport_validated`, `validated_by`, `validated_at`, `enrollment_channel`, `declared_by_email`, `frozen_activity_price`, `frozen_transport_rate_linked`, `frozen_transport_rate_unlinked`, `frozen_sessions`, `enrollment_status`, `withdrawn_at`, `withdrawn_by`, `withdrawal_reason`.
+`enrollment_id` (PK), `activity_id`, `cycle_id`, `student_id`, `transport_option`, `validated_transport_option`, `transport_validated`, `validated_by`, `validated_at`, `enrollment_channel`, `declared_by_email`, `enrolled_by`, `frozen_activity_price`, `frozen_transport_rate_linked`, `frozen_transport_rate_unlinked`, `frozen_sessions`, `enrollment_status`, `withdrawn_at`, `withdrawn_by`, `withdrawal_reason`.
+
+> **`enrolled_by` se agregó en la v1.8.** `uuid` nulo con FK a `users`. Existían `withdrawn_by` y `validated_by` pero no el equivalente para el alta: se sabía quién retiró y no quién inscribió. Cuando el portal cargue el volumen, las altas por canal `admin` serán justamente las excepciones —la familia que llamó, la inscripción fuera de ventana, la reubicación— y son las que alguien va a querer explicar después. Admite nulo porque las inscripciones del portal no lo tendrán: las familias no tienen `user_id`, y para ese caso la autoría queda en `enrollment_channel` más `declared_by_email`.
 
 Únicos: `(activity_id, student_id)` y el andamiaje `(enrollment_id, cycle_id, student_id, activity_id)`.
 
@@ -616,6 +684,125 @@ Efecto secundario valioso: **el cargo de transporte no puede duplicarse** para e
 **Reubicación:** anular la vieja —el disparador libera el día— y crear la nueva. Si la segunda falla, el estudiante queda sin actividad pero con el día libre: el estado recuperable.
 
 **Reactivación:** volver a `active` **no repone los días**. La aplicación debe reinsertarlos, y fallará si otro tomó el día. Ese fallo es correcto y necesita mensaje claro.
+
+### 7.6 Inscripción transaccional — `fn_extracurricular_enroll`
+
+**Construida el 31 de julio de 2026.** Es el único camino de escritura hacia `svc_extracurricular_enrollments` y `svc_extracurricular_enrollment_days`. La llaman por RPC tanto `enrollments.html` como, en su momento, el Apps Script del portal de familias.
+
+#### Firma
+
+```
+fn_extracurricular_enroll(
+  p_student_id        integer,
+  p_activity_id       uuid,
+  p_transport_option  varchar DEFAULT 'none',
+  p_channel           varchar DEFAULT 'admin',
+  p_declared_by_email varchar DEFAULT NULL,
+  p_enrolled_by       uuid    DEFAULT NULL
+) RETURNS json
+```
+
+**Quien llama no envía ningún valor de dinero.** Ni precio, ni tarifas, ni sesiones. Todo se deriva adentro. Es lo que impide que el portal calcule por su cuenta y que las dos implementaciones diverjan.
+
+#### Lo que deriva
+
+| Dato congelado | Origen |
+|---|---|
+| `cycle_id` | De la actividad |
+| `frozen_activity_price` | `activities.frozen_price` |
+| `frozen_transport_rate_linked` / `_unlinked` | De la temporada, ambas siempre |
+| `frozen_sessions` | Suma de `cycle_days.sessions_count` de los días de la actividad |
+| Días ocupados | Un `INSERT ... SELECT` desde `activity_days` |
+
+#### Validaciones, en orden de evaluación
+
+| # | Validación | Tratamiento |
+|---|---|---|
+| 1 | Opción de transporte en `none` / `linked` / `unlinked` | Rechazo |
+| 2 | La actividad existe | Rechazo |
+| 3 | Actividad en `offered` | Rechazo |
+| 4 | Actividad con `frozen_price` | Rechazo |
+| 5 | Temporada en `published` | Rechazo (decisión 47) |
+| 6 | Las dos tarifas de transporte digitadas | Rechazo |
+| 7 | Ventana de inscripción | **Depende del canal** (ver abajo) |
+| 8 | Temporada ya iniciada | **Advertencia**, nunca rechazo |
+| 9 | Estudiante existe y `student_status.status_code = 1` | Rechazo |
+| 10 | Estudiante con curso asignado | Rechazo |
+| 11 | El grado del estudiante está en `activity_grades` | Rechazo |
+| 12 | La actividad tiene al menos un día | Rechazo |
+| 13 | Ningún día con `sessions_count` nulo | Rechazo |
+| 14 | Sesiones > 0 | Rechazo |
+
+**El estudiante activo se resuelve por `status_code = 1`, no por el uuid** de `student_status`. Así la misma sentencia sirve en DEV y en PROD sin depender de que los uuid del catálogo coincidan entre ambientes.
+
+> **Por qué la 13 existe y no es paranoia.** `SUM()` **ignora los nulos**: una actividad con un día sin conteo no daría suma nula, daría *el total de los otros días*. Menos sesiones de las reales, cargo de transporte más bajo, congelado en la fila, y nada que lo delate. La validación 1 de publicación lo previene, pero la función tiene que defenderse sola porque el portal la llama directo.
+
+> **Por qué la 11 vive aquí.** La sección 7.4 la dejó deliberadamente fuera de las restricciones de base, como regla de proceso, y `enrollments.html` la resuelve filtrando la lista de candidatos. Un filtro de interfaz no defiende nada frente a una llamada por RPC.
+
+#### La regla del canal
+
+| Canal | Fuera de la ventana de inscripción |
+|---|---|
+| `admin` | **Pasa**, con advertencia (decisión 48) |
+| Cualquier otro | **Rechazo** |
+
+La condición está escrita como *"distinto de `admin`"*, no como *"igual a familia"*. Así no depende de qué literal termine usando el portal, y cualquier canal que se invente después nace bloqueado en vez de nacer permitido.
+
+**Consecuencia institucional, aceptada el 31 de julio de 2026:** una familia que llega tarde no puede inscribirse sola. Tiene que llamar al colegio y que coordinación la registre. Es más trabajo para coordinación, pero conserva el control de los casos tardíos, que son justamente los que llegan a Tesorería con particularidades de cobro.
+
+#### Advertencias
+
+Una función de base **no puede advertir**: o rechaza o acepta. Pero sí puede devolver la advertencia, y debe hacerlo por la misma razón que existe la función: si el texto vive en `enrollments.html`, cuando exista el portal habrá que escribirlo otra vez en Apps Script y las dos versiones divergirán.
+
+El campo `warnings` del JSON de respuesta trae un arreglo de textos ya redactados para el usuario. Dos previstos:
+
+- **Fuera de la ventana de inscripción**, con las fechas.
+- **Inscripción posterior al inicio de la temporada**, con la fecha de inicio y la aclaración de que el cobro lo define Tesorería.
+
+**Son independientes y pueden salir juntas.** El 11 de septiembre la ventana ya cerró *y* la temporada ya arrancó; una inscripción el 5 de agosto estaría fuera de ventana sin que la temporada haya empezado. Verificado en las pruebas 6 y 7.
+
+**La función no propone ningún ajuste de precio en ninguno de los dos casos.** Es de Tesorería (sección 3.1 de la Parte I).
+
+#### Atomicidad
+
+Los dos `INSERT` van dentro de un bloque `BEGIN ... EXCEPTION`, que en PostgreSQL crea una subtransacción: si el de los días falla, el de la inscripción se deshace solo. Ahí desaparece el remedo que hacía `enrollments.html`, que borraba a mano la inscripción recién creada.
+
+El manejador distingue las dos restricciones que llegan con el mismo `23505`, leyendo `CONSTRAINT_NAME` con `GET STACKED DIAGNOSTICS`:
+
+| Restricción | Mensaje devuelto |
+|---|---|
+| `..._no_overlap` | El estudiante ya tiene una actividad ese día |
+| `..._activity_student_unique` | El estudiante ya está inscrito en esta actividad |
+
+Cualquier otra violación de unicidad se relanza sin traducir.
+
+#### Respuesta
+
+```json
+{
+  "ok": true,
+  "enrollment_id": "...",
+  "activity_name": "Futbol",
+  "transport_option": "linked",
+  "frozen_activity_price": 393000,
+  "frozen_transport_rate_linked": 16100,
+  "frozen_transport_rate_unlinked": 21000,
+  "frozen_sessions": 24,
+  "total_value": 779400,
+  "days": [1, 3],
+  "warnings": []
+}
+```
+
+#### Consumo desde la pantalla
+
+`POST` a `/rpc/fn_extracurricular_enroll` por el `supabaseRequest()` de siempre, sin headers explícitos. Los nombres de los parámetros en el cuerpo son los de la firma, con prefijo `p_`: PostgREST los mapea literalmente.
+
+> **Los errores llegan envueltos.** `_supabaseRequestSingle` lanza `Error("HTTP 400: {…json…}")`, así que el mensaje legible queda adentro de ese texto como el campo `message`. `traducirError()` lo extrae y, cuando el `code` es `P0001` —un `RAISE` nuestro—, lo muestra tal cual: el texto ya está escrito para el usuario. Sin esa extracción el coordinador vería el `HTTP 400` crudo.
+
+#### Seguridad
+
+La función queda expuesta por RPC y es invocable con la `anon key`, igual que cualquier tabla hoy. **No empeora nada respecto al estado actual de la plataforma** —RLS está desactivado y la seguridad vive en la capa JS— pero conviene tenerlo escrito y no descubrirlo de paso. Cuando el portal exista, la llamada del lado familias pasa por Apps Script con `service_role`, no desde el navegador.
 
 ## 8. El motor: `extracurricular-engine.js` y `calendario-escolar.js`
 
@@ -684,7 +871,7 @@ Se recomienda que la pantalla muestre las seis como **lista de verificación vis
 | 1 | Gestionar temporadas de extracurriculares | `seasons.html` | ✅ completa |
 | 2 | Conceptos de costo de extracurriculares | `cost-concepts.html` | ✅ |
 | 3 | Gestionar actividades extracurriculares | `activities.html` | ✅ |
-| 4 | Gestionar inscripciones a extracurriculares | `enrollments.html` | ⚠️ etapa 1 sin probar |
+| 4 | Gestionar inscripciones a extracurriculares | `enrollments.html` | ✅ etapa 1 probada, por RPC |
 | 5 | Registrar asistencia a extracurriculares | `attendance.html` | ❌ |
 | 6 | Configurar rutas de extracurriculares | `routes.html` | ❌ |
 | 7 | Registro diario de rutas de extracurriculares | `daily-routes.html` | ❌ |
@@ -744,8 +931,12 @@ La inscripción ocurriría en `families.html`, página pública sin `config.js` 
 | Endpoint | Función |
 |---|---|
 | `get_extracurricular_offer` | Temporada abierta, actividades filtradas por grados de los hijos |
-| `enroll_student` | Valida ventana y no cruce, inserta inscripción y días |
+| `enroll_student` | **Envoltura delgada sobre `fn_extracurricular_enroll`** (v1.8) |
 | `get_my_enrollments` | Inscripciones vigentes |
+
+> **`enroll_student` dejó de ser trabajo de diseño.** La v1.7 lo describía como *"valida ventana y no cruce, inserta inscripción y días"*, que era la especificación de una segunda implementación completa, en un tercer lenguaje. Con la función de la sección 7.6 el endpoint se reduce a: recibir estudiante, actividad y opción de transporte declarada, verificar contra la sesión del portal que ese estudiante pertenece a la familia del correo autenticado, y llamar la función por RPC con `p_channel` distinto de `'admin'`. Toda la aritmética, las catorce validaciones y la atomicidad ya están resueltas del lado del servidor.
+
+> **Lo único que el portal sigue debiendo por su cuenta** es la verificación de pertenencia: que el estudiante que llega en la petición sea hijo de la familia asociada al correo de la sesión. La función no lo puede saber —no recibe el correo autenticado, solo el declarado— y sin esa verificación cualquiera con una sesión válida podría inscribir a un estudiante ajeno.
 
 Cadena de resolución: `family_members.email → families → students.family_id → students.course_id → courses.grade_id → grades`.
 
@@ -765,11 +956,19 @@ Cuando el portal esté vivo, `enrollments.html` queda para dos cosas:
 
 **La vista operativa.** Quién va en qué actividad, si se alcanzó el mínimo, quién declaró transporte. Eso el portal no lo da.
 
+> **Actualización de la v1.8.** Las dos escrituras dejaron de ser independientes: ambas pasan por `fn_extracurricular_enroll`. Lo que sigue siendo independiente es el **camino de autenticación** —sesión de SchoolNet contra sesión del portal— y por eso `enrollment_channel` conserva su razón de ser, junto con la regla de ventana que se comporta distinto según el canal.
+
 > **Ajuste de diseño previsto.** La etapa 1 presenta las actividades como tarjetas para escoger una a la vez. Sirve para inscribir, que es lo que se tuvo en mente al construirla. **No sirve para la pregunta diaria del coordinador cuando el portal cargue el volumen** —"¿cuáles actividades van a abrir?"—, porque obliga a entrar y salir de cada una. Debe convertirse en una tabla con conteos, sin perder el acceso al detalle. Se posterga hasta que exista el portal: hoy no hay volumen que justifique el rediseño.
 
 ### 12.4 Impacto en esta entrega
 
 Inscripción únicamente desde `enrollments.html` con `enrollment_channel = 'admin'`; `declared_by_email` opcional. **El modelo de datos no cambia**: todas las columnas del portal existen ya.
+
+### 12.5 Bloqueo institucional, no técnico
+
+**La carga de `family_members` está incompleta.** El documento entregado a IT (`Inconsistencias_BD_Estudiantes_para_IT.md`) reporta 26 códigos de familia del CSV que no existen en `families`, y la familia 106000 con padres distintos entre hermanos. Mientras eso no se resuelva, esas familias no pueden entrar al portal: `request_code` valida contra `family_members` y devuelve respuesta neutra, así que ni siquiera sabrían por qué.
+
+**Abrir la inscripción por portal con cobertura parcial deja a un grupo de familias sin canal y sin explicación visible.** Es razón suficiente para que la primera temporada la cargue coordinación, independientemente de que el portal esté técnicamente listo.
 
 ## 13. Notificaciones
 
@@ -815,6 +1014,10 @@ Por `sendNotification()` de Apps Script, desde `desarrollos@colegiotilata.edu.co
 | 17 | Dos fuentes de superávit apiladas | Prorratear sobre mínimos en vez de inscritos reales, más el redondeo hacia arriba. Ninguna es un error, pero quien apruebe los precios ante el Consejo Directivo debería poder explicar de dónde sale el excedente |
 | 18 | El motor no rechaza una actividad sin días | Devuelve `0` sesiones, no error. Mitigado en `activities.html`, no en el motor |
 | 19 | `system_config.current_academic_year_id` desalineado entre ambientes | Hace que `generar-dias-tilata.html` opere sobre el año equivocado sin avisar |
+| 20 | El candado de reversa cuenta inscripciones sin filtrar por estado | Bloquea reversas legítimas y no bloquea la peligrosa: la de una temporada ya entregada. Sección 3.4 |
+| 21 | No existe `delivered_at` ni bitácora de transiciones de temporada | Sin ella no se puede saber si una temporada estuvo entregada. Una temporada ya entregada no se reconstruye hacia atrás: la columna hay que agregarla **antes** de la primera entrega real |
+| 22 | La función queda expuesta por RPC con la `anon key` | No empeora el estado actual de la plataforma, donde RLS está desactivado en todas las tablas. Se documenta para que sea una decisión y no un descubrimiento. Sección 7.6 |
+| 23 | El `DataBase.md` del proyecto se desactualiza en silencio | Tenía el esquema previo a la fase 1 y ninguna tabla de la fase 2. Verificar contra `information_schema`, no contra el archivo. Sección 3.5 |
 
 ## 16. Bitácora de decisiones
 
@@ -875,6 +1078,22 @@ Por `sendNotification()` de Apps Script, desde `desarrollos@colegiotilata.edu.co
 | 36 | ¿El selector de grados filtra por año académico? | **No.** La nota de la v1.3 era falsa. Ver sección 7.4 |
 | 37 | ¿Dónde se muestra el ajuste por redondeo? | **Línea propia en el desglose**, no diluido en el total. Es dinero que alguien tiene que poder explicar |
 | 38 | ¿`activities.html` guarda el precio calculado? | **No.** Es estimación de solo lectura; `frozen_price` se escribe al publicar |
+
+### 16.7 Cerradas en la v1.8 (prueba de `enrollments.html` y función transaccional)
+
+| # | Decisión | Resolución |
+|---|---|---|
+| 53 | ¿La función recibe los valores congelados o los deriva? | **Los deriva.** Quien llama no envía dinero. Es lo que impide que el portal calcule por su cuenta |
+| 54 | ¿La ventana de inscripción se comporta distinto según el canal? | **Sí.** `admin` pasa con advertencia, cualquier otro canal rechaza. Consecuencia aceptada: la familia que llega tarde llama al colegio |
+| 55 | ¿Cómo se escribe la regla del canal? | **"Distinto de `admin`"**, no "igual a familia". Un canal nuevo nace bloqueado, no permitido |
+| 56 | ¿Una función de base puede advertir? | **No, pero puede devolver la advertencia.** El texto vive en la función, no en cada llamador, para que no diverja cuando existan dos |
+| 57 | ¿Dónde vive la validación de grado? | **En la función.** Un filtro de interfaz no defiende nada frente a una llamada por RPC |
+| 58 | ¿Se agrega `enrolled_by`? | **Sí**, antes de escribir la función para no cambiarle la firma después. Nulo, porque el portal no lo tendrá |
+| 59 | ¿Cómo se identifica al estudiante activo? | Por **`student_status.status_code = 1`**, no por uuid: los catálogos pueden no coincidir entre ambientes |
+| 60 | ¿Qué hace la función si un día no tiene `sessions_count`? | **Rechaza.** `SUM()` ignora los nulos y devolvería menos sesiones de las reales, congeladas y sin rastro |
+| 61 | ¿Se conservan las ramas viejas de `traducirError()`? | **Sí**, como red por si algo escribe directo a las tablas sin pasar por la función |
+| 62 | ¿La reversa a borrador debe permitirse con inscripciones anuladas? | **Sí, con advertencia**, salvo que la temporada haya estado en `delivered`. Pendiente de implementar: requiere `delivered_at`. Sección 3.4 |
+| 63 | ¿Qué queda de `enroll_student` en el portal? | **Una envoltura delgada** más la verificación de pertenencia del estudiante a la familia autenticada, que la función no puede hacer |
 
 ### 16.6 Cerradas en la v1.6
 
