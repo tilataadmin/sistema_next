@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.1">
+    <meta name="page-version" content="26.7.31.1">
     <title>Inscripciones a Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -774,60 +774,38 @@
             const correo = document.getElementById('insc-correo').value.trim();
 
             const payload = {
-                activity_id: actividadSel.activity_id,
-                cycle_id: temporadaSel.cycle_id,
-                student_id: estudianteSel.student_id,
-                transport_option: document.getElementById('insc-transporte').value,
-                enrollment_channel: 'admin',
-                declared_by_email: correo === '' ? null : correo,
-                frozen_activity_price: parseFloat(actividadSel.frozen_price),
-                frozen_transport_rate_linked: parseFloat(temporadaSel.transport_rate_linked),
-                frozen_transport_rate_unlinked: parseFloat(temporadaSel.transport_rate_unlinked),
-                frozen_sessions: ses,
-                enrollment_status: 'active'
+                p_student_id: estudianteSel.student_id,
+                p_activity_id: actividadSel.activity_id,
+                p_transport_option: document.getElementById('insc-transporte').value,
+                p_channel: 'admin',
+                p_declared_by_email: correo === '' ? null : correo,
+                p_enrolled_by: currentUser?.user_id || null
             };
 
-            let enrollmentId = null;
             try {
                 mostrarLoading();
 
-                const creada = await supabaseRequest('/svc_extracurricular_enrollments', {
+                // Una sola llamada. La función congela precio, tarifas y sesiones, e
+                // inserta inscripción y días en la misma transacción; si los días
+                // fallan, la inscripción se deshace sola. La pantalla ya no envía
+                // ningún valor de dinero: los deriva el servidor. El portal de
+                // familias llamará esta misma función.
+                const r = await supabaseRequest('/rpc/fn_extracurricular_enroll', {
                     method: 'POST', body: JSON.stringify(payload)
-                });
-                enrollmentId = creada && creada[0] ? creada[0].enrollment_id : null;
-                if (!enrollmentId) throw new Error('No se recibió el identificador de la inscripción.');
-
-                await supabaseRequest('/svc_extracurricular_enrollment_days', {
-                    method: 'POST',
-                    body: JSON.stringify(actividadSel.dias.map(d => ({
-                        enrollment_id: enrollmentId,
-                        cycle_id: temporadaSel.cycle_id,
-                        student_id: estudianteSel.student_id,
-                        activity_id: actividadSel.activity_id,
-                        day_of_week: d
-                    })))
                 });
 
                 modalInscribir.hide();
                 showMessage(`${nombreEstudiante(estudianteSel)} quedó inscrito`, 'success');
+
+                // Advertencias que no bloquean: fuera de ventana, temporada iniciada.
+                (r?.warnings || []).forEach(a => showMessage(a, 'warning'));
+
                 await cargarInscripciones();
                 renderActividades();
                 renderInscritos();
                 ocultarLoading();
 
             } catch (err) {
-                // Si los días fallaron, la inscripción quedaría activa sin días: un
-                // registro que ocupa cupo y no ocupa día. Se deshace en el acto.
-                if (enrollmentId) {
-                    try {
-                        await supabaseRequest(`/svc_extracurricular_enrollments?enrollment_id=eq.${enrollmentId}`, { method: 'DELETE' });
-                    } catch (e2) {
-                        console.error('❌ No se pudo deshacer la inscripción incompleta:', e2);
-                        showMessage('La inscripción quedó incompleta y no se pudo deshacer. Revise el registro antes de reintentar.', 'danger');
-                        ocultarLoading();
-                        return;
-                    }
-                }
                 ocultarLoading();
                 traducirError(err);
             }
@@ -888,7 +866,27 @@
         }
 
         function traducirError(err) {
-            const m = err.message || '';
+            const bruto = err.message || '';
+
+            // supabaseRequest lanza Error("HTTP 400: {json}"). El mensaje legible que
+            // escribe fn_extracurricular_enroll viene dentro de ese JSON; sin
+            // extraerlo el coordinador vería el HTTP 400 crudo.
+            let m = bruto, codigo = '';
+            const llave = bruto.indexOf('{');
+            if (llave !== -1) {
+                try {
+                    const j = JSON.parse(bruto.slice(llave));
+                    if (j && j.message) m = j.message;
+                    if (j && j.code) codigo = j.code;
+                } catch (e) { /* si no es JSON, se queda el texto crudo */ }
+            }
+
+            // P0001 es un RAISE nuestro: el texto ya está escrito para el usuario.
+            if (codigo === 'P0001') {
+                showMessage(m, 'warning');
+                return;
+            }
+
             if (m.includes('enrollment_days_no_overlap')) {
                 showMessage('El estudiante ya tiene otra actividad en uno de esos días. Actualice la página: alguien pudo inscribirlo mientras tanto.', 'warning');
             } else if (m.includes('activity_student_unique')) {
