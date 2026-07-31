@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.1">
+    <meta name="page-version" content="26.7.31.1">
     <title>Temporadas de Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -179,6 +179,19 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-send me-2"></i>Publicación</h6>
+                </div>
+                <div class="card-body">
+                    <p class="hint mb-3">
+                        Publicar abre la temporada a inscripciones y congela los precios. Ninguna de estas
+                        verificaciones vive en la base de datos: son responsabilidad de esta pantalla.
+                    </p>
+                    <div id="panel-publicacion"></div>
                 </div>
             </div>
 
@@ -607,6 +620,7 @@
                 mostrarLoading();
                 await cargarReferenciaTarifas();
                 await cargarDiasTemporada();
+                await cargarInsumosPublicacion();
                 renderDetalle();
                 ocultarLoading();
                 document.getElementById('detalle-temporada').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -650,6 +664,7 @@
 
             renderDias();
             renderTarifas();
+            renderPublicacion();
         }
 
         function renderDias() {
@@ -1002,9 +1017,351 @@
         }
 
         // ==========================================
-        // UTILIDADES
+        // PUBLICACIÓN — ETAPA 4
+        // Las seis validaciones de la sección 9 no viven en ninguna restricción
+        // de base: son responsabilidad de esta pantalla. Se muestran como lista
+        // de verificación permanente, no como alerta al fallar, para que el
+        // coordinador vea qué falta antes de intentar publicar.
         // ==========================================
-        
+        let conceptosPub = [];
+        let actividadesPub = [];
+        let costosPub = [];
+        let insumosPub = null;
+
+        async function cargarInsumosPublicacion() {
+            const cid = temporadaSel.cycle_id;
+
+            conceptosPub = await supabaseRequest(
+                `/svc_extracurricular_cost_concepts?select=*&cycle_id=eq.${cid}`
+            ) || [];
+
+            costosPub = await supabaseRequest(
+                `/svc_extracurricular_activity_costs?select=activity_id,concept_id,concept_value&cycle_id=eq.${cid}`
+            ) || [];
+
+            const acts = await supabaseRequest(
+                `/svc_extracurricular_activities?select=*,svc_extracurricular_activity_days(day_of_week)` +
+                `&cycle_id=eq.${cid}&order=activity_name.asc`
+            ) || [];
+            actividadesPub = acts.map(a => ({
+                ...a,
+                dias: (a.svc_extracurricular_activity_days || []).map(d => d.day_of_week)
+            }));
+
+            // El calendario se consulta aparte: su ausencia es la validación 6
+            try {
+                insumosPub = await ecObtenerInsumosCalendario(temporadaSel.academic_year_id);
+            } catch (e) {
+                console.warn('No se pudo leer el calendario del año académico:', e);
+                insumosPub = null;
+            }
+        }
+
+        function conceptoAplicaPub(c, a) {
+            if (!c.is_active) return false;
+            if (!c.applies_to_modality) return true;
+            return c.applies_to_modality === a.modality;
+        }
+
+        function tieneValor(a, c) {
+            const propio = costosPub.find(x => x.activity_id === a.activity_id && x.concept_id === c.concept_id);
+            if (propio) return true;
+            return c.default_value !== null && c.default_value !== undefined;
+        }
+
+        function sesionesPorDiaMapa() {
+            const m = {};
+            diasTemporada.forEach(d => { m[d.day_of_week] = d.sessions_count; });
+            return m;
+        }
+
+        function calcularPreciosOferta() {
+            const ofertadas = actividadesPub.filter(a => a.activity_status === 'offered');
+            if (ofertadas.length === 0) return null;
+            return ecCalcularPrecios(
+                ofertadas.map(a => ({
+                    activity_id: a.activity_id,
+                    activity_name: a.activity_name,
+                    modality: a.modality,
+                    min_students: a.min_students,
+                    dias: a.dias
+                })),
+                conceptosPub,
+                costosPub,
+                sesionesPorDiaMapa()
+            );
+        }
+
+        function validacionesPublicacion() {
+            const v = [];
+            const ofertadas = actividadesPub.filter(a => a.activity_status === 'offered');
+
+            const sinSesiones = diasTemporada.filter(d => d.sessions_count === null || d.sessions_count === undefined);
+            v.push({
+                n: 1,
+                texto: 'Todos los días con sesiones calculadas',
+                ok: diasTemporada.length > 0 && sinSesiones.length === 0,
+                detalle: diasTemporada.length === 0
+                    ? 'La temporada no tiene días habilitados.'
+                    : (sinSesiones.length > 0 ? 'Sin calcular: ' + sinSesiones.map(d => EC_DIAS_NOMBRE[d.day_of_week]).join(', ') + '.' : '')
+            });
+
+            const ok2 = !!(temporadaSel.enrollment_start_date && temporadaSel.enrollment_end_date);
+            v.push({
+                n: 2,
+                texto: 'Fechas de inscripción digitadas',
+                ok: ok2,
+                detalle: ok2 ? '' : 'Falta la ventana de inscripción. Se edita en el formulario de la temporada.'
+            });
+
+            const tv = temporadaSel.transport_rate_linked;
+            const tnv = temporadaSel.transport_rate_unlinked;
+            const ok3 = tv !== null && tv !== undefined && tnv !== null && tnv !== undefined;
+            v.push({
+                n: 3,
+                texto: 'Las dos tarifas de transporte digitadas',
+                ok: ok3,
+                detalle: ok3 ? '' : 'La fila de inscripción las congela y son NOT NULL: obligatorias aunque sean cero.'
+            });
+
+            const faltantes = [];
+            ofertadas.forEach(a => {
+                conceptosPub.filter(c => conceptoAplicaPub(c, a)).forEach(c => {
+                    if (!tieneValor(a, c)) faltantes.push(`${a.activity_name} · ${c.concept_name}`);
+                });
+            });
+            v.push({
+                n: 4,
+                texto: 'Todo concepto aplicable con valor propio o por defecto',
+                ok: faltantes.length === 0,
+                detalle: faltantes.length === 0 ? '' : 'Sin valor: ' + faltantes.join('; ') + '.'
+            });
+
+            const res = calcularPreciosOferta();
+            const conError = res ? res.actividades.filter(d => d.errores.length > 0) : [];
+            v.push({
+                n: 5,
+                texto: 'El motor calcula precio para todas las actividades en la oferta',
+                ok: res !== null && res.errores.length === 0 && conError.length === 0,
+                detalle: res === null
+                    ? 'No hay actividades en la oferta.'
+                    : [...res.errores, ...conError.map(d => `${d.activity_name}: ${d.errores.join(' ')}`)].join(' ')
+            });
+
+            const ok6 = insumosPub !== null && Object.keys(insumosPub.excluidas).length > 0;
+            v.push({
+                n: 6,
+                texto: 'Calendario laboral cargado para el año académico',
+                ok: ok6,
+                detalle: ok6 ? '' : 'Sin festivos ni jornadas, el conteo da el máximo teórico y los precios salen inflados.'
+            });
+
+            v.push({
+                n: 7,
+                texto: 'Al menos una actividad en la oferta',
+                ok: ofertadas.length > 0,
+                detalle: ofertadas.length > 0
+                    ? ofertadas.length + ' actividad' + (ofertadas.length === 1 ? '' : 'es') + ' se publicarán.'
+                    : 'Las actividades en borrador no se publican. Inclúyalas en la oferta desde Actividades.'
+            });
+
+            return v;
+        }
+
+        function renderPublicacion() {
+            const cont = document.getElementById('panel-publicacion');
+            const estado = temporadaSel.season_status;
+
+            if (estado !== 'draft') {
+                cont.innerHTML = `
+                    <div class="alert alert-light border py-2 px-3 mb-3" style="font-size:0.85rem;">
+                        <i class="bi bi-lock me-1"></i>La temporada está ${badgeEstado(estado)} desde
+                        ${temporadaSel.published_at ? fmtFecha(temporadaSel.published_at.slice(0, 10)) : '—'}.
+                        Los precios y las tarifas quedaron congelados en cada fila de inscripción.
+                    </div>
+                    <button class="btn btn-outline-warning btn-sm" onclick="revertirPublicacion()">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Devolver a borrador
+                    </button>
+                    <div class="hint mt-2">Solo mientras no existan inscripciones activas, y nunca después de entregar a Tesorería.</div>`;
+                return;
+            }
+
+            const v = validacionesPublicacion();
+            const todoOk = v.every(x => x.ok);
+            const res = calcularPreciosOferta();
+
+            let html = '<div class="table-responsive mb-3"><table class="table table-sm mb-0">' +
+                '<tbody>' + v.map(x => `
+                    <tr>
+                        <td style="width:32px;">${x.ok
+                            ? '<i class="bi bi-check-circle-fill text-success"></i>'
+                            : '<i class="bi bi-x-circle-fill text-danger"></i>'}</td>
+                        <td>
+                            ${x.texto}
+                            ${x.detalle ? `<div class="hint">${escaparHTML(x.detalle)}</div>` : ''}
+                        </td>
+                    </tr>`).join('') + '</tbody></table></div>';
+
+            if (res && todoOk) {
+                html += '<div class="table-responsive mb-3"><table class="table table-sm mb-0">' +
+                    '<thead class="table-light"><tr><th>Se congelará</th><th class="text-end">Precio</th></tr></thead><tbody>' +
+                    res.actividades.map(d =>
+                        `<tr><td>${escaparHTML(d.activity_name)} <span class="hint">· ${d.sesiones} sesiones</span></td>
+                             <td class="text-end fw-semibold">${fmtCOP(d.precio)}</td></tr>`
+                    ).join('') + '</tbody></table></div>';
+            }
+
+            html += `<button class="btn btn-ec" onclick="publicarTemporada()" ${todoOk ? '' : 'disabled'}>
+                        <i class="bi bi-send me-1"></i>Publicar temporada
+                     </button>
+                     <div class="hint mt-2">
+                        Publicar congela el precio de cada actividad y las dos tarifas. A partir de ahí,
+                        cambiar un concepto, un mínimo o una sesión ya no mueve lo que paga una familia inscrita.
+                     </div>`;
+
+            cont.innerHTML = html;
+        }
+
+        async function publicarTemporada() {
+            if (!esEditable()) return;
+
+            const v = validacionesPublicacion();
+            if (!v.every(x => x.ok)) {
+                showMessage('Faltan validaciones por cumplir.', 'warning');
+                return;
+            }
+
+            const res = calcularPreciosOferta();
+            const resumen = res.actividades
+                .map(d => `${d.activity_name}: ${fmtCOP(d.precio)}`)
+                .join('\n');
+
+            if (!confirm(
+                `Se publicará "${temporadaSel.cycle_name}" con estos precios:\n\n${resumen}\n\n` +
+                `Quedan congelados. Cambiar después un concepto, un mínimo o una sesión no altera lo que ` +
+                `pague una familia ya inscrita.\n\n¿Continuar?`
+            )) return;
+
+            try {
+                mostrarLoading();
+
+                // Primero los precios: si algo falla aquí, la temporada sigue en
+                // borrador y se puede reintentar. Al revés quedaría publicada sin precios.
+                for (const d of res.actividades) {
+                    await supabaseRequest(`/svc_extracurricular_activities?activity_id=eq.${d.activity_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ frozen_price: d.precio, updated_at: new Date().toISOString() })
+                    });
+                }
+
+                await supabaseRequest(`/svc_extracurricular_cycles?cycle_id=eq.${temporadaSel.cycle_id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        season_status: 'published',
+                        published_at: new Date().toISOString(),
+                        published_by: currentUser.user_id,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                await cargarTemporadas();
+                temporadaSel = cacheTemporadas.find(t => t.cycle_id === temporadaSel.cycle_id);
+                await cargarInsumosPublicacion();
+                renderDetalle();
+                ocultarLoading();
+                showMessage('Temporada publicada. Los precios quedaron congelados.', 'success');
+            } catch (err) {
+                ocultarLoading();
+                console.error('❌ Error publicando:', err);
+                showMessage('Error al publicar: ' + (err.message || ''), 'danger');
+            }
+        }
+
+        // Decisión 62: la reversa se permite con inscripciones anuladas, con
+        // advertencia, y se bloquea si hay alguna activa o si la temporada estuvo
+        // entregada a Tesorería. Una inscripción anulada no se factura, así que no
+        // produce dos generaciones de precio conviviendo; una entregada sí es un
+        // hecho contable que el reporte de cierre no podría explicar.
+        // Se limpia frozen_price para que no quede un precio huérfano que nadie
+        // sabría si sigue vigente.
+        async function revertirPublicacion() {
+            if (!temporadaSel || temporadaSel.season_status !== 'published') return;
+
+            try {
+                mostrarLoading();
+                const insc = await supabaseRequest(
+                    `/svc_extracurricular_enrollments?select=enrollment_status&cycle_id=eq.${temporadaSel.cycle_id}`
+                );
+                ocultarLoading();
+
+                const filas    = insc || [];
+                const activas  = filas.filter(i => i.enrollment_status === 'active').length;
+                const anuladas = filas.length - activas;
+
+                if (activas > 0) {
+                    showMessage(
+                        `No se puede devolver a borrador: la temporada tiene ${activas} ` +
+                        `inscripción(es) activa(s). Retírelas primero si de verdad hay que republicar.`,
+                        'warning');
+                    return;
+                }
+
+                // La columna existe desde la v1.8 pero todavía no la escribe nadie:
+                // las transiciones a delivered no están construidas. La condición
+                // queda lista para cuando lo estén.
+                if (temporadaSel.delivered_at) {
+                    showMessage(
+                        'No se puede devolver a borrador: la temporada ya estuvo entregada a Tesorería. ' +
+                        'Republicar con otro divisor dejaría el reporte de cierre sin explicación posible.',
+                        'warning');
+                    return;
+                }
+
+                let aviso = '';
+                if (anuladas > 0) {
+                    aviso = `\n\nOJO: quedan ${anuladas} inscripción(es) anulada(s). Sus valores ` +
+                            `congelados sobreviven a la reversa y dejarán de corresponder a la ` +
+                            `parametrización de la temporada.`;
+                }
+
+                if (!confirm(
+                    `¿Devolver "${temporadaSel.cycle_name}" a borrador?\n\n` +
+                    `Se borran los precios congelados de todas las actividades. Habrá que volver a publicar ` +
+                    `para recalcularlos.` + aviso
+                )) return;
+
+                mostrarLoading();
+                await supabaseRequest(
+                    `/svc_extracurricular_activities?cycle_id=eq.${temporadaSel.cycle_id}`,
+                    { method: 'PATCH', body: JSON.stringify({ frozen_price: null, updated_at: new Date().toISOString() }) }
+                );
+                await supabaseRequest(`/svc_extracurricular_cycles?cycle_id=eq.${temporadaSel.cycle_id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        season_status: 'draft',
+                        published_at: null,
+                        published_by: null,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                await cargarTemporadas();
+                temporadaSel = cacheTemporadas.find(t => t.cycle_id === temporadaSel.cycle_id);
+                await cargarInsumosPublicacion();
+                renderDetalle();
+                ocultarLoading();
+                showMessage('Temporada devuelta a borrador', 'success');
+            } catch (err) {
+                ocultarLoading();
+                showMessage('Error al devolver a borrador: ' + (err.message || ''), 'danger');
+            }
+        }
+
+        function escaparHTML(s) {
+            return String(s ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
         function mostrarLoading() { document.getElementById('loading-overlay')?.classList.remove('hidden'); }
         function ocultarLoading() { document.getElementById('loading-overlay')?.classList.add('hidden'); }
     </script>
