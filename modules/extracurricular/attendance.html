@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.31.1">
+    <meta name="page-version" content="26.7.31.2">
     <title>Asistencia a Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -70,7 +70,9 @@
                 </h1>
                 <p class="text-muted">
                     Se registra por fecha, no por actividad: un mismo día pueden correr varias actividades a la vez.
-                    Nada queda guardado hasta que se pulse Guardar.
+                    La columna <strong>Colegio</strong> muestra el ingreso registrado ese día; el botón
+                    <strong>Proponer según ingreso</strong> llena las marcas a partir de él. Nada queda guardado
+                    hasta que se pulse Guardar.
                 </p>
             </div>
         </div>
@@ -128,6 +130,7 @@
         let actividadesDia = [];       // actividades que corren ese día de la semana
         let filasPorActividad = {};    // activity_id -> [ fila ]
         let marcas = {};               // enrollment_id -> 'present' | 'absent'
+        let evidencia = {};            // documento -> { entrada, salida, dentro }
 
         const ESTADOS = {
             draft:             { texto: 'Borrador',                clase: 'estado-draft' },
@@ -268,6 +271,7 @@
             actividadesDia = [];
             filasPorActividad = {};
             marcas = {};
+            evidencia = {};
             document.getElementById('avisos-fecha').innerHTML = '';
             document.getElementById('panel-dia').innerHTML = '';
         }
@@ -351,7 +355,7 @@
             // 2. Inscripciones activas de esas actividades
             const inscripciones = await supabaseRequest(
                 `/svc_extracurricular_enrollments?select=enrollment_id,activity_id,student_id,enrollment_status,` +
-                `students(student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,courses(course_name))` +
+                `students(student_id,student_code,student_id_document,student_first_name,student_last_name_1,student_last_name_2,courses(course_name))` +
                 `&cycle_id=eq.${cid}&activity_id=in.(${idsVivas.join(',')})&enrollment_status=eq.active`
             ) || [];
 
@@ -362,7 +366,7 @@
             const asistencia = await supabaseRequest(
                 `/svc_extracurricular_attendance?select=attendance_id,enrollment_id,attendance_status,` +
                 `svc_extracurricular_enrollments!inner(enrollment_id,activity_id,student_id,enrollment_status,` +
-                `students(student_id,student_code,student_first_name,student_last_name_1,student_last_name_2,courses(course_name)))` +
+                `students(student_id,student_code,student_id_document,student_first_name,student_last_name_1,student_last_name_2,courses(course_name)))` +
                 `&attendance_date=eq.${fechaSel}&svc_extracurricular_enrollments.cycle_id=eq.${cid}`
             ) || [];
 
@@ -411,11 +415,86 @@
                 filasPorActividad[k].sort((x, y) =>
                     nombreApellido(x.estudiante).localeCompare(nombreApellido(y.estudiante), 'es'));
             });
+
+            await cargarEvidencia();
         }
 
         const nombreApellido = s => s
             ? `${s.student_last_name_1 || ''} ${s.student_last_name_2 || ''} ${s.student_first_name || ''}`.trim()
             : '';
+
+        // ==========================================
+        // EVIDENCIA: INGRESO AL COLEGIO
+        // La salida solo se registra cuando el estudiante se va ANTES de la hora
+        // normal de salida, así que su presencia es exactamente la señal que
+        // interesa: no estaba en el colegio cuando empezó la actividad.
+        // Se mira el ULTIMO registro válido del día, no si existe alguna salida:
+        // quien sale a las 11 por una cita y vuelve a las 2 sí estuvo.
+        // ==========================================
+        async function cargarEvidencia() {
+            evidencia = {};
+
+            const regs = await supabaseRequest(
+                `/attendance?select=person_id_document,attendance_time,registro_tipo,attendance_timestamp` +
+                `&person_type=eq.student&is_valid=eq.true&attendance_date=eq.${fechaSel}` +
+                `&order=attendance_timestamp.asc`
+            ) || [];
+
+            regs.forEach(r => {
+                const doc = r.person_id_document;
+                if (!doc) return;
+                if (!evidencia[doc]) evidencia[doc] = { entrada: null, salida: null, dentro: false };
+
+                const hora = (r.attendance_time || '').slice(0, 5);
+                if (r.registro_tipo === 'entrada') {
+                    if (!evidencia[doc].entrada) evidencia[doc].entrada = hora;
+                    evidencia[doc].dentro = true;
+                    evidencia[doc].salida = null;
+                } else if (r.registro_tipo === 'salida') {
+                    evidencia[doc].salida = hora;
+                    evidencia[doc].dentro = false;
+                }
+            });
+        }
+
+        // Devuelve { texto, clase, propuesta } para una fila
+        function evidenciaDe(f) {
+            const doc = f.estudiante?.student_id_document;
+            if (!doc) {
+                return { texto: 'Sin documento en la ficha', clase: 'chip', propuesta: null };
+            }
+            const e = evidencia[doc];
+            if (!e) {
+                return { texto: 'Sin registro de ingreso', clase: 'chip chip-falta', propuesta: 'absent' };
+            }
+            if (e.dentro) {
+                return { texto: `Entró ${e.entrada || '—'}`, clase: 'chip chip-ok', propuesta: 'present' };
+            }
+            return {
+                texto: `Entró ${e.entrada || '—'} · salió ${e.salida || '—'}`,
+                clase: 'chip chip-falta',
+                propuesta: 'absent'
+            };
+        }
+
+        function proponerSegunColegio(activityId) {
+            const filas = (filasPorActividad[activityId] || []).filter(f => !f.retirada);
+            let sinDoc = 0;
+
+            filas.forEach(f => {
+                const ev = evidenciaDe(f);
+                if (!ev.propuesta) { sinDoc++; return; }
+                marcas[f.enrollment_id] = ev.propuesta;
+            });
+
+            renderDia();
+
+            if (sinDoc > 0) {
+                showMessage(
+                    `${sinDoc} estudiante(s) sin documento en su ficha quedaron sin proponer: no hay por dónde ` +
+                    `cruzarlos con el ingreso al colegio.`, 'warning');
+            }
+        }
 
         // ==========================================
         // RENDER
@@ -453,6 +532,7 @@
 
             const cuerpo = filas.map(f => {
                 const marca = marcas[f.enrollment_id] || null;
+                const ev = evidenciaDe(f);
                 const clases = [];
                 if (f.retirada) clases.push('fila-retirada');
                 if (!marca) clases.push('sin-marcar');
@@ -470,6 +550,7 @@
                         <div class="hint">${f.estudiante?.student_code ?? ''}</div>
                     </td>
                     <td>${escaparHTML(f.estudiante?.courses?.course_name || '—')}</td>
+                    <td><span class="${ev.clase}">${escaparHTML(ev.texto)}</span></td>
                     <td class="col-marcas">${botones}</td>
                     <td>${f.retirada
                             ? '<span class="chip chip-falta">Inscripción retirada</span>'
@@ -484,6 +565,9 @@
                         <span class="count-badge ms-2">${marcadas} de ${filas.length}</span>
                     </h5>
                     <div>
+                        <button class="btn btn-sm btn-outline-secondary me-2" onclick="proponerSegunColegio('${a.activity_id}')">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>Proponer según ingreso
+                        </button>
                         <button class="btn btn-sm btn-outline-secondary me-2" onclick="todosPresentes('${a.activity_id}')">
                             <i class="bi bi-check-all me-1"></i>Todos presentes
                         </button>
@@ -499,6 +583,7 @@
                                 <tr>
                                     <th>Estudiante</th>
                                     <th>Curso</th>
+                                    <th>Colegio</th>
                                     <th class="col-marcas">Asistencia</th>
                                     <th></th>
                                 </tr>
