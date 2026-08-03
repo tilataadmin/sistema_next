@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.3.4">
+    <meta name="page-version" content="26.8.3.5">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -1276,6 +1276,7 @@
                 const promover = [];
                 const sinCambio = [];
                 const nuevos = [];
+                const nuevosIncompletos = [];
                 const discrepanciaCodigo = [];
                 const estadoInesperado = [];
                 const seccionSinCurso = [];
@@ -1322,11 +1323,56 @@
                                             curso_phidias: nombreCurso
                                         });
                                     } else {
+                                        const faltantes = [];
+                                        const nom = cleanText(st.firstname);
+                                        const ap1 = cleanText(st.lastname1);
+                                        const nac = phidiasTimestampToDate(st.birthday);
+                                        const hoy = getCurrentDateColombia();
+
+                                        if (!nom) faltantes.push('nombre');
+                                        if (!ap1) faltantes.push('primer apellido');
+                                        if (!nac) faltantes.push('fecha de nacimiento');
+                                        if (nac && nac > hoy) faltantes.push('fecha de nacimiento futura');
+
+                                        const familyCode = Math.floor(Number(st.code) / 10);
+                                        if (!Number.isFinite(familyCode) || familyCode <= 0) {
+                                            faltantes.push('codigo de familia derivable');
+                                        }
+
+                                        if (faltantes.length) {
+                                            nuevosIncompletos.push({
+                                                codigo: st.code,
+                                                documento: doc || '',
+                                                nombre: nombre,
+                                                curso_phidias: nombreCurso,
+                                                faltantes: faltantes.join(', ')
+                                            });
+                                            continue;
+                                        }
+
+                                        let ingreso = phidiasTimestampToDate(st.enrollment?.date);
+                                        if (!ingreso || ingreso > hoy) ingreso = hoy;
+
                                         nuevos.push({
                                             codigo: st.code,
                                             documento: doc || '',
                                             nombre: nombre,
-                                            curso_phidias: nombreCurso
+                                            curso_phidias: nombreCurso,
+                                            apellidos: [ap1, cleanText(st.lastname2)].filter(Boolean).join(' '),
+                                            payload: {
+                                                student_code: Number(st.code),
+                                                student_id_document: doc || null,
+                                                student_email: cleanText(st.email) || null,
+                                                student_first_name: nom,
+                                                student_last_name_1: ap1,
+                                                student_last_name_2: cleanText(st.lastname2) || null,
+                                                student_birthday: nac,
+                                                student_entry_date: ingreso,
+                                                family_id: familyCode,
+                                                course_id: courseId,
+                                                gender_id: STUDENT_SYNC_MAPPINGS.gender[st.gender] || null,
+                                                status_id: UUID_STATUS_ACTIVO
+                                            }
                                         });
                                     }
                                     continue;
@@ -1378,7 +1424,7 @@
                     });
 
                 phidiasAnalysisResult = {
-                    promover, sinCambio, nuevos, discrepanciaCodigo,
+                    promover, sinCambio, nuevos, nuevosIncompletos, discrepanciaCodigo,
                     estadoInesperado, seccionSinCurso, ausentes,
                     ignoradosNoActivos, ignoradosSinCodigo,
                     generado: new Date().toISOString()
@@ -1399,6 +1445,7 @@
                 ['Promover (cambian de curso)', r.promover.length, 'warning'],
                 ['Sin cambio', r.sinCambio.length, 'secondary'],
                 ['Nuevos a crear', r.nuevos.length, 'primary'],
+                ['Nuevos con datos incompletos', r.nuevosIncompletos.length, 'danger'],
                 ['Discrepancia de codigo', r.discrepanciaCodigo.length, 'danger'],
                 ['Estado inesperado', r.estadoInesperado.length, 'danger'],
                 ['Activos sin matricula vigente en PHIDIAS', r.ausentes.length, 'danger'],
@@ -1440,6 +1487,7 @@
 
             r.promover.forEach(x => rows.push(['PROMOVER', x.codigo, '', x.nombre, x.curso_actual, x.curso_nuevo, '']));
             r.nuevos.forEach(x => rows.push(['NUEVO', x.codigo, x.documento, x.nombre, '', x.curso_phidias, '']));
+            r.nuevosIncompletos.forEach(x => rows.push(['NUEVO INCOMPLETO', x.codigo, x.documento, x.nombre, '', x.curso_phidias, 'Falta: ' + x.faltantes]));
             r.discrepanciaCodigo.forEach(x => rows.push(['DISCREPANCIA CODIGO', x.codigo_phidias, x.documento, x.nombre, '', x.curso_phidias, 'Codigo en SchoolNet: ' + x.codigo_schoolnet]));
             r.estadoInesperado.forEach(x => rows.push(['ESTADO INESPERADO', x.codigo, '', x.nombre, '', x.curso_phidias, x.nota]));
             r.ausentes.forEach(x => rows.push(['SIN MATRICULA VIGENTE', x.codigo, '', x.nombre, x.curso_schoolnet, '', 'Activo en SchoolNet / en PHIDIAS: ' + x.estado_phidias]));
