@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.3.1">
+    <meta name="page-version" content="26.8.3.2">
     <title>Mi Perfil - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1922,6 +1922,8 @@
         let certificateTabInitialized = false;
         let certificateState = {
             currentYear: null,         // Año académico vigente
+            previousYear: null,        // Año académico inmediatamente anterior
+            salaryIsFromPreviousYear: false, // ¿El salario mostrado viene del año anterior?
             salary: null,              // Salario del año vigente
             contract: null,            // Contrato del año vigente (con tipo de contrato)
             template: null,            // Plantilla activa
@@ -1962,7 +1964,7 @@
                     docTypeData,
                     historyData
                 ] = await Promise.all([
-                    supabaseRequest('/academic_years?select=year_id,year_name&is_current=eq.true&limit=1'),
+                    supabaseRequest('/academic_years?select=year_id,year_name,is_current&order=year_name.asc'),
                     supabaseRequest(`/worker_salaries?select=*&worker_id=eq.${workerData.worker_id}`),
                     supabaseRequest(`/worker_contracts?select=*,contract_types(type_name)&worker_id=eq.${workerData.worker_id}&order=created_at.desc`),
                     supabaseRequest('/certificate_template?select=*&is_active=eq.true&order=updated_at.desc&limit=1'),
@@ -1976,16 +1978,27 @@
                 ]);
 
                 // 2) Año vigente (crítico)
-                if (!yearData || yearData.length === 0) {
+                const currentIndex = (yearData || []).findIndex(y => y.is_current === true);
+                if (currentIndex === -1) {
                     return mostrarErrorCertificado(
                         'No hay un año académico marcado como vigente',
                         'Contacta al área de configuración del sistema.'
                     );
                 }
-                certificateState.currentYear = yearData[0];
+                certificateState.currentYear = yearData[currentIndex];
+                certificateState.previousYear = currentIndex > 0 ? yearData[currentIndex - 1] : null;
 
                 // 3) Datos del trabajador para el año vigente
                 certificateState.salary = (salaryData || []).find(s => s.academic_year_id === certificateState.currentYear.year_id) || null;
+                certificateState.salaryIsFromPreviousYear = false;
+
+                if (!certificateState.salary && certificateState.previousYear) {
+                    const salarioAnterior = (salaryData || []).find(s => s.academic_year_id === certificateState.previousYear.year_id) || null;
+                    if (salarioAnterior) {
+                        certificateState.salary = salarioAnterior;
+                        certificateState.salaryIsFromPreviousYear = true;
+                    }
+                }
                 certificateState.contract = (contractData && contractData.length > 0) ? contractData[0] : null;
 
                 // 4) Configuración general
