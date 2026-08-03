@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.3.5">
+    <meta name="page-version" content="26.8.3.6">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -1466,8 +1466,12 @@
             html += '<button class="btn btn-outline-dark me-2" onclick="descargarReportePhidias()">';
             html += '<i class="bi bi-download me-1"></i>Descargar reporte CSV</button>';
             if (r.promover.length > 0) {
-                html += '<button class="btn btn-warning" onclick="aplicarPromociones()">';
+                html += '<button class="btn btn-warning me-2" onclick="aplicarPromociones()">';
                 html += `<i class="bi bi-arrow-left-right me-1"></i>Aplicar cambios de curso (${r.promover.length})</button>`;
+            }
+            if (r.nuevos.length > 0) {
+                html += '<button class="btn btn-primary" onclick="crearEstudiantesNuevos()">';
+                html += `<i class="bi bi-person-plus me-1"></i>Crear estudiantes nuevos (${r.nuevos.length})</button>`;
             }
             html += '<p class="text-muted small mt-3 mb-0">El analisis no modifico ningun dato. ';
             html += 'Aplicar solo cambia el curso de los estudiantes listados como PROMOVER.</p>';
@@ -1583,6 +1587,123 @@
                 console.error('❌ Error aplicando cambios:', error);
                 hideLoading();
                 showAlert('Error aplicando cambios: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // CREAR ESTUDIANTES NUEVOS DESDE PHIDIAS
+        // ==========================================
+
+        async function crearEstudiantesNuevos() {
+            if (!phidiasAnalysisResult || !phidiasAnalysisResult.nuevos.length) {
+                showAlert('No hay estudiantes nuevos para crear. Ejecute primero el analisis.', 'warning');
+                return;
+            }
+
+            const lista = phidiasAnalysisResult.nuevos;
+            const ambiente = (typeof CURRENT_ENVIRONMENT !== 'undefined')
+                ? CURRENT_ENVIRONMENT.toUpperCase() : 'DESCONOCIDO';
+
+            const porCurso = {};
+            lista.forEach(x => { porCurso[x.curso_phidias] = (porCurso[x.curso_phidias] || 0) + 1; });
+            const detalle = Object.keys(porCurso).sort()
+                .map(k => `  ${k}: ${porCurso[k]}`).join('\n');
+
+            const mensaje =
+                `AMBIENTE: ${ambiente}\n\n` +
+                `Se crearan ${lista.length} estudiantes nuevos:\n\n${detalle}\n\n` +
+                `Tambien se crearan las familias que no existan.\n` +
+                `Todos quedaran con estado Activo.\n` +
+                `Esta accion no tiene deshacer automatico.\n\n` +
+                `¿Confirma?`;
+
+            if (!confirm(mensaje)) return;
+
+            try {
+                showLoading();
+                const txt = document.getElementById('loadingOverlay').querySelector('p');
+
+                // 1. Revalidar que ninguno exista ya (proteccion contra doble click)
+                txt.textContent = 'Revalidando codigos...';
+                const codigos = lista.map(x => Number(x.codigo));
+                const yaExisten = await supabaseRequest(
+                    `/students?select=student_code&student_code=in.(${codigos.join(',')})`
+                );
+                if (yaExisten.length > 0) {
+                    hideLoading();
+                    showAlert(
+                        `Operacion cancelada: ${yaExisten.length} de estos codigos ya existen en la base. ` +
+                        `Ejecute el analisis nuevamente.`, 'danger');
+                    console.warn('Codigos ya existentes:', yaExisten.map(x => x.student_code));
+                    return;
+                }
+
+                // 2. Crear familias faltantes
+                txt.textContent = 'Verificando familias...';
+                const codigosFamilia = [...new Set(lista.map(x => x.payload.family_id))];
+                const familiasExistentes = await supabaseRequest(
+                    `/families?select=family_code&family_code=in.(${codigosFamilia.join(',')})`
+                );
+                const setFamilias = new Set(familiasExistentes.map(f => f.family_code));
+
+                const familiasNuevas = [];
+                lista.forEach(x => {
+                    const fc = x.payload.family_id;
+                    if (!setFamilias.has(fc)) {
+                        setFamilias.add(fc);
+                        familiasNuevas.push({
+                            family_code: fc,
+                            family_name: x.apellidos || x.nombre,
+                            student_count: 1
+                        });
+                    }
+                });
+
+                if (familiasNuevas.length) {
+                    txt.textContent = `Creando ${familiasNuevas.length} familias...`;
+                    await supabaseRequest('/families', {
+                        method: 'POST',
+                        body: JSON.stringify(familiasNuevas)
+                    });
+                }
+
+                // 3. Asignar student_id consecutivo
+                txt.textContent = 'Creando estudiantes...';
+                const maxData = await supabaseRequest('/students?select=student_id&order=student_id.desc&limit=1');
+                let siguienteId = (maxData && maxData.length) ? maxData[0].student_id + 1 : 1;
+
+                const payloads = lista.map(x => ({ ...x.payload, student_id: siguienteId++ }));
+
+                const creados = await supabaseRequest('/students', {
+                    method: 'POST',
+                    body: JSON.stringify(payloads)
+                });
+
+                hideLoading();
+
+                const total = Array.isArray(creados) ? creados.length : 0;
+                let msg = `Estudiantes creados en ${ambiente}:<br>`;
+                msg += `• ${total} de ${lista.length} estudiantes<br>`;
+                msg += `• ${familiasNuevas.length} familias nuevas`;
+
+                if (total !== lista.length) {
+                    msg += `<br><br>⚠️ El conteo no coincide. Revise la consola.`;
+                }
+
+                showAlert(msg, total === lista.length ? 'success' : 'warning');
+
+                phidiasAnalysisResult = null;
+                document.getElementById('phidiasAnalysisPanel').innerHTML =
+                    '<div class="alert alert-info">Estudiantes creados. ' +
+                    'Ejecute el analisis nuevamente para verificar.</div>';
+
+                await loadStudents();
+
+            } catch (error) {
+                console.error('❌ Error creando estudiantes:', error);
+                hideLoading();
+                showAlert('Error creando estudiantes: ' + error.message +
+                          '<br><br>Verifique en la base si quedaron registros parciales.', 'danger');
             }
         }
 
@@ -1818,6 +1939,7 @@
         window.analizarPhidias = analizarPhidias;
         window.descargarReportePhidias = descargarReportePhidias;
         window.aplicarPromociones = aplicarPromociones;
+        window.crearEstudiantesNuevos = crearEstudiantesNuevos;
         window.abrirModalRetiro = abrirModalRetiro;
         
         console.log('🎉 Gestión de Estudiantes cargada correctamente');
