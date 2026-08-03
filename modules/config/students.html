@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.3.3">
+    <meta name="page-version" content="26.8.3.4">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -1416,9 +1416,14 @@
             html += '</tbody></table>';
             html += `<p class="text-muted small mb-3">Omitidos por estado distinto de Activo en PHIDIAS: ${r.ignoradosNoActivos}. `;
             html += `Omitidos por falta de codigo: ${r.ignoradosSinCodigo}.</p>`;
-            html += '<button class="btn btn-outline-dark" onclick="descargarReportePhidias()">';
+            html += '<button class="btn btn-outline-dark me-2" onclick="descargarReportePhidias()">';
             html += '<i class="bi bi-download me-1"></i>Descargar reporte CSV</button>';
-            html += '<p class="text-muted small mt-3 mb-0">Este analisis no modifico ningun dato.</p>';
+            if (r.promover.length > 0) {
+                html += '<button class="btn btn-warning" onclick="aplicarPromociones()">';
+                html += `<i class="bi bi-arrow-left-right me-1"></i>Aplicar cambios de curso (${r.promover.length})</button>`;
+            }
+            html += '<p class="text-muted small mt-3 mb-0">El analisis no modifico ningun dato. ';
+            html += 'Aplicar solo cambia el curso de los estudiantes listados como PROMOVER.</p>';
             html += '</div></div>';
 
             document.getElementById('phidiasAnalysisPanel').innerHTML = html;
@@ -1443,6 +1448,94 @@
 
             const fecha = new Date().toISOString().slice(0, 10);
             downloadCsv(rows, `analisis_phidias_${fecha}.csv`);
+        }
+
+        // ==========================================
+        // APLICAR CAMBIOS DE CURSO (SOLO course_id)
+        // ==========================================
+
+        async function aplicarPromociones() {
+            if (!phidiasAnalysisResult || !phidiasAnalysisResult.promover.length) {
+                showAlert('No hay cambios de curso para aplicar. Ejecute primero el analisis.', 'warning');
+                return;
+            }
+
+            const lista = phidiasAnalysisResult.promover;
+            const ambiente = (typeof CURRENT_ENVIRONMENT !== 'undefined')
+                ? CURRENT_ENVIRONMENT.toUpperCase() : 'DESCONOCIDO';
+
+            const mensaje =
+                `AMBIENTE: ${ambiente}\n\n` +
+                `Se modificara el curso de ${lista.length} estudiantes.\n\n` +
+                `Solo se altera el campo course_id. No se crean, retiran ni cambian de estado.\n` +
+                `Esta accion no tiene deshacer automatico.\n\n` +
+                `¿Confirma?`;
+
+            if (!confirm(mensaje)) return;
+
+            try {
+                showLoading();
+                const txt = document.getElementById('loadingOverlay').querySelector('p');
+
+                const grupos = new Map();
+                lista.forEach(x => {
+                    if (!grupos.has(x.course_id_nuevo)) grupos.set(x.course_id_nuevo, []);
+                    grupos.get(x.course_id_nuevo).push(x.student_id);
+                });
+
+                const ahora = new Date().toISOString();
+                const errores = [];
+                let actualizados = 0;
+                let lote = 0;
+
+                for (const [courseId, ids] of grupos.entries()) {
+                    lote++;
+                    txt.textContent = `Aplicando cambios (${lote}/${grupos.size})...`;
+
+                    for (let i = 0; i < ids.length; i += 100) {
+                        const trozo = ids.slice(i, i + 100);
+                        try {
+                            const res = await supabaseRequest(
+                                `/students?student_id=in.(${trozo.join(',')})&select=student_id`,
+                                {
+                                    method: 'PATCH',
+                                    body: JSON.stringify({ course_id: courseId, updated_at: ahora })
+                                }
+                            );
+                            actualizados += Array.isArray(res) ? res.length : 0;
+                        } catch (e) {
+                            errores.push(`Curso ${courseId} (${trozo.length} estudiantes): ${e.message}`);
+                            console.error('❌ Error en lote:', courseId, trozo, e);
+                        }
+                    }
+                }
+
+                hideLoading();
+
+                let msg = `Cambios aplicados en ${ambiente}:<br>`;
+                msg += `• ${actualizados} de ${lista.length} estudiantes actualizados`;
+
+                if (actualizados !== lista.length) {
+                    msg += `<br><br>⚠️ El conteo no coincide. Revise la consola y vuelva a ejecutar el analisis.`;
+                }
+                if (errores.length) {
+                    msg += `<br><br>❌ ${errores.length} lote(s) con error. Detalle en consola.`;
+                }
+
+                showAlert(msg, errores.length || actualizados !== lista.length ? 'warning' : 'success');
+
+                phidiasAnalysisResult = null;
+                document.getElementById('phidiasAnalysisPanel').innerHTML =
+                    '<div class="alert alert-info">Cambios aplicados. ' +
+                    'Ejecute el analisis nuevamente para verificar el estado actual.</div>';
+
+                await loadStudents();
+
+            } catch (error) {
+                console.error('❌ Error aplicando cambios:', error);
+                hideLoading();
+                showAlert('Error aplicando cambios: ' + error.message, 'danger');
+            }
         }
 
         // ==========================================
@@ -1676,6 +1769,7 @@
         window.syncWithPhidias = syncWithPhidias;
         window.analizarPhidias = analizarPhidias;
         window.descargarReportePhidias = descargarReportePhidias;
+        window.aplicarPromociones = aplicarPromociones;
         window.abrirModalRetiro = abrirModalRetiro;
         
         console.log('🎉 Gestión de Estudiantes cargada correctamente');
