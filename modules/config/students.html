@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.10.2">
+    <meta name="page-version" content="26.8.3.3">
     
     <title>Gestionar Estudiantes - SchoolNet</title>
     
@@ -147,7 +147,7 @@
                         <input type="text" id="searchInput" class="form-control" 
                                placeholder="Busque por nombre o apellido...">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label for="statusFilter" class="form-label">Estado</label>
                         <select id="statusFilter" class="form-select">
                             <option value="">Todos los estados</option>
@@ -163,14 +163,22 @@
                             <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
                         </button>
                     </div>
-                    <div class="col-md-1">
-                        <button id="btnSyncPhidias" class="btn btn-success w-100" title="Sincronizar con PHIDIAS">
-                            <i class="bi bi-cloud-download"></i>
-                        </button>
+                    <div class="col-md-2">
+                        <div class="btn-group w-100" role="group">
+                            <button id="btnAnalyzePhidias" class="btn btn-outline-primary" title="Analizar PHIDIAS (no modifica datos)">
+                                <i class="bi bi-search"></i>
+                            </button>
+                            <button id="btnSyncPhidias" class="btn btn-success" title="Sincronizar con PHIDIAS">
+                                <i class="bi bi-cloud-download"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Panel de análisis PHIDIAS -->
+        <div id="phidiasAnalysisPanel"></div>
 
         <!-- Tabla de estudiantes -->
         <div class="card mb-4">
@@ -850,6 +858,11 @@
             document.getElementById('btnNewStudent').addEventListener('click', showNewStudentModal);
             document.getElementById('btnRefresh').addEventListener('click', () => loadStudents());
 
+            // Botón analizar PHIDIAS (solo lectura)
+            document.getElementById('btnAnalyzePhidias').addEventListener('click', async () => {
+                await analizarPhidias();
+            });
+
             // Botón sincronizar PHIDIAS
             document.getElementById('btnSyncPhidias').addEventListener('click', async () => {
                 if (confirm('¿Desea sincronizar estudiantes desde PHIDIAS?\n\nEsto creará nuevos estudiantes y familias que no existan en el sistema.')) {
@@ -1193,6 +1206,246 @@
         }
 
         // ==========================================
+        // ANÁLISIS PHIDIAS (SOLO LECTURA - NO ESCRIBE NADA)
+        // ==========================================
+
+        const UUID_STATUS_ACTIVO = 'd89b6287-ee51-435d-aeeb-d0f503af4646';
+
+        let phidiasAnalysisResult = null;
+
+        function normalizeCourseKey(value) {
+            if (!value) return '';
+            return String(value).normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+
+        function cleanText(value) {
+            if (!value) return '';
+            return String(value).normalize('NFC').replace(/\s+/g, ' ').trim();
+        }
+
+        function csvCell(value) {
+            const s = (value === null || value === undefined) ? '' : String(value);
+            return '"' + s.replace(/"/g, '""') + '"';
+        }
+
+        function downloadCsv(rows, filename) {
+            const content = '\uFEFF' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function analizarPhidias() {
+            try {
+                showLoading();
+                const txt = document.getElementById('loadingOverlay').querySelector('p');
+
+                txt.textContent = 'Conectando con PHIDIAS...';
+                const phidiasData = await phidiasRequest('/course/consolidate');
+
+                txt.textContent = 'Leyendo cursos de SchoolNet...';
+                const tilataCourses = await supabaseRequest('/courses?select=course_id,course_name,course_status');
+                const courseMap = {};
+                const courseNameById = {};
+                tilataCourses.forEach(c => {
+                    courseMap[normalizeCourseKey(c.course_name)] = c.course_id;
+                    courseNameById[c.course_id] = c.course_name;
+                });
+
+                txt.textContent = 'Leyendo estudiantes de SchoolNet...';
+                const existing = await supabaseRequest(
+                    '/students?select=student_id,student_code,student_id_document,student_first_name,student_last_name_1,student_last_name_2,course_id,status_id&limit=5000'
+                );
+                const byCode = new Map();
+                const byDoc = new Map();
+                existing.forEach(s => {
+                    byCode.set(String(s.student_code), s);
+                    if (s.student_id_document) {
+                        byDoc.set(cleanText(s.student_id_document), s);
+                    }
+                });
+
+                txt.textContent = 'Comparando...';
+
+                const promover = [];
+                const sinCambio = [];
+                const nuevos = [];
+                const discrepanciaCodigo = [];
+                const estadoInesperado = [];
+                const seccionSinCurso = [];
+                const codigosPhidias = new Map();
+                let ignoradosNoActivos = 0;
+                let ignoradosSinCodigo = 0;
+
+                for (const category of phidiasData) {
+                    for (const course of category.courses || []) {
+                        for (const section of course.sections || []) {
+                            const nombreCurso = cleanText(`${course.name} ${section.name}`);
+                            const courseId = courseMap[normalizeCourseKey(nombreCurso)];
+                            const alumnos = section.students || [];
+
+                            if (!courseId) {
+                                seccionSinCurso.push({ curso: nombreCurso, estudiantes: alumnos.length });
+                            }
+
+                            for (const st of alumnos) {
+                                const estado = (st.enrollment?.status || '').toLowerCase().trim();
+                                if (!st.code) { ignoradosSinCodigo++; continue; }
+
+                                codigosPhidias.set(String(st.code), {
+                                    estado: estado || '(sin estado)',
+                                    curso: nombreCurso
+                                });
+
+                                if (estado !== 'activo') { ignoradosNoActivos++; continue; }
+                                if (!courseId) continue;
+
+                                const nombre = [st.firstname, st.lastname1, st.lastname2]
+                                    .filter(Boolean).map(cleanText).join(' ');
+                                const doc = st.document ? cleanText(st.document) : null;
+                                const actual = byCode.get(String(st.code));
+
+                                if (!actual) {
+                                    const porDoc = doc ? byDoc.get(doc) : null;
+                                    if (porDoc) {
+                                        discrepanciaCodigo.push({
+                                            codigo_phidias: st.code,
+                                            codigo_schoolnet: porDoc.student_code,
+                                            documento: doc,
+                                            nombre: nombre,
+                                            curso_phidias: nombreCurso
+                                        });
+                                    } else {
+                                        nuevos.push({
+                                            codigo: st.code,
+                                            documento: doc || '',
+                                            nombre: nombre,
+                                            curso_phidias: nombreCurso
+                                        });
+                                    }
+                                    continue;
+                                }
+
+                                if (actual.status_id !== UUID_STATUS_ACTIVO) {
+                                    estadoInesperado.push({
+                                        codigo: st.code,
+                                        nombre: nombre,
+                                        curso_phidias: nombreCurso,
+                                        nota: 'Activo en PHIDIAS pero no Activo en SchoolNet'
+                                    });
+                                    continue;
+                                }
+
+                                const cursoActual = courseNameById[actual.course_id] || '(sin curso)';
+                                if (actual.course_id === courseId) {
+                                    sinCambio.push({ codigo: st.code, nombre: nombre, curso: nombreCurso });
+                                } else {
+                                    promover.push({
+                                        student_id: actual.student_id,
+                                        codigo: st.code,
+                                        nombre: nombre,
+                                        curso_actual: cursoActual,
+                                        curso_nuevo: nombreCurso,
+                                        course_id_nuevo: courseId
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                const ausentes = existing
+                    .filter(s => {
+                        if (s.status_id !== UUID_STATUS_ACTIVO) return false;
+                        const p = codigosPhidias.get(String(s.student_code));
+                        return !p || p.estado !== 'activo';
+                    })
+                    .map(s => {
+                        const p = codigosPhidias.get(String(s.student_code));
+                        return {
+                            codigo: s.student_code,
+                            nombre: [s.student_first_name, s.student_last_name_1, s.student_last_name_2]
+                                .filter(Boolean).join(' '),
+                            curso_schoolnet: courseNameById[s.course_id] || '(sin curso)',
+                            estado_phidias: p ? p.estado : 'no aparece en PHIDIAS'
+                        };
+                    });
+
+                phidiasAnalysisResult = {
+                    promover, sinCambio, nuevos, discrepanciaCodigo,
+                    estadoInesperado, seccionSinCurso, ausentes,
+                    ignoradosNoActivos, ignoradosSinCodigo,
+                    generado: new Date().toISOString()
+                };
+
+                hideLoading();
+                renderPhidiasAnalysis(phidiasAnalysisResult);
+
+            } catch (error) {
+                console.error('❌ Error en análisis PHIDIAS:', error);
+                hideLoading();
+                showAlert('Error en análisis con PHIDIAS: ' + error.message, 'danger');
+            }
+        }
+
+        function renderPhidiasAnalysis(r) {
+            const filas = [
+                ['Promover (cambian de curso)', r.promover.length, 'warning'],
+                ['Sin cambio', r.sinCambio.length, 'secondary'],
+                ['Nuevos a crear', r.nuevos.length, 'primary'],
+                ['Discrepancia de codigo', r.discrepanciaCodigo.length, 'danger'],
+                ['Estado inesperado', r.estadoInesperado.length, 'danger'],
+                ['Activos sin matricula vigente en PHIDIAS', r.ausentes.length, 'danger'],
+                ['Secciones sin curso equivalente', r.seccionSinCurso.length, 'danger']
+            ];
+
+            let html = '<div class="card mb-4"><div class="card-header bg-dark text-white">';
+            html += '<i class="bi bi-clipboard-data me-2"></i>Analisis PHIDIAS</div>';
+            html += '<div class="card-body"><table class="table table-sm mb-3"><tbody>';
+            filas.forEach(f => {
+                html += `<tr><td>${f[0]}</td><td class="text-end">`;
+                html += `<span class="badge bg-${f[1] > 0 ? f[2] : 'light'} ${f[1] > 0 ? '' : 'text-dark'}">${f[1]}</span>`;
+                html += '</td></tr>';
+            });
+            html += '</tbody></table>';
+            html += `<p class="text-muted small mb-3">Omitidos por estado distinto de Activo en PHIDIAS: ${r.ignoradosNoActivos}. `;
+            html += `Omitidos por falta de codigo: ${r.ignoradosSinCodigo}.</p>`;
+            html += '<button class="btn btn-outline-dark" onclick="descargarReportePhidias()">';
+            html += '<i class="bi bi-download me-1"></i>Descargar reporte CSV</button>';
+            html += '<p class="text-muted small mt-3 mb-0">Este analisis no modifico ningun dato.</p>';
+            html += '</div></div>';
+
+            document.getElementById('phidiasAnalysisPanel').innerHTML = html;
+            document.getElementById('phidiasAnalysisPanel').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function descargarReportePhidias() {
+            if (!phidiasAnalysisResult) {
+                showAlert('Primero ejecute el analisis.', 'warning');
+                return;
+            }
+            const r = phidiasAnalysisResult;
+            const rows = [['Categoria', 'Codigo', 'Documento', 'Nombre', 'Curso actual', 'Curso PHIDIAS', 'Nota']];
+
+            r.promover.forEach(x => rows.push(['PROMOVER', x.codigo, '', x.nombre, x.curso_actual, x.curso_nuevo, '']));
+            r.nuevos.forEach(x => rows.push(['NUEVO', x.codigo, x.documento, x.nombre, '', x.curso_phidias, '']));
+            r.discrepanciaCodigo.forEach(x => rows.push(['DISCREPANCIA CODIGO', x.codigo_phidias, x.documento, x.nombre, '', x.curso_phidias, 'Codigo en SchoolNet: ' + x.codigo_schoolnet]));
+            r.estadoInesperado.forEach(x => rows.push(['ESTADO INESPERADO', x.codigo, '', x.nombre, '', x.curso_phidias, x.nota]));
+            r.ausentes.forEach(x => rows.push(['SIN MATRICULA VIGENTE', x.codigo, '', x.nombre, x.curso_schoolnet, '', 'Activo en SchoolNet / en PHIDIAS: ' + x.estado_phidias]));
+            r.seccionSinCurso.forEach(x => rows.push(['SECCION SIN CURSO', '', '', '', '', x.curso, x.estudiantes + ' estudiantes afectados']));
+            r.sinCambio.forEach(x => rows.push(['SIN CAMBIO', x.codigo, '', x.nombre, x.curso, x.curso, '']));
+
+            const fecha = new Date().toISOString().slice(0, 10);
+            downloadCsv(rows, `analisis_phidias_${fecha}.csv`);
+        }
+
+        // ==========================================
         // SINCRONIZACIÓN CON PHIDIAS
         // ==========================================
         
@@ -1421,6 +1674,8 @@
         window.editStudent = editStudent;
         window.loadStudents = loadStudents;
         window.syncWithPhidias = syncWithPhidias;
+        window.analizarPhidias = analizarPhidias;
+        window.descargarReportePhidias = descargarReportePhidias;
         window.abrirModalRetiro = abrirModalRetiro;
         
         console.log('🎉 Gestión de Estudiantes cargada correctamente');

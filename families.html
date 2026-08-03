@@ -20,20 +20,22 @@
             display: flex;
             align-items: center;
         }
+        /* El ancho cambia según la pantalla: el acceso es un formulario angosto,
+           la oferta de actividades necesita espacio para las tarjetas. */
         .portal-wrapper {
             width: 100%;
             max-width: 440px;
             margin: 0 auto;
             padding: 1rem;
+            transition: max-width 0.2s ease;
         }
-        .portal-header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        .portal-header .brand-logo {
-            max-height: 72px;
-            width: auto;
-        }
+        .portal-wrapper.ancho { max-width: 720px; }
+
+        body.con-dashboard { align-items: flex-start; padding-top: 2rem; padding-bottom: 2rem; }
+
+        .portal-header { text-align: center; margin-bottom: 1.5rem; }
+        .portal-header .brand-logo { max-height: 72px; width: auto; }
+
         .portal-card {
             border: none;
             border-radius: 12px;
@@ -56,14 +58,73 @@
             color: #fff;
             opacity: 0.65;
         }
-        .btn-enviar .spinner-border {
-            width: 1rem;
-            height: 1rem;
+        .btn-enviar .spinner-border { width: 1rem; height: 1rem; }
+
+        .chip {
+            display: inline-block;
+            font-size: 0.75rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 0.35rem;
+            background-color: #eef1f6;
+            color: var(--brand-primary);
+            margin: 0.1rem 0.15rem 0.1rem 0;
+            white-space: nowrap;
+        }
+        .chip-alerta { background-color: #fde2e1; color: #8c2f2d; }
+        .chip-ok     { background-color: #d6ecdd; color: #14683f; }
+
+        .tarjeta-actividad {
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: #fff;
+        }
+        .tarjeta-actividad.bloqueada { opacity: 0.6; background: #fafafa; }
+
+        .tarjeta-inscrita {
+            border-left: 4px solid var(--brand-primary);
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            margin-bottom: 0.75rem;
+            background: #fff;
+            border-top: 1px solid #dee2e6;
+            border-right: 1px solid #dee2e6;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        /* Cada opción de transporte es una fila completa con su precio: la
+           familia compara los tres valores antes de decidir, no después. */
+        .opcion-transporte {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 0.6rem 0.85rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+        }
+        /* El hover solo insinúa; la selección se ve por el fondo. Antes ambos
+           cambiaban el borde y una opción bajo el cursor parecía elegida. */
+        .opcion-transporte:hover { border-color: #b9c4d4; }
+        .opcion-transporte.elegida {
+            border-color: var(--brand-primary);
+            background-color: #f4f7fb;
+        }
+        .opcion-transporte input { margin-right: 0.5rem; }
+        .opcion-valor { font-weight: 600; color: var(--brand-primary); white-space: nowrap; }
+
+        .nav-hijos .nav-link { color: var(--brand-tertiary); }
+        .nav-hijos .nav-link.active {
+            background-color: var(--brand-primary);
+            color: #fff;
         }
     </style>
 </head>
 <body>
-    <div class="portal-wrapper">
+    <div class="portal-wrapper" id="portal-wrapper">
 
         <!-- Encabezado / marca -->
         <div class="portal-header">
@@ -132,15 +193,19 @@
                     </div>
                 </div>
 
-                <!-- Pantalla 3: Dashboard de hijos -->
+                <!-- Pantalla 3: Extracurriculares -->
                 <div id="pantalla-dashboard" style="display: none;">
-                    <p class="mb-3">Selecciona un estudiante para ver sus planeadores.</p>
-                    <div id="hijos-container" class="d-grid gap-2"></div>
-                    <div id="hijos-vacio" class="text-muted fst-italic small" style="display: none;">
-                        No encontramos estudiantes activos asociados a este correo.
+                    <div id="dashboard-cargando" class="text-center text-muted py-3">
+                        <span class="spinner-border spinner-border-sm me-2"></span>Cargando...
                     </div>
+
+                    <div id="dashboard-contenido" style="display: none;">
+                        <div id="bloque-inscritas"></div>
+                        <div id="bloque-oferta"></div>
+                    </div>
+
                     <div class="d-grid mt-3">
-                        <button type="button" class="btn btn-link btn-sm text-muted" onclick="volverACorreo()">
+                        <button type="button" class="btn btn-link btn-sm text-muted" onclick="salir()">
                             Salir
                         </button>
                     </div>
@@ -158,10 +223,6 @@
         // ==========================================
         // CONFIGURACIÓN
         // ==========================================
-        // URL del Web App de Apps Script (se completa cuando el intermediario esté publicado).
-        // Mientras esté vacía, la página funciona en "modo demostración": no llama a ningún
-        // servicio y solo muestra el mensaje neutro.
-
         // El portal es un solo archivo servido en dos dominios, y cada dominio
         // debe hablar con su propio GAS: uno escribe en desarrollo y el otro en
         // producción. Se decide por el nombre del host, igual que config.js.
@@ -179,8 +240,7 @@
 
         console.log('Portal de Familias — ambiente: ' + PORTAL_AMBIENTE.toUpperCase());
 
-        // Aviso visible fuera de producción. Hoy costó una hora no saber a qué
-        // base estaba escribiendo el portal.
+        // Aviso visible fuera de producción.
         if (PORTAL_AMBIENTE !== 'production') {
             document.addEventListener('DOMContentLoaded', function () {
                 const cinta = document.createElement('div');
@@ -192,11 +252,28 @@
             });
         }
 
-        
         // Estado de sesión (solo en memoria, no se persiste)
         let correoActual = '';
         let sessionToken = '';
         let sessionExpiresAt = '';
+
+        // Estado de la oferta
+        let oferta = null;            // respuesta de get_extracurricular_offer
+        let inscripciones = [];       // respuesta de get_my_enrollments
+        let hijoActivo = null;        // student_id de la pestaña visible
+        let transporteElegido = {};   // activity_id -> 'none' | 'linked' | 'unlinked'
+
+        const DIAS = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo' };
+
+        const TRANSPORTE = {
+            none:     { etiqueta: 'Sin transporte',            detalle: 'La familia lo recoge al terminar.' },
+            linked:   { etiqueta: 'Solicito servicio de ruta y ya tengo ruta con el operador oficial del colegio', detalle: '' },
+            unlinked: { etiqueta: 'Solicito servicio de ruta y no tengo ruta con el operador oficial del colegio', detalle: '' }
+        };
+
+        const fmtPesos = v => '$ ' + Number(v || 0).toLocaleString('es-CO');
+        const fmtFecha = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-CO',
+            { day: '2-digit', month: 'long', year: 'numeric' }) : '';
 
         // ==========================================
         // UTILIDADES
@@ -209,6 +286,7 @@
                     <i class="bi bi-${iconos[tipo] || 'info-circle'} me-2"></i>
                     <div>${texto}</div>
                 </div>`;
+            cont.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         function limpiarMensaje() {
@@ -217,6 +295,12 @@
 
         function correoValido(correo) {
             return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
+        }
+
+        function escaparHtml(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto == null ? '' : String(texto);
+            return div.innerHTML;
         }
 
         function setCargando(cargando) {
@@ -228,6 +312,15 @@
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-envelope me-1"></i>Enviar código';
             }
+        }
+
+        async function llamarGas(payload) {
+            const resp = await fetch(GAS_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            return await resp.json();
         }
 
         // ==========================================
@@ -245,22 +338,15 @@
             setCargando(true);
 
             try {
-                // Modo demostración: sin endpoint configurado aún.
-                if (!GAS_ENDPOINT) {
-                    console.warn('GAS_ENDPOINT no configurado: modo demostración.');
-                    await new Promise(r => setTimeout(r, 600));
-                } else {
-                    // Se envía como text/plain para evitar el preflight CORS de Apps Script.
-                    // request_code no necesita leer la respuesta (el mensaje es neutro siempre),
-                    // así que va en modo no-cors: la petición y el correo salen sin que un
-                    // bloqueo de CORS rechace el fetch.
-                    await fetch(GAS_ENDPOINT, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'request_code', email: correo })
-                    });
-                }
+                // Se envía como text/plain para evitar el preflight CORS de Apps Script.
+                // request_code no necesita leer la respuesta (el mensaje es neutro siempre),
+                // así que va en modo no-cors.
+                await fetch(GAS_ENDPOINT, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'request_code', email: correo })
+                });
 
                 // Respuesta neutra: nunca revela si el correo existe o no.
                 mostrarMensaje('Si el correo está registrado, recibirás un código en unos minutos.', 'success');
@@ -276,69 +362,6 @@
         }
 
         // ==========================================
-        // DASHBOARD DE HIJOS
-        // ==========================================
-        async function cargarHijos() {
-            const cont = document.getElementById('hijos-container');
-            const vacio = document.getElementById('hijos-vacio');
-            const dashboard = document.getElementById('pantalla-dashboard');
-
-            cont.innerHTML = '';
-            vacio.style.display = 'none';
-            dashboard.style.display = 'block';
-            cont.innerHTML = '<div class="text-center text-muted small">Cargando...</div>';
-
-            try {
-                const resp = await fetch(GAS_ENDPOINT, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'get_children', token: sessionToken })
-                });
-                const data = await resp.json();
-
-                cont.innerHTML = '';
-
-                if (!data.ok) {
-                    mostrarMensaje(data.message || 'No fue posible cargar los estudiantes.', 'danger');
-                    dashboard.style.display = 'none';
-                    return;
-                }
-
-                const hijos = data.children || [];
-                if (hijos.length === 0) {
-                    vacio.style.display = 'block';
-                    return;
-                }
-
-                hijos.forEach(function (hijo) {
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.className = 'btn btn-brand text-start d-flex align-items-center';
-                    btn.innerHTML =
-                        '<i class="bi bi-person-circle me-2"></i>' +
-                        '<span>' + escaparHtml(hijo.name) + '</span>';
-                    // Por ahora informativo; los planeadores se enlazan después.
-                    btn.onclick = function () {
-                        mostrarMensaje('Aquí verás los planeadores de ' + escaparHtml(hijo.name) + '.', 'info');
-                    };
-                    cont.appendChild(btn);
-                });
-
-            } catch (error) {
-                console.error('Error cargando hijos:', error);
-                cont.innerHTML = '';
-                dashboard.style.display = 'none';
-                mostrarMensaje('No fue posible cargar los estudiantes. Intenta de nuevo.', 'danger');
-            }
-        }
-
-        function escaparHtml(texto) {
-            const div = document.createElement('div');
-            div.textContent = texto == null ? '' : String(texto);
-            return div.innerHTML;
-        }
-
-        // ==========================================
         // NAVEGACIÓN ENTRE PANTALLAS
         // ==========================================
         function mostrarPantallaCodigo() {
@@ -351,6 +374,23 @@
         function volverACorreo() {
             limpiarMensaje();
             document.getElementById('pantalla-codigo').style.display = 'none';
+            document.getElementById('pantalla-correo').style.display = 'block';
+        }
+
+        function salir() {
+            // El token vive solo en memoria; salir es olvidarlo.
+            sessionToken = '';
+            sessionExpiresAt = '';
+            oferta = null;
+            inscripciones = [];
+            hijoActivo = null;
+            transporteElegido = {};
+
+            document.body.classList.remove('con-dashboard');
+            document.getElementById('portal-wrapper').classList.remove('ancho');
+            document.getElementById('pantalla-dashboard').style.display = 'none';
+            document.getElementById('dashboard-contenido').style.display = 'none';
+            limpiarMensaje();
             document.getElementById('pantalla-correo').style.display = 'block';
         }
 
@@ -371,19 +411,14 @@
             btn.innerHTML = '<span class="spinner-border me-1" role="status" style="width:1rem;height:1rem;"></span>Validando...';
 
             try {
-                const resp = await fetch(GAS_ENDPOINT, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'verify_code', email: correoActual, code: codigo })
-                });
-                const data = await resp.json();
+                const data = await llamarGas({ action: 'verify_code', email: correoActual, code: codigo });
 
                 if (data.ok) {
                     sessionToken = data.token;
                     sessionExpiresAt = data.expires_at;
                     document.getElementById('pantalla-codigo').style.display = 'none';
                     limpiarMensaje();
-                    await cargarHijos();
+                    await cargarDashboard();
                 } else {
                     mostrarMensaje(data.message || 'No fue posible validar el código.', 'danger');
                 }
@@ -393,6 +428,279 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Validar';
+            }
+        }
+
+        // ==========================================
+        // DASHBOARD
+        // ==========================================
+        async function cargarDashboard() {
+            document.body.classList.add('con-dashboard');
+            document.getElementById('portal-wrapper').classList.add('ancho');
+            document.getElementById('pantalla-dashboard').style.display = 'block';
+            document.getElementById('dashboard-cargando').style.display = 'block';
+            document.getElementById('dashboard-contenido').style.display = 'none';
+
+            try {
+                // Una sola petición. Antes eran dos endpoints y cada uno resolvía
+                // los hijos por su cuenta: las mismas consultas, dos veces.
+                const resp = await llamarGas({ action: 'get_portal_data', token: sessionToken });
+
+                if (!resp.ok) {
+                    if (resp.error === 'session') {
+                        mostrarMensaje('Tu sesión venció. Vuelve a ingresar.', 'warning');
+                        salir();
+                        return;
+                    }
+                    document.getElementById('dashboard-cargando').style.display = 'none';
+                    mostrarMensaje(resp.message || 'No fue posible cargar la información.', 'danger');
+                    return;
+                }
+
+                oferta = resp.offer || {};
+                inscripciones = resp.enrollments || [];
+
+                if (hijoActivo === null && oferta.children && oferta.children.length > 0) {
+                    hijoActivo = oferta.children[0].student_id;
+                }
+
+                document.getElementById('dashboard-cargando').style.display = 'none';
+                document.getElementById('dashboard-contenido').style.display = 'block';
+                render();
+
+            } catch (error) {
+                console.error('Error cargando el dashboard:', error);
+                document.getElementById('dashboard-cargando').style.display = 'none';
+                mostrarMensaje('No fue posible cargar la información. Intenta de nuevo.', 'danger');
+            }
+        }
+
+        function render() {
+            renderInscritas();
+            renderOferta();
+        }
+
+        // --- Inscripciones vigentes ---
+        function renderInscritas() {
+            const cont = document.getElementById('bloque-inscritas');
+
+            if (inscripciones.length === 0) { cont.innerHTML = ''; return; }
+
+            const filas = inscripciones.map(function (i) {
+                const dias = (i.days || []).map(d => `<span class="chip">${DIAS[d]}</span>`).join('');
+                const transporte = TRANSPORTE[i.transport_option]
+                    ? TRANSPORTE[i.transport_option].etiqueta : i.transport_option;
+
+                return `<div class="tarjeta-inscrita">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div>
+                            <div class="fw-semibold">${escaparHtml(i.activity_name)}</div>
+                            <div class="text-muted small">${escaparHtml(i.student_name)}</div>
+                        </div>
+                        <div class="text-end">
+                            <div class="opcion-valor">${fmtPesos(i.total_value)}</div>
+                            <div class="text-muted small">${i.sessions} sesiones</div>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        ${dias}
+                        <span class="chip chip-ok"><i class="bi bi-bus-front me-1"></i>${escaparHtml(transporte)}</span>
+                    </div>
+                </div>`;
+            }).join('');
+
+            cont.innerHTML = `
+                <h5 class="mb-3"><i class="bi bi-check2-circle me-2"></i>Inscripciones confirmadas</h5>
+                ${filas}
+                <p class="text-muted small">
+                    Para cambiar o cancelar una inscripción, comunícate con el colegio.
+                </p>
+                <hr class="my-4">`;
+        }
+
+        // --- Oferta disponible ---
+        function renderOferta() {
+            const cont = document.getElementById('bloque-oferta');
+
+            // Sin temporada abierta: cada caso trae su propio mensaje desde el servidor.
+            if (!oferta.season) {
+                cont.innerHTML = `<div class="text-center text-muted py-3">
+                    <i class="bi bi-calendar-x d-block mb-2" style="font-size:2rem;"></i>
+                    ${escaparHtml(oferta.message || 'No hay actividades disponibles por ahora.')}
+                </div>`;
+                return;
+            }
+
+            const hijos = oferta.children || [];
+            if (hijos.length === 0) {
+                cont.innerHTML = '<div class="text-center text-muted py-3">No encontramos estudiantes asociados a este correo.</div>';
+                return;
+            }
+
+            // Pestañas solo si hay más de un hijo: con uno solo, una pestaña
+            // única es ruido.
+            let pestanas = '';
+            if (hijos.length > 1) {
+                pestanas = `<ul class="nav nav-pills nav-hijos mb-3">` +
+                    hijos.map(h => `<li class="nav-item">
+                        <button class="nav-link ${h.student_id === hijoActivo ? 'active' : ''}"
+                                onclick="cambiarHijo(${h.student_id})">${escaparHtml(h.name.split(' ')[0])}</button>
+                    </li>`).join('') + `</ul>`;
+            }
+
+            const hijo = hijos.find(h => h.student_id === hijoActivo) || hijos[0];
+
+            const encabezado = `
+                <h5 class="mb-1"><i class="bi bi-stars me-2"></i>${escaparHtml(oferta.season.cycle_name)}</h5>
+                <p class="text-muted small mb-3">
+                    Del ${fmtFecha(oferta.season.start_date)} al ${fmtFecha(oferta.season.end_date)}.
+                    Las inscripciones cierran el ${fmtFecha(oferta.season.enrollment_end_date)}.
+                </p>`;
+
+            const subtitulo = hijos.length > 1
+                ? `<p class="mb-3"><strong>${escaparHtml(hijo.name)}</strong> · ${escaparHtml(hijo.course || '')}</p>`
+                : `<p class="mb-3 text-muted">Actividades disponibles para <strong>${escaparHtml(hijo.name)}</strong> (${escaparHtml(hijo.course || '')}).</p>`;
+
+            const acts = hijo.activities || [];
+            const cuerpo = acts.length === 0
+                ? `<div class="text-muted fst-italic">No hay actividades disponibles para su grado en esta temporada.</div>`
+                : acts.map(a => renderActividad(hijo, a)).join('');
+
+            cont.innerHTML = encabezado + pestanas + subtitulo + cuerpo;
+        }
+
+        function renderActividad(hijo, a) {
+            const dias = (a.days || []).map(d => `<span class="chip">${DIAS[d]}</span>`).join('');
+
+            // Dos razones distintas para no poder inscribir, con mensajes distintos.
+            let bloqueo = null;
+            if (a.lleno) {
+                bloqueo = 'Esta actividad ya completó su cupo.';
+            } else if (a.conflict) {
+                bloqueo = `${escaparHtml(hijo.name.split(' ')[0])} ya tiene <strong>${escaparHtml(a.conflict.activity)}</strong>
+                           los ${DIAS[a.conflict.day].toLowerCase()}. No puede estar en dos actividades el mismo día.`;
+            }
+
+            const elegido = transporteElegido[a.activity_id] || null;
+
+            const opciones = bloqueo ? '' : Object.keys(TRANSPORTE).map(function (k) {
+                const t = TRANSPORTE[k];
+                return `<label class="opcion-transporte ${elegido === k ? 'elegida' : ''}">
+                    <span class="d-flex align-items-start">
+                        <input type="radio" name="tr-${a.activity_id}" value="${k}"
+                               ${elegido === k ? 'checked' : ''}
+                               onchange="elegirTransporte('${a.activity_id}', '${k}')">
+                        <span>
+                            <span class="fw-semibold d-block">${t.etiqueta}</span>
+                            ${t.detalle ? `<span class="text-muted small">${t.detalle}</span>` : ''}
+                        </span>
+                    </span>
+                    <span class="opcion-valor">${fmtPesos(a.options[k])}</span>
+                </label>`;
+            }).join('');
+
+            const aviso = bloqueo
+                ? `<div class="alert alert-secondary py-2 px-3 mb-0 small mt-2">
+                       <i class="bi bi-info-circle me-1"></i>${bloqueo}</div>`
+                : `<p class="text-muted small mt-2 mb-2">
+                       El colegio verifica con el operador de transporte lo que declares aquí.
+                       Si no corresponde, se ajusta el valor a cobrar.<br>
+                       El colegio enviará la factura por el medio acostumbrado. Cualquier inquietud
+                       al respecto, por favor contacte a Tesorería.</p>
+                   <div class="d-grid">
+                       <button class="btn btn-brand" ${elegido ? '' : 'disabled'}
+                               onclick="inscribir(${hijo.student_id}, '${a.activity_id}')">
+                           <i class="bi bi-person-plus me-1"></i>${elegido ? 'Inscribir' : 'Elige una opción de transporte'}
+                       </button>
+                   </div>`;
+
+            return `<div class="tarjeta-actividad ${bloqueo ? 'bloqueada' : ''}">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <div class="fw-semibold" style="font-size:1.05rem;">${escaparHtml(a.activity_name)}</div>
+                        ${a.description ? `<div class="text-muted small">${escaparHtml(a.description)}</div>` : ''}
+                    </div>
+                    <div class="text-end">
+                        <div class="text-muted small">${a.sessions} sesiones</div>
+                        ${a.lleno ? '<span class="chip chip-alerta">Cupo lleno</span>'
+                                  : `<span class="chip">${a.cupos_libres} cupos</span>`}
+                    </div>
+                </div>
+                <div class="mt-2 mb-3">${dias}</div>
+                ${opciones}
+                ${aviso}
+            </div>`;
+        }
+
+        function cambiarHijo(studentId) {
+            hijoActivo = studentId;
+            limpiarMensaje();
+            render();
+        }
+
+        function elegirTransporte(activityId, opcion) {
+            transporteElegido[activityId] = opcion;
+            render();
+        }
+
+        // ==========================================
+        // INSCRIBIR
+        // ==========================================
+        async function inscribir(studentId, activityId) {
+            const opcion = transporteElegido[activityId];
+            if (!opcion) return;
+
+            const hijo = (oferta.children || []).find(h => h.student_id === studentId);
+            const act = hijo ? (hijo.activities || []).find(a => a.activity_id === activityId) : null;
+            if (!hijo || !act) return;
+
+            const total = act.options[opcion];
+            const confirmar = `¿Inscribir a ${hijo.name} en ${act.activity_name}?\n\n` +
+                `${TRANSPORTE[opcion].etiqueta}\n` +
+                `Valor de la temporada: ${fmtPesos(total)}\n\n` +
+                `Una vez inscrito, los cambios se hacen con el colegio.`;
+
+            if (!confirm(confirmar)) return;
+
+            limpiarMensaje();
+            mostrarMensaje('<span class="spinner-border spinner-border-sm me-2"></span>Registrando la inscripción...', 'info');
+
+            try {
+                const data = await llamarGas({
+                    action: 'enroll_student',
+                    token: sessionToken,
+                    student_id: studentId,
+                    activity_id: activityId,
+                    transport_option: opcion
+                });
+
+                if (!data.ok) {
+                    if (data.error === 'session') {
+                        mostrarMensaje('Tu sesión venció. Vuelve a ingresar.', 'warning');
+                        salir();
+                        return;
+                    }
+                    // Los mensajes de la base llegan ya redactados para el usuario.
+                    mostrarMensaje(escaparHtml(data.message || 'No fue posible completar la inscripción.'), 'danger');
+                    return;
+                }
+
+                let texto = `Listo. ${escaparHtml(hijo.name)} quedó inscrito en ` +
+                            `<strong>${escaparHtml(data.activity_name)}</strong> por ${fmtPesos(data.total_value)}.` +
+                            `<br><span class="small">Te enviamos la confirmación a ${escaparHtml(correoActual)}.</span>`;
+                (data.warnings || []).forEach(function (w) { texto += `<br><span class="small">${escaparHtml(w)}</span>`; });
+
+                delete transporteElegido[activityId];
+
+                // Se recarga desde el servidor y no se modifica el estado local:
+                // la inscripción cambia los cupos, los días ocupados y la lista de
+                // actividades disponibles de TODOS los hijos, no solo de este.
+                await cargarDashboard();
+                mostrarMensaje(texto, 'success');
+
+            } catch (error) {
+                console.error('Error inscribiendo:', error);
+                mostrarMensaje('No fue posible completar la inscripción. Intenta de nuevo.', 'danger');
             }
         }
 
