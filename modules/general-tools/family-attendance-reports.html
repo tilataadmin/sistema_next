@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.08.04.13.00">
+    <title>Reportes de asistencia de familias - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        .loading-overlay {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden { display: none; }
+        .loading-content {
+            background: #ffffff; padding: 2rem;
+            border-radius: 8px; text-align: center;
+        }
+        .spinner-tilata {
+            border: 3px solid #f3f3f3; border-top: 3px solid #1b365d;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin: 0 auto 1rem;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .kpi-card {
+            border: 1px solid #dee2e6; border-radius: 6px;
+            padding: 1rem; background: #ffffff; height: 100%;
+        }
+        .kpi-valor { font-size: 1.9rem; font-weight: 700; color: #1b365d; line-height: 1.1; }
+        .kpi-etiqueta { font-size: 0.82rem; color: #6c757d; }
+
+        /* Barras: CSS puro, colores sólidos */
+        .barra-fila { margin-bottom: 0.6rem; }
+        .barra-cabecera {
+            display: flex; justify-content: space-between;
+            font-size: 0.87rem; margin-bottom: 0.15rem;
+        }
+        .barra-pista {
+            background: #e9ecef; border-radius: 3px;
+            height: 20px; overflow: hidden;
+        }
+        .barra-valor { height: 100%; background: #1b365d; }
+        .barra-valor.media { background: #3d6199; }
+        .barra-valor.baja { background: #b02a37; }
+
+        .tabla-familias th { cursor: pointer; user-select: none; white-space: nowrap; }
+        .tabla-familias th .bi { font-size: 0.75rem; }
+
+        .fila-atraso-alto { background-color: #f8d7da; }
+        .fila-atraso-medio { background-color: #fff3cd; }
+
+        .nota-metodo {
+            font-size: 0.82rem; color: #6c757d;
+            border-left: 3px solid #dee2e6; padding-left: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner-tilata"></div>
+            <p class="mb-0">Calculando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html"><i class="bi bi-house me-1"></i>Dashboard</a>
+                </li>
+                <li class="breadcrumb-item"><a href="index.html">Herramientas Generales</a></li>
+                <li class="breadcrumb-item active">Reportes de asistencia de familias</li>
+            </ol>
+        </nav>
+
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-graph-up me-2"></i>
+                    Reportes de asistencia de familias
+                </h1>
+                <p class="text-muted mb-0">
+                    Participación de las familias en los encuentros convocados por el colegio.
+                </p>
+            </div>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <!-- FILTROS -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label">Año académico</label>
+                        <select class="form-select" id="f-anio"></select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Sección</label>
+                        <select class="form-select" id="f-seccion">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Grado</label>
+                        <select class="form-select" id="f-grado">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Curso</label>
+                        <select class="form-select" id="f-curso">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Desde</label>
+                        <input type="date" class="form-control" id="f-desde">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Hasta</label>
+                        <input type="date" class="form-control" id="f-hasta">
+                    </div>
+                </div>
+                <div class="text-end mt-3">
+                    <button class="btn btn-outline-secondary" onclick="limpiarFiltros()">
+                        <i class="bi bi-x-circle me-1"></i>Limpiar
+                    </button>
+                    <button class="btn btn-primary" onclick="aplicarFiltros()">
+                        <i class="bi bi-funnel me-1"></i>Aplicar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PESTAÑAS -->
+        <ul class="nav nav-tabs mb-3" id="tabs-dash">
+            <li class="nav-item">
+                <button class="nav-link active" data-panel="panorama" onclick="cambiarPanel('panorama')">
+                    <i class="bi bi-bar-chart me-1"></i>Panorama
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-panel="familias" onclick="cambiarPanel('familias')">
+                    <i class="bi bi-people me-1"></i>Familias
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-panel="operacion" onclick="cambiarPanel('operacion')">
+                    <i class="bi bi-clock-history me-1"></i>Operación
+                </button>
+            </li>
+        </ul>
+
+        <!-- ============ PANEL 1: PANORAMA ============ -->
+        <div id="panel-panorama">
+            <div class="row g-3 mb-4" id="kpis"></div>
+
+            <div id="aviso-cobertura-datos" class="alert alert-warning d-none"></div>
+
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="bi bi-diagram-3 me-2"></i>Por sección</div>
+                        <div class="card-body" id="graf-seccion"></div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="bi bi-mortarboard me-2"></i>Por grado</div>
+                        <div class="card-body" id="graf-grado"></div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="bi bi-people me-2"></i>Por curso</div>
+                        <div class="card-body" id="graf-curso"></div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="bi bi-calendar-event me-2"></i>Por actividad</div>
+                        <div class="card-body" id="graf-actividad"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ PANEL 2: FAMILIAS ============ -->
+        <div id="panel-familias" class="d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <i class="bi bi-people me-2"></i>Asistencia por familia
+                        <span class="badge bg-secondary ms-2" id="conteo-familias">0</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <input type="text" class="form-control form-control-sm" style="width: 230px"
+                               id="buscar-familia" placeholder="Buscar familia o estudiante...">
+                        <button class="btn btn-sm btn-outline-success" onclick="exportarFamilias()">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Excel
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="nota-metodo mb-3">
+                        La unidad de conteo es el par <strong>hijo × encuentro</strong>: una familia con
+                        tres hijos convocados al mismo encuentro cuenta tres veces. Solo se incluyen
+                        cursos <strong>cerrados</strong>; los que siguen abiertos o vencieron sin cierre
+                        no cuentan ni a favor ni en contra.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover tabla-familias">
+                            <thead class="table-light">
+                                <tr>
+                                    <th onclick="ordenarFamilias('family_name')">Familia <i class="bi bi-arrow-down-up"></i></th>
+                                    <th onclick="ordenarFamilias('family_code')">Código <i class="bi bi-arrow-down-up"></i></th>
+                                    <th>Estudiantes</th>
+                                    <th onclick="ordenarFamilias('convocatorias')" class="text-center">Convocatorias <i class="bi bi-arrow-down-up"></i></th>
+                                    <th onclick="ordenarFamilias('asistencias')" class="text-center">Asistencias <i class="bi bi-arrow-down-up"></i></th>
+                                    <th onclick="ordenarFamilias('porcentaje')" class="text-center">% <i class="bi bi-arrow-down-up"></i></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-familias"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ PANEL 3: OPERACIÓN ============ -->
+        <div id="panel-operacion" class="d-none">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Cierres pendientes
+                    <span class="badge bg-secondary ms-2" id="conteo-pendientes">0</span>
+                </div>
+                <div class="card-body">
+                    <p class="nota-metodo mb-3">
+                        Cursos convocados cuyo director aún no ha cerrado el registro. Mientras no cierren,
+                        esas familias no reciben correo y no cuentan en las estadísticas.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Actividad</th>
+                                    <th>Fecha</th>
+                                    <th>Curso</th>
+                                    <th>Director</th>
+                                    <th class="text-center">Días</th>
+                                    <th class="text-center">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-pendientes"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-speedometer2 me-2"></i>Demora en cerrar, por director
+                </div>
+                <div class="card-body">
+                    <p class="nota-metodo mb-3">
+                        Días entre la fecha del encuentro y el cierre del registro. Se usa la
+                        <strong>mediana</strong> y no el promedio: un caso extremo distorsionaría
+                        la lectura de toda una sección.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Director</th>
+                                    <th>Curso(s)</th>
+                                    <th class="text-center">Cierres</th>
+                                    <th class="text-center">Mediana (días)</th>
+                                    <th class="text-center">Máximo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-demora"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // VARIABLES GLOBALES
+        // ==========================================
+        let currentUser = null;
+        let datos = {
+            anios: [], secciones: [], grados: [], cursos: [],
+            actividades: [], convocatorias: [], estudiantes: [],
+            familias: [], asistencias: [], usuarios: []
+        };
+        let familiasCalculadas = [];
+        let ordenActual = { campo: 'porcentaje', asc: true };
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Reportes de asistencia de familias');
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    window.location.href = '../../login.html';
+                    return;
+                }
+                currentUser = session.user;
+
+                await cargarTodo();
+
+                document.getElementById('f-seccion').addEventListener('change', alCambiarSeccion);
+                document.getElementById('f-grado').addEventListener('change', alCambiarGrado);
+                document.getElementById('buscar-familia').addEventListener('input', renderFamilias);
+
+            } catch (error) {
+                console.error('❌ Error:', error);
+                showMessage('Error al cargar: ' + error.message, 'danger');
+            }
+        });
+
+        async function cargarTodo() {
+            try {
+                mostrarLoading();
+
+                const [anios, cfg, secciones, grados, cursos, actividades, convocatorias, usuarios] =
+                    await Promise.all([
+                        supabaseRequest('/academic_years?select=year_id,year_name,year_order&order=year_order.desc'),
+                        supabaseRequest('/system_config?select=current_academic_year_id&limit=1'),
+                        supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active&order=section_name'),
+                        supabaseRequest('/grades?select=grade_id,grade_name,grade_order,section_id&grade_status=eq.active&order=grade_order'),
+                        supabaseRequest('/courses?select=course_id,course_name,course_order,grade_id,course_director_email&course_status=eq.active&order=course_order'),
+                        supabaseRequest('/familia_actividad_actividades?select=id,nombre,fecha,academic_year_id'),
+                        supabaseRequest('/familia_actividad_cursos?select=actividad_id,curso_id,estado,cerrado_at,cerrado_por'),
+                        supabaseRequest('/users?select=user_id,user_mail,user_display_name')
+                    ]);
+
+                datos.anios = anios || [];
+                datos.secciones = secciones || [];
+                datos.grados = grados || [];
+                datos.cursos = cursos || [];
+                datos.actividades = actividades || [];
+                datos.convocatorias = convocatorias || [];
+                datos.usuarios = usuarios || [];
+
+                const yearVigente = (cfg && cfg.length) ? cfg[0].current_academic_year_id : null;
+
+                // Filtro de año
+                const selAnio = document.getElementById('f-anio');
+                selAnio.innerHTML = '<option value="">Todos</option>' +
+                    datos.anios.map(a =>
+                        `<option value="${a.year_id}" ${a.year_id === yearVigente ? 'selected' : ''}>
+                            ${escapeHtml(a.year_name)}
+                         </option>`).join('');
+
+                document.getElementById('f-seccion').innerHTML = '<option value="">Todas</option>' +
+                    datos.secciones.map(s =>
+                        `<option value="${s.section_id}">${escapeHtml(s.section_name)}</option>`).join('');
+
+                pintarGrados('');
+                pintarCursos('');
+
+                await cargarDatosPesados();
+
+                calcular();
+                ocultarLoading();
+
+            } catch (error) {
+                console.error('❌ Error cargando catálogos:', error);
+                showMessage('Error al cargar datos: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        // Estudiantes, familias y asistencias: el grueso del volumen
+        async function cargarDatosPesados() {
+            const estudiantes = await supabaseRequest(
+                '/students?select=student_id,student_first_name,student_last_name_1,student_last_name_2,course_id,family_id,student_status(status_code)'
+            ) || [];
+
+            datos.estudiantes = estudiantes.filter(e => e.student_status?.status_code === 1);
+
+            datos.familias = await supabaseRequest(
+                '/families?select=family_id,family_code,family_name'
+            ) || [];
+
+            // Basta el nivel estudiante: no se necesita el detalle por familiar
+            datos.asistencias = await supabaseRequest(
+                '/familia_actividad_asistencias?select=actividad_id,estudiante_id,asistio,asistio_otro_familiar'
+            ) || [];
+        }
+
+        // ==========================================
+        // FILTROS DEPENDIENTES
+        // ==========================================
+        function pintarGrados(sectionId) {
+            const lista = sectionId
+                ? datos.grados.filter(g => g.section_id === sectionId)
+                : datos.grados;
+
+            document.getElementById('f-grado').innerHTML = '<option value="">Todos</option>' +
+                lista.map(g => `<option value="${g.grade_id}">${escapeHtml(g.grade_name)}</option>`).join('');
+        }
+
+        function pintarCursos(gradeId) {
+            const seccionId = document.getElementById('f-seccion').value;
+
+            let lista = datos.cursos;
+            if (gradeId) {
+                lista = lista.filter(c => c.grade_id === gradeId);
+            } else if (seccionId) {
+                const gradosSeccion = datos.grados
+                    .filter(g => g.section_id === seccionId).map(g => g.grade_id);
+                lista = lista.filter(c => gradosSeccion.includes(c.grade_id));
+            }
+
+            document.getElementById('f-curso').innerHTML = '<option value="">Todos</option>' +
+                lista.map(c => `<option value="${c.course_id}">${escapeHtml(c.course_name)}</option>`).join('');
+        }
+
+        function alCambiarSeccion() {
+            pintarGrados(document.getElementById('f-seccion').value);
+            pintarCursos('');
+        }
+
+        function alCambiarGrado() {
+            pintarCursos(document.getElementById('f-grado').value);
+        }
+
+        function limpiarFiltros() {
+            document.getElementById('f-anio').value = '';
+            document.getElementById('f-seccion').value = '';
+            pintarGrados('');
+            pintarCursos('');
+            document.getElementById('f-desde').value = '';
+            document.getElementById('f-hasta').value = '';
+            calcular();
+        }
+
+        function aplicarFiltros() {
+            mostrarLoading();
+            setTimeout(() => { calcular(); ocultarLoading(); }, 30);
+        }
+
+        // ==========================================
+        // NÚCLEO DE CÁLCULO
+        // ==========================================
+        function calcular() {
+            const fAnio = document.getElementById('f-anio').value;
+            const fSeccion = document.getElementById('f-seccion').value;
+            const fGrado = document.getElementById('f-grado').value;
+            const fCurso = document.getElementById('f-curso').value;
+            const fDesde = document.getElementById('f-desde').value;
+            const fHasta = document.getElementById('f-hasta').value;
+
+            // Índices
+            const cursoPorId = {};
+            datos.cursos.forEach(c => { cursoPorId[c.course_id] = c; });
+            const gradoPorId = {};
+            datos.grados.forEach(g => { gradoPorId[g.grade_id] = g; });
+            const seccionPorId = {};
+            datos.secciones.forEach(s => { seccionPorId[s.section_id] = s; });
+            const actividadPorId = {};
+            datos.actividades.forEach(a => { actividadPorId[a.id] = a; });
+            const familiaPorCodigo = {};
+            datos.familias.forEach(f => { familiaPorCodigo[f.family_code] = f; });
+
+            // Cursos que pasan el filtro
+            const cursosValidos = new Set(
+                datos.cursos.filter(c => {
+                    if (fCurso && c.course_id !== fCurso) return false;
+                    const g = gradoPorId[c.grade_id];
+                    if (!g) return false;
+                    if (fGrado && g.grade_id !== fGrado) return false;
+                    if (fSeccion && g.section_id !== fSeccion) return false;
+                    return true;
+                }).map(c => c.course_id)
+            );
+
+            // Actividades que pasan el filtro
+            const actividadesValidas = new Set(
+                datos.actividades.filter(a => {
+                    if (fAnio && a.academic_year_id !== fAnio) return false;
+                    if (fDesde && a.fecha < fDesde) return false;
+                    if (fHasta && a.fecha > fHasta) return false;
+                    return true;
+                }).map(a => a.id)
+            );
+
+            // SOLO cursos cerrados entran en el cálculo de participación.
+            // Un curso sin cerrar significa que el director no registró: castigar
+            // a esas familias con 0% sería atribuirles el incumplimiento del docente.
+            const convocatoriasCerradas = datos.convocatorias.filter(c =>
+                c.estado === 'cerrado'
+                && actividadesValidas.has(c.actividad_id)
+                && cursosValidos.has(c.curso_id)
+            );
+
+            const paresCerrados = new Set(
+                convocatoriasCerradas.map(c => c.actividad_id + '|' + c.curso_id)
+            );
+
+            // Estudiante -> curso actual
+            const cursoDeEstudiante = {};
+            datos.estudiantes.forEach(e => { cursoDeEstudiante[e.student_id] = e.course_id; });
+
+            // Asistencias que corresponden a un par (actividad, curso) cerrado
+            const relevantes = datos.asistencias.filter(a => {
+                const cursoId = cursoDeEstudiante[a.estudiante_id];
+                if (!cursoId) return false;
+                return paresCerrados.has(a.actividad_id + '|' + cursoId);
+            });
+
+            calcularKpis(relevantes, convocatoriasCerradas, actividadesValidas);
+            calcularAgrupaciones(relevantes, cursoDeEstudiante, cursoPorId, gradoPorId, seccionPorId, actividadPorId);
+            calcularFamilias(relevantes, familiaPorCodigo, cursoPorId);
+            calcularOperacion(actividadesValidas, cursosValidos, cursoPorId, actividadPorId);
+        }
+
+        function calcularKpis(relevantes, convocatoriasCerradas, actividadesValidas) {
+            const encuentros = new Set(convocatoriasCerradas.map(c => c.actividad_id)).size;
+            const convocatorias = relevantes.length;
+            const asistieron = relevantes.filter(a => a.asistio).length;
+            const pct = convocatorias > 0 ? Math.round(asistieron * 1000 / convocatorias) / 10 : 0;
+
+            document.getElementById('kpis').innerHTML = `
+                <div class="col-6 col-lg-3">
+                    <div class="kpi-card">
+                        <div class="kpi-valor">${encuentros}</div>
+                        <div class="kpi-etiqueta">Encuentros con registro cerrado</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="kpi-card">
+                        <div class="kpi-valor">${convocatorias}</div>
+                        <div class="kpi-etiqueta">Convocatorias (hijo × encuentro)</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="kpi-card">
+                        <div class="kpi-valor">${asistieron}</div>
+                        <div class="kpi-etiqueta">Con asistencia registrada</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="kpi-card">
+                        <div class="kpi-valor">${pct}%</div>
+                        <div class="kpi-etiqueta">Participación global</div>
+                    </div>
+                </div>`;
+
+            // Advertir si buena parte de lo convocado quedó fuera por no estar cerrado
+            const totalConvocado = datos.convocatorias.filter(c =>
+                actividadesValidas.has(c.actividad_id)).length;
+            const sinCerrar = totalConvocado - convocatoriasCerradas.length;
+            const aviso = document.getElementById('aviso-cobertura-datos');
+
+            if (sinCerrar > 0) {
+                aviso.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>
+                    <strong>${sinCerrar} de ${totalConvocado} convocatorias</strong> no tienen el registro
+                    cerrado y quedan fuera de estas cifras. Revísalas en la pestaña
+                    <strong>Operación</strong> antes de sacar conclusiones.`;
+                aviso.classList.remove('d-none');
+            } else {
+                aviso.classList.add('d-none');
+            }
+        }
+
+        function calcularAgrupaciones(relevantes, cursoDeEstudiante, cursoPorId, gradoPorId, seccionPorId, actividadPorId) {
+            const porSeccion = {}, porGrado = {}, porCurso = {}, porActividad = {};
+
+            const sumar = (mapa, clave, etiqueta, asistio) => {
+                if (!clave) return;
+                if (!mapa[clave]) mapa[clave] = { etiqueta: etiqueta, total: 0, si: 0 };
+                mapa[clave].total++;
+                if (asistio) mapa[clave].si++;
+            };
+
+            relevantes.forEach(a => {
+                const cursoId = cursoDeEstudiante[a.estudiante_id];
+                const curso = cursoPorId[cursoId];
+                if (!curso) return;
+                const grado = gradoPorId[curso.grade_id];
+                const seccion = grado ? seccionPorId[grado.section_id] : null;
+                const act = actividadPorId[a.actividad_id];
+
+                if (seccion) sumar(porSeccion, seccion.section_id, seccion.section_name, a.asistio);
+                if (grado) sumar(porGrado, grado.grade_id, grado.grade_name, a.asistio);
+                sumar(porCurso, cursoId, curso.course_name, a.asistio);
+                if (act) sumar(porActividad, act.id, act.nombre + ' · ' + formatDate(act.fecha), a.asistio);
+            });
+
+            pintarBarras('graf-seccion', porSeccion);
+            pintarBarras('graf-grado', porGrado);
+            pintarBarras('graf-curso', porCurso);
+            pintarBarras('graf-actividad', porActividad);
+        }
+
+        function pintarBarras(contenedorId, mapa) {
+            const filas = Object.values(mapa)
+                .map(v => ({
+                    etiqueta: v.etiqueta,
+                    total: v.total,
+                    si: v.si,
+                    pct: v.total > 0 ? Math.round(v.si * 1000 / v.total) / 10 : 0
+                }))
+                .sort((a, b) => b.pct - a.pct);
+
+            const cont = document.getElementById(contenedorId);
+
+            if (filas.length === 0) {
+                cont.innerHTML = '<div class="text-muted small text-center py-3">Sin datos para los filtros aplicados.</div>';
+                return;
+            }
+
+            cont.innerHTML = filas.map(f => {
+                let clase = '';
+                if (f.pct < 40) clase = 'baja';
+                else if (f.pct < 70) clase = 'media';
+
+                return `
+                    <div class="barra-fila">
+                        <div class="barra-cabecera">
+                            <span>${escapeHtml(f.etiqueta)}</span>
+                            <span class="text-muted">${f.si}/${f.total} · <strong>${f.pct}%</strong></span>
+                        </div>
+                        <div class="barra-pista">
+                            <div class="barra-valor ${clase}" style="width: ${f.pct}%"></div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        // ==========================================
+        // FAMILIAS
+        // ==========================================
+        function calcularFamilias(relevantes, familiaPorCodigo, cursoPorId) {
+            const estudiantePorId = {};
+            datos.estudiantes.forEach(e => { estudiantePorId[e.student_id] = e; });
+
+            const acumulado = {};
+
+            relevantes.forEach(a => {
+                const est = estudiantePorId[a.estudiante_id];
+                if (!est) return;
+
+                const codigo = est.family_id;
+                if (!acumulado[codigo]) {
+                    const fam = familiaPorCodigo[codigo];
+                    acumulado[codigo] = {
+                        family_code: codigo,
+                        family_name: fam ? (fam.family_name || 'Familia ' + codigo) : 'Familia ' + codigo,
+                        estudiantes: new Set(),
+                        convocatorias: 0,
+                        asistencias: 0
+                    };
+                }
+
+                const nombre = `${est.student_first_name} ${est.student_last_name_1}`.trim();
+                acumulado[codigo].estudiantes.add(nombre);
+                acumulado[codigo].convocatorias++;
+                if (a.asistio) acumulado[codigo].asistencias++;
+            });
+
+            familiasCalculadas = Object.values(acumulado).map(f => ({
+                family_code: f.family_code,
+                family_name: f.family_name,
+                estudiantes: Array.from(f.estudiantes).join(', '),
+                convocatorias: f.convocatorias,
+                asistencias: f.asistencias,
+                porcentaje: f.convocatorias > 0
+                    ? Math.round(f.asistencias * 1000 / f.convocatorias) / 10
+                    : 0
+            }));
+
+            renderFamilias();
+        }
+
+        function renderFamilias() {
+            const busqueda = document.getElementById('buscar-familia').value.toLowerCase();
+
+            let lista = familiasCalculadas.filter(f =>
+                !busqueda ||
+                f.family_name.toLowerCase().includes(busqueda) ||
+                f.estudiantes.toLowerCase().includes(busqueda) ||
+                String(f.family_code).includes(busqueda)
+            );
+
+            const campo = ordenActual.campo;
+            lista.sort((a, b) => {
+                let va = a[campo], vb = b[campo];
+                if (typeof va === 'string') {
+                    return ordenActual.asc ? va.localeCompare(vb) : vb.localeCompare(va);
+                }
+                return ordenActual.asc ? va - vb : vb - va;
+            });
+
+            document.getElementById('conteo-familias').textContent = lista.length;
+
+            const tbody = document.getElementById('tbody-familias');
+
+            if (lista.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Sin datos para los filtros aplicados.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = lista.map(f => {
+                let badge = 'bg-success';
+                if (f.porcentaje < 40) badge = 'bg-danger';
+                else if (f.porcentaje < 70) badge = 'bg-warning text-dark';
+
+                return `
+                    <tr>
+                        <td>${escapeHtml(f.family_name)}</td>
+                        <td class="text-muted">${f.family_code}</td>
+                        <td class="small">${escapeHtml(f.estudiantes)}</td>
+                        <td class="text-center">${f.convocatorias}</td>
+                        <td class="text-center">${f.asistencias}</td>
+                        <td class="text-center">
+                            <span class="badge ${badge}">${f.porcentaje}%</span>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function ordenarFamilias(campo) {
+            if (ordenActual.campo === campo) {
+                ordenActual.asc = !ordenActual.asc;
+            } else {
+                ordenActual.campo = campo;
+                ordenActual.asc = true;
+            }
+            renderFamilias();
+        }
+
+        function exportarFamilias() {
+            try {
+                const filas = familiasCalculadas.map(f => ({
+                    'Código': f.family_code,
+                    'Familia': f.family_name,
+                    'Estudiantes': f.estudiantes,
+                    'Convocatorias': f.convocatorias,
+                    'Asistencias': f.asistencias,
+                    '% Participación': f.porcentaje
+                }));
+
+                if (filas.length === 0) {
+                    showMessage('No hay datos para exportar', 'warning');
+                    return;
+                }
+
+                const hoja = XLSX.utils.json_to_sheet(filas);
+                const libro = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(libro, hoja, 'Asistencia familias');
+
+                const fecha = new Date().toISOString().split('T')[0];
+                XLSX.writeFile(libro, `asistencia_familias_${fecha}.xlsx`);
+
+            } catch (error) {
+                console.error('❌ Error exportando:', error);
+                showMessage('Error al exportar: ' + error.message, 'danger');
+            }
+        }
+
+        // ==========================================
+        // OPERACIÓN
+        // ==========================================
+        function calcularOperacion(actividadesValidas, cursosValidos, cursoPorId, actividadPorId) {
+            const usuarioPorCorreo = {};
+            datos.usuarios.forEach(u => {
+                if (u.user_mail) usuarioPorCorreo[u.user_mail.toLowerCase()] = u.user_display_name;
+            });
+            const usuarioPorId = {};
+            datos.usuarios.forEach(u => { usuarioPorId[u.user_id] = u.user_display_name; });
+
+            const hoy = new Date();
+
+            // --- Pendientes ---
+            const pendientes = datos.convocatorias
+                .filter(c => c.estado !== 'cerrado'
+                          && actividadesValidas.has(c.actividad_id)
+                          && cursosValidos.has(c.curso_id))
+                .map(c => {
+                    const act = actividadPorId[c.actividad_id];
+                    const curso = cursoPorId[c.curso_id];
+                    const fecha = act ? new Date(act.fecha + 'T00:00:00') : null;
+                    const dias = fecha ? Math.floor((hoy - fecha) / 86400000) : null;
+                    const correo = curso ? (curso.course_director_email || '') : '';
+
+                    return {
+                        actividad: act ? act.nombre : '(sin actividad)',
+                        fecha: act ? act.fecha : null,
+                        curso: curso ? curso.course_name : '(sin curso)',
+                        director: usuarioPorCorreo[correo.toLowerCase()] || correo || 'Sin director asignado',
+                        dias: dias,
+                        estado: c.estado
+                    };
+                })
+                .sort((a, b) => (b.dias || 0) - (a.dias || 0));
+
+            document.getElementById('conteo-pendientes').textContent = pendientes.length;
+            const tbodyP = document.getElementById('tbody-pendientes');
+
+            if (pendientes.length === 0) {
+                tbodyP.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No hay cierres pendientes.</td></tr>';
+            } else {
+                tbodyP.innerHTML = pendientes.map(p => {
+                    let clase = '';
+                    if (p.dias !== null && p.dias >= 7) clase = 'fila-atraso-alto';
+                    else if (p.dias !== null && p.dias >= 3) clase = 'fila-atraso-medio';
+
+                    const badge = p.estado === 'vencido'
+                        ? '<span class="badge bg-danger">Vencido</span>'
+                        : '<span class="badge bg-secondary">Abierto</span>';
+
+                    return `
+                        <tr class="${clase}">
+                            <td>${escapeHtml(p.actividad)}</td>
+                            <td>${p.fecha ? formatDate(p.fecha) : '—'}</td>
+                            <td>${escapeHtml(p.curso)}</td>
+                            <td>${escapeHtml(p.director)}</td>
+                            <td class="text-center">${p.dias !== null ? p.dias : '—'}</td>
+                            <td class="text-center">${badge}</td>
+                        </tr>`;
+                }).join('');
+            }
+
+            // --- Demora histórica ---
+            const porDirector = {};
+
+            datos.convocatorias
+                .filter(c => c.estado === 'cerrado' && c.cerrado_at
+                          && actividadesValidas.has(c.actividad_id)
+                          && cursosValidos.has(c.curso_id))
+                .forEach(c => {
+                    const act = actividadPorId[c.actividad_id];
+                    const curso = cursoPorId[c.curso_id];
+                    if (!act || !curso) return;
+
+                    const fechaAct = new Date(act.fecha + 'T00:00:00');
+                    const fechaCierre = new Date(c.cerrado_at);
+                    const dias = Math.max(0, Math.floor((fechaCierre - fechaAct) / 86400000));
+
+                    const nombre = usuarioPorId[c.cerrado_por] || '(desconocido)';
+
+                    if (!porDirector[nombre]) {
+                        porDirector[nombre] = { nombre: nombre, cursos: new Set(), dias: [] };
+                    }
+                    porDirector[nombre].cursos.add(curso.course_name);
+                    porDirector[nombre].dias.push(dias);
+                });
+
+            const filas = Object.values(porDirector).map(d => ({
+                nombre: d.nombre,
+                cursos: Array.from(d.cursos).join(', '),
+                cierres: d.dias.length,
+                mediana: mediana(d.dias),
+                maximo: Math.max(...d.dias)
+            })).sort((a, b) => b.mediana - a.mediana);
+
+            const tbodyD = document.getElementById('tbody-demora');
+
+            if (filas.length === 0) {
+                tbodyD.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Aún no hay cierres registrados.</td></tr>';
+                return;
+            }
+
+            tbodyD.innerHTML = filas.map(f => {
+                let clase = '';
+                if (f.mediana >= 7) clase = 'fila-atraso-alto';
+                else if (f.mediana >= 3) clase = 'fila-atraso-medio';
+
+                return `
+                    <tr class="${clase}">
+                        <td>${escapeHtml(f.nombre)}</td>
+                        <td class="small">${escapeHtml(f.cursos)}</td>
+                        <td class="text-center">${f.cierres}</td>
+                        <td class="text-center"><strong>${f.mediana}</strong></td>
+                        <td class="text-center">${f.maximo}</td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function mediana(valores) {
+            if (!valores.length) return 0;
+            const orden = [...valores].sort((a, b) => a - b);
+            const medio = Math.floor(orden.length / 2);
+            return orden.length % 2 !== 0
+                ? orden[medio]
+                : Math.round((orden[medio - 1] + orden[medio]) / 2);
+        }
+
+        // ==========================================
+        // NAVEGACIÓN Y UTILIDADES
+        // ==========================================
+        function cambiarPanel(panel) {
+            ['panorama', 'familias', 'operacion'].forEach(p => {
+                document.getElementById('panel-' + p).classList.toggle('d-none', p !== panel);
+            });
+            document.querySelectorAll('#tabs-dash .nav-link').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.panel === panel);
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.toString().replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function mostrarLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        window.aplicarFiltros = aplicarFiltros;
+        window.limpiarFiltros = limpiarFiltros;
+        window.cambiarPanel = cambiarPanel;
+        window.ordenarFamilias = ordenarFamilias;
+        window.exportarFamilias = exportarFamilias;
+
+        console.log('✅ family-attendance-reports.html cargado correctamente');
+    </script>
+</body>
+</html>
