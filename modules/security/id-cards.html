@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.4.1">
+    <meta name="page-version" content="26.8.4.2">
     <title>Gestión de Carnets - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -362,6 +362,79 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Carga Masiva de Códigos RFID -->
+    <div class="modal fade" id="bulkModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-upload me-2"></i>Previsualización de carga masiva
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-secondary py-2 mb-3">
+                        <small>
+                            <strong>Archivo:</strong> <span id="bulkFileName">-</span> &nbsp;|&nbsp;
+                            <strong>Destino:</strong> <span id="bulkScopeLabel">-</span> &nbsp;|&nbsp;
+                            <strong>Filas:</strong> <span id="bulkTotalRows">0</span>
+                        </small>
+                    </div>
+
+                    <div class="row g-2 mb-3" id="bulkCounters"></div>
+
+                    <div class="alert alert-warning" id="bulkOverwriteBox">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="bulkOverwrite">
+                            <label class="form-check-label" for="bulkOverwrite">
+                                <strong>Sobrescribir códigos existentes.</strong>
+                                Si no se marca, las personas que ya tienen una tarjeta registrada se omiten.
+                                Al marcarlo, sus tarjetas anteriores dejan de funcionar.
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <select class="form-select form-select-sm" id="bulkFilter" style="width: 260px;">
+                            <option value="all">Mostrar todas las filas</option>
+                            <option value="nuevo">Solo asignaciones nuevas</option>
+                            <option value="existente">Solo reemplazos</option>
+                            <option value="sin_cambio">Solo sin cambio</option>
+                            <option value="no_encontrado">Solo no encontrados</option>
+                            <option value="conflicto">Solo conflictos</option>
+                            <option value="error">Solo errores</option>
+                        </select>
+                        <small class="text-muted" id="bulkFilterCount"></small>
+                    </div>
+
+                    <div class="table-responsive" style="max-height: 45vh; overflow-y: auto;">
+                        <table class="table table-sm table-hover">
+                            <thead class="sticky-top">
+                                <tr>
+                                    <th style="width: 60px;">Fila</th>
+                                    <th style="width: 110px;">Identificador</th>
+                                    <th>Persona</th>
+                                    <th style="width: 120px;">Tarjeta actual</th>
+                                    <th style="width: 120px;">Tarjeta nueva</th>
+                                    <th style="width: 150px;">Estado</th>
+                                    <th>Detalle</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bulkTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="bulkApplyBtn" disabled>
+                        <i class="bi bi-check2-circle me-1"></i>
+                        Aplicar <span id="bulkApplyCount">0</span> cambios
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1008,6 +1081,92 @@
             });
         }
 
+        const BULK_STATES = {
+            nuevo:         { label: 'Asignación nueva',  cls: 'bg-success' },
+            existente:     { label: 'Reemplaza tarjeta', cls: 'bg-warning text-dark' },
+            sin_cambio:    { label: 'Sin cambio',        cls: 'bg-secondary' },
+            no_encontrado: { label: 'No encontrado',     cls: 'bg-danger' },
+            conflicto:     { label: 'Conflicto',         cls: 'bg-danger' },
+            error:         { label: 'Error',             cls: 'bg-danger' }
+        };
+
+        let bulkModal = null;
+
+        function openBulkModal(fileName, scope, summary) {
+            if (!bulkModal) {
+                bulkModal = new bootstrap.Modal(document.getElementById('bulkModal'));
+                document.getElementById('bulkFilter').addEventListener('change', function() {
+                    renderBulkTable(this.value);
+                });
+                document.getElementById('bulkOverwrite').addEventListener('change', updateBulkApplyCount);
+            }
+
+            document.getElementById('bulkFileName').textContent = fileName;
+            document.getElementById('bulkScopeLabel').textContent = scope === 'worker' ? 'Trabajadores' : 'Estudiantes';
+            document.getElementById('bulkTotalRows').textContent = bulkRows.length;
+            document.getElementById('bulkOverwrite').checked = false;
+            document.getElementById('bulkFilter').value = 'all';
+
+            renderBulkCounters(summary);
+            renderBulkTable('all');
+            updateBulkApplyCount();
+
+            bulkModal.show();
+        }
+
+        function renderBulkCounters(s) {
+            const order = ['nuevo', 'existente', 'sin_cambio', 'no_encontrado', 'conflicto', 'error'];
+            document.getElementById('bulkCounters').innerHTML = order.map(key => `
+                <div class="col">
+                    <div class="card bg-light h-100">
+                        <div class="card-body text-center py-2">
+                            <h5 class="mb-0">${s[key]}</h5>
+                            <small class="text-muted">${BULK_STATES[key].label}</small>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderBulkTable(filter) {
+            const rows = filter === 'all' ? bulkRows : bulkRows.filter(r => r.estado === filter);
+            const tbody = document.getElementById('bulkTableBody');
+
+            document.getElementById('bulkFilterCount').textContent =
+                `Mostrando ${rows.length} de ${bulkRows.length} filas`;
+
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">
+                    No hay filas en esta categoría</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = rows.map(r => {
+                const st = BULK_STATES[r.estado] || { label: r.estado, cls: 'bg-secondary' };
+                return `
+                    <tr>
+                        <td class="text-muted">${r.excel_row}</td>
+                        <td><code>${escapeHtml(r.id_raw)}</code></td>
+                        <td>${escapeHtml(r.persona_nombre || '-')}</td>
+                        <td>${r.rfid_actual ? `<code class="text-muted">${escapeHtml(r.rfid_actual)}</code>` : '-'}</td>
+                        <td>${r.rfid ? `<code>${escapeHtml(r.rfid)}</code>` : '-'}</td>
+                        <td><span class="badge ${st.cls}">${st.label}</span></td>
+                        <td><small>${escapeHtml(r.detalle)}</small></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getBulkApplicableRows() {
+            const overwrite = document.getElementById('bulkOverwrite').checked;
+            return bulkRows.filter(r => r.estado === 'nuevo' || (overwrite && r.estado === 'existente'));
+        }
+
+        function updateBulkApplyCount() {
+            const n = getBulkApplicableRows().length;
+            document.getElementById('bulkApplyCount').textContent = n;
+        }
+
         function summarizeBulkRows(rows) {
             const s = { nuevo: 0, existente: 0, sin_cambio: 0, no_encontrado: 0, conflicto: 0, error: 0 };
             rows.forEach(r => { if (s[r.estado] !== undefined) s[r.estado]++; });
@@ -1046,13 +1205,7 @@
                 console.log('📊 Resumen:', s);
                 console.table(bulkRows);
 
-                showMessage(
-                    `Archivo leído: <strong>${bulkRows.length}</strong> filas. ` +
-                    `Nuevas: ${s.nuevo} | Con código previo: ${s.existente} | Sin cambio: ${s.sin_cambio} | ` +
-                    `No encontradas: ${s.no_encontrado} | Conflictos: ${s.conflicto} | Errores: ${s.error}. ` +
-                    `Detalle completo en la consola (F12).`,
-                    'info'
-                );
+                openBulkModal(file.name, scope, s);
 
             } catch (error) {
                 console.error('❌ Error leyendo archivo:', error);
@@ -1139,6 +1292,8 @@
         window.openRFIDModal = openRFIDModal;
         window.triggerBulkUpload = triggerBulkUpload;
         window.handleBulkFile = handleBulkFile;
+        window.openBulkModal = openBulkModal;
+        window.renderBulkTable = renderBulkTable;
         window.removeRFID = removeRFID;
         window.loadWorkers = loadWorkers;
         window.loadStudents = loadStudents;
