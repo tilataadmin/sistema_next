@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.4.3">
+    <meta name="page-version" content="26.8.4.4">
     <title>Gestión de Carnets - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -386,6 +386,8 @@
                     </div>
 
                     <div class="row g-2 mb-3" id="bulkCounters"></div>
+
+                    <div id="bulkMissingBox"></div>
 
                     <div class="alert alert-warning" id="bulkOverwriteBox">
                         <div class="form-check">
@@ -1124,7 +1126,9 @@
             document.getElementById('bulkOverwrite').checked = false;
             document.getElementById('bulkFilter').value = 'all';
 
+            computeBulkMissing(scope);
             renderBulkCounters(summary);
+            renderBulkMissing(scope);
             renderBulkTable('all');
             updateBulkApplyCount();
 
@@ -1143,6 +1147,57 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        function renderBulkMissing(scope) {
+            const box = document.getElementById('bulkMissingBox');
+            const universo = scope === 'worker' ? 'trabajadores' : 'estudiantes';
+
+            if (bulkMissing.length === 0) {
+                box.innerHTML = `
+                    <div class="alert alert-success py-2 mb-3">
+                        <small>
+                            <i class="bi bi-check2-circle me-1"></i>
+                            Todos los ${universo} que hoy tienen tarjeta vienen incluidos en el archivo.
+                        </small>
+                    </div>
+                `;
+                return;
+            }
+
+            box.innerHTML = `
+                <div class="alert alert-info mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="bi bi-info-circle me-1"></i>
+                            Hay <strong>${bulkMissing.length}</strong> ${universo} con tarjeta registrada
+                            que <strong>no vienen en el archivo</strong>. Conservarán la tarjeta actual.
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-dark" onclick="downloadBulkMissing()">
+                            <i class="bi bi-download me-1"></i>Descargar listado
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function downloadBulkMissing() {
+            const sep = ';';
+            const esc = (v) => `"${String(v === null || v === undefined ? '' : v).replace(/"/g, '""')}"`;
+            const lines = [['Identificador', 'Persona', 'Tarjeta actual'].map(esc).join(sep)];
+
+            bulkMissing.forEach(m => {
+                lines.push([esc(m.identificador), esc(m.nombre), `="${m.rfid_actual}"`].join(sep));
+            });
+
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `no_incluidos_${bulkScope}_${stamp}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         function renderBulkTable(filter) {
@@ -1333,6 +1388,28 @@
             return s;
         }
 
+        let bulkMissing = [];
+
+        function computeBulkMissing(scope) {
+            const enArchivo = new Set(
+                bulkRows.filter(r => r.persona_id !== null).map(r => String(r.persona_id))
+            );
+
+            const universo = scope === 'worker' ? allWorkers : allStudents;
+
+            bulkMissing = universo.filter(p => {
+                const id = String(scope === 'worker' ? p.worker_id : p.student_id);
+                const rfid = ((scope === 'worker' ? p.worker_rfid_code : p.student_rfid_code) || '').trim();
+                return rfid !== '' && !enArchivo.has(id);
+            }).map(p => ({
+                identificador: scope === 'worker' ? p.worker_id_doc : String(p.student_code),
+                nombre: buildFullName(p, scope),
+                rfid_actual: ((scope === 'worker' ? p.worker_rfid_code : p.student_rfid_code) || '').trim()
+            })).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+
+            return bulkMissing;
+        }
+
         async function handleBulkFile(event, scope) {
             const file = event.target.files[0];
             if (!file) return;
@@ -1455,6 +1532,7 @@
         window.openBulkModal = openBulkModal;
         window.renderBulkTable = renderBulkTable;
         window.downloadBulkReport = downloadBulkReport;
+        window.downloadBulkMissing = downloadBulkMissing;
         window.removeRFID = removeRFID;
         window.loadWorkers = loadWorkers;
         window.loadStudents = loadStudents;
