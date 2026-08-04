@@ -1,43 +1,43 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-08-04 20:02 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-04 20:06 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
-**1270 referencias** provienen de consultas armadas en variables. El escáner sabe qué tabla se toca, pero no si se lee o se escribe. Por eso las cifras de escritura son un piso, no un total.
+**307 referencias** provienen de consultas armadas en variables. El escáner sabe qué tabla se toca, pero no si se lee o se escribe. Por eso las cifras de escritura son un piso, no un total.
 
 | Archivo | Referencias dudosas |
 |---|---:|
-| `modules/general-tools/tasks.html` | 39 |
-| `modules/hr/request-absence.html` | 32 |
-| `modules/hr/workers.html` | 28 |
-| `modules/planning/interdisc-unit-form.html` | 28 |
-| `modules/hr/clearances.html` | 24 |
-| `modules/planning/planner-form.html` | 21 |
-| `modules/general-tools/lists.html` | 20 |
-| `modules/indicators/dashboard-edit.html` | 17 |
-| `modules/planning/unit-form.html` | 17 |
-| `modules/events/events-detail.html` | 16 |
-| `dashboard.html` | 15 |
-| `modules/config/year-closure.html` | 15 |
-| `modules/hr/absence-reports.html` | 15 |
-| `modules/hr/hr-dashboard.html` | 14 |
-| `modules/institutional-eval/evaluate.html` | 14 |
-| `modules/procedures/execute.html` | 14 |
 | `modules/suppliers/register.html` | 14 |
-| `modules/hr/authorize-absences.html` | 13 |
-| `modules/indicators/dashboard.html` | 13 |
-| `modules/procedures/execute-public.html` | 13 |
-| `modules/teacher-eval/forms.html` | 13 |
-| `modules/extracurricular/activities.html` | 12 |
-| `modules/extracurricular/seasons.html` | 12 |
 | `modules/follow-ups/general-queries.html` | 12 |
-| `modules/institutional-eval/structure.html` | 12 |
-| `modules/procedures/execute-form.html` | 12 |
-| `modules/profile/mi-perfil.html` | 12 |
-| `modules/services/rep-trips.html` | 12 |
-| `modules/admissions/form.html` | 11 |
-| `modules/admissions/step4-form.html` | 11 |
+| `api/cron/auto-absences.js` | 10 |
+| `modules/budget/budget-queries.html` | 10 |
+| `modules/procedures/execute-form.html` | 9 |
+| `modules/procedures/execute-public.html` | 9 |
+| `modules/procedures/execute.html` | 9 |
+| `modules/training/path-queries.html` | 9 |
+| `modules/indicators/improvement-dashboard.html` | 7 |
+| `modules/training/reports.html` | 7 |
+| `modules/budget/category-detail.html` | 6 |
+| `modules/general-tools/attendance-reports.html` | 6 |
+| `modules/indicators/correlations.html` | 6 |
+| `modules/indicators/improvement.html` | 6 |
+| `modules/institutional-eval/index.html` | 6 |
+| `modules/institutional-eval/structure.html` | 6 |
+| `modules/teacher-eval/index.html` | 6 |
+| `modules/budget/initialize-budget-general.html` | 5 |
+| `modules/follow-ups/manage-eae-issues.html` | 5 |
+| `modules/suppliers/index.html` | 5 |
+| `modules/surveys/index.html` | 5 |
+| `modules/training/index.html` | 5 |
+| `modules/tte/index.html` | 5 |
+| `modules/budget/budget-overview.html` | 4 |
+| `modules/budget/budget-transfer.html` | 4 |
+| `modules/config/index.html` | 4 |
+| `modules/config/students.html` | 4 |
+| `modules/early-alerts/manage-alerts.html` | 4 |
+| `modules/hr/index.html` | 4 |
+| `modules/indicators/dashboard.html` | 4 |
 
 ## Funciones de base de datos invocadas
 
@@ -64,10 +64,10 @@ Columnas, restricciones y palabras sueltas que el escáner filtró. Si alguno de
 
 | Nombre | Veces |
 |---|---:|
-| responsible_worker_id | 14 |
-| worker_id | 8 |
-| published_by | 4 |
-| budget_assignments_worker_id_fkey | 3 |
-| coordinator_worker_id | 2 |
+| responsible_worker_id | 7 |
+| worker_id | 4 |
+| budget_assignments_worker_id_fkey | 2 |
 | manager_id | 2 |
+| published_by | 2 |
 | current_budget_year_id | 1 |
+| coordinator_worker_id | 1 |
