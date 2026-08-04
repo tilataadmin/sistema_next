@@ -1,96 +1,113 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-08-04 19:50 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-04 20:02 UTC. **No editar a mano.**
+
+**331 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
 - **Módulo:** api
-- **Lee (6):** attendance, hr_absence_requests, hr_config, hr_non_work_days, worker_managers, workers
+- **Lee (0):** —
 - **Escribe (0):** —
+- **Sin determinar (6):** attendance, hr_absence_requests, hr_config, hr_non_work_days, worker_managers, workers
 
 ### `api/cron/probation-report.js`
 
 - **Módulo:** api
-- **Lee (3):** organizational_areas, organizational_subareas, workers
+- **Lee (0):** —
 - **Escribe (0):** —
+- **Sin determinar (1):** workers
 
 ### `assets/js/config.js`
 
-- **Módulo:** assets
-- **Lee (7):** audit_log, permissions, role_permissions, roles, system_config, user_roles, users
+- **Módulo:** (núcleo)
+- **Lee (6):** permissions, role_permissions, roles, system_config, user_roles, users
 - **Escribe (1):** **users**
+- **Sin determinar (4):** audit_log, permissions, system_config, users
 
 ### `assets/js/sidebar.js`
 
-- **Módulo:** assets
-- **Lee (6):** permissions, role_permissions, roles, system_announcements, user_roles, users
+- **Módulo:** (núcleo)
+- **Lee (5):** permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (3):** permissions, system_announcements, users
 
 ### `dashboard.html`
 
 - **Módulo:** (raíz)
-- **Lee (19):** budget_assignments, budget_assignments_worker_id_fkey, courses, execution_requests, grades, hr_absence_authorizations, sections, stm_prom_topics, stm_students_topics, students, support_tickets, svc_service_requests, system_config, tasks, tte_categories, tte_request_fragments, tte_requests, user_dashboard_shortcuts, workers
+- **Lee (17):** budget_assignments, courses, execution_requests, grades, hr_absence_authorizations, sections, stm_prom_topics, students, support_tickets, svc_service_requests, system_config, tasks, tte_categories, tte_request_fragments, tte_requests, user_dashboard_shortcuts, workers
 - **Escribe (0):** —
+- **Sin determinar (13):** execution_requests, hr_absence_authorizations, stm_prom_topics, stm_students_topics, support_tickets, svc_service_requests, system_config, tasks, tte_categories, tte_request_fragments, tte_requests, user_dashboard_shortcuts, workers
 
 ### `diagnostico_permisos_training.html`
 
 - **Módulo:** (raíz)
 - **Lee (5):** permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (4):** permissions, role_permissions, user_roles, users
 
 ### `login.html`
 
 - **Módulo:** (raíz)
-- **Lee (6):** permissions, role_permissions, roles, system_config, user_roles, users
+- **Lee (4):** permissions, system_config, user_roles, users
 - **Escribe (1):** **users**
+- **Sin determinar (1):** users
 
 ### `manual/my-ticket.html`
 
 - **Módulo:** manual
 - **Lee (3):** support_tickets, ticket_history, users
 - **Escribe (2):** **support_tickets**, **ticket_history**
+- **Sin determinar (2):** support_tickets, ticket_history
 
 ### `manual/report-ticket.html`
 
 - **Módulo:** manual
 - **Lee (3):** permissions, ticket_categories, ticket_priority_options
 - **Escribe (2):** **support_tickets**, **ticket_history**
+- **Sin determinar (2):** ticket_categories, ticket_priority_options
 
 ### `modules/adjust-balances.html`
 
-- **Módulo:** adjust-balances.html
+- **Módulo:** (modules sin carpeta)
 - **Lee (4):** hr_absence_categories, hr_absence_requests, hr_balance_adjustments, workers
 - **Escribe (1):** **hr_balance_adjustments**
+- **Sin determinar (4):** hr_absence_categories, hr_absence_requests, hr_balance_adjustments, workers
 
 ### `modules/admissions/admissions-reports.html`
 
 - **Módulo:** admissions
 - **Lee (5):** aap_applicants, aap_contact_sources, aap_financial_reviews, academic_years, grades
 - **Escribe (0):** —
+- **Sin determinar (2):** aap_applicants, aap_financial_reviews
 
 ### `modules/admissions/applicant-detail.html`
 
 - **Módulo:** admissions
 - **Lee (12):** aap_applicant_documents, aap_applicant_steps, aap_applicants, aap_contact_sources, aap_fairs, aap_financial_reviews, aap_kindergartens, aap_loss_reasons, aap_referral_types, aap_required_document_grades, academic_years, grades
 - **Escribe (3):** **aap_applicant_sources**, **aap_applicant_steps**, **aap_applicants**
+- **Sin determinar (7):** aap_applicant_documents, aap_applicant_sources, aap_applicant_steps, aap_applicants, aap_financial_reviews, aap_loss_reasons, aap_required_document_grades
 
 ### `modules/admissions/applicant-documents.html`
 
 - **Módulo:** admissions
 - **Lee (3):** aap_applicant_documents, aap_applicants, aap_required_documents
 - **Escribe (0):** —
+- **Sin determinar (3):** aap_applicant_documents, aap_applicants, aap_required_documents
 
 ### `modules/admissions/applicant-financial.html`
 
 - **Módulo:** admissions
 - **Lee (3):** aap_applicants, aap_financial_agreements, aap_financial_reviews
 - **Escribe (2):** **aap_financial_agreements**, **aap_financial_reviews**
+- **Sin determinar (3):** aap_applicants, aap_financial_agreements, aap_financial_reviews
 
 ### `modules/admissions/applicants.html`
 
 - **Módulo:** admissions
 - **Lee (4):** aap_applicants, aap_contact_sources, academic_years, grades
 - **Escribe (1):** **aap_applicants**
+- **Sin determinar (1):** aap_applicants
 
 ### `modules/admissions/contact-sources.html`
 
@@ -103,24 +120,28 @@
 - **Módulo:** admissions
 - **Lee (2):** aap_applicants, aap_financial_reviews
 - **Escribe (0):** —
+- **Sin determinar (2):** aap_applicants, aap_financial_reviews
 
 ### `modules/admissions/documents-catalog.html`
 
 - **Módulo:** admissions
 - **Lee (2):** grades, workers
 - **Escribe (2):** **aap_required_document_grades**, **aap_required_documents**
+- **Sin determinar (3):** aap_required_documents, grades, workers
 
 ### `modules/admissions/email-templates.html`
 
 - **Módulo:** admissions
 - **Lee (1):** aap_email_templates
 - **Escribe (1):** **aap_email_templates**
+- **Sin determinar (1):** aap_email_templates
 
 ### `modules/admissions/experiences.html`
 
 - **Módulo:** admissions
 - **Lee (5):** aap_applicant_experiences, aap_applicants, aap_experience_events, aap_experience_types, workers
 - **Escribe (3):** **aap_applicant_experiences**, **aap_experience_events**, **aap_experience_types**
+- **Sin determinar (5):** aap_applicant_experiences, aap_applicants, aap_experience_events, aap_experience_types, workers
 
 ### `modules/admissions/fairs.html`
 
@@ -133,6 +154,7 @@
 - **Módulo:** admissions
 - **Lee (11):** aap_applicant_experiences, aap_applicant_steps, aap_applicants, aap_contact_sources, aap_email_templates, aap_experience_events, aap_form_available_years, aap_module_config, aap_process_steps, aap_referral_types, grades
 - **Escribe (4):** **aap_applicant_experiences**, **aap_applicant_sources**, **aap_applicant_steps**, **aap_applicants**
+- **Sin determinar (8):** aap_applicant_experiences, aap_applicant_sources, aap_applicant_steps, aap_applicants, aap_email_templates, aap_experience_events, aap_form_available_years, aap_module_config
 
 ### `modules/admissions/grade-age-ranges.html`
 
@@ -145,6 +167,7 @@
 - **Módulo:** admissions
 - **Lee (3):** aap_kindergartens, kindergarten_actions, users
 - **Escribe (1):** **kindergarten_actions**
+- **Sin determinar (2):** aap_kindergartens, kindergarten_actions
 
 ### `modules/admissions/kindergartens.html`
 
@@ -163,6 +186,7 @@
 - **Módulo:** admissions
 - **Lee (5):** aap_form_available_years, aap_module_config, academic_years, forms, roles
 - **Escribe (2):** **aap_form_available_years**, **aap_module_config**
+- **Sin determinar (1):** aap_form_available_years
 
 ### `modules/admissions/referral-types.html`
 
@@ -175,150 +199,175 @@
 - **Módulo:** admissions
 - **Lee (9):** aap_applicant_documents, aap_applicant_steps, aap_applicants, aap_email_templates, aap_module_config, aap_process_steps, aap_required_documents, form_fields, form_responses
 - **Escribe (4):** **aap_applicant_steps**, **aap_applicants**, **form_responses**, **procedure_instances**
+- **Sin determinar (8):** aap_applicant_documents, aap_applicant_steps, aap_applicants, aap_email_templates, aap_module_config, aap_required_documents, form_fields, form_responses
 
 ### `modules/admissions/upload-campaigns.html`
 
 - **Módulo:** admissions
 - **Lee (2):** marketing_campaigns, marketing_contacts
 - **Escribe (3):** **marketing_campaigns**, **marketing_contact_campaigns**, **marketing_contacts**
+- **Sin determinar (1):** marketing_campaigns
 
 ### `modules/alumni/auditoria-consentimiento.html`
 
 - **Módulo:** alumni
-- **Lee (1):** alumni_consent_log
+- **Lee (0):** —
 - **Escribe (1):** **alumni_export_log**
+- **Sin determinar (1):** alumni_consent_log
 
 ### `modules/alumni/directorio.html`
 
 - **Módulo:** alumni
 - **Lee (4):** alumni, alumni_field_definitions, alumni_field_groups, genders
 - **Escribe (1):** **alumni**
+- **Sin determinar (1):** alumni
 
 ### `modules/alumni/gestionar-campos.html`
 
 - **Módulo:** alumni
 - **Lee (3):** alumni, alumni_field_definitions, alumni_field_groups
 - **Escribe (2):** **alumni_field_definitions**, **alumni_field_groups**
+- **Sin determinar (3):** alumni, alumni_field_definitions, alumni_field_groups
 
 ### `modules/alumni/importar-archivo.html`
 
 - **Módulo:** alumni
 - **Lee (2):** alumni, genders
 - **Escribe (1):** **alumni**
+- **Sin determinar (1):** alumni
 
 ### `modules/alumni/publico/acceder.html`
 
 - **Módulo:** alumni
 - **Lee (2):** alumni, alumni_magic_links
 - **Escribe (2):** **alumni**, **alumni_magic_links**
+- **Sin determinar (2):** alumni, alumni_magic_links
 
 ### `modules/alumni/publico/aviso-privacidad.html`
 
 - **Módulo:** alumni
 - **Lee (1):** system_config
 - **Escribe (0):** —
+- **Sin determinar (1):** system_config
 
 ### `modules/alumni/publico/identificacion.html`
 
 - **Módulo:** alumni
 - **Lee (1):** alumni
 - **Escribe (1):** **alumni_magic_links**
+- **Sin determinar (1):** alumni
 
 ### `modules/alumni/publico/perfil.html`
 
 - **Módulo:** alumni
 - **Lee (3):** alumni, alumni_field_definitions, alumni_field_groups
 - **Escribe (3):** **alumni**, **alumni_consent_log**, **alumni_magic_links**
+- **Sin determinar (2):** alumni, alumni_magic_links
 
 ### `modules/alumni/publico/verificar-email.html`
 
 - **Módulo:** alumni
 - **Lee (1):** alumni
 - **Escribe (2):** **alumni**, **alumni_magic_links**
+- **Sin determinar (1):** alumni
 
 ### `modules/alumni/reportes.html`
 
 - **Módulo:** alumni
-- **Lee (4):** alumni, alumni_field_definitions, alumni_field_groups, genders
+- **Lee (3):** alumni_field_definitions, alumni_field_groups, genders
 - **Escribe (1):** **alumni_export_log**
+- **Sin determinar (1):** alumni
 
 ### `modules/budget/assign-requesters.html`
 
 - **Módulo:** budget
-- **Lee (2):** roles, user_roles
+- **Lee (1):** roles
 - **Escribe (1):** **budget_requesters**
+- **Sin determinar (1):** user_roles
 
 ### `modules/budget/associate-invoices.html`
 
 - **Módulo:** budget
 - **Lee (8):** budget_assignments, budget_items, budget_payments, execution_requests, sup_suppliers, suppliers, system_config, workers
 - **Escribe (3):** **budget_assignments**, **budget_payments**, **execution_requests**
+- **Sin determinar (2):** budget_assignments, budget_payments
 
 ### `modules/budget/budget-authorization.html`
 
 - **Módulo:** budget
-- **Lee (6):** academic_years, budget_assignments, budget_categories, budget_items, system_config, workers
+- **Lee (3):** academic_years, budget_categories, system_config
 - **Escribe (0):** —
+- **Sin determinar (2):** budget_assignments, budget_items
 
 ### `modules/budget/budget-categories.html`
 
 - **Módulo:** budget
 - **Lee (1):** budget_categories
 - **Escribe (1):** **budget_categories**
+- **Sin determinar (1):** budget_categories
 
 ### `modules/budget/budget-items.html`
 
 - **Módulo:** budget
 - **Lee (4):** budget_categories, budget_items, chart_of_accounts, tax_types
 - **Escribe (1):** **budget_items**
+- **Sin determinar (1):** budget_items
 
 ### `modules/budget/budget-overview.html`
 
 - **Módulo:** budget
-- **Lee (10):** academic_years, budget_assignments, budget_items, budget_payments, budget_transfers, execution_requests, sup_suppliers, suppliers, system_config, workers
+- **Lee (8):** budget_assignments, budget_items, budget_transfers, execution_requests, sup_suppliers, suppliers, system_config, workers
 - **Escribe (0):** —
+- **Sin determinar (6):** academic_years, budget_assignments, budget_payments, execution_requests, sup_suppliers, suppliers
 
 ### `modules/budget/budget-queries.html`
 
 - **Módulo:** budget
-- **Lee (10):** academic_years, budget_assignments, budget_categories, budget_items, budget_payments, execution_requests, sup_suppliers, suppliers, system_config, workers
+- **Lee (8):** academic_years, budget_assignments, budget_categories, budget_items, execution_requests, sup_suppliers, suppliers, workers
 - **Escribe (0):** —
+- **Sin determinar (8):** academic_years, budget_assignments, budget_categories, budget_items, budget_payments, execution_requests, system_config, workers
 
 ### `modules/budget/budget-request.html`
 
 - **Módulo:** budget
-- **Lee (5):** academic_years, budget_assignments, budget_items, system_config, workers
+- **Lee (4):** academic_years, budget_items, system_config, workers
 - **Escribe (0):** —
+- **Sin determinar (1):** budget_assignments
 
 ### `modules/budget/budget-transfer.html`
 
 - **Módulo:** budget
-- **Lee (4):** budget_assignments, budget_items, system_config, workers
+- **Lee (3):** budget_assignments, system_config, workers
 - **Escribe (1):** **budget_transfers**
+- **Sin determinar (2):** budget_assignments, budget_items
 
 ### `modules/budget/category-detail.html`
 
 - **Módulo:** budget
-- **Lee (10):** academic_years, budget_assignments, budget_categories, budget_items, budget_payments, budget_transfers, execution_requests, suppliers, system_config, workers
+- **Lee (6):** budget_assignments, budget_items, budget_transfers, suppliers, system_config, workers
 - **Escribe (0):** —
+- **Sin determinar (6):** academic_years, budget_assignments, budget_categories, budget_items, budget_payments, execution_requests
 
 ### `modules/budget/chart-of-accounts.html`
 
 - **Módulo:** budget
 - **Lee (1):** chart_of_accounts
 - **Escribe (1):** **chart_of_accounts**
+- **Sin determinar (1):** chart_of_accounts
 
 ### `modules/budget/close-overruns.html`
 
 - **Módulo:** budget
-- **Lee (1):** system_config
+- **Lee (4):** budget_assignments, budget_items, system_config, workers
 - **Escribe (1):** **execution_requests**
+- **Sin determinar (1):** execution_requests
 
 ### `modules/budget/close-transfer.html`
 
 - **Módulo:** budget
-- **Lee (2):** budget_assignments, system_config
+- **Lee (1):** system_config
 - **Escribe (2):** **budget_assignments**, **budget_transfers**
+- **Sin determinar (2):** budget_assignments, budget_transfers
 
 ### `modules/budget/execution-request.html`
 
@@ -329,32 +378,37 @@
 ### `modules/budget/index.html`
 
 - **Módulo:** budget
-- **Lee (8):** budget_assignments, current_budget_year_id, execution_requests, permissions, role_permissions, roles, system_config, user_roles
+- **Lee (6):** budget_assignments, permissions, role_permissions, roles, system_config, user_roles
 - **Escribe (0):** —
+- **Sin determinar (1):** user_roles
 
 ### `modules/budget/initialize-budget-general.html`
 
 - **Módulo:** budget
-- **Lee (5):** academic_years, budget_assignments, budget_categories, budget_items, workers
+- **Lee (3):** academic_years, budget_categories, workers
 - **Escribe (1):** **budget_assignments**
+- **Sin determinar (5):** academic_years, budget_assignments, budget_categories, budget_items, workers
 
 ### `modules/budget/initialize-budget-year.html`
 
 - **Módulo:** budget
 - **Lee (7):** academic_areas, academic_years, budget_assignments, budget_items, grades, programs, sections
 - **Escribe (1):** **budget_assignments**
+- **Sin determinar (6):** academic_areas, budget_assignments, budget_items, grades, programs, sections
 
 ### `modules/budget/report-design.html`
 
 - **Módulo:** budget
 - **Lee (7):** academic_years, budget_assignments, budget_categories, budget_items, budget_report_lines, budget_report_sections, budget_reports
 - **Escribe (3):** **budget_report_lines**, **budget_report_sections**, **budget_reports**
+- **Sin determinar (3):** budget_assignments, budget_report_lines, budget_report_sections
 
 ### `modules/budget/report-view.html`
 
 - **Módulo:** budget
 - **Lee (7):** academic_years, budget_assignments, budget_categories, budget_items, budget_report_lines, budget_report_sections, budget_reports
 - **Escribe (0):** —
+- **Sin determinar (3):** budget_assignments, budget_report_lines, budget_report_sections
 
 ### `modules/budget/request-resolution.html`
 
@@ -367,6 +421,7 @@
 - **Módulo:** budget
 - **Lee (1):** suppliers
 - **Escribe (1):** **suppliers**
+- **Sin determinar (1):** suppliers
 
 ### `modules/budget/tax-types.html`
 
@@ -383,14 +438,16 @@
 ### `modules/config/academic-areas.html`
 
 - **Módulo:** config
-- **Lee (7):** academic_areas, academic_subject_grades, academic_subjects, coordinator_worker_id, grades, sections, workers
+- **Lee (6):** academic_areas, academic_subject_grades, academic_subjects, grades, sections, workers
 - **Escribe (3):** **academic_areas**, **academic_subject_grades**, **academic_subjects**
+- **Sin determinar (4):** academic_areas, academic_subjects, grades, workers
 
 ### `modules/config/academic-assignments.html`
 
 - **Módulo:** config
-- **Lee (10):** academic_areas, academic_assignments, academic_subject_grades, academic_subjects, academic_years, courses, grades, sections, worker_job_roles, workers
+- **Lee (9):** academic_areas, academic_subject_grades, academic_subjects, academic_years, courses, grades, sections, worker_job_roles, workers
 - **Escribe (2):** **academic_assignments**, **academic_subject_grades**
+- **Sin determinar (5):** academic_subject_grades, academic_years, courses, grades, workers
 
 ### `modules/config/annual-fees.html`
 
@@ -415,18 +472,21 @@
 - **Módulo:** config
 - **Lee (4):** academic_year_grade_stats, academic_years, student_entries, student_withdrawals
 - **Escribe (0):** —
+- **Sin determinar (1):** academic_years
 
 ### `modules/config/eps.html`
 
 - **Módulo:** config
-- **Lee (0):** —
+- **Lee (2):** students, workers
 - **Escribe (1):** **eps_entities**
+- **Sin determinar (1):** eps_entities
 
 ### `modules/config/families.html`
 
 - **Módulo:** config
 - **Lee (4):** families, family_members, student_status, students
 - **Escribe (2):** **families**, **family_members**
+- **Sin determinar (3):** families, family_members, students
 
 ### `modules/config/grades.html`
 
@@ -437,14 +497,16 @@
 ### `modules/config/index.html`
 
 - **Módulo:** config
-- **Lee (9):** academic_areas, academic_years, courses, grades, roles, sections, student_status, students, user_roles
+- **Lee (5):** academic_years, roles, student_status, students, user_roles
 - **Escribe (0):** —
+- **Sin determinar (4):** academic_areas, courses, grades, sections
 
 ### `modules/config/load-test.html`
 
 - **Módulo:** config
-- **Lee (3):** test_grades, test_students, test_subjects
+- **Lee (2):** test_students, test_subjects
 - **Escribe (0):** —
+- **Sin determinar (2):** test_grades, test_students
 
 ### `modules/config/programs.html`
 
@@ -463,24 +525,28 @@
 - **Módulo:** config
 - **Lee (9):** academic_years, courses, document_types, eps_entities, families, genders, grades, student_status, students
 - **Escribe (3):** **families**, **student_withdrawals**, **students**
+- **Sin determinar (1):** students
 
 ### `modules/config/year-closure-reversal.html`
 
 - **Módulo:** config
 - **Lee (4):** academic_year_closures, alumni, student_status, students
 - **Escribe (5):** **academic_year_closures**, **academic_years**, **alumni**, **students**, **system_config**
+- **Sin determinar (4):** academic_year_closures, alumni, student_status, students
 
 ### `modules/config/year-closure.html`
 
 - **Módulo:** config
 - **Lee (8):** academic_assignments, academic_years, alumni, courses, grades, student_status, students, svc_student_year_services
 - **Escribe (8):** **academic_assignments**, **academic_year_closures**, **academic_year_grade_stats**, **academic_years**, **alumni**, **courses**, **students**, **system_config**
+- **Sin determinar (8):** academic_assignments, academic_years, alumni, courses, grades, student_status, students, svc_student_year_services
 
 ### `modules/config/years.html`
 
 - **Módulo:** config
 - **Lee (3):** academic_year_closures, academic_year_trimesters, academic_years
 - **Escribe (2):** **academic_year_trimesters**, **academic_years**
+- **Sin determinar (1):** academic_year_closures
 
 ### `modules/early-alerts/alert-types.html`
 
@@ -491,14 +557,16 @@
 ### `modules/early-alerts/assigned-actions.html`
 
 - **Módulo:** early-alerts
-- **Lee (3):** early_alert_logs, families, workers
+- **Lee (2):** families, students
 - **Escribe (1):** **tasks**
+- **Sin determinar (3):** early_alert_logs, tasks, workers
 
 ### `modules/early-alerts/dashboard.html`
 
 - **Módulo:** early-alerts
 - **Lee (11):** courses, early_alert_causes, early_alert_logs, families, grades, roles, sections, students, tasks, user_roles, workers
 - **Escribe (0):** —
+- **Sin determinar (3):** early_alert_logs, students, tasks
 
 ### `modules/early-alerts/index.html`
 
@@ -511,12 +579,14 @@
 - **Módulo:** early-alerts
 - **Lee (10):** courses, early_alert_causes, early_alert_logs, early_alert_notes, families, grades, sections, students, system_config, workers
 - **Escribe (3):** **early_alert_logs**, **early_alert_notes**, **tasks**
+- **Sin determinar (5):** early_alert_logs, early_alert_notes, students, tasks, workers
 
 ### `modules/early-alerts/register-alerts.html`
 
 - **Módulo:** early-alerts
 - **Lee (8):** courses, early_alert_causes, early_alert_logs, families, grades, students, system_config, workers
 - **Escribe (1):** **early_alert_logs**
+- **Sin determinar (3):** early_alert_logs, students, workers
 
 ### `modules/environmental/daily-water-readings.html`
 
@@ -529,12 +599,14 @@
 - **Módulo:** environmental
 - **Lee (5):** env_water_alerts, env_water_meters, env_water_readings_daily, env_water_readings_extraordinary, system_config
 - **Escribe (3):** **audit_log**, **env_water_alerts**, **env_water_readings_daily**
+- **Sin determinar (1):** env_water_readings_daily
 
 ### `modules/environmental/extraordinary-water-readings.html`
 
 - **Módulo:** environmental
-- **Lee (3):** env_water_alerts, env_water_meters, env_water_readings_extraordinary
+- **Lee (4):** env_water_alerts, env_water_meters, env_water_readings_extraordinary, users
 - **Escribe (2):** **env_water_alerts**, **env_water_readings_extraordinary**
+- **Sin determinar (1):** env_water_readings_extraordinary
 
 ### `modules/environmental/import-inventory.html`
 
@@ -551,8 +623,9 @@
 ### `modules/environmental/index.html`
 
 - **Módulo:** environmental
-- **Lee (7):** env_tree_care_log, env_tree_inventory, permissions, role_permissions, roles, user_roles, users
+- **Lee (6):** env_tree_care_log, permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (1):** env_tree_inventory
 
 ### `modules/environmental/monthly-water-readings.html`
 
@@ -569,8 +642,9 @@
 ### `modules/environmental/reports.html`
 
 - **Módulo:** environmental
-- **Lee (4):** academic_years, env_tree_care_log, env_tree_inventory, env_tree_species
+- **Lee (3):** academic_years, env_tree_inventory, env_tree_species
 - **Escribe (0):** —
+- **Sin determinar (1):** env_tree_care_log
 
 ### `modules/environmental/species-documentation.html`
 
@@ -607,11 +681,12 @@
 - **Módulo:** environmental
 - **Lee (2):** env_water_alert_history, users
 - **Escribe (2):** **env_water_alert_history**, **env_water_alerts**
+- **Sin determinar (1):** env_water_alerts
 
 ### `modules/environmental/water-balance-dashboard.html`
 
 - **Módulo:** environmental
-- **Lee (8):** env_water_alerts, env_water_meters, env_water_readings_daily, env_water_readings_monthly, student_status, students, system_config, workers
+- **Lee (7):** env_water_alerts, env_water_meters, env_water_readings_daily, student_status, students, system_config, workers
 - **Escribe (0):** —
 
 ### `modules/environmental/water-meters.html`
@@ -619,30 +694,35 @@
 - **Módulo:** environmental
 - **Lee (3):** env_water_meters, env_water_readings_extraordinary, env_water_readings_monthly
 - **Escribe (1):** **env_water_meters**
+- **Sin determinar (1):** env_water_meters
 
 ### `modules/environmental/water-reports.html`
 
 - **Módulo:** environmental
-- **Lee (8):** env_water_alerts, env_water_meters, env_water_readings_daily, env_water_readings_extraordinary, env_water_readings_monthly, student_status, students, workers
+- **Lee (9):** env_water_alert_history, env_water_alerts, env_water_meters, env_water_readings_daily, env_water_readings_extraordinary, env_water_readings_monthly, student_status, students, workers
 - **Escribe (0):** —
+- **Sin determinar (1):** env_water_alerts
 
 ### `modules/events/event-public-attendance.html`
 
 - **Módulo:** events
 - **Lee (3):** event_attendance, event_registrations, events
 - **Escribe (1):** **event_attendance**
+- **Sin determinar (2):** event_attendance, event_registrations
 
 ### `modules/events/event-public-register.html`
 
 - **Módulo:** events
 - **Lee (6):** event_groups, event_institutions, event_registrations, event_slots, events, institutions
 - **Escribe (2):** **event_group_enrollments**, **event_registrations**
+- **Sin determinar (4):** event_groups, event_institutions, event_registrations, event_slots
 
 ### `modules/events/event-public-workshops.html`
 
 - **Módulo:** events
 - **Lee (4):** event_group_enrollments, event_groups, event_registrations, event_slots
 - **Escribe (1):** **event_group_enrollments**
+- **Sin determinar (4):** event_group_enrollments, event_groups, event_registrations, event_slots
 
 ### `modules/events/events-dashboard.html`
 
@@ -655,6 +735,7 @@
 - **Módulo:** events
 - **Lee (8):** event_attendance, event_group_enrollments, event_groups, event_institutions, event_registrations, event_slots, events, institutions
 - **Escribe (3):** **event_groups**, **event_registrations**, **event_slots**
+- **Sin determinar (6):** event_attendance, event_group_enrollments, event_groups, event_institutions, event_registrations, event_slots
 
 ### `modules/events/events-institutions.html`
 
@@ -667,6 +748,7 @@
 - **Módulo:** events
 - **Lee (5):** event_attendance, event_institutions, event_registrations, events, institutions
 - **Escribe (2):** **event_institutions**, **events**
+- **Sin determinar (2):** event_attendance, event_registrations
 
 ### `modules/events/events-settings.html`
 
@@ -685,36 +767,43 @@
 - **Módulo:** extracurricular
 - **Lee (10):** academic_years, grades, svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_activity_days, svc_extracurricular_activity_grades, svc_extracurricular_cost_concepts, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments
 - **Escribe (4):** **svc_extracurricular_activities**, **svc_extracurricular_activity_costs**, **svc_extracurricular_activity_days**, **svc_extracurricular_activity_grades**
+- **Sin determinar (9):** grades, svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_activity_days, svc_extracurricular_activity_grades, svc_extracurricular_cost_concepts, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments
 
 ### `modules/extracurricular/attendance.html`
 
 - **Módulo:** extracurricular
 - **Lee (8):** academic_years, attendance, svc_extracurricular_activities, svc_extracurricular_activity_days, svc_extracurricular_attendance, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments
 - **Escribe (1):** **svc_extracurricular_attendance**
+- **Sin determinar (7):** attendance, svc_extracurricular_activities, svc_extracurricular_activity_days, svc_extracurricular_attendance, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments
 
 ### `modules/extracurricular/cost-concepts.html`
 
 - **Módulo:** extracurricular
 - **Lee (5):** academic_years, svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_cost_concepts, svc_extracurricular_cycles
 - **Escribe (1):** **svc_extracurricular_cost_concepts**
+- **Sin determinar (4):** svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_cost_concepts, svc_extracurricular_cycles
 
 ### `modules/extracurricular/enrollments.html`
 
 - **Módulo:** extracurricular
-- **Lee (12):** academic_years, courses, fn_extracurricular_enroll, student_status, students, svc_extracurricular_activities, svc_extracurricular_activity_days, svc_extracurricular_activity_grades, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollment_days, svc_extracurricular_enrollments
-- **Escribe (2):** **fn_extracurricular_enroll**, **svc_extracurricular_enrollments**
+- **Lee (11):** academic_years, courses, student_status, students, svc_extracurricular_activities, svc_extracurricular_activity_days, svc_extracurricular_activity_grades, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollment_days, svc_extracurricular_enrollments
+- **Escribe (1):** **svc_extracurricular_enrollments**
+- **Sin determinar (6):** students, svc_extracurricular_activities, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollment_days, svc_extracurricular_enrollments
+- **Funciones (1):** fn_extracurricular_enroll
 
 ### `modules/extracurricular/extracurricular-engine.js`
 
 - **Módulo:** extracurricular
 - **Lee (3):** academic_years, hr_non_work_days, pedagogical_days
 - **Escribe (0):** —
+- **Sin determinar (3):** academic_years, hr_non_work_days, pedagogical_days
 
 ### `modules/extracurricular/seasons.html`
 
 - **Módulo:** extracurricular
 - **Lee (9):** academic_years, svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_activity_days, svc_extracurricular_cost_concepts, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments, svc_transport_rates_extracurricular
 - **Escribe (4):** **svc_extracurricular_activities**, **svc_extracurricular_cost_concepts**, **svc_extracurricular_cycle_days**, **svc_extracurricular_cycles**
+- **Sin determinar (8):** academic_years, svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_cost_concepts, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments, svc_transport_rates_extracurricular
 
 ### `modules/follow-ups/categories.html`
 
@@ -751,6 +840,7 @@
 - **Módulo:** follow-ups
 - **Lee (14):** academic_years, courses, grades, stm_category, stm_docs, stm_prom_topics, stm_prom_topics_categories, stm_students_topics, stm_students_topics_categories, student_status, students, system_config, tasks, workers
 - **Escribe (0):** —
+- **Sin determinar (6):** stm_prom_topics, stm_prom_topics_categories, stm_students_topics, stm_students_topics_categories, students, tasks
 
 ### `modules/follow-ups/group-issues.html`
 
@@ -761,7 +851,7 @@
 ### `modules/follow-ups/index.html`
 
 - **Módulo:** follow-ups
-- **Lee (11):** courses, grades, permissions, role_permissions, roles, sections, stm_prom_topics, stm_students_topics, students, user_roles, users
+- **Lee (10):** courses, grades, permissions, role_permissions, roles, sections, stm_prom_topics, stm_students_topics, user_roles, users
 - **Escribe (0):** —
 
 ### `modules/follow-ups/individual-issues.html`
@@ -773,14 +863,16 @@
 ### `modules/follow-ups/manage-eae-issues.html`
 
 - **Módulo:** follow-ups
-- **Lee (3):** students, system_config, workers
+- **Lee (2):** system_config, workers
 - **Escribe (2):** **stm_docs**, **stm_students_topics**
+- **Sin determinar (2):** stm_students_topics, students
 
 ### `modules/follow-ups/manage-group-issues.html`
 
 - **Módulo:** follow-ups
-- **Lee (9):** courses, grades, sections, stm_category, stm_docs, stm_prom_topics, stm_prom_topics_categories, tasks, workers
+- **Lee (8):** courses, grades, sections, stm_category, stm_docs, stm_prom_topics_categories, tasks, workers
 - **Escribe (3):** **stm_docs**, **stm_prom_topics**, **tasks**
+- **Sin determinar (6):** courses, sections, stm_docs, stm_prom_topics, tasks, workers
 
 ### `modules/follow-ups/manage-unescalated-issues.html`
 
@@ -791,8 +883,9 @@
 ### `modules/follow-ups/query-confidential-notes.html`
 
 - **Módulo:** follow-ups
-- **Lee (5):** roles, stm_confidential_notes, students, system_config, user_roles
+- **Lee (4):** roles, students, system_config, user_roles
 - **Escribe (0):** —
+- **Sin determinar (1):** stm_confidential_notes
 
 ### `modules/follow-ups/review-individual-issues.html`
 
@@ -803,14 +896,16 @@
 ### `modules/follow-ups/tasks.html`
 
 - **Módulo:** follow-ups
-- **Lee (1):** workers
+- **Lee (1):** students
 - **Escribe (1):** **tasks**
+- **Sin determinar (2):** tasks, workers
 
 ### `modules/follow-ups/user-course-assignments.html`
 
 - **Módulo:** follow-ups
 - **Lee (6):** cost_centers, courses, grades, sections, worker_courses, workers
 - **Escribe (1):** **worker_courses**
+- **Sin determinar (2):** cost_centers, workers
 
 ### `modules/general-tools/ai-admin.html`
 
@@ -821,14 +916,16 @@
 ### `modules/general-tools/attendance-reports.html`
 
 - **Módulo:** general-tools
-- **Lee (10):** attendance, courses, hr_absence_categories, hr_absence_requests, hr_non_work_days, organizational_divisions, student_status, students, system_config, workers
+- **Lee (10):** attendance, courses, hr_absence_categories, hr_non_work_days, organizational_areas, organizational_divisions, student_status, students, system_config, workers
 - **Escribe (0):** —
+- **Sin determinar (5):** attendance, hr_absence_categories, hr_non_work_days, students, workers
 
 ### `modules/general-tools/attendance.html`
 
 - **Módulo:** general-tools
 - **Lee (6):** attendance, students, users, visitor_attendance, visitors, workers
 - **Escribe (5):** **attendance**, **facial_recognition_logs**, **phidias_sync_logs**, **visitor_attendance**, **visitors**
+- **Sin determinar (6):** attendance, phidias_sync_logs, students, visitor_attendance, visitors, workers
 
 ### `modules/general-tools/community-query.html`
 
@@ -853,42 +950,49 @@
 - **Módulo:** general-tools
 - **Lee (4):** contract_categories, contract_templates, generated_contracts, users
 - **Escribe (0):** —
+- **Sin determinar (1):** generated_contracts
 
 ### `modules/general-tools/dashboard.html`
 
 - **Módulo:** general-tools
-- **Lee (4):** academic_years, indicator_categories, students, tasks
+- **Lee (3):** academic_years, indicator_categories, students
 - **Escribe (0):** —
+- **Sin determinar (1):** tasks
 
 ### `modules/general-tools/family-activities.html`
 
 - **Módulo:** general-tools
 - **Lee (9):** academic_years, courses, familia_actividad_actividades, familia_actividad_asistencias, familia_actividad_cursos, familia_actividad_envios, grades, sections, system_config
 - **Escribe (2):** **familia_actividad_actividades**, **familia_actividad_cursos**
+- **Sin determinar (7):** academic_years, courses, familia_actividad_actividades, familia_actividad_asistencias, familia_actividad_cursos, familia_actividad_envios, system_config
 
 ### `modules/general-tools/family-attendance-reports.html`
 
 - **Módulo:** general-tools
 - **Lee (12):** academic_years, courses, familia_actividad_actividades, familia_actividad_asistencias, familia_actividad_cursos, families, grades, sections, student_status, students, system_config, users
 - **Escribe (0):** —
+- **Sin determinar (3):** familia_actividad_asistencias, families, students
 
 ### `modules/general-tools/family-attendance.html`
 
 - **Módulo:** general-tools
-- **Lee (11):** courses, familia_actividad_actividades, familia_actividad_asistencias, familia_actividad_asistencias_familiares, familia_actividad_cursos, families, family_members, grades, sections, student_status, students
+- **Lee (7):** courses, familia_actividad_actividades, familia_actividad_cursos, grades, sections, student_status, students
 - **Escribe (3):** **familia_actividad_asistencias**, **familia_actividad_asistencias_familiares**, **familia_actividad_cursos**
+- **Sin determinar (5):** courses, familia_actividad_asistencias, familia_actividad_asistencias_familiares, familia_actividad_cursos, students
 
 ### `modules/general-tools/family-messages.html`
 
 - **Módulo:** general-tools
 - **Lee (2):** familia_actividad_plantillas, system_config
 - **Escribe (1):** **familia_actividad_plantillas**
+- **Sin determinar (2):** familia_actividad_plantillas, system_config
 
 ### `modules/general-tools/generar-dias-tilata.html`
 
 - **Módulo:** general-tools
 - **Lee (4):** academic_years, hr_non_work_days, pedagogical_days, system_config
 - **Escribe (1):** **hr_non_work_days**
+- **Sin determinar (3):** academic_years, hr_non_work_days, pedagogical_days
 
 ### `modules/general-tools/index.html`
 
@@ -905,20 +1009,23 @@
 ### `modules/general-tools/lists.html`
 
 - **Módulo:** general-tools
-- **Lee (14):** cost_centers, courses, families, genders, job_roles, organizational_areas, organizational_divisions, organizational_subareas, sections, student_status, students, system_config, worker_job_roles, workers
+- **Lee (13):** cost_centers, courses, families, genders, job_roles, organizational_areas, organizational_divisions, organizational_subareas, sections, student_status, students, system_config, worker_job_roles
 - **Escribe (0):** —
+- **Sin determinar (8):** cost_centers, families, organizational_areas, organizational_divisions, organizational_subareas, students, worker_job_roles, workers
 
 ### `modules/general-tools/pedagogical-days.html`
 
 - **Módulo:** general-tools
 - **Lee (3):** academic_years, pedagogical_days, system_config
 - **Escribe (1):** **pedagogical_days**
+- **Sin determinar (1):** pedagogical_days
 
 ### `modules/general-tools/project-detail.html`
 
 - **Módulo:** general-tools
 - **Lee (7):** project_documents, project_milestones, project_minutes, project_participants, projects, tasks, workers
 - **Escribe (5):** **project_documents**, **project_milestones**, **project_minutes**, **project_participants**, **projects**
+- **Sin determinar (6):** project_documents, project_milestones, project_minutes, project_participants, tasks, workers
 
 ### `modules/general-tools/projects-dashboard.html`
 
@@ -931,6 +1038,7 @@
 - **Módulo:** general-tools
 - **Lee (5):** project_milestones, project_participants, projects, tasks, workers
 - **Escribe (1):** **projects**
+- **Sin determinar (5):** project_milestones, project_participants, projects, tasks, workers
 
 ### `modules/general-tools/registro-facial.html`
 
@@ -941,8 +1049,9 @@
 ### `modules/general-tools/tasks.html`
 
 - **Módulo:** general-tools
-- **Lee (18):** courses, form_fields, indicator_categories, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, procedures, project_milestones, responsible_worker_id, task_collaborators, task_deliverables, task_documents, task_progress_notes, tasks, worker_id, workers
+- **Lee (16):** courses, form_fields, indicator_categories, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, procedures, project_milestones, task_collaborators, task_deliverables, task_documents, task_progress_notes, tasks, workers
 - **Escribe (7):** **procedure_instance_steps**, **procedure_instances**, **task_collaborators**, **task_deliverables**, **task_documents**, **task_progress_notes**, **tasks**
+- **Sin determinar (14):** form_fields, indicator_categories, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, procedures, project_milestones, task_collaborators, task_deliverables, task_documents, task_progress_notes, tasks
 
 ### `modules/hr/absence-categories.html`
 
@@ -955,36 +1064,42 @@
 - **Módulo:** hr
 - **Lee (4):** hr_clearance_admins, hr_clearance_areas, hr_config, workers
 - **Escribe (4):** **hr_balance_adjustments**, **hr_clearance_admins**, **hr_clearance_areas**, **hr_config**
+- **Sin determinar (4):** hr_clearance_admins, hr_clearance_areas, hr_config, workers
 
 ### `modules/hr/absence-reports.html`
 
 - **Módulo:** hr
 - **Lee (8):** attendance, hr_absence_categories, hr_absence_requests, hr_balance_adjustments, hr_config, hr_non_work_days, sections, workers
 - **Escribe (0):** —
+- **Sin determinar (8):** attendance, hr_absence_categories, hr_absence_requests, hr_balance_adjustments, hr_config, hr_non_work_days, sections, workers
 
 ### `modules/hr/adjust-balances.html`
 
 - **Módulo:** hr
 - **Lee (6):** academic_years, hr_absence_categories, hr_absence_requests, hr_balance_adjustments, users, workers
 - **Escribe (1):** **hr_balance_adjustments**
+- **Sin determinar (6):** academic_years, hr_absence_categories, hr_absence_requests, hr_balance_adjustments, users, workers
 
 ### `modules/hr/authorize-absences.html`
 
 - **Módulo:** hr
 - **Lee (6):** hr_absence_attachments, hr_absence_authorizations, hr_absence_requests, hr_config, worker_managers, workers
 - **Escribe (3):** **hr_absence_authorizations**, **hr_absence_requests**, **hr_balance_adjustments**
+- **Sin determinar (5):** hr_absence_attachments, hr_absence_authorizations, hr_absence_requests, worker_managers, workers
 
 ### `modules/hr/certificates-config.html`
 
 - **Módulo:** hr
 - **Lee (3):** certificate_signer, certificate_template, contract_types
 - **Escribe (3):** **certificate_signer**, **certificate_template**, **contract_types**
+- **Sin determinar (3):** certificate_signer, certificate_template, contract_types
 
 ### `modules/hr/clearances.html`
 
 - **Módulo:** hr
 - **Lee (10):** hr_clearance_admins, hr_clearance_areas, hr_clearance_items, hr_clearance_processes, hr_clearance_worker_closures, hr_config, sections, system_config, worker_managers, workers
 - **Escribe (3):** **hr_clearance_items**, **hr_clearance_processes**, **hr_clearance_worker_closures**
+- **Sin determinar (7):** hr_clearance_items, hr_clearance_processes, hr_clearance_worker_closures, sections, system_config, worker_managers, workers
 
 ### `modules/hr/cost-centers.html`
 
@@ -997,18 +1112,21 @@
 - **Módulo:** hr
 - **Lee (2):** organizational_divisions, workers
 - **Escribe (1):** **organizational_divisions**
+- **Sin determinar (2):** organizational_divisions, workers
 
 ### `modules/hr/hr-dashboard.html`
 
 - **Módulo:** hr
 - **Lee (8):** attendance, hr_absence_categories, hr_absence_requests, hr_balance_adjustments, hr_config, hr_non_work_days, sections, workers
 - **Escribe (0):** —
+- **Sin determinar (4):** attendance, hr_absence_requests, hr_non_work_days, workers
 
 ### `modules/hr/index.html`
 
 - **Módulo:** hr
-- **Lee (11):** cost_centers, job_roles, organizational_areas, organizational_subareas, permissions, role_permissions, roles, user_roles, users, worker_job_roles, workers
+- **Lee (10):** cost_centers, organizational_areas, organizational_subareas, permissions, role_permissions, roles, user_roles, users, worker_job_roles, workers
 - **Escribe (0):** —
+- **Sin determinar (3):** job_roles, users, workers
 
 ### `modules/hr/job-roles.html`
 
@@ -1033,24 +1151,28 @@
 - **Módulo:** hr
 - **Lee (13):** academic_years, hr_absence_attachments, hr_absence_authorizations, hr_absence_categories, hr_absence_requests, hr_balance_adjustments, hr_config, hr_non_work_days, organizational_areas, organizational_divisions, worker_job_roles, worker_managers, workers
 - **Escribe (3):** **hr_absence_attachments**, **hr_absence_authorizations**, **hr_absence_requests**
+- **Sin determinar (10):** academic_years, hr_absence_attachments, hr_absence_authorizations, hr_absence_requests, hr_balance_adjustments, organizational_areas, organizational_divisions, worker_job_roles, worker_managers, workers
 
 ### `modules/hr/subareas.html`
 
 - **Módulo:** hr
 - **Lee (4):** cost_centers, organizational_areas, organizational_divisions, workers
 - **Escribe (1):** **organizational_subareas**
+- **Sin determinar (1):** organizational_subareas
 
 ### `modules/hr/work-calendar.html`
 
 - **Módulo:** hr
 - **Lee (4):** academic_years, hr_non_work_days, system_config, workers
 - **Escribe (2):** **hr_balance_adjustments**, **hr_non_work_days**
+- **Sin determinar (4):** academic_years, hr_non_work_days, system_config, workers
 
 ### `modules/hr/workers.html`
 
 - **Módulo:** hr
-- **Lee (31):** academic_years, budget_assignments, contract_types, cost_centers, document_types, eps_entities, genders, hr_config, indicators, job_roles, manager_id, organizational_areas, organizational_divisions, organizational_subareas, project_participants, projects, roles, sections, survey_masters, system_config, task_collaborators, tasks, training_module_roles, users, variables, worker_contracts, worker_job_roles, worker_managers, worker_salaries, worker_training_paths, workers
+- **Lee (30):** academic_years, budget_assignments, contract_types, cost_centers, document_types, eps_entities, genders, hr_config, indicators, job_roles, organizational_areas, organizational_divisions, organizational_subareas, project_participants, projects, roles, sections, survey_masters, system_config, task_collaborators, tasks, training_module_roles, users, variables, worker_contracts, worker_job_roles, worker_managers, worker_salaries, worker_training_paths, workers
 - **Escribe (17):** **budget_assignments**, **hr_balance_adjustments**, **indicators**, **project_participants**, **projects**, **survey_masters**, **task_collaborators**, **tasks**, **user_roles**, **users**, **variables**, **worker_contracts**, **worker_job_roles**, **worker_managers**, **worker_salaries**, **worker_training_paths**, **workers**
+- **Sin determinar (13):** budget_assignments, indicators, project_participants, projects, survey_masters, task_collaborators, tasks, users, variables, worker_contracts, worker_managers, worker_salaries, workers
 
 ### `modules/indicators/benchmarks.html`
 
@@ -1067,50 +1189,58 @@
 ### `modules/indicators/correlations.html`
 
 - **Módulo:** indicators
-- **Lee (4):** indicators, kpi_relationship_suggestions, variable_values, variables
+- **Lee (2):** indicators, kpi_relationship_suggestions
 - **Escribe (1):** **kpi_relationship_suggestions**
+- **Sin determinar (4):** indicators, kpi_relationship_suggestions, variable_values, variables
 
 ### `modules/indicators/dashboard-config.html`
 
 - **Módulo:** indicators
 - **Lee (4):** dashboard_invitations, dashboards, users, workers
 - **Escribe (1):** **dashboards**
+- **Sin determinar (3):** dashboard_invitations, dashboards, workers
 
 ### `modules/indicators/dashboard-edit.html`
 
 - **Módulo:** indicators
 - **Lee (10):** dashboard_indicators, dashboard_invitations, dashboard_variables, dashboards, indicator_categories, indicator_category_assignments, indicators, users, variables, workers
 - **Escribe (4):** **dashboard_indicators**, **dashboard_invitations**, **dashboard_variables**, **dashboards**
+- **Sin determinar (10):** dashboard_indicators, dashboard_invitations, dashboard_variables, dashboards, indicator_categories, indicator_category_assignments, indicators, users, variables, workers
 
 ### `modules/indicators/dashboard.html`
 
 - **Módulo:** indicators
-- **Lee (13):** academic_years, dashboard_indicators, dashboard_invitations, dashboard_variables, dashboards, indicator_goals, indicators, system_config, users, variable_goals, variable_values, variables, workers
+- **Lee (12):** academic_years, dashboard_indicators, dashboard_invitations, dashboard_variables, dashboards, indicator_goals, indicators, system_config, users, variable_values, variables, workers
 - **Escribe (0):** —
+- **Sin determinar (8):** dashboard_indicators, dashboard_invitations, dashboard_variables, dashboards, variable_goals, variable_values, variables, workers
 
 ### `modules/indicators/data-entry.html`
 
 - **Módulo:** indicators
 - **Lee (5):** academic_years, segment_options, segments, variable_segments, variables
 - **Escribe (1):** **variable_values**
+- **Sin determinar (2):** variable_values, variables
 
 ### `modules/indicators/improvement-dashboard.html`
 
 - **Módulo:** indicators
-- **Lee (7):** indicator_goals, indicators, kpi_improvement_plans, kpi_indicator_analysis_notes, kpi_plan_updates, tasks, users
+- **Lee (4):** indicator_goals, indicators, kpi_improvement_plans, users
 - **Escribe (0):** —
+- **Sin determinar (5):** indicators, kpi_improvement_plans, kpi_indicator_analysis_notes, kpi_plan_updates, tasks
 
 ### `modules/indicators/improvement.html`
 
 - **Módulo:** indicators
-- **Lee (4):** indicator_goals, indicators, tasks, users
+- **Lee (2):** indicator_goals, users
 - **Escribe (3):** **kpi_improvement_plans**, **kpi_indicator_analysis_notes**, **kpi_plan_updates**
+- **Sin determinar (6):** indicator_goals, indicators, kpi_improvement_plans, kpi_indicator_analysis_notes, kpi_plan_updates, tasks
 
 ### `modules/indicators/index.html`
 
 - **Módulo:** indicators
 - **Lee (8):** academic_years, permissions, role_permissions, roles, user_roles, users, variable_values, variables
 - **Escribe (0):** —
+- **Sin determinar (1):** variable_values
 
 ### `modules/indicators/indicators.html`
 
@@ -1133,44 +1263,51 @@
 ### `modules/indicators/variables.html`
 
 - **Módulo:** indicators
-- **Lee (11):** indicator_categories, indicator_category_assignments, indicators, segment_options, segments, survey_masters, survey_sections, users, variable_segments, variable_values, variables
+- **Lee (10):** indicator_categories, indicators, segment_options, segments, survey_masters, survey_sections, users, variable_segments, variable_values, variables
 - **Escribe (4):** **query_validations**, **variable_permissions**, **variable_segments**, **variables**
+- **Sin determinar (2):** indicators, variable_values
 
 ### `modules/institutional-eval/evaluate.html`
 
 - **Módulo:** institutional-eval
 - **Lee (11):** academic_years, ie_component_ratings, ie_components, ie_evaluations, ie_expected_results, ie_management_areas, ie_process_results, ie_process_workers, ie_processes, ie_rubrics, system_config
 - **Escribe (2):** **ie_component_ratings**, **ie_process_results**
+- **Sin determinar (8):** ie_component_ratings, ie_components, ie_evaluations, ie_expected_results, ie_process_results, ie_process_workers, ie_processes, ie_rubrics
 
 ### `modules/institutional-eval/evaluations.html`
 
 - **Módulo:** institutional-eval
 - **Lee (6):** academic_years, ie_evaluations, ie_management_areas, ie_process_workers, ie_processes, workers
 - **Escribe (2):** **ie_evaluations**, **ie_process_workers**
+- **Sin determinar (6):** academic_years, ie_evaluations, ie_management_areas, ie_process_workers, ie_processes, workers
 
 ### `modules/institutional-eval/improvement.html`
 
 - **Módulo:** institutional-eval
 - **Lee (9):** academic_years, ie_component_ratings, ie_components, ie_evaluations, ie_improvement_links, ie_management_areas, ie_processes, project_milestones, projects
 - **Escribe (1):** **ie_improvement_links**
+- **Sin determinar (8):** ie_component_ratings, ie_components, ie_evaluations, ie_improvement_links, ie_management_areas, ie_processes, project_milestones, projects
 
 ### `modules/institutional-eval/index.html`
 
 - **Módulo:** institutional-eval
-- **Lee (10):** academic_years, ie_components, ie_evaluations, ie_improvement_links, ie_management_areas, permissions, role_permissions, roles, user_roles, users
+- **Lee (6):** academic_years, permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (5):** ie_components, ie_evaluations, ie_improvement_links, ie_management_areas, users
 
 ### `modules/institutional-eval/results.html`
 
 - **Módulo:** institutional-eval
 - **Lee (6):** academic_years, ie_component_ratings, ie_components, ie_evaluations, ie_management_areas, ie_processes
 - **Escribe (0):** —
+- **Sin determinar (5):** ie_component_ratings, ie_components, ie_evaluations, ie_management_areas, ie_processes
 
 ### `modules/institutional-eval/structure.html`
 
 - **Módulo:** institutional-eval
 - **Lee (6):** ie_components, ie_expected_results, ie_management_areas, ie_processes, ie_rubrics, ie_sources
 - **Escribe (6):** **ie_components**, **ie_expected_results**, **ie_management_areas**, **ie_processes**, **ie_rubrics**, **ie_sources**
+- **Sin determinar (6):** ie_components, ie_expected_results, ie_management_areas, ie_processes, ie_rubrics, ie_sources
 
 ### `modules/new-students/activities.html`
 
@@ -1193,8 +1330,9 @@
 ### `modules/new-students/new-students-report.html`
 
 - **Módulo:** new-students
-- **Lee (6):** academic_years, courses, grades, new_student_actors, new_students, students
+- **Lee (6):** academic_years, courses, grades, new_student_actors, student_status, students
 - **Escribe (1):** **student_entries**
+- **Sin determinar (2):** new_students, students
 
 ### `modules/new-students/register-activities.html`
 
@@ -1213,6 +1351,7 @@
 - **Módulo:** new-students
 - **Lee (6):** courses, new_student_activities, new_student_activity_records, new_students, students, workers
 - **Escribe (0):** —
+- **Sin determinar (1):** new_students
 
 ### `modules/planning/catalogs.html`
 
@@ -1223,188 +1362,220 @@
 ### `modules/planning/coordinator-area.html`
 
 - **Módulo:** planning
-- **Lee (29):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_comments, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, pln_interdisc_unit_cycles, pln_interdisc_unit_disciplines, pln_interdisc_units, pln_planner_atl_skills, pln_planner_connections, pln_planner_cycles, pln_planners, pln_unit_atl_skills, pln_unit_collaborators, pln_unit_cycles, pln_unit_grades, pln_unit_key_concepts, pln_unit_subjects, pln_units, programs, users, workers
+- **Lee (12):** academic_areas, academic_years, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, pln_planners, pln_units, programs, users, workers
 - **Escribe (0):** —
+- **Sin determinar (5):** academic_areas, academic_years, pln_dp_outlines, pln_planners, pln_units
 
 ### `modules/planning/coordinator-program.html`
 
 - **Módulo:** planning
-- **Lee (29):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_comments, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, pln_interdisc_unit_cycles, pln_interdisc_unit_disciplines, pln_interdisc_units, pln_planner_atl_skills, pln_planner_connections, pln_planner_cycles, pln_planners, pln_unit_atl_skills, pln_unit_collaborators, pln_unit_cycles, pln_unit_grades, pln_unit_key_concepts, pln_unit_subjects, pln_units, programs, users, workers
+- **Lee (11):** academic_years, grades, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, pln_units, programs, users, workers
 - **Escribe (0):** —
+- **Sin determinar (5):** academic_years, grades, pln_dp_outlines, pln_units, programs
 
 ### `modules/planning/coordinator-section.html`
 
 - **Módulo:** planning
-- **Lee (30):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_comments, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, pln_interdisc_unit_cycles, pln_interdisc_unit_disciplines, pln_interdisc_units, pln_planner_atl_skills, pln_planner_connections, pln_planner_cycles, pln_planners, pln_unit_atl_skills, pln_unit_collaborators, pln_unit_cycles, pln_unit_grades, pln_unit_key_concepts, pln_unit_subjects, pln_units, programs, sections, users, workers
+- **Lee (11):** academic_years, grades, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, programs, sections, users, workers
 - **Escribe (0):** —
+- **Sin determinar (4):** academic_years, grades, pln_dp_outlines, sections
 
 ### `modules/planning/dp-outline-form.html`
 
 - **Módulo:** planning
 - **Lee (9):** academic_areas, academic_assignments, academic_subjects, pln_comments, pln_dp_outline_topics, pln_dp_outlines, programs, sections, workers
 - **Escribe (3):** **pln_comments**, **pln_dp_outline_topics**, **pln_dp_outlines**
+- **Sin determinar (4):** academic_assignments, pln_comments, pln_dp_outline_topics, workers
 
 ### `modules/planning/dp-planner-form.html`
 
 - **Módulo:** planning
-- **Lee (17):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_comments, pln_create_planner_cycle, pln_ib_atl_skills, pln_planner_atl_skills, pln_planner_cycles, pln_planner_dp, pln_planner_dp_components, pln_planners, programs, sections, workers
-- **Escribe (7):** **pln_comments**, **pln_create_planner_cycle**, **pln_planner_atl_skills**, **pln_planner_cycles**, **pln_planner_dp**, **pln_planner_dp_components**, **pln_planners**
+- **Lee (15):** academic_areas, academic_subjects, academic_years, courses, grades, pln_comments, pln_ib_atl_skills, pln_planner_atl_skills, pln_planner_cycles, pln_planner_dp, pln_planner_dp_components, pln_planners, programs, sections, workers
+- **Escribe (6):** **pln_comments**, **pln_planner_atl_skills**, **pln_planner_cycles**, **pln_planner_dp**, **pln_planner_dp_components**, **pln_planners**
+- **Funciones (1):** pln_create_planner_cycle
 
 ### `modules/planning/interdisc-unit-form.html`
 
 - **Módulo:** planning
-- **Lee (25):** academic_areas, academic_assignments, academic_subjects, academic_year_trimesters, academic_years, courses, grades, pln_comments, pln_ib_atl_skills, pln_ib_learner_profile, pln_interdisc_unit_atl_skills, pln_interdisc_unit_body, pln_interdisc_unit_concept_strategies, pln_interdisc_unit_criteria, pln_interdisc_unit_cycles, pln_interdisc_unit_disciplines, pln_interdisc_unit_learner_profile, pln_interdisc_unit_sessions, pln_interdisc_unit_tilata_attributes, pln_interdisc_units, pln_myp_concept_strategies, pln_tilata_attributes, programs, sections, workers
+- **Lee (24):** academic_areas, academic_subjects, academic_year_trimesters, academic_years, courses, grades, pln_comments, pln_ib_atl_skills, pln_ib_learner_profile, pln_interdisc_unit_atl_skills, pln_interdisc_unit_body, pln_interdisc_unit_concept_strategies, pln_interdisc_unit_criteria, pln_interdisc_unit_cycles, pln_interdisc_unit_disciplines, pln_interdisc_unit_learner_profile, pln_interdisc_unit_sessions, pln_interdisc_unit_tilata_attributes, pln_interdisc_units, pln_myp_concept_strategies, pln_tilata_attributes, programs, sections, workers
 - **Escribe (9):** **pln_comments**, **pln_interdisc_unit_atl_skills**, **pln_interdisc_unit_body**, **pln_interdisc_unit_concept_strategies**, **pln_interdisc_unit_criteria**, **pln_interdisc_unit_cycles**, **pln_interdisc_unit_disciplines**, **pln_interdisc_unit_sessions**, **pln_interdisc_units**
+- **Sin determinar (11):** courses, pln_comments, pln_interdisc_unit_atl_skills, pln_interdisc_unit_body, pln_interdisc_unit_concept_strategies, pln_interdisc_unit_criteria, pln_interdisc_unit_cycles, pln_interdisc_unit_disciplines, pln_interdisc_unit_sessions, pln_interdisc_units, workers
 
 ### `modules/planning/my-dp-outlines.html`
 
 - **Módulo:** planning
-- **Lee (7):** academic_assignments, academic_subjects, courses, grades, pln_dp_outlines, programs, workers
+- **Lee (4):** academic_subjects, pln_dp_outlines, programs, workers
 - **Escribe (2):** **pln_dp_outline_topics**, **pln_dp_outlines**
+- **Sin determinar (3):** pln_dp_outlines, programs, workers
 
 ### `modules/planning/my-dp-planners.html`
 
 - **Módulo:** planning
 - **Lee (9):** academic_assignments, academic_subjects, academic_years, courses, grades, pln_dp_outlines, pln_planners, programs, workers
 - **Escribe (2):** **pln_planner_dp**, **pln_planners**
+- **Sin determinar (5):** academic_assignments, pln_dp_outlines, pln_planners, programs, workers
 
 ### `modules/planning/my-interdisc-units.html`
 
 - **Módulo:** planning
-- **Lee (9):** academic_assignments, academic_subjects, academic_years, courses, grades, pln_interdisc_unit_disciplines, pln_interdisc_units, programs, workers
+- **Lee (7):** academic_assignments, academic_subjects, academic_years, grades, pln_interdisc_units, programs, workers
 - **Escribe (2):** **pln_interdisc_unit_body**, **pln_interdisc_units**
+- **Sin determinar (3):** academic_assignments, pln_interdisc_units, workers
 
 ### `modules/planning/my-myp-planners.html`
 
 - **Módulo:** planning
 - **Lee (8):** academic_assignments, academic_subjects, academic_years, courses, grades, pln_planners, programs, workers
 - **Escribe (2):** **pln_planner_myp**, **pln_planners**
+- **Sin determinar (4):** academic_assignments, pln_planners, programs, workers
 
 ### `modules/planning/my-planners.html`
 
 - **Módulo:** planning
 - **Lee (8):** academic_assignments, academic_subjects, academic_years, courses, grades, pln_planners, programs, workers
 - **Escribe (1):** **pln_planners**
+- **Sin determinar (4):** academic_assignments, pln_planners, programs, workers
 
 ### `modules/planning/my-units.html`
 
 - **Módulo:** planning
-- **Lee (14):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_ib_themes, pln_unit_collaborators, pln_unit_grades, pln_unit_subjects, pln_units, programs, sections, workers
+- **Lee (12):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_ib_themes, pln_unit_collaborators, pln_units, programs, sections, workers
 - **Escribe (3):** **pln_unit_collaborators**, **pln_unit_grades**, **pln_units**
+- **Sin determinar (7):** academic_assignments, academic_years, courses, pln_ib_themes, pln_unit_collaborators, pln_units, workers
 
 ### `modules/planning/myp-planner-form.html`
 
 - **Módulo:** planning
-- **Lee (24):** academic_areas, academic_assignments, academic_subjects, academic_year_trimesters, academic_years, courses, grades, pln_comments, pln_ib_atl_skills, pln_ib_learner_profile, pln_myp_assessment_criteria, pln_myp_concept_strategies, pln_myp_grade_year, pln_planner_atl_skills, pln_planner_cycles, pln_planner_learner_profile, pln_planner_myp, pln_planner_myp_concept_strategies, pln_planner_tilata_attributes, pln_planners, pln_tilata_attributes, programs, sections, workers
+- **Lee (23):** academic_areas, academic_subjects, academic_year_trimesters, academic_years, courses, grades, pln_comments, pln_ib_atl_skills, pln_ib_learner_profile, pln_myp_assessment_criteria, pln_myp_concept_strategies, pln_myp_grade_year, pln_planner_atl_skills, pln_planner_cycles, pln_planner_learner_profile, pln_planner_myp, pln_planner_myp_concept_strategies, pln_planner_tilata_attributes, pln_planners, pln_tilata_attributes, programs, sections, workers
 - **Escribe (7):** **pln_comments**, **pln_myp_assessment_criteria**, **pln_planner_atl_skills**, **pln_planner_cycles**, **pln_planner_myp**, **pln_planner_myp_concept_strategies**, **pln_planners**
 
 ### `modules/planning/planner-form.html`
 
 - **Módulo:** planning
-- **Lee (21):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_comments, pln_connection_types, pln_create_planner_criterion, pln_create_planner_cycle, pln_ib_atl_skills, pln_planner_assessment_criteria, pln_planner_atl_skills, pln_planner_connections, pln_planner_cycles, pln_planners, pln_unit_grades, pln_units, programs, sections, workers
-- **Escribe (8):** **pln_comments**, **pln_create_planner_criterion**, **pln_create_planner_cycle**, **pln_planner_assessment_criteria**, **pln_planner_atl_skills**, **pln_planner_connections**, **pln_planner_cycles**, **pln_planners**
+- **Lee (17):** academic_areas, academic_subjects, academic_years, courses, grades, pln_comments, pln_connection_types, pln_ib_atl_skills, pln_planner_assessment_criteria, pln_planner_atl_skills, pln_planner_connections, pln_planner_cycles, pln_planners, pln_unit_grades, programs, sections, workers
+- **Escribe (6):** **pln_comments**, **pln_planner_assessment_criteria**, **pln_planner_atl_skills**, **pln_planner_connections**, **pln_planner_cycles**, **pln_planners**
+- **Sin determinar (10):** academic_years, courses, pln_comments, pln_planner_assessment_criteria, pln_planner_atl_skills, pln_planner_connections, pln_planner_cycles, pln_planners, pln_unit_grades, workers
+- **Funciones (2):** pln_create_planner_criterion, pln_create_planner_cycle
 
 ### `modules/planning/planners.html`
 
 - **Módulo:** planning
-- **Lee (12):** academic_areas, academic_subjects, academic_years, grades, pln_comments, pln_planner_assessment_criteria, pln_planner_cycles, pln_planners, pln_units, programs, sections, workers
+- **Lee (8):** academic_areas, academic_subjects, academic_years, grades, pln_planners, programs, sections, workers
 - **Escribe (0):** —
+- **Sin determinar (2):** pln_planners, workers
 
 ### `modules/planning/unit-form.html`
 
 - **Módulo:** planning
-- **Lee (34):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_action_scope, pln_action_types, pln_comments, pln_connection_types, pln_create_unit_cycle, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_learner_profile, pln_ib_themes, pln_inquiry_stages, pln_tilata_attributes, pln_unit_action_scope, pln_unit_action_types, pln_unit_atl_skills, pln_unit_collaborators, pln_unit_cycle_connections, pln_unit_cycle_subjects, pln_unit_cycles, pln_unit_grades, pln_unit_key_concepts, pln_unit_learner_profile, pln_unit_subject_connections, pln_unit_subjects, pln_unit_tilata_attributes, pln_units, programs, sections, workers
-- **Escribe (10):** **pln_comments**, **pln_create_unit_cycle**, **pln_unit_collaborators**, **pln_unit_cycle_connections**, **pln_unit_cycle_subjects**, **pln_unit_cycles**, **pln_unit_grades**, **pln_unit_subject_connections**, **pln_unit_subjects**, **pln_units**
+- **Lee (30):** academic_areas, academic_assignments, academic_subjects, academic_years, courses, grades, pln_action_scope, pln_action_types, pln_connection_types, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_learner_profile, pln_ib_themes, pln_inquiry_stages, pln_tilata_attributes, pln_unit_action_scope, pln_unit_action_types, pln_unit_atl_skills, pln_unit_collaborators, pln_unit_cycles, pln_unit_grades, pln_unit_key_concepts, pln_unit_learner_profile, pln_unit_subject_connections, pln_unit_subjects, pln_unit_tilata_attributes, pln_units, programs, sections, workers
+- **Escribe (9):** **pln_comments**, **pln_unit_collaborators**, **pln_unit_cycle_connections**, **pln_unit_cycle_subjects**, **pln_unit_cycles**, **pln_unit_grades**, **pln_unit_subject_connections**, **pln_unit_subjects**, **pln_units**
+- **Sin determinar (9):** academic_years, courses, pln_comments, pln_unit_collaborators, pln_unit_cycle_connections, pln_unit_cycle_subjects, pln_unit_cycles, pln_units, workers
+- **Funciones (1):** pln_create_unit_cycle
 
 ### `modules/planning/units.html`
 
 - **Módulo:** planning
-- **Lee (13):** academic_areas, academic_subjects, academic_years, grades, pln_comments, pln_unit_collaborators, pln_unit_cycles, pln_unit_grades, pln_unit_subjects, pln_units, programs, sections, workers
+- **Lee (8):** academic_areas, academic_subjects, academic_years, grades, pln_units, programs, sections, workers
 - **Escribe (0):** —
+- **Sin determinar (2):** pln_units, workers
 
 ### `modules/procedures/dashboard.html`
 
 - **Módulo:** procedures
-- **Lee (5):** procedure_instance_steps, procedure_instances, procedure_steps, procedures, tasks
+- **Lee (3):** procedure_instances, procedure_steps, procedures
 - **Escribe (0):** —
+- **Sin determinar (4):** procedure_instances, procedure_steps, procedures, tasks
 
 ### `modules/procedures/execute-form-public.html`
 
 - **Módulo:** procedures
 - **Lee (5):** field_option_catalog, form_fields, forms, procedures, system_config
 - **Escribe (2):** **form_responses**, **procedure_instances**
+- **Sin determinar (2):** forms, procedures
 
 ### `modules/procedures/execute-form.html`
 
 - **Módulo:** procedures
-- **Lee (13):** academic_areas, courses, families, field_option_catalog, form_fields, forms, genders, grades, job_roles, procedures, sections, students, workers
+- **Lee (4):** field_option_catalog, form_fields, forms, procedures
 - **Escribe (2):** **form_responses**, **procedure_instances**
+- **Sin determinar (11):** academic_areas, courses, families, forms, genders, grades, job_roles, procedures, sections, students, workers
 
 ### `modules/procedures/execute-public.html`
 
 - **Módulo:** procedures
-- **Lee (18):** academic_areas, courses, families, field_option_catalog, form_fields, forms, genders, grades, job_roles, procedure_step_parallel_assignments, procedure_steps, procedures, responsible_worker_id, sections, students, system_config, worker_id, workers
+- **Lee (7):** field_option_catalog, form_fields, forms, procedure_step_parallel_assignments, procedure_steps, procedures, system_config
 - **Escribe (4):** **form_responses**, **procedure_instance_steps**, **procedure_instances**, **tasks**
+- **Sin determinar (13):** academic_areas, courses, families, forms, genders, grades, job_roles, procedure_step_parallel_assignments, procedure_steps, procedures, sections, students, workers
 
 ### `modules/procedures/execute.html`
 
 - **Módulo:** procedures
-- **Lee (17):** academic_areas, courses, families, field_option_catalog, form_fields, forms, genders, grades, job_roles, procedure_step_parallel_assignments, procedure_steps, procedures, responsible_worker_id, sections, students, worker_id, workers
+- **Lee (6):** field_option_catalog, form_fields, forms, procedure_step_parallel_assignments, procedure_steps, procedures
 - **Escribe (4):** **form_responses**, **procedure_instance_steps**, **procedure_instances**, **tasks**
+- **Sin determinar (13):** academic_areas, courses, families, forms, genders, grades, job_roles, procedure_step_parallel_assignments, procedure_steps, procedures, sections, students, workers
 
 ### `modules/procedures/forms.html`
 
 - **Módulo:** procedures
 - **Lee (7):** field_option_catalog, form_access_workers, form_fields, form_responses, forms, procedures, workers
 - **Escribe (4):** **field_option_catalog**, **form_access_workers**, **form_fields**, **forms**
+- **Sin determinar (3):** form_access_workers, forms, workers
 
 ### `modules/procedures/index.html`
 
 - **Módulo:** procedures
 - **Lee (5):** permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (1):** users
 
 ### `modules/procedures/my-requests.html`
 
 - **Módulo:** procedures
-- **Lee (9):** field_option_catalog, form_fields, form_responses, procedure_instance_steps, procedure_instances, procedure_steps, procedures, responsible_worker_id, tasks
+- **Lee (8):** field_option_catalog, form_fields, form_responses, procedure_instance_steps, procedure_instances, procedure_steps, procedures, tasks
 - **Escribe (2):** **procedure_instances**, **tasks**
+- **Sin determinar (6):** form_responses, procedure_instance_steps, procedure_instances, procedure_steps, procedures, tasks
 
 ### `modules/procedures/procedures.html`
 
 - **Módulo:** procedures
-- **Lee (10):** form_fields, forms, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, responsible_worker_id, worker_id, workers
+- **Lee (8):** form_fields, forms, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, workers
 - **Escribe (4):** **procedure_step_branches**, **procedure_step_parallel_assignments**, **procedure_steps**, **procedures**
+- **Sin determinar (5):** form_fields, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, procedures
 
 ### `modules/procedures/query-submissions.html`
 
 - **Módulo:** procedures
-- **Lee (8):** field_option_catalog, form_access_workers, form_fields, form_responses, forms, procedure_instances, procedures, workers
+- **Lee (7):** field_option_catalog, form_access_workers, form_fields, form_responses, forms, procedures, workers
 - **Escribe (0):** —
+- **Sin determinar (5):** form_access_workers, form_responses, forms, procedure_instances, workers
 
 ### `modules/procedures/records.html`
 
 - **Módulo:** procedures
-- **Lee (9):** field_option_catalog, form_fields, form_responses, procedure_instance_steps, procedure_instances, procedure_steps, procedures, responsible_worker_id, tasks
+- **Lee (8):** field_option_catalog, form_fields, form_responses, procedure_instance_steps, procedure_instances, procedure_steps, procedures, tasks
 - **Escribe (2):** **procedure_instances**, **tasks**
+- **Sin determinar (7):** form_fields, form_responses, procedure_instance_steps, procedure_instances, procedure_steps, procedures, tasks
 
 ### `modules/procedures/track-public.html`
 
 - **Módulo:** procedures
 - **Lee (5):** procedure_instance_steps, procedure_instances, procedure_steps, procedures, system_config
 - **Escribe (0):** —
+- **Sin determinar (4):** procedure_instance_steps, procedure_instances, procedure_steps, procedures
 
 ### `modules/profile/mi-perfil.html`
 
 - **Módulo:** profile
-- **Lee (19):** academic_years, certificate_signer, certificate_template, contract_types, document_types, hr_non_work_days, job_roles, pedagogical_days, system_config, tilata_recurring_events, tilata_recurring_invitees, tilata_recurring_occurrences, user_dashboard_shortcuts, worker_certificates_log, worker_contracts, worker_job_roles, worker_managers, worker_salaries, workers
+- **Lee (22):** academic_years, certificate_signer, certificate_template, contract_types, cost_centers, document_types, genders, hr_non_work_days, job_roles, organizational_areas, organizational_divisions, pedagogical_days, system_config, tilata_recurring_events, tilata_recurring_invitees, tilata_recurring_occurrences, user_dashboard_shortcuts, worker_certificates_log, worker_contracts, worker_job_roles, worker_salaries, workers
 - **Escribe (5):** **tilata_recurring_events**, **tilata_recurring_invitees**, **tilata_recurring_occurrences**, **user_dashboard_shortcuts**, **worker_certificates_log**
+- **Sin determinar (9):** hr_non_work_days, tilata_recurring_events, tilata_recurring_invitees, tilata_recurring_occurrences, user_dashboard_shortcuts, worker_certificates_log, worker_job_roles, worker_managers, workers
 
 ### `modules/profile/mis-tickets.html`
 
 - **Módulo:** profile
 - **Lee (1):** support_tickets
 - **Escribe (0):** —
+- **Sin determinar (1):** support_tickets
 
 ### `modules/security/announcements.html`
 
@@ -1423,12 +1594,14 @@
 - **Módulo:** security
 - **Lee (3):** student_status, students, workers
 - **Escribe (2):** **students**, **workers**
+- **Sin determinar (2):** students, workers
 
 ### `modules/security/index.html`
 
 - **Módulo:** security
 - **Lee (6):** academic_years, permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (4):** permissions, roles, user_roles, users
 
 ### `modules/security/permissions.html`
 
@@ -1465,6 +1638,7 @@
 - **Módulo:** security
 - **Lee (8):** permissions, role_permissions, support_tickets, ticket_categories, ticket_history, ticket_priority_options, user_roles, users
 - **Escribe (2):** **support_tickets**, **ticket_history**
+- **Sin determinar (2):** role_permissions, support_tickets
 
 ### `modules/security/user-roles.html`
 
@@ -1483,12 +1657,14 @@
 - **Módulo:** services
 - **Lee (10):** budget_assignments, permissions, role_permissions, roles, svc_module_config, svc_service_type_notifications, system_config, user_roles, users, workers
 - **Escribe (3):** **budget_assignments**, **execution_requests**, **svc_admissions_family_services**
+- **Sin determinar (2):** svc_admissions_family_services, users
 
 ### `modules/services/approvals.html`
 
 - **Módulo:** services
-- **Lee (18):** budget_assignments, budget_categories, budget_items, svc_catering_menus, svc_internal_event_catering, svc_internal_event_services, svc_internal_event_support_staff, svc_internal_events, svc_module_config, svc_rep_trip_adults, svc_service_requests, svc_service_type_notifications, svc_sports_trip_adults, svc_support_areas, svc_transport_nodes, svc_trip_transport_nodes, system_config, workers
+- **Lee (27):** budget_assignments, budget_categories, budget_items, grades, svc_catering_menus, svc_internal_event_catering, svc_internal_event_services, svc_internal_event_support_staff, svc_internal_events, svc_module_config, svc_pedagogical_trip_grades, svc_pedagogical_trips, svc_rep_groups, svc_rep_trip_adults, svc_rep_trips, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_teams, svc_sports_trip_adults, svc_sports_trips, svc_support_areas, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, system_config, workers
 - **Escribe (3):** **budget_assignments**, **execution_requests**, **svc_service_requests**
+- **Sin determinar (2):** svc_service_requests, svc_service_type_notifications
 
 ### `modules/services/config.html`
 
@@ -1499,7 +1675,7 @@
 ### `modules/services/event-costs.html`
 
 - **Módulo:** services
-- **Lee (5):** svc_internal_event_services, svc_internal_events, svc_service_requests, svc_support_areas, workers
+- **Lee (2):** svc_support_areas, workers
 - **Escribe (1):** **svc_internal_event_services**
 
 ### `modules/services/index.html`
@@ -1507,24 +1683,29 @@
 - **Módulo:** services
 - **Lee (14):** academic_years, permissions, role_permissions, roles, svc_internal_event_services, svc_internal_events, svc_maintenance_requests, svc_pedagogical_trips, svc_service_requests, svc_sports_trips, svc_support_areas, user_roles, users, workers
 - **Escribe (0):** —
+- **Sin determinar (1):** users
 
 ### `modules/services/internal-events.html`
 
 - **Módulo:** services
-- **Lee (11):** get_workers_with_permission, svc_catering_menus, svc_internal_event_catering, svc_internal_event_services, svc_internal_events, svc_module_config, svc_service_requests, svc_service_type_notifications, svc_support_areas, users, workers
-- **Escribe (5):** **get_workers_with_permission**, **svc_internal_event_catering**, **svc_internal_event_services**, **svc_internal_events**, **svc_service_requests**
+- **Lee (10):** svc_catering_menus, svc_internal_event_catering, svc_internal_event_services, svc_internal_events, svc_module_config, svc_service_requests, svc_service_type_notifications, svc_support_areas, users, workers
+- **Escribe (4):** **svc_internal_event_catering**, **svc_internal_event_services**, **svc_internal_events**, **svc_service_requests**
+- **Sin determinar (2):** svc_internal_events, svc_service_type_notifications
+- **Funciones (1):** get_workers_with_permission
 
 ### `modules/services/js/commons.js`
 
 - **Módulo:** services
-- **Lee (13):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_student_year_services, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, system_config, user_roles, users, workers
+- **Lee (12):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, system_config, user_roles, users, workers
 - **Escribe (0):** —
+- **Sin determinar (7):** academic_years, attendance, role_permissions, system_config, user_roles, users, workers
 
 ### `modules/services/maintenance-management.html`
 
 - **Módulo:** services
 - **Lee (7):** svc_maintenance_history, svc_maintenance_photos, svc_maintenance_priorities, svc_maintenance_requests, svc_maintenance_spaces, users, workers
 - **Escribe (3):** **svc_maintenance_history**, **svc_maintenance_photos**, **svc_maintenance_requests**
+- **Sin determinar (1):** svc_maintenance_photos
 
 ### `modules/services/maintenance-request.html`
 
@@ -1541,8 +1722,10 @@
 ### `modules/services/pedagogical-trips.html`
 
 - **Módulo:** services
-- **Lee (24):** calculate_transport_cost, courses, create_pedagogical_trip, execute_trip_banderazo, get_pedagogical_trip_students, get_workers_with_permission, grades, sections, student_status, students, suspend_trip, svc_catering_menus, svc_pedagogical_trip_adults, svc_pedagogical_trip_attendance, svc_pedagogical_trip_catering, svc_pedagogical_trip_grades, svc_pedagogical_trips, svc_service_requests, svc_service_type_notifications, svc_transport_nodes, svc_trip_transport_nodes, transition_trip_statuses, update_pedagogical_trip, workers
-- **Escribe (8):** **calculate_transport_cost**, **create_pedagogical_trip**, **execute_trip_banderazo**, **get_workers_with_permission**, **suspend_trip**, **svc_pedagogical_trips**, **transition_trip_statuses**, **update_pedagogical_trip**
+- **Lee (14):** grades, sections, svc_catering_menus, svc_pedagogical_trip_adults, svc_pedagogical_trip_attendance, svc_pedagogical_trip_catering, svc_pedagogical_trip_grades, svc_pedagogical_trips, svc_service_requests, svc_service_type_notifications, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
+- **Escribe (1):** **svc_pedagogical_trips**
+- **Sin determinar (7):** grades, svc_pedagogical_trip_adults, svc_pedagogical_trip_attendance, svc_pedagogical_trips, svc_service_type_notifications, svc_trip_transport_nodes, workers
+- **Funciones (8):** calculate_transport_cost, create_pedagogical_trip, execute_trip_banderazo, get_pedagogical_trip_students, get_workers_with_permission, suspend_trip, transition_trip_statuses, update_pedagogical_trip
 
 ### `modules/services/rep-groups.html`
 
@@ -1555,12 +1738,14 @@
 - **Módulo:** services
 - **Lee (13):** courses, students, svc_rep_group_members, svc_rep_groups, svc_rep_trip_adults, svc_rep_trip_attendance, svc_rep_trips, svc_service_requests, svc_service_type_notifications, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
 - **Escribe (5):** **svc_rep_trip_adults**, **svc_rep_trip_attendance**, **svc_rep_trips**, **svc_service_requests**, **svc_trip_transport_nodes**
+- **Sin determinar (7):** svc_rep_group_members, svc_rep_groups, svc_rep_trip_adults, svc_rep_trip_attendance, svc_rep_trips, svc_service_type_notifications, svc_trip_transport_nodes
 
 ### `modules/services/reports.html`
 
 - **Módulo:** services
-- **Lee (13):** svc_extracurricular_daily_records, svc_extracurricular_vehicle_configs, svc_internal_event_catering, svc_internal_event_services, svc_internal_events, svc_pedagogical_trips, svc_rep_trips, svc_service_requests, svc_sports_trips, svc_staff_transport_daily_records, svc_staff_transport_routes, svc_transport_destinations, workers
+- **Lee (11):** svc_extracurricular_daily_records, svc_extracurricular_vehicle_configs, svc_internal_event_catering, svc_internal_event_services, svc_pedagogical_trips, svc_rep_trips, svc_sports_trips, svc_staff_transport_daily_records, svc_staff_transport_routes, svc_transport_destinations, workers
 - **Escribe (0):** —
+- **Sin determinar (2):** svc_internal_events, svc_service_requests
 
 ### `modules/services/sports-teams.html`
 
@@ -1573,6 +1758,7 @@
 - **Módulo:** services
 - **Lee (15):** courses, students, svc_service_requests, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams, svc_sports_trip_adults, svc_sports_trip_attendance, svc_sports_trips, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
 - **Escribe (5):** **svc_service_requests**, **svc_sports_trip_adults**, **svc_sports_trip_attendance**, **svc_sports_trips**, **svc_trip_transport_nodes**
+- **Sin determinar (6):** svc_service_type_notifications, svc_sports_team_members, svc_sports_trip_adults, svc_sports_trip_attendance, svc_sports_trips, svc_trip_transport_nodes
 
 ### `modules/services/staff-transport.html`
 
@@ -1591,12 +1777,14 @@
 - **Módulo:** services
 - **Lee (7):** budget_assignments, budget_items, budget_requesters, svc_module_config, svc_service_type_notifications, system_config, workers
 - **Escribe (2):** **budget_assignments**, **execution_requests**
+- **Sin determinar (6):** budget_assignments, budget_requesters, execution_requests, svc_module_config, svc_service_type_notifications, workers
 
 ### `modules/suppliers/catalogs.html`
 
 - **Módulo:** suppliers
 - **Lee (4):** sup_banks, sup_ciiu_activities, sup_departments, sup_municipalities
 - **Escribe (4):** **sup_banks**, **sup_ciiu_activities**, **sup_departments**, **sup_municipalities**
+- **Sin determinar (1):** sup_municipalities
 
 ### `modules/suppliers/config.html`
 
@@ -1609,66 +1797,78 @@
 - **Módulo:** suppliers
 - **Lee (1):** sup_suppliers
 - **Escribe (0):** —
+- **Sin determinar (1):** sup_suppliers
 
 ### `modules/suppliers/index.html`
 
 - **Módulo:** suppliers
-- **Lee (8):** academic_years, permissions, role_permissions, roles, sup_legal_documents, sup_suppliers, user_roles, users
+- **Lee (6):** academic_years, permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (3):** sup_legal_documents, sup_suppliers, users
 
 ### `modules/suppliers/legal-documents.html`
 
 - **Módulo:** suppliers
-- **Lee (3):** published_by, sup_legal_document_versions, sup_legal_documents
+- **Lee (2):** sup_legal_document_versions, sup_legal_documents
 - **Escribe (2):** **sup_legal_document_versions**, **sup_legal_documents**
+- **Sin determinar (2):** sup_legal_document_versions, sup_legal_documents
 
 ### `modules/suppliers/manage.html`
 
 - **Módulo:** suppliers
 - **Lee (11):** sup_attachment_types, sup_legal_document_versions, sup_legal_documents, sup_supplier_attachments, sup_supplier_legal_acceptances, sup_supplier_notifications, sup_supplier_tax_conditions, sup_suppliers, sup_tax_conditions, users, workers
 - **Escribe (2):** **sup_supplier_notifications**, **sup_suppliers**
+- **Sin determinar (3):** sup_supplier_notifications, sup_suppliers, workers
 
 ### `modules/suppliers/my-suppliers.html`
 
 - **Módulo:** suppliers
 - **Lee (9):** sup_attachment_types, sup_legal_document_versions, sup_legal_documents, sup_supplier_attachments, sup_supplier_legal_acceptances, sup_supplier_tax_conditions, sup_suppliers, sup_tax_conditions, workers
 - **Escribe (0):** —
+- **Sin determinar (2):** sup_suppliers, workers
 
 ### `modules/suppliers/portal.html`
 
 - **Módulo:** suppliers
-- **Lee (13):** get_workers_with_permission, sup_attachment_types, sup_banks, sup_ciiu_activities, sup_departments, sup_municipalities, sup_otp_codes, sup_supplier_attachments, sup_supplier_tax_conditions, sup_suppliers, sup_tax_conditions, sup_tax_regimes, system_config
-- **Escribe (5):** **get_workers_with_permission**, **sup_otp_codes**, **sup_supplier_attachments**, **sup_supplier_tax_conditions**, **sup_suppliers**
+- **Lee (12):** sup_attachment_types, sup_banks, sup_ciiu_activities, sup_departments, sup_municipalities, sup_otp_codes, sup_supplier_attachments, sup_supplier_tax_conditions, sup_suppliers, sup_tax_conditions, sup_tax_regimes, system_config
+- **Escribe (4):** **sup_otp_codes**, **sup_supplier_attachments**, **sup_supplier_tax_conditions**, **sup_suppliers**
+- **Sin determinar (4):** sup_otp_codes, sup_supplier_attachments, sup_supplier_tax_conditions, sup_suppliers
+- **Funciones (1):** get_workers_with_permission
 
 ### `modules/suppliers/register.html`
 
 - **Módulo:** suppliers
-- **Lee (14):** sup_attachment_types, sup_banks, sup_ciiu_activities, sup_departments, sup_legal_document_versions, sup_legal_documents, sup_municipalities, sup_supplier_attachments, sup_supplier_legal_acceptances, sup_supplier_tax_conditions, sup_suppliers, sup_tax_conditions, sup_tax_regimes, system_config
+- **Lee (1):** system_config
 - **Escribe (0):** —
+- **Sin determinar (14):** sup_attachment_types, sup_banks, sup_ciiu_activities, sup_departments, sup_legal_document_versions, sup_legal_documents, sup_municipalities, sup_supplier_attachments, sup_supplier_legal_acceptances, sup_supplier_tax_conditions, sup_suppliers, sup_tax_conditions, sup_tax_regimes, system_config
 
 ### `modules/surveys/applications.html`
 
 - **Módulo:** surveys
 - **Lee (3):** survey_applications, survey_masters, survey_respondent_profile
 - **Escribe (1):** **survey_applications**
+- **Sin determinar (1):** survey_applications
 
 ### `modules/surveys/comparison.html`
 
 - **Módulo:** surveys
-- **Lee (7):** survey_applications, survey_masters, survey_questions, survey_respondent_profile, survey_responses, survey_scales, survey_sections
+- **Lee (6):** survey_applications, survey_masters, survey_questions, survey_respondent_profile, survey_scales, survey_sections
 - **Escribe (0):** —
+- **Sin determinar (1):** survey_responses
 
 ### `modules/surveys/dashboard.html`
 
 - **Módulo:** surveys
 - **Lee (9):** academic_years, student_status, students, survey_applications, survey_masters, survey_respondent_profile, survey_responses, users, workers
 - **Escribe (0):** —
+- **Sin determinar (2):** students, workers
 
 ### `modules/surveys/index.html`
 
 - **Módulo:** surveys
-- **Lee (9):** permissions, role_permissions, roles, survey_applications, survey_masters, survey_respondent_profile, survey_scales, user_roles, users
+- **Lee (5):** permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (5):** survey_applications, survey_masters, survey_respondent_profile, survey_scales, users
 
 ### `modules/surveys/master-segments.html`
 
@@ -1679,20 +1879,23 @@
 ### `modules/surveys/masters.html`
 
 - **Módulo:** surveys
-- **Lee (1):** survey_applications
+- **Lee (2):** survey_applications, users
 - **Escribe (1):** **survey_masters**
+- **Sin determinar (1):** survey_masters
 
 ### `modules/surveys/micro-survey-kiosk.html`
 
 - **Módulo:** surveys
-- **Lee (2):** micro_survey_responses, micro_surveys
+- **Lee (0):** —
 - **Escribe (0):** —
+- **Sin determinar (2):** micro_survey_responses, micro_surveys
 
 ### `modules/surveys/micro-surveys.html`
 
 - **Módulo:** surveys
 - **Lee (3):** micro_survey_responses, micro_surveys, users
 - **Escribe (1):** **micro_surveys**
+- **Sin determinar (2):** micro_survey_responses, micro_surveys
 
 ### `modules/surveys/questions.html`
 
@@ -1711,6 +1914,7 @@
 - **Módulo:** surveys
 - **Lee (13):** courses, segment_options, segments, survey_applications, survey_master_segments, survey_masters, survey_questions, survey_respondent_profile, survey_responses, survey_scale_options, survey_scales, survey_sections, users
 - **Escribe (0):** —
+- **Sin determinar (3):** survey_applications, survey_masters, survey_respondent_profile
 
 ### `modules/surveys/scales.html`
 
@@ -1729,24 +1933,28 @@
 - **Módulo:** teacher-eval
 - **Lee (1):** teval_config
 - **Escribe (1):** **teval_config**
+- **Sin determinar (1):** teval_config
 
 ### `modules/teacher-eval/evaluate.html`
 
 - **Módulo:** teacher-eval
 - **Lee (18):** academic_assignments, academic_subject_grades, academic_subjects, academic_years, courses, grades, students, survey_scale_options, teval_config, teval_form_questions, teval_form_school_sections, teval_form_sections, teval_forms, teval_period_forms, teval_periods, teval_sessions, teval_verification_codes, workers
 - **Escribe (3):** **teval_responses**, **teval_sessions**, **teval_verification_codes**
+- **Sin determinar (10):** academic_assignments, academic_subject_grades, students, survey_scale_options, teval_form_questions, teval_form_sections, teval_period_forms, teval_periods, teval_sessions, teval_verification_codes
 
 ### `modules/teacher-eval/forms.html`
 
 - **Módulo:** teacher-eval
 - **Lee (6):** sections, survey_scales, teval_form_questions, teval_form_school_sections, teval_form_sections, teval_forms
 - **Escribe (5):** **teval_form_questions**, **teval_form_school_sections**, **teval_form_sections**, **teval_forms**, **teval_period_forms**
+- **Sin determinar (7):** sections, survey_scales, teval_form_questions, teval_form_school_sections, teval_form_sections, teval_forms, teval_period_forms
 
 ### `modules/teacher-eval/index.html`
 
 - **Módulo:** teacher-eval
-- **Lee (9):** academic_years, permissions, role_permissions, roles, teval_forms, teval_periods, teval_responses, user_roles, users
+- **Lee (6):** academic_years, permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (4):** teval_forms, teval_periods, teval_responses, users
 
 ### `modules/teacher-eval/leadership-catalogs.html`
 
@@ -1757,62 +1965,72 @@
 ### `modules/teacher-eval/leadership-cycles.html`
 
 - **Módulo:** teacher-eval
-- **Lee (7):** leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_grades, leadership_interest_groups, workers
+- **Lee (6):** leadership_cycle_evaluatees, leadership_cycles, leadership_dimensions, leadership_grades, leadership_interest_groups, workers
 - **Escribe (3):** **leadership_cycle_evaluatees**, **leadership_cycle_evaluators**, **leadership_cycles**
+- **Sin determinar (2):** leadership_cycle_evaluatees, workers
 
 ### `modules/teacher-eval/leadership-my-results.html`
 
 - **Módulo:** teacher-eval
-- **Lee (11):** leadership_attributes, leadership_behaviors, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_interest_groups, leadership_questions, leadership_responses, worker_managers, workers
+- **Lee (8):** leadership_attributes, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_interest_groups, worker_managers, workers
 - **Escribe (0):** —
+- **Sin determinar (3):** leadership_cycle_evaluatees, leadership_cycle_evaluators, worker_managers
 
 ### `modules/teacher-eval/leadership-observations.html`
 
 - **Módulo:** teacher-eval
 - **Lee (4):** leadership_attributes, leadership_dimensions, leadership_observations, workers
 - **Escribe (1):** **leadership_observations**
+- **Sin determinar (2):** leadership_observations, workers
 
 ### `modules/teacher-eval/leadership-plan.html`
 
 - **Módulo:** teacher-eval
-- **Lee (13):** leadership_attributes, leadership_behaviors, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_improvement_actions, leadership_improvement_plans, leadership_observations, leadership_questions, leadership_responses, worker_managers, workers
+- **Lee (10):** leadership_attributes, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_improvement_actions, leadership_improvement_plans, leadership_observations, worker_managers, workers
 - **Escribe (2):** **leadership_improvement_actions**, **leadership_improvement_plans**
+- **Sin determinar (6):** leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_improvement_actions, leadership_improvement_plans, leadership_observations, worker_managers
 
 ### `modules/teacher-eval/leadership-reports.html`
 
 - **Módulo:** teacher-eval
-- **Lee (12):** leadership_attributes, leadership_behaviors, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_grades, leadership_interest_groups, leadership_observations, leadership_questions, leadership_responses, workers
+- **Lee (8):** leadership_attributes, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_grades, leadership_interest_groups, workers
 - **Escribe (0):** —
+- **Sin determinar (3):** leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_observations
 
 ### `modules/teacher-eval/leadership-survey.html`
 
 - **Módulo:** teacher-eval
-- **Lee (13):** leadership_attributes, leadership_behaviors, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_grades, leadership_interest_groups, leadership_observations, leadership_question_groups, leadership_questions, leadership_responses, workers
+- **Lee (12):** leadership_attributes, leadership_behaviors, leadership_cycle_evaluatees, leadership_cycle_evaluators, leadership_cycles, leadership_dimensions, leadership_grades, leadership_interest_groups, leadership_observations, leadership_question_groups, leadership_responses, workers
 - **Escribe (2):** **leadership_cycle_evaluators**, **leadership_responses**
+- **Sin determinar (5):** leadership_cycle_evaluators, leadership_observations, leadership_questions, leadership_responses, workers
 
 ### `modules/teacher-eval/monitor.html`
 
 - **Módulo:** teacher-eval
 - **Lee (10):** academic_years, courses, grades, sections, students, teval_form_school_sections, teval_forms, teval_period_forms, teval_periods, teval_sessions
 - **Escribe (0):** —
+- **Sin determinar (5):** courses, students, teval_period_forms, teval_periods, teval_sessions
 
 ### `modules/teacher-eval/my-results.html`
 
 - **Módulo:** teacher-eval
 - **Lee (11):** academic_years, courses, grades, sections, students, teval_form_questions, teval_form_sections, teval_periods, teval_responses, teval_sessions, workers
 - **Escribe (0):** —
+- **Sin determinar (4):** teval_periods, teval_responses, teval_sessions, workers
 
 ### `modules/teacher-eval/periods.html`
 
 - **Módulo:** teacher-eval
 - **Lee (6):** academic_years, sections, teval_form_school_sections, teval_forms, teval_period_forms, teval_periods
 - **Escribe (2):** **teval_period_forms**, **teval_periods**
+- **Sin determinar (4):** academic_years, teval_forms, teval_period_forms, teval_periods
 
 ### `modules/teacher-eval/results.html`
 
 - **Módulo:** teacher-eval
-- **Lee (8):** academic_years, sections, teval_form_questions, teval_form_sections, teval_periods, teval_responses, teval_sessions, workers
+- **Lee (11):** academic_years, courses, grades, sections, students, teval_form_questions, teval_form_sections, teval_periods, teval_responses, teval_sessions, workers
 - **Escribe (0):** —
+- **Sin determinar (6):** sections, teval_form_questions, teval_periods, teval_responses, teval_sessions, workers
 
 ### `modules/teacher-eval/rubric.html`
 
@@ -1831,6 +2049,7 @@
 - **Módulo:** training
 - **Lee (1):** worker_training_paths
 - **Escribe (0):** —
+- **Sin determinar (1):** worker_training_paths
 
 ### `modules/training/facilitators.html`
 
@@ -1847,8 +2066,9 @@
 ### `modules/training/index.html`
 
 - **Módulo:** training
-- **Lee (9):** academic_years, permissions, role_permissions, roles, training_facilitators, training_modules, user_roles, users, worker_training_paths
+- **Lee (6):** academic_years, permissions, role_permissions, roles, user_roles, worker_training_paths
 - **Escribe (0):** —
+- **Sin determinar (6):** role_permissions, training_facilitators, training_modules, user_roles, users, worker_training_paths
 
 ### `modules/training/manage-deadlines.html`
 
@@ -1907,8 +2127,9 @@
 ### `modules/training/path-queries.html`
 
 - **Módulo:** training
-- **Lee (7):** organizational_areas, training_axes, training_facilitators, training_module_facilitators, training_modules, worker_training_paths, workers
+- **Lee (7):** organizational_areas, training_axes, training_facilitators, training_modalities, training_modules, worker_training_paths, workers
 - **Escribe (1):** **query_logs**
+- **Sin determinar (3):** training_module_facilitators, worker_training_paths, workers
 
 ### `modules/training/register-completion.html`
 
@@ -1921,6 +2142,7 @@
 - **Módulo:** training
 - **Lee (9):** organizational_areas, organizational_divisions, training_axes, training_facilitators, training_modalities, training_module_facilitators, training_modules, worker_training_paths, workers
 - **Escribe (0):** —
+- **Sin determinar (2):** worker_training_paths, workers
 
 ### `modules/training/request-modules.html`
 
@@ -1955,20 +2177,23 @@
 ### `modules/tte/dashboard.html`
 
 - **Módulo:** tte
-- **Lee (5):** academic_years, tte_categories, tte_priorities, tte_request_fragments, tte_requests
+- **Lee (4):** academic_years, tte_categories, tte_priorities, tte_requests
 - **Escribe (0):** —
+- **Sin determinar (2):** tte_request_fragments, tte_requests
 
 ### `modules/tte/index.html`
 
 - **Módulo:** tte
-- **Lee (7):** academic_years, permissions, role_permissions, roles, tte_requests, user_roles, users
+- **Lee (6):** academic_years, permissions, role_permissions, roles, user_roles, users
 - **Escribe (0):** —
+- **Sin determinar (2):** tte_requests, user_roles
 
 ### `modules/tte/manage-requests.html`
 
 - **Módulo:** tte
 - **Lee (9):** courses, grades, sections, tte_categories, tte_priorities, tte_request_comments, tte_request_fragments, tte_requests, workers
 - **Escribe (3):** **tte_request_comments**, **tte_request_fragments**, **tte_requests**
+- **Sin determinar (1):** tte_request_fragments
 
 ### `modules/tte/priorities.html`
 
@@ -1979,7 +2204,7 @@
 ### `modules/tte/respond-requests.html`
 
 - **Módulo:** tte
-- **Lee (9):** courses, grades, sections, tte_categories, tte_priorities, tte_request_comments, tte_request_fragments, tte_requests, workers
+- **Lee (6):** courses, grades, sections, tte_categories, tte_request_comments, workers
 - **Escribe (3):** **tte_request_comments**, **tte_request_fragments**, **tte_requests**
 
 ### `tilata-te-escucha.html`
