@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.4.2">
+    <meta name="page-version" content="26.8.4.3">
     <title>Gestión de Carnets - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -427,6 +427,22 @@
                             <tbody id="bulkTableBody"></tbody>
                         </table>
                     </div>
+
+                    <div id="bulkProgressBox" style="display: none;">
+                        <div class="text-center mb-3">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <div><strong>Aplicando cambios...</strong></div>
+                            <small class="text-muted">No cierres esta ventana ni recargues la página.</small>
+                        </div>
+                        <div class="progress" style="height: 24px;">
+                            <div class="progress-bar" id="bulkProgressBar" role="progressbar" style="width: 0%;">0%</div>
+                        </div>
+                        <div class="text-center mt-2">
+                            <small class="text-muted" id="bulkProgressText">0 de 0</small>
+                        </div>
+                    </div>
+
+                    <div id="bulkResultBox" style="display: none;"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -1099,6 +1115,7 @@
                     renderBulkTable(this.value);
                 });
                 document.getElementById('bulkOverwrite').addEventListener('change', updateBulkApplyCount);
+                document.getElementById('bulkApplyBtn').addEventListener('click', applyBulkChanges);
             }
 
             document.getElementById('bulkFileName').textContent = fileName;
@@ -1165,6 +1182,149 @@
         function updateBulkApplyCount() {
             const n = getBulkApplicableRows().length;
             document.getElementById('bulkApplyCount').textContent = n;
+            document.getElementById('bulkApplyBtn').disabled = (n === 0);
+        }
+
+        function setBulkProcessing(active) {
+            const hide = active ? 'none' : '';
+            document.getElementById('bulkCounters').style.display = hide;
+            document.getElementById('bulkOverwriteBox').style.display = hide;
+            document.getElementById('bulkFilter').parentElement.style.display = hide;
+            document.getElementById('bulkTableBody').closest('.table-responsive').style.display = hide;
+            document.getElementById('bulkProgressBox').style.display = active ? 'block' : 'none';
+            document.getElementById('bulkApplyBtn').disabled = active;
+            document.querySelectorAll('#bulkModal [data-bs-dismiss="modal"]').forEach(b => {
+                b.disabled = active;
+                b.style.pointerEvents = active ? 'none' : '';
+            });
+        }
+
+        function updateBulkProgress(done, total) {
+            const pct = Math.round((done / total) * 100);
+            const bar = document.getElementById('bulkProgressBar');
+            bar.style.width = pct + '%';
+            bar.textContent = pct + '%';
+            document.getElementById('bulkProgressText').textContent = `${done} de ${total}`;
+        }
+
+        async function applyBulkChanges() {
+            const rows = getBulkApplicableRows();
+            if (rows.length === 0) return;
+
+            const scope = bulkScope;
+            const universo = scope === 'worker' ? 'trabajadores' : 'estudiantes';
+            const reemplazos = rows.filter(r => r.estado === 'existente').length;
+
+            let aviso = `Se van a asignar ${rows.length} códigos RFID a ${universo}.`;
+            if (reemplazos > 0) {
+                aviso += `\n\nATENCIÓN: ${reemplazos} de estos reemplazan una tarjeta ya registrada. ` +
+                         `Esas tarjetas anteriores dejarán de funcionar de inmediato.`;
+            }
+            aviso += `\n\n¿Continuar?`;
+
+            if (!confirm(aviso)) return;
+
+            const endpointBase = scope === 'worker' ? '/workers?worker_id=eq.' : '/students?student_id=eq.';
+            const field = scope === 'worker' ? 'worker_rfid_code' : 'student_rfid_code';
+            const CHUNK = 5;
+
+            let done = 0, ok = 0, fail = 0;
+
+            setBulkProcessing(true);
+            updateBulkProgress(0, rows.length);
+
+            for (let i = 0; i < rows.length; i += CHUNK) {
+                const chunk = rows.slice(i, i + CHUNK);
+                await Promise.all(chunk.map(async (r) => {
+                    try {
+                        const body = { updated_at: new Date().toISOString() };
+                        body[field] = r.rfid;
+                        await supabaseRequest(endpointBase + encodeURIComponent(r.persona_id), {
+                            method: 'PATCH',
+                            body: JSON.stringify(body)
+                        });
+                        r.aplicado = true;
+                        r.error_aplicacion = '';
+                        ok++;
+                    } catch (error) {
+                        r.aplicado = false;
+                        r.error_aplicacion = error.message || 'Error desconocido';
+                        fail++;
+                        console.error(`❌ Fila ${r.excel_row} (${r.persona_nombre}):`, error);
+                    }
+                    done++;
+                    updateBulkProgress(done, rows.length);
+                }));
+            }
+
+            document.getElementById('bulkProgressBox').style.display = 'none';
+
+            const resultBox = document.getElementById('bulkResultBox');
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = `
+                <div class="alert ${fail === 0 ? 'alert-success' : 'alert-warning'}">
+                    <h5 class="alert-heading">
+                        <i class="bi bi-${fail === 0 ? 'check2-circle' : 'exclamation-triangle'} me-2"></i>
+                        Proceso terminado
+                    </h5>
+                    <p class="mb-2">
+                        <strong>${ok}</strong> códigos aplicados correctamente.
+                        ${fail > 0 ? `<strong class="text-danger">${fail}</strong> fallaron (ver consola).` : ''}
+                    </p>
+                    <hr>
+                    <button type="button" class="btn btn-sm btn-outline-dark" onclick="downloadBulkReport()">
+                        <i class="bi bi-download me-1"></i>Descargar reporte
+                    </button>
+                </div>
+            `;
+
+            document.querySelectorAll('#bulkModal [data-bs-dismiss="modal"]').forEach(b => {
+                b.disabled = false;
+                b.style.pointerEvents = '';
+                b.innerHTML = 'Cerrar';
+            });
+            document.getElementById('bulkApplyBtn').style.display = 'none';
+
+            if (scope === 'worker') { await loadWorkers(); } else { await loadStudents(); }
+
+            showMessage(
+                `Carga masiva terminada: ${ok} aplicados, ${fail} con error.`,
+                fail === 0 ? 'success' : 'warning'
+            );
+        }
+
+        function downloadBulkReport() {
+            const sep = ';';
+            const esc = (v) => `"${String(v === null || v === undefined ? '' : v).replace(/"/g, '""')}"`;
+            const excelText = (v) => v ? `="${v}"` : '';
+
+            const headers = ['Fila Excel', 'Identificador', 'Persona', 'Tarjeta anterior',
+                             'Tarjeta nueva', 'Estado', 'Detalle', 'Aplicado', 'Error'];
+
+            const lines = [headers.map(esc).join(sep)];
+
+            bulkRows.forEach(r => {
+                lines.push([
+                    esc(r.excel_row),
+                    esc(r.id_raw),
+                    esc(r.persona_nombre || ''),
+                    excelText(r.rfid_actual || ''),
+                    excelText(r.rfid || ''),
+                    esc((BULK_STATES[r.estado] || {}).label || r.estado),
+                    esc(r.detalle),
+                    esc(r.aplicado === true ? 'SI' : (r.aplicado === false ? 'NO' : '')),
+                    esc(r.error_aplicacion || '')
+                ].join(sep));
+            });
+
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `reporte_carnets_${bulkScope}_${stamp}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         function summarizeBulkRows(rows) {
@@ -1294,6 +1454,7 @@
         window.handleBulkFile = handleBulkFile;
         window.openBulkModal = openBulkModal;
         window.renderBulkTable = renderBulkTable;
+        window.downloadBulkReport = downloadBulkReport;
         window.removeRFID = removeRFID;
         window.loadWorkers = loadWorkers;
         window.loadStudents = loadStudents;
