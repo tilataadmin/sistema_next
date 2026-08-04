@@ -168,6 +168,7 @@ function analizar(ruta) {
   }
 
   const resueltos = new Set();
+  const tramos = [];   // rangos de texto ya consumidos por el pase A
 
   // --- Pase A: llamadas a supabaseRequest con literal dentro del argumento ---
   const reLlamada = /supabaseRequest\s*\(/g;
@@ -176,6 +177,7 @@ function analizar(ruta) {
     const abre = texto.indexOf('(', m.index);
     if (abre === -1) continue;
     const arg = argumentoDe(texto, abre);
+    tramos.push([m.index, abre + arg.length + 2]);
     const nroLinea = linea(texto, m.index);
     const endpoint = primerLiteralDeRuta(arg);
     if (!endpoint) continue;                 // endpoint en variable -> lo ve el pase B
@@ -193,7 +195,9 @@ function analizar(ruta) {
 
   // --- Pase B: endpoints escritos en variables u otros literales ---
   const reSuelto = /(['"`])(\/(?:rpc\/)?[a-z][a-z0-9_]{2,}(?:\?[^'"`\n]*)?)\1/g;
+  const yaConsumido = i => tramos.some(([a, b]) => i >= a && i <= b);
   while ((m = reSuelto.exec(texto)) !== null) {
+    if (yaConsumido(m.index)) continue;
     const endpoint = m[2];
     const nroLinea = linea(texto, m.index);
     const primero = tablaDeEndpoint(endpoint);
