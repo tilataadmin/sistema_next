@@ -1,223 +1,223 @@
-# Bitácora — Mapa de dependencias de SchoolNet
+# Bitácora — Mapa de dependencias y contrato de identidad
 
-**Versión:** 1.0
-**Fecha:** 2026-08-04
-**Estado:** Escáner funcionando en `developmen`. Interpretación de hallazgos pendiente.
-**Repositorio:** `tilataadmin/sistema_next`, rama `developmen`
-
----
-
-## 1. Problema que originó el trabajo
-
-Tras el cierre del año académico 2025-2026 y la introducción de la distinción entre **año académico** y **año presupuestal**, varias funcionalidades se rompieron en módulos que nadie había tocado. La causa de fondo no fue el cambio en sí, sino que **no existía forma de saber qué páginas dependían de qué tablas**.
-
-SchoolNet ha crecido sin un registro de esas dependencias. Con 424 tablas y 331 archivos con acceso a datos, ningún cambio estructural se puede evaluar de antemano.
-
-**Objetivo:** mapear las dependencias existentes y establecer una metodología para mantener el mapa vivo a medida que el sistema crece.
+**Versión:** 2.0
+**Fecha:** 2026-08-05
+**Estado:** Escáner operativo. Contrato de cargos y roles implementado en DEV y PROD. Migración de presupuestos pendiente.
+**Repositorio:** `tilataadmin/sistema_next`
 
 ---
 
-## 2. Dimensión medida
+## 1. Origen y evolución del trabajo
 
-| Métrica | Valor |
-|---|---|
-| Tablas en la base de datos | 424 |
-| Llaves foráneas declaradas | 780 |
-| Prefijos de dominio | ~39 (mayores: `svc_` 56, `pln_` 52, `aap_` 30) |
-| Archivos con acceso a datos | 331 |
-| Funciones de base de datos invocadas desde el frontend | 12 |
+El objetivo inicial era mapear qué páginas dependen de qué tablas, tras el cierre del año académico 2025-2026 que rompió funcionalidades en módulos que nadie había tocado.
+
+El mapa se construyó y funciona. Pero al analizar sus resultados apareció una causa estructural más profunda que el objetivo original: **la identidad del trabajador estaba partida en dos y el sistema no podía distinguirlas.** Esa se corrigió en esta sesión.
+
+Queda pendiente aplicar la corrección a las tablas de presupuesto, que es donde el problema se manifestó primero.
 
 ---
 
-## 3. Diagnóstico previo al escáner
+## 2. Lo construido: el mapa de dependencias
 
-Hallazgo obtenido leyendo el esquema y `config.js`, antes de construir nada:
+### 2.1 Arquitectura
 
-- `academic_years` es referenciada por **35 llaves foráneas**.
-- El **año presupuestal no es una entidad separada**: es `system_config.current_budget_year_id`, un uuid que apunta a `academic_years(year_id)`. Una sola tabla sirve dos conceptos semánticos distintos.
-- **`config.js` no contiene ninguna función que resuelva "el año actual".** No hay una sola mención a `is_current` ni a `current_budget_year_id`. Cada página resuelve la pregunta por su cuenta.
-
-**Conclusión:** la ruptura del cierre anual fue un problema de semántica dispersa, no solo de falta de mapa. El mapa da el radio de impacto; prevenir la ruptura requiere además centralizar la resolución de los conceptos transversales.
-
----
-
-## 4. Lo que se construyó
-
-### 4.1 Arquitectura elegida
-
-Dos piezas separadas:
-
-| Pieza | Qué es | Ubicación |
+| Pieza | Ubicación | Función |
 |---|---|---|
-| **Escáner** | Script Node que recorre el repositorio y genera los reportes | `herramientas/escaner-mapa.js` |
-| **Disparador** | Workflow de GitHub Actions que lo ejecuta automáticamente | `.github/workflows/mapa.yml` |
+| Escáner | `herramientas/escaner-mapa.js` | Recorre el repositorio y genera los reportes |
+| Disparador | `.github/workflows/mapa.yml` | GitHub Actions, corre con cada push a `developmen` |
+| Reportes | `mapa/` | Se regeneran solos, nunca se editan a mano |
 
-**Por qué GitHub Actions:** no existe entorno local de desarrollo (solo editor web de GitHub). Actions ejecuta el escáner en la nube con cada push a `developmen` y commitea los reportes de vuelta. El mapa nunca se mantiene a mano, por lo tanto no se desactualiza.
-
-### 4.2 Salidas generadas (carpeta `mapa/`)
+### 2.2 Salidas
 
 | Archivo | Contenido |
 |---|---|
-| `INDICE_INVERSO.md` | Por cada tabla: qué archivos la tocan, con qué operación y en qué líneas. **Es el reporte de impacto.** |
-| `POR_PAGINA.md` | Por cada archivo: qué tablas lee, cuáles escribe, cuáles quedan sin determinar, qué funciones invoca |
+| `INDICE_INVERSO.md` | Por tabla: qué archivos la tocan, con qué operación y en qué líneas |
+| `POR_PAGINA.md` | **Por archivo: qué tablas lee, cuáles escribe, qué funciones invoca** |
 | `ACOPLAMIENTO.md` | Tablas escritas desde más de un módulo, y tablas con muchos puntos de escritura |
-| `CALIDAD.md` | Auditoría del propio escáner: referencias sin determinar, funciones detectadas, nombres descartados |
-| `datos.json` | Datos crudos, para construir consultas o una página en SchoolNet más adelante |
+| `CALIDAD.md` | Auditoría del escáner: referencias sin determinar, funciones, nombres descartados |
+| `datos.json` | Datos crudos, base para una futura página de consulta en SchoolNet |
 
-### 4.3 Alcance del escáner
+**Nota:** `POR_PAGINA.md` ya responde el requerimiento de "saber qué tablas afecta cada archivo de código". Existe y se actualiza solo.
 
-**Sí detecta:** consultas PostgREST directas con su verbo HTTP, relaciones embebidas dentro de `select=` (incluida la sintaxis de alias y de desambiguación por `!constraint`), llamadas a funciones `/rpc/`, y consultas armadas en variables (identifica la tabla, no la operación).
+### 2.3 Dimensión medida
 
-**No detecta:** lógica dentro de funciones y triggers de Postgres; accesos desde el repositorio `tilata-ia` (Rigoberto); accesos desde los Google Apps Script; el valor de variables construidas dinámicamente.
+| Métrica | Valor |
+|---|---|
+| Tablas en la base | 424 |
+| Llaves foráneas | 780 |
+| Archivos con acceso a datos | 331 |
+| Funciones de base invocadas desde el frontend | 12 |
+| Tablas escritas desde más de un módulo | 26 |
 
----
-
-## 5. Correcciones aplicadas durante la sesión
-
-El escáner pasó por tres rondas. Todas las fallas fueron de diseño del escáner, no del código de SchoolNet.
-
-| # | Defecto | Efecto | Estado |
-|---|---|---|---|
-| 1 | Funciones `/rpc/` contadas como escrituras | `get_workers_with_permission` aparecía como tabla acoplada | Corregido — van a listado aparte |
-| 2 | El verbo HTTP se deducía por cercanía en el texto | Escrituras atribuidas al archivo equivocado; sospecha de sobrecarga falsa sobre `hr` | Corregido — balanceo de paréntesis |
-| 3 | Nombres de columna tratados como tablas | `responsible_worker_id` aparecía en el índice | Corregido — filtro por sufijos, con excepción para `student_status` |
-| 4 | Opciones pasadas en variable (`opts`) se asumían como `GET` | Borrados reportados como lecturas | Corregido — se marcan como indeterminadas |
-| 5 | Llamadas de varias líneas contadas dos veces | 1270 referencias dudosas infladas artificialmente | Corregido — se registran tramos consumidos |
-
----
-
-## 6. Hallazgos que han sobrevivido a todas las correcciones
-
-### 6.1 Concentración de dependencias (lectura + escritura)
-
-| Tabla | Archivos que la tocan | Observación |
-|---|---:|---|
-| `workers` | 132 | **40% del sistema.** La tabla más crítica, por encima de estudiantes y años |
-| `academic_years` | 82 | 1 de cada 4 páginas. Este era el radio de impacto del cierre anual |
-| `grades` | 67 | |
-| `courses` | 64 | |
-| `users` | 56 | |
-| `system_config` | 54 | |
-| `students` | 48 | |
-
-La criticidad de `workers` conecta directamente con la deuda conocida de `worker_email_legacy`: cualquier ambigüedad sobre la identidad de un trabajador se propaga por dos quintas partes del sistema.
-
-### 6.2 Acoplamiento entre módulos — los focos
+### 2.4 Focos de acoplamiento detectados
 
 | Tabla | Módulos que escriben | Archivos |
 |---|---|---:|
 | `tasks` | early-alerts, follow-ups, general-tools, hr, procedures | 11 |
-| `budget_assignments` | budget, **hr**, **services** | 9 |
+| `budget_assignments` | budget, hr, services | 9 |
 | `procedure_instances` | admissions, general-tools, procedures | 8 |
-| `execution_requests` | budget, **services** | 7 |
+| `execution_requests` | budget, services | 7 |
 | `alumni` | alumni, config | 7 |
-| `stm_students_topics` | follow-ups, new-students | 6 |
-| `worker_training_paths` | hr, training | 6 |
 
-**`budget_assignments` y `execution_requests` son la explicación directa de la ruptura del cierre anual.** Las tablas centrales del presupuesto no las modifica solo el módulo de presupuesto: también las modifican recursos humanos y servicios, desde código escrito sin conocimiento de la distinción académico/presupuestal.
-
-**`tasks` es el caso más disperso del sistema:** once archivos en cinco módulos crean o modifican tareas. Once reglas de negocio conviviendo sin conocerse entre sí.
-
-### 6.3 Dato tranquilizador
-
-`academic_years` tiene solo **4 archivos que la escriben, todos en `config`**. La escritura está bien concentrada. El problema nunca fue quién la modifica, sino los 82 archivos que la leen asumiendo semánticas distintas.
-
-### 6.4 Anomalías estructurales detectadas
-
-- Existe al menos un archivo suelto directamente en `modules/`, fuera de cualquier módulo, que escribe en `hr_balance_adjustments`.
-- Hay archivos en la raíz del repositorio que escriben en `users` y `tte_requests`.
-- La carpeta `manual/` (documentación de usuario) contiene código funcional que escribe en `support_tickets` y `ticket_history`.
-- El módulo `general-tools` sigue vivo y escribiendo en tablas de `hr` y `procedures`, pese a que el documento de reestructuración lo daba por eliminado. Los permisos se movieron; los archivos no.
-
-### 6.5 Funciones de base de datos (dependencia oculta)
-
-Doce funciones invocadas desde el frontend. Su lógica interna es invisible para el escáner:
-
-`get_workers_with_permission` (3 archivos) · `pln_create_planner_cycle` (2) · `fn_extracurricular_enroll` · `pln_create_planner_criterion` · `pln_create_unit_cycle` · `transition_trip_statuses` · `calculate_transport_cost` · `update_pedagogical_trip` · `create_pedagogical_trip` · `execute_trip_banderazo` · `suspend_trip` · `get_pedagogical_trip_students`
+Concentración de dependencias: `workers` en 132 archivos (40% del sistema), `academic_years` en 82.
 
 ---
 
-## 7. Limitaciones conocidas del mapa actual
+## 3. Lo resuelto: identidad del trabajador
 
-1. **Las cifras de escritura son un piso, no un total.** Cuando la consulta se arma en una variable, el escáner identifica la tabla pero no la operación. El reporte `CALIDAD.md` cuantifica cuántos casos son y en qué archivos.
-2. **No hay contraste contra el catálogo de la base de datos.** Por lo tanto todavía no se pueden producir dos reportes valiosos:
-   - **Tablas huérfanas:** existen en Supabase, ningún archivo las usa. Candidatas a depuración.
-   - **Tablas fantasma:** el código las invoca, no existen en la base. Bugs latentes.
-3. **Cobertura limitada al repositorio principal.** Quedan fuera `tilata-ia` (Rigoberto) y los Google Apps Script.
-4. **La lógica dentro de funciones y triggers de Postgres no se analiza.**
+### 3.1 El diagnóstico
 
----
+`workers.email` tiene restricción de unicidad, por lo que funcionaba como identificador. Pero **unicidad no es estabilidad**: en Tilatá algunos correos pertenecen a la persona (`hmoncada`, profesores, servicios generales) y otros al cargo (`rectoria@`, `dafi@`, `tesoreria@`). Los segundos se reasignan cuando cambia el ocupante, y en ese instante los datos guardados por correo cambian de dueño sin que nadie ejecute nada.
 
-## 8. Pendientes
+Unas veinte tablas identificaban al trabajador por correo en texto, sin llave foránea. Y esas tablas coinciden con los focos de acoplamiento: `execution_requests`, `budget_requesters`, `task_collaborators`, `task_deliverables`, `task_progress_notes`, `project_participants`, `tte_requests`.
 
-### 8.1 Cerrar el escáner
+**Corrección de rumbo importante:** la interpretación previa —que `worker_email_legacy` era deuda a eliminar migrando todo a `worker_id`— era equivocada. Migrar sin más habría roto la continuidad institucional: la nueva directora de bachillerato dejaría de ver las partidas de su propio cargo. El correo no era un atajo perezoso, era el sustituto de una entidad faltante.
 
-- [ ] Verificar la corrida #3 (estaba en cola al terminar la sesión) y revisar `ACOPLAMIENTO.md` con las cifras ya limpias.
-- [ ] Confirmar que `CALIDAD.md` no reporta nombres descartados que sean tablas reales.
+### 3.2 La distinción que faltaba
 
-### 8.2 Conectar el catálogo de la base de datos
+Aportada por Desarrollos durante la sesión: **cargo** es la posición contractual de la persona; **rol institucional** es la función que ejerce, sobrevive a quien la ocupa y tiene correo propio.
 
-El endpoint `/rest/v1/` de Supabase **ya no funciona con la clave pública** — devuelve `Invalid API key. Only the service_role API key can be used for this endpoint`. Comprobado en DEV el 2026-08-04.
+Una persona puede tener ambos. Ejemplo real: Andrés Eduardo Flórez tiene cargo de Psicólogo y rol institucional de Coordinación SER.
 
-**Decisión tomada:** no usar la clave `service_role` en GitHub. Da control total sobre la base para una tarea que solo requiere lectura de nombres.
+### 3.3 Estructura implementada
 
-**Camino elegido:** crear en Supabase una función de solo lectura que devuelva la lista de tablas y columnas, invocable con la clave pública vía `/rpc/`. Ejecutar en DEV y en PROD.
+**`job_roles`:**
+- `role_type` (`'cargo'` | `'rol'`), obligatoria, por defecto `'cargo'`
+- `role_email`, opcional y única
+- Restricción: solo un `rol` puede tener correo
 
-**Decisión de diseño:** el escáner contrastará contra **DEV y PROD simultáneamente**, etiquetando cada hallazgo. Esto evita falsas alarmas por tablas que solo existen en DEV, y produce gratis un reporte de diferencias de esquema entre ambos ambientes.
+**`worker_job_roles`:**
+- `assignment_id` como nueva llave primaria (reemplaza la pareja `worker_id + job_role_id`, que impedía reocupación)
+- `end_date`, nula mientras la ocupación esté vigente
+- Restricción de orden de fechas
 
-- [ ] Escribir y ejecutar la función de catálogo en DEV.
-- [ ] Replicar en PROD.
-- [ ] Ampliar el escáner para consumirla y generar los reportes de tablas huérfanas y fantasma.
+Con eso, la pregunta "quién ocupaba este rol en tal fecha" tiene respuesta. Antes la ocupación solo tenía presente.
 
-### 8.3 Contratos de dominio (capa humana)
+### 3.4 Datos cargados en PRODUCCIÓN
 
-**Principio acordado:** la lista de conceptos a documentar **sale de los datos del escáner, no de intuición.** Las tablas con mayor concentración de dependencias y mayor acoplamiento son las que necesitan contrato.
+- 71 registros en `job_roles`: 63 activos (28 cargos, 35 roles), 8 inactivos
+- 34 roles institucionales con correo, 2 sin correo (Cortilatá y ECOS)
+- "Ingeniero" separado en "Ingeniero de redes y equipos" e "Ingeniero de software", con John Adalberto Torres y Mary Andrea Acero reasignados
+- "Psicólogo- Coordinador SER" separado en cargo "Psicóloga" + rol "Coordinación SER"
+- Ocupación de Paulo Andrés López en "Dirección de escuela alta" cerrada el 2026-06-30
+- 8 roles obsoletos desactivados, conservando su historia
 
-Cada contrato debe responder: cuál es la fuente de verdad, qué función lo resuelve, qué tablas lo materializan, y qué le pasa en el cierre anual.
+### 3.5 Bug crítico encontrado y corregido
 
-Candidatos que la evidencia ya señala:
+`modules/hr/workers.html`, función `saveWorkerRoles`, ejecutaba:
 
-- [ ] **Identidad del trabajador** (`workers`, 132 archivos) — incluye resolver la deuda de `worker_email_legacy` vs. `worker_id`
-- [ ] **Año académico vs. año presupuestal** (`academic_years`, 82 archivos, 35 FK)
-- [ ] **Tarea** (`tasks`, 5 módulos escribiendo)
-- [ ] **Asignación presupuestal** (`budget_assignments` + `execution_requests`, escritas desde budget, hr y services)
+```
+DELETE /worker_job_roles?worker_id=eq.${workerId}
+```
 
-### 8.4 Centralización en `config.js`
+Sin filtro por estado. Borraba **todas** las filas de roles del trabajador, incluidas las históricas, y reinsertaba solo las vigentes. Era inofensivo mientras no hubiera historia; desde la carga de datos habría destruido cada registro histórico al primer guardado.
 
-- [ ] Crear resolvedores canónicos del año (académico y presupuestal) en `config.js`, y migrar las páginas a usarlos. Este es el cambio que habría evitado la ruptura del cierre anual.
+Reemplazado por reconciliación por diferencia: cierra con `end_date` los roles retirados, actualiza los que continúan conservando su fecha original, e inserta solo los nuevos.
 
-### 8.5 Metodología permanente
+**Este bug se encontró gracias al mapa.** Sin el índice inverso no se habría revisado ese archivo.
 
-- [ ] Incorporar al documento `GUIA_CREAR_NUEVOS_MODULOS.md` un paso obligatorio: declarar a qué conceptos transversales se conecta cada módulo nuevo.
-- [ ] Instalar el hábito de consultar `INDICE_INVERSO.md` antes de modificar cualquier tabla del núcleo.
-- [ ] Evaluar si el workflow debe fallar el build cuando detecte tablas fantasma (convertir el mapa en control de calidad, no solo documentación).
-- [ ] Evaluar una página en SchoolNet que consuma `datos.json` para consultar el mapa cómodamente.
-
-### 8.6 Depuración estructural (menor prioridad)
-
-- [ ] Reubicar el archivo suelto en `modules/` dentro de su módulo.
-- [ ] Revisar los archivos de raíz que escriben en `users` y `tte_requests`.
-- [ ] Sacar el código funcional de la carpeta `manual/`.
-- [ ] Completar la eliminación de `general-tools`: mover los archivos, no solo los permisos.
+Desplegado a `main` vía PR #931 (13 commits, 10 archivos, sin reversiones).
 
 ---
 
-## 9. Estado de los archivos
+## 4. Pendiente inmediato: migración de presupuestos
 
-| Archivo | Rama | Estado |
-|---|---|---|
-| `herramientas/escaner-mapa.js` | `developmen` | v3 subida, corrida #3 en cola al cierre de sesión |
-| `.github/workflows/mapa.yml` | `developmen` | Funcionando, sin cambios previstos |
-| `mapa/*` | `developmen` | Regenerados automáticamente en cada push |
+Es el paso que cierra el círculo y el de mayor riesgo. Toca datos presupuestales reales y afecta a nueve archivos que escriben en `budget_assignments`.
 
-**Nada de esto se ha llevado a `main`.** El workflow solo se dispara en `developmen`.
+Tablas a migrar, para que apunten al rol en lugar del correo suelto:
+
+- [ ] `budget_assignments` (`worker_email_legacy`) — incluye resolver el caso Diana Sandoval / Natalia De Toro, assignment `3a5ea917`
+- [ ] `execution_requests` (`worker_email`)
+- [ ] `budget_requesters` (`worker_email`, hoy con FK a `workers(email)` con propagación automática — hay que quitarla)
+- [ ] `task_collaborators`, `task_deliverables`, `task_progress_notes`
+- [ ] `project_participants`
+- [ ] `tte_requests` (`requester_email`)
+- [ ] `ie_process_workers`, `ie_component_ratings`, `new_student_actors`, `promotion_topics`, `ticket_categories`, `svc_trip_authorizations`
+
+**Método sugerido:** cruzar los correos guardados contra `job_roles.role_email`. Los que coincidan pertenecen a un rol institucional y se migran al rol. Los que coincidan con `workers.email` de una persona sin rol institucional se migran a `worker_id`. Los que no coincidan con nada son datos huérfanos que hay que revisar uno por uno.
+
+---
+
+## 5. Verificaciones pendientes de la sesión
+
+- [ ] **Probar `workers.html` en producción.** El código nuevo está desplegado pero nadie lo ha ejercido. Editar un trabajador de prueba, quitarle y ponerle un rol, y confirmar que la historia se conserva.
+- [ ] **Correr el escáner.** El mapa no refleja el `workers.html` corregido.
+- [ ] **Revisar filtros por `role_status`.** Cinco archivos leen `job_roles` para armar listas: `lists.html`, `community-query.html`, `manage-absences.html`, `generate-paths.html`, `module-roles.html`. Si filtran por activo, los 8 roles desactivados desaparecen de sus menús. Verificar especialmente formación, donde los módulos se asignan por rol: si un módulo estaba asignado a "Ingeniero", alguien puede quedarse sin ruta.
+- [ ] **Estado de Paulo Andrés en `workers`.** Su rol quedó cerrado, pero su ficha puede seguir marcada como activa. Consulta quedó sin ejecutar.
+
+---
+
+## 6. Decisiones institucionales pendientes
+
+- [ ] **Nomenclatura de género en los cargos.** Varios están en femenino ("Coordinadora de Lenguas", "Supervisora de servicios generales", "Generadora de Contenido", "Diseñadora Grafica", "Psicóloga"). Si el rol sobrevive a quien lo ocupa, el nombre no debería depender de la persona. Propuesta de Desarrollos: usar la forma "Coordinación de..." en lugar de coordinador/coordinadora. **Sin definir.** Tiene consecuencia práctica: Andrés Eduardo Flórez quedó asignado al cargo "Psicóloga".
+- [ ] **Correos personales en roles institucionales.** Tres roles tienen hoy correo de persona y deberían tener genérico: Dirección de desarrollo profesional (`ediaz@` → `desarrolloprofesional@`), Coordinación E.A.E. (`avargas@` → `eae@`), Coordinación CAS (`cpatino@` → `cas@`). Se cargó el correo actual a propósito, para que el cruce con los datos históricos funcione. **Una vez migrado todo al rol, cambiar el correo es trivial y no rompe nada.**
+- [ ] Clasificar Fonoaudiología, Terapia ocupacional, Analista contable, Analista de talento humano y Técnico ambiental: son una persona cada uno pero no tienen correo institucional. Sin correo no hay continuidad que preservar, así que quedaron como cargos.
+- [ ] Corregir tildes: "Fonoaudiologa", "Diseñadora Grafica", "Director de Seccion Bachillerato". Se pospuso a propósito para no tocar los nombres dos veces, ya que coinciden con los del problema de género.
+- [ ] Rol "Director ejecutivo de Cortilatá" quedó sin correo, por ser entidad distinta y sin acceso a SchoolNet.
+
+---
+
+## 7. Objetivo nuevo: documentación del sistema
+
+Planteado por Desarrollos al cierre de esta sesión. Se trabajará por partes.
+
+### 7.1 El problema
+
+La documentación de módulos es inconsistente. No existe un registro confiable de qué hace cada módulo, qué funcionalidades incluye y en qué estado está cada una.
+
+### 7.2 Lo que ya existe y sirve de base
+
+`mapa/POR_PAGINA.md` responde, para cada archivo, qué tablas lee y cuáles escribe. Eso es el esqueleto factual. Lo que falta es la capa semántica: **qué hace** ese archivo, no solo qué toca.
+
+### 7.3 Objetivos, del más concreto al más ambicioso
+
+- [ ] **Ficha por archivo.** Qué hace, quién lo usa, qué tablas toca (ya lo da el escáner), qué funcionalidades ofrece. Generable en buena parte desde el código.
+- [ ] **Ficha por módulo.** Qué resuelve el módulo, qué páginas lo componen, qué flujos soporta, qué estado tiene cada funcionalidad.
+- [ ] **Resumen macro del sistema.** Qué es SchoolNet, qué dominios cubre, cómo se relacionan entre sí, dónde están las fronteras.
+
+### 7.4 Enfoque propuesto
+
+Igual que con el mapa: **generar lo que se pueda generar, escribir a mano solo lo que no se puede deducir.**
+
+Una parte de la ficha por archivo es derivable del código: nombre, módulo, tablas, funciones invocadas, formularios que contiene, permisos que exige. Otra parte requiere criterio humano: para qué sirve, quién lo usa, qué se rompe si falla.
+
+Empezar por un módulo piloto, validar el formato, y solo después escalar. Escribir 331 fichas con un formato equivocado sería peor que no tenerlas.
+
+**Orden sugerido:** después de cerrar la migración de presupuestos. Documentar un sistema mientras se le cambia la estructura debajo produce documentación obsoleta al nacer.
+
+---
+
+## 8. Deuda estructural anotada (no urgente)
+
+- [ ] **La rama `developmen` está 921 commits detrás de `main`.** Cada PR desde ella tiene riesgo de reversión. Hasta ahora GitHub ha resuelto bien las combinaciones, pero no está garantizado. Merece una sesión propia.
+- [ ] Archivos sueltos en `modules/` sin pertenecer a ningún módulo, escribiendo en `hr_balance_adjustments`.
+- [ ] Archivos en la raíz del repositorio escribiendo en `users` y `tte_requests`.
+- [ ] La carpeta `manual/` contiene código funcional que escribe en `support_tickets` y `ticket_history`.
+- [ ] El módulo `general-tools` sigue vivo y escribiendo en tablas de `hr` y `procedures`, pese a estar dado por eliminado en el documento de reestructuración. Los permisos se movieron; los archivos no.
+- [ ] **Unificar perfiles de seguridad con cargos.** Planteado por Desarrollos: los perfiles de permisos y los cargos probablemente deberían ser lo mismo. La decisión tomada sobre `job_roles` condiciona esa unificación, sin cerrarle la puerta.
+- [ ] Conectar el catálogo de la base al escáner, para detectar tablas huérfanas y tablas fantasma. El endpoint `/rest/v1/` ya no acepta la clave pública; el camino es una función de solo lectura invocable por `/rpc/`.
+- [ ] Las 12 funciones de base de datos invocadas desde el frontend son dependencias ocultas: el escáner las detecta pero no ve qué tablas tocan por dentro.
+
+---
+
+## 9. Principios que gobiernan este trabajo
+
+**El mapa se genera, no se escribe.** Un documento mantenido a mano se desactualiza en semanas y entonces es peor que no tenerlo, porque genera confianza falsa.
+
+**Diagnosticar antes de escribir.** Toda modificación va precedida de una consulta de verificación, y toda consulta declara en qué ambiente corre.
+
+**Los cambios estructurales se replican; los de datos no.** DEV y PROD tienen la misma estructura por definición. Los datos son distintos y las decisiones se toman sobre los reales.
+
+**La historia no se borra, se cierra.** Una ocupación que termina lleva fecha de fin y estado inactivo. Nunca DELETE.
+
+**Un cambio a la vez, con verificación.** Un bloque de diez sentencias que falla en la séptima deja la base en un estado que hay que diagnosticar hacia atrás.
 
 ---
 
 ## 10. Para retomar en una sesión nueva
 
-> Estoy trabajando en el mapa de dependencias tabla-página de SchoolNet. Ya está funcionando el escáner (`herramientas/escaner-mapa.js`) disparado por GitHub Actions (`.github/workflows/mapa.yml`) en la rama `developmen`, que genera los reportes en la carpeta `mapa/`. Adjunto la bitácora v1.0 y los reportes actuales. Quiero continuar con [conectar el catálogo de la base / escribir los contratos de dominio / centralizar la resolución del año].
+> Continúo el trabajo de ordenamiento estructural de SchoolNet. Adjunto la bitácora v2.0. Ya está el escáner de dependencias corriendo por GitHub Actions, y el contrato de cargos y roles implementado en DEV y PROD. Quiero seguir con [la migración de presupuestos / las verificaciones pendientes de la sección 5 / el piloto de documentación de módulos].
 
 ---
 
-**Fin del documento — Bitácora v1.0**
+**Fin del documento — Bitácora v2.0**
