@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-05 12:39 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-05 12:45 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -470,7 +470,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/request-absence.html` | hr | GET | 546, 622, 663, 726, 2020, 2034, 2078, 2094, 2277, 2527 |
 | `modules/hr/subareas.html` | hr | GET | 603 |
 | `modules/hr/work-calendar.html` | hr | GET | 628, 1405 |
-| `modules/hr/workers.html` | hr | DELETE, GET, PATCH, POST, embed | 1229, 1640, 1916, 2255, 2501, 2506, 2744, 2834, 3291, 3474 |
+| `modules/hr/workers.html` | hr | DELETE, GET, PATCH, POST, embed | 1229, 1640, 1916, 2255, 2501, 2506, 2782, 2872, 3329, 3512 |
 | `modules/indicators/dashboard-config.html` | indicators | GET | 261 |
 | `modules/indicators/dashboard-edit.html` | indicators | GET | 1028, 1220, 1360 |
 | `modules/indicators/dashboard.html` | indicators | GET | 558 |
@@ -593,7 +593,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/adjust-balances.html` | hr | GET | 507 |
 | `modules/hr/request-absence.html` | hr | GET | 678 |
 | `modules/hr/work-calendar.html` | hr | GET | 653 |
-| `modules/hr/workers.html` | hr | GET, embed | 1263, 3902, 3905 |
+| `modules/hr/workers.html` | hr | GET, embed | 1263, 3940, 3943 |
 | `modules/indicators/dashboard.html` | indicators | GET, embed | 804, 1834 |
 | `modules/indicators/data-entry.html` | indicators | GET | 316 |
 | `modules/indicators/index.html` | indicators | GET | 641 |
@@ -795,7 +795,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/index.html` | general-tools | GET | 628 |
 | `modules/hr/adjust-balances.html` | hr | GET | 808 |
 | `modules/hr/index.html` | hr | GET, ND | 712, 995, 1010 |
-| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1347, 2483, 2488, 2654, 2679, 2797, 2802, 2810, 3323, 3706 |
+| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1347, 2483, 2488, 2692, 2717, 2835, 2840, 2848, 3361, 3744 |
 | `modules/indicators/dashboard-config.html` | indicators | embed | 367 |
 | `modules/indicators/dashboard-edit.html` | indicators | GET, embed | 671, 800, 1301 |
 | `modules/indicators/dashboard.html` | indicators | embed | 586 |
@@ -939,7 +939,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/pedagogical-days.html` | general-tools | GET | 300 |
 | `modules/hr/clearances.html` | hr | GET | 1409 |
 | `modules/hr/work-calendar.html` | hr | GET | 661 |
-| `modules/hr/workers.html` | hr | GET | 3159 |
+| `modules/hr/workers.html` | hr | GET | 3197 |
 | `modules/indicators/dashboard.html` | indicators | GET | 797 |
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 1519 |
 | `modules/procedures/execute-form-public.html` | procedures | GET | 271 |
@@ -1028,7 +1028,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/follow-ups/query-confidential-notes.html` | follow-ups | embed | 136 |
 | `modules/general-tools/index.html` | general-tools | embed | 467, 605, 628 |
 | `modules/hr/index.html` | hr | embed | 712, 846, 995, 1010 |
-| `modules/hr/workers.html` | hr | GET | 2692 |
+| `modules/hr/workers.html` | hr | GET | 2730 |
 | `modules/indicators/index.html` | indicators | embed | 480, 596 |
 | `modules/institutional-eval/index.html` | institutional-eval | embed | 426, 472, 694, 835 |
 | `modules/new-students/index.html` | new-students | embed | 454, 557, 721 |
@@ -1066,7 +1066,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/follow-ups/query-confidential-notes.html` | follow-ups | GET | 136 |
 | `modules/general-tools/index.html` | general-tools | GET, embed | 467, 605, 628 |
 | `modules/hr/index.html` | hr | GET, embed | 712, 846, 995, 1010 |
-| `modules/hr/workers.html` | hr | POST | 2697 |
+| `modules/hr/workers.html` | hr | POST | 2735 |
 | `modules/indicators/index.html` | indicators | embed | 480, 596 |
 | `modules/institutional-eval/index.html` | institutional-eval | GET, embed | 426, 472, 694, 835 |
 | `modules/new-students/index.html` | new-students | GET, embed | 454, 557, 721 |
@@ -1166,7 +1166,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 698 |
 | `modules/general-tools/projects.html` | general-tools | GET | 762 |
 | `modules/general-tools/tasks.html` | general-tools | GET, ND, PATCH, POST | 2229, 2291, 3239, 3245, 3254, 3268, 3309, 3885, 3922, 3948 |
-| `modules/hr/workers.html` | hr | GET, PATCH, embed | 2448, 3194, 3197, 3591 |
+| `modules/hr/workers.html` | hr | GET, PATCH, embed | 2448, 3232, 3235, 3629 |
 | `modules/indicators/improvement-dashboard.html` | indicators | ND | 703, 786 |
 | `modules/indicators/improvement.html` | indicators | ND | 1191 |
 | `modules/procedures/dashboard.html` | procedures | ND | 347, 1145 |
@@ -1221,7 +1221,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/report-design.html` | budget | GET | 1436 |
 | `modules/budget/report-view.html` | budget | GET | 608 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 945 |
-| `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3168, 3565 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
 | `modules/services/admissions-family.html` | services | GET, PATCH | 440, 666, 754, 927 |
 | `modules/services/approvals.html` | services | GET, PATCH | 1376, 1548 |
 | `modules/services/svc-meal-tickets.html` | services | GET, PATCH, embed | 240, 253, 473, 581, 584 |
@@ -1408,7 +1408,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/index.html` | hr | GET | 943 |
 | `modules/hr/manage-absences.html` | hr | GET | 2272, 2292 |
 | `modules/hr/request-absence.html` | hr | GET | 1965, 1985 |
-| `modules/hr/workers.html` | hr | DELETE, GET, POST | 1323, 2576, 2591, 2978 |
+| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1323, 2579, 2587, 2606, 2629, 3016 |
 | `modules/profile/mi-perfil.html` | profile | GET, ND | 608, 1973 |
 | `modules/security/user-roles.html` | security | GET | 490 |
 | `modules/training/generate-paths.html` | training | GET, embed | 459, 566, 780, 880 |
@@ -1421,7 +1421,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET, POST | 3015, 3050 |
+| `modules/hr/workers.html` | hr | GET, POST | 3053, 3088 |
 | `modules/training/dashboard.html` | training | GET | 779 |
 | `modules/training/generate-paths.html` | training | GET, POST | 930, 961 |
 | `modules/training/index.html` | training | GET, ND | 753, 1028 |
@@ -1490,7 +1490,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET, PATCH | 3429, 3804 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 3467, 3842 |
 | `modules/indicators/variables.html` | indicators | GET | 678 |
 | `modules/surveys/applications.html` | surveys | GET, embed | 492, 578 |
 | `modules/surveys/comparison.html` | surveys | GET | 458 |
@@ -1668,7 +1668,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/clearances.html` | hr | GET | 612, 865, 2275 |
 | `modules/hr/manage-absences.html` | hr | GET | 1016, 2251, 2417 |
 | `modules/hr/request-absence.html` | hr | GET | 1945, 2028, 2535 |
-| `modules/hr/workers.html` | hr | DELETE, GET, PATCH, POST, embed | 1229, 1673, 2609, 2630, 3291, 3685 |
+| `modules/hr/workers.html` | hr | DELETE, GET, PATCH, POST, embed | 1229, 1673, 2647, 2668, 3329, 3723 |
 | `modules/profile/mi-perfil.html` | profile | ND | 615 |
 | `modules/teacher-eval/leadership-my-results.html` | teacher-eval | GET | 227 |
 | `modules/teacher-eval/leadership-plan.html` | teacher-eval | GET | 798 |
@@ -1761,7 +1761,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET, PATCH | 3329, 3338, 3349, 3715, 3738 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 3367, 3376, 3387, 3753, 3776 |
 | `modules/indicators/correlations.html` | indicators | ND | 1131 |
 | `modules/indicators/dashboard-edit.html` | indicators | GET | 800 |
 | `modules/indicators/dashboard.html` | indicators | GET, embed | 907, 1007, 1150, 1824 |
@@ -1827,7 +1827,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET, PATCH | 3393, 3772 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 3431, 3810 |
 | `modules/indicators/correlations.html` | indicators | ND, embed | 720, 856, 1091, 1378 |
 | `modules/indicators/dashboard-edit.html` | indicators | GET | 671 |
 | `modules/indicators/dashboard.html` | indicators | embed | 884 |
@@ -1918,7 +1918,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET | 2990 |
+| `modules/hr/workers.html` | hr | GET | 3028 |
 | `modules/training/generate-paths.html` | training | GET | 571, 894 |
 | `modules/training/manage-deadlines.html` | training | embed | 700 |
 | `modules/training/module-roles.html` | training | DELETE, GET, PATCH, POST | 464, 618, 664, 705 |
@@ -2428,7 +2428,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/project-detail.html` | general-tools | GET, PATCH | 1076, 1747, 1782, 2757 |
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 692 |
 | `modules/general-tools/projects.html` | general-tools | GET, PATCH, POST, embed | 647, 689, 694, 1301, 1315 |
-| `modules/hr/workers.html` | hr | GET, PATCH, embed | 2460, 3245, 3248, 3639 |
+| `modules/hr/workers.html` | hr | GET, PATCH, embed | 2460, 3283, 3286, 3677 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 485 |
 
 ### stm_prom_topics
@@ -3136,7 +3136,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/hr/certificates-config.html` | hr | GET, PATCH, POST | 635, 779, 789, 830 |
-| `modules/hr/workers.html` | hr | GET, embed | 3903, 3905 |
+| `modules/hr/workers.html` | hr | GET, embed | 3941, 3943 |
 | `modules/profile/mi-perfil.html` | profile | embed | 1969 |
 
 ### dashboard_invitations
@@ -3305,7 +3305,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/project-detail.html` | general-tools | GET, PATCH, POST | 1125, 1157, 1966, 1998, 2728, 2742 |
 | `modules/general-tools/projects.html` | general-tools | GET | 652, 694 |
-| `modules/hr/workers.html` | hr | GET, PATCH | 2466, 3248, 3662 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 2466, 3286, 3700 |
 
 ### stm_prom_topics_categories
 
@@ -3930,7 +3930,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 2266, 3277, 3372, 3431, 3467, 4039 |
-| `modules/hr/workers.html` | hr | GET, PATCH | 2454, 3197, 3614 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 2454, 3235, 3652 |
 
 ### teval_config
 
@@ -3985,7 +3985,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1273, 3905, 4131, 4143 |
+| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1273, 3943, 4169, 4181 |
 | `modules/profile/mi-perfil.html` | profile | GET | 1969 |
 
 ### worker_courses
@@ -3999,7 +3999,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1272, 3904, 4157, 4169 |
+| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1272, 3942, 4195, 4207 |
 | `modules/profile/mi-perfil.html` | profile | GET | 1968 |
 
 ### aap_experience_types
