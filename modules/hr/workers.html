@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="2026.8.3.1">
+    <meta name="page-version" content="2026.8.5.1">
     <title>Trabajadores</title>
     
     <!-- Bootstrap CSS -->
@@ -2569,31 +2569,69 @@
             }
         }
 
-        // ✅ CÓDIGO CORREGIDO
+        // ✅ CÓDIGO CORREGIDO — conserva la historia de ocupación
         async function saveWorkerRoles(workerId) {
             try {
-                if (currentEditingWorkerId) {
-                    await supabaseRequest(`/worker_job_roles?worker_id=eq.${workerId}`, {
-                        method: 'DELETE'
-                    });
+                const hoy = getCurrentDateColombia();
+
+                // Estado real en base de datos, no el del modal
+                const existentes = currentEditingWorkerId
+                    ? (await supabaseRequest(`/worker_job_roles?select=assignment_id,job_role_id,is_primary_role,notes&worker_id=eq.${workerId}&assignment_status=eq.active`) || [])
+                    : [];
+
+                const deseados = tempAssignedRoles.map(r => r.job_role_id);
+
+                // 1. Roles retirados: se cierran con fecha de fin, NUNCA se borran
+                for (const fila of existentes) {
+                    if (!deseados.includes(fila.job_role_id)) {
+                        await supabaseRequest(`/worker_job_roles?assignment_id=eq.${fila.assignment_id}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({
+                                end_date: hoy,
+                                assignment_status: 'inactive',
+                                updated_at: new Date().toISOString()
+                            })
+                        });
+                    }
                 }
-        
-                if (tempAssignedRoles.length > 0) {
-                    const roleAssignments = tempAssignedRoles.map(role => ({
-                        worker_id: workerId,
-                        job_role_id: role.job_role_id,
-                        assigned_date: role.assigned_date || getCurrentDateColombia(),  // ← Corregido
-                        is_primary_role: role.is_primary_role,
-                        assignment_status: 'active',
-                        notes: role.notes || null
-                    }));
-        
+
+                // 2. Roles que continúan: solo se actualizan si cambió algo
+                const nuevos = [];
+                for (const role of tempAssignedRoles) {
+                    const fila = existentes.find(e => e.job_role_id === role.job_role_id);
+                    if (fila) {
+                        const cambioPrincipal = fila.is_primary_role !== role.is_primary_role;
+                        const cambioNotas = (fila.notes || '') !== (role.notes || '');
+                        if (cambioPrincipal || cambioNotas) {
+                            await supabaseRequest(`/worker_job_roles?assignment_id=eq.${fila.assignment_id}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({
+                                    is_primary_role: role.is_primary_role,
+                                    notes: role.notes || null,
+                                    updated_at: new Date().toISOString()
+                                })
+                            });
+                        }
+                    } else {
+                        nuevos.push({
+                            worker_id: workerId,
+                            job_role_id: role.job_role_id,
+                            assigned_date: role.assigned_date || hoy,
+                            is_primary_role: role.is_primary_role,
+                            assignment_status: 'active',
+                            notes: role.notes || null
+                        });
+                    }
+                }
+
+                // 3. Roles nuevos
+                if (nuevos.length > 0) {
                     await supabaseRequest('/worker_job_roles', {
                         method: 'POST',
-                        body: JSON.stringify(roleAssignments)
+                        body: JSON.stringify(nuevos)
                     });
                 }
-        
+
             } catch (error) {
                 console.error('❌ Error guardando roles:', error);
                 throw new Error('Error al guardar los roles del trabajador');
