@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inicializar Año Presupuestal - SchoolNet</title>
+    <meta name="page-version" content="26.8.10.1">
+    <title>Inicializar Año Presupuestal</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -850,8 +851,8 @@
                 // Obtener todas las asignaciones existentes de una vez (optimización crítica)
                 showLoading('Consultando asignaciones existentes...');
                 const existingAssignments = await getExistingAssignments(yearId);
-                const existingKeys = new Set(existingAssignments.map(a => `${a.budget_item_id}-${a.assignment_category}`));
-
+                const existingKeys = new Set(existingAssignments.map(a => `${a.budget_item_id}-${a.assignment_category}-${a.category_detail || ''}`));
+                
                 // Procesar cada categoría secuencialmente
                 const categories = [
                     { name: 'secciones', function: processCategorySections },
@@ -883,12 +884,29 @@
         }
 
         /**
+         * Resuelve una lista de correos a sus worker_id correspondientes.
+         * Devuelve un Map email -> worker_id. Los correos sin trabajador
+         * asociado no aparecen en el Map.
+         */
+        async function mapWorkersPorEmail(emails) {
+            const unicos = [...new Set((emails || []).filter(Boolean))];
+            if (unicos.length === 0) return new Map();
+
+            const lista = unicos.map(e => `"${e}"`).join(',');
+            const workers = await supabaseRequest(
+                `/workers?select=worker_id,email&email=in.(${lista})`
+            );
+
+            return new Map((workers || []).map(w => [w.email, w.worker_id]));
+        }
+
+        /**
          * Obtiene todas las asignaciones existentes para el año
          */
         async function getExistingAssignments(yearId) {
             try {
                 const assignments = await supabaseRequest(
-                    `/budget_assignments?select=budget_item_id,assignment_category&academic_year_id=eq.${yearId}`
+                    `/budget_assignments?select=budget_item_id,assignment_category,category_detail&academic_year_id=eq.${yearId}`
                 );
                 return assignments || [];
             } catch (error) {
@@ -916,28 +934,39 @@
                     return result;
                 }
 
+                // Resolver los directores de sección a worker_id
+                const mapWorkers = await mapWorkersPorEmail(sections.map(s => s.director_email));
+
                 // Crear asignaciones masivas
                 const assignmentsToCreate = [];
 
                 budgetItems.forEach(item => {
                     sections.forEach(section => {
-                        const key = `${item.item_id}-Secciones`;
+                        const key = `${item.item_id}-Secciones-${section.section_name}`;
                         
                         if (existingKeys.has(key)) {
                             result.existing++;
-                        } else {
-                            assignmentsToCreate.push({
-                                academic_year_id: yearId,
-                                budget_item_id: item.item_id,
-                                assignment_category: 'Secciones',
-                                category_detail: section.section_name,
-                                worker_email: section.director_email,
-                                requested_value: 0,
-                                approved_value: 0,
-                                executed_value: 0,
-                                assignment_status: 'active'
-                            });
+                            return;
                         }
+
+                        const workerId = mapWorkers.get(section.director_email);
+                        if (!workerId) {
+                            result.errors.push(`Sección "${section.section_name}": no se encontró trabajador para ${section.director_email || '(sin correo)'}. Sub-ítem "${item.item_name}" omitido.`);
+                            return;
+                        }
+
+                        assignmentsToCreate.push({
+                            academic_year_id: yearId,
+                            budget_item_id: item.item_id,
+                            assignment_category: 'Secciones',
+                            category_detail: section.section_name,
+                            worker_id: workerId,
+                            worker_email_legacy: section.director_email,
+                            requested_value: 0,
+                            approved_value: 0,
+                            executed_value: 0,
+                            assignment_status: 'active'
+                        });
                     });
                 });
 
@@ -989,28 +1018,39 @@
                     return result;
                 }
 
+                // Resolver los directores de programa a worker_id
+                const mapWorkers = await mapWorkersPorEmail(programs.map(p => p.program_director_email));
+
                 // Crear asignaciones masivas
                 const assignmentsToCreate = [];
 
                 budgetItems.forEach(item => {
                     programs.forEach(program => {
-                        const key = `${item.item_id}-Programas`;
+                        const key = `${item.item_id}-Programas-${program.program_name}`;
                         
                         if (existingKeys.has(key)) {
                             result.existing++;
-                        } else {
-                            assignmentsToCreate.push({
-                                academic_year_id: yearId,
-                                budget_item_id: item.item_id,
-                                assignment_category: 'Programas',
-                                category_detail: program.program_name,
-                                worker_email: program.program_director_email,
-                                requested_value: 0,
-                                approved_value: 0,
-                                executed_value: 0,
-                                assignment_status: 'active'
-                            });
+                            return;
                         }
+
+                        const workerId = mapWorkers.get(program.program_director_email);
+                        if (!workerId) {
+                            result.errors.push(`Programa "${program.program_name}": no se encontró trabajador para ${program.program_director_email || '(sin correo)'}. Sub-ítem "${item.item_name}" omitido.`);
+                            return;
+                        }
+
+                        assignmentsToCreate.push({
+                            academic_year_id: yearId,
+                            budget_item_id: item.item_id,
+                            assignment_category: 'Programas',
+                            category_detail: program.program_name,
+                            worker_id: workerId,
+                            worker_email_legacy: program.program_director_email,
+                            requested_value: 0,
+                            approved_value: 0,
+                            executed_value: 0,
+                            assignment_status: 'active'
+                        });
                     });
                 });
 
@@ -1055,7 +1095,7 @@
                 );
 
                 const areas = await supabaseRequest(
-                    `/academic_areas?select=area_id,area_name,area_chief_email&area_status=eq.active`
+                    `/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active`
                 );
 
                 if (!budgetItems.length || !areas.length) {
@@ -1067,23 +1107,30 @@
 
                 budgetItems.forEach(item => {
                     areas.forEach(area => {
-                        const key = `${item.item_id}-Áreas`;
+                        const key = `${item.item_id}-Áreas-${area.area_name}`;
                         
                         if (existingKeys.has(key)) {
                             result.existing++;
-                        } else {
-                            assignmentsToCreate.push({
-                                academic_year_id: yearId,
-                                budget_item_id: item.item_id,
-                                assignment_category: 'Áreas',
-                                category_detail: area.area_name,
-                                worker_email: area.area_chief_email,
-                                requested_value: 0,
-                                approved_value: 0,
-                                executed_value: 0,
-                                assignment_status: 'active'
-                            });
+                            return;
                         }
+
+                        // Las áreas sin coordinador asignado se omiten
+                        if (!area.coordinator_worker_id) {
+                            result.errors.push(`Área "${area.area_name}": sin coordinador asignado. Sub-ítem "${item.item_name}" omitido.`);
+                            return;
+                        }
+
+                        assignmentsToCreate.push({
+                            academic_year_id: yearId,
+                            budget_item_id: item.item_id,
+                            assignment_category: 'Áreas',
+                            category_detail: area.area_name,
+                            worker_id: area.coordinator_worker_id,
+                            requested_value: 0,
+                            approved_value: 0,
+                            executed_value: 0,
+                            assignment_status: 'active'
+                        });
                     });
                 });
 
@@ -1128,35 +1175,47 @@
                 );
 
                 const grades = await supabaseRequest(
-                    `/grades?select=grade_id,grade_name,sections!inner(director_email)&grade_status=eq.active`
+                    `/grades?select=grade_id,grade_name,sections!inner(director_email)&grade_status=eq.active&academic_year_id=eq.${yearId}`
                 );
 
                 if (!budgetItems.length || !grades.length) {
                     return result;
                 }
 
+                // Resolver los directores de sección a worker_id
+                const mapWorkers = await mapWorkersPorEmail(grades.map(g => g.sections?.director_email));
+
                 // Crear asignaciones masivas
                 const assignmentsToCreate = [];
 
                 budgetItems.forEach(item => {
                     grades.forEach(grade => {
-                        const key = `${item.item_id}-Grados`;
+                        const key = `${item.item_id}-Grados-${grade.grade_name}`;
                         
                         if (existingKeys.has(key)) {
                             result.existing++;
-                        } else {
-                            assignmentsToCreate.push({
-                                academic_year_id: yearId,
-                                budget_item_id: item.item_id,
-                                assignment_category: 'Grados',
-                                category_detail: grade.grade_name,
-                                worker_email: grade.sections?.director_email,
-                                requested_value: 0,
-                                approved_value: 0,
-                                executed_value: 0,
-                                assignment_status: 'active'
-                            });
+                            return;
                         }
+
+                        const emailDirector = grade.sections?.director_email;
+                        const workerId = mapWorkers.get(emailDirector);
+                        if (!workerId) {
+                            result.errors.push(`Grado "${grade.grade_name}": no se encontró trabajador para ${emailDirector || '(sin correo)'}. Sub-ítem "${item.item_name}" omitido.`);
+                            return;
+                        }
+
+                        assignmentsToCreate.push({
+                            academic_year_id: yearId,
+                            budget_item_id: item.item_id,
+                            assignment_category: 'Grados',
+                            category_detail: grade.grade_name,
+                            worker_id: workerId,
+                            worker_email_legacy: emailDirector,
+                            requested_value: 0,
+                            approved_value: 0,
+                            executed_value: 0,
+                            assignment_status: 'active'
+                        });
                     });
                 });
 
