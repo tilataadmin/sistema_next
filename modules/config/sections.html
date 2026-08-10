@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.26.1">
+    <meta name="page-version" content="26.8.10.1">
     <title>Gestión de Secciones - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -743,14 +743,73 @@
         // ELIMINAR SECCIÓN
         // ==========================================
         
-        async function deleteSection(sectionId, sectionName) {
-            const confirmMessage = `¿Está seguro de eliminar la sección "${sectionName}"?\n\nEsta acción no se puede deshacer.`;
+        // Tablas que referencian sections.section_id mediante FK.
+        // Si se agrega una FK nueva hacia sections, debe registrarse aquí.
+        const SECTION_DEPENDENCIES = [
+            { table: 'grades',                     select: 'grade_name',  label: 'grado(s)' },
+            { table: 'workers',                    select: 'worker_id',   label: 'trabajador(es)' },
+            { table: 'hr_clearance_items',         select: 'item_id',     label: 'ítem(s) de paz y salvo' },
+            { table: 'teval_form_school_sections', select: 'form_id',     label: 'formulario(s) de evaluación docente' }
+        ];
+        
+        async function checkSectionDependencies(sectionId) {
+            const blockers = [];
             
-            if (!confirm(confirmMessage)) {
-                return;
+            for (const dep of SECTION_DEPENDENCIES) {
+                const rows = await supabaseRequest(
+                    '/' + dep.table + '?select=' + dep.select + '&section_id=eq.' + sectionId
+                );
+                
+                if (rows && rows.length > 0) {
+                    blockers.push({
+                        label: dep.label,
+                        count: rows.length,
+                        names: dep.table === 'grades'
+                            ? rows.map(r => r.grade_name).filter(Boolean)
+                            : []
+                    });
+                }
             }
             
+            return blockers;
+        }
+        
+        async function deleteSection(sectionId, sectionName) {
             try {
+                mostrarLoading();
+                
+                console.log('🔍 Verificando dependencias de la sección:', sectionId);
+                const blockers = await checkSectionDependencies(sectionId);
+                
+                ocultarLoading();
+                
+                if (blockers.length > 0) {
+                    console.warn('⛔ Sección con dependencias, borrado bloqueado:', blockers);
+                    
+                    let detalle = blockers.map(b => {
+                        let linea = '<li>' + b.count + ' ' + b.label;
+                        if (b.names.length > 0) {
+                            linea += ': ' + escapeHtml(b.names.join(', '));
+                        }
+                        return linea + '</li>';
+                    }).join('');
+                    
+                    showMessage(
+                        'No se puede eliminar la sección "' + escapeHtml(sectionName) + '" porque tiene registros asociados:' +
+                        '<ul class="mb-1 mt-2">' + detalle + '</ul>' +
+                        '<small>Reasigne o elimine primero esos registros.</small>',
+                        'danger'
+                    );
+                    return;
+                }
+                
+                const confirmMessage = `¿Está seguro de eliminar la sección "${sectionName}"?\n\nEsta acción no se puede deshacer.`;
+                
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+                
+                mostrarLoading();
                 console.log('🗑️ Eliminando sección:', sectionId);
                 
                 await supabaseRequest('/sections?section_id=eq.' + sectionId, {
@@ -766,6 +825,8 @@
             } catch (error) {
                 console.error('❌ Error eliminando sección:', error);
                 showMessage('Error eliminando sección: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
             }
         }
         
