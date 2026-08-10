@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-08-10 15:10 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-10 16:10 UTC. **No editar a mano.**
 
 **331 archivos** con acceso a datos.
 
@@ -366,7 +366,7 @@
 ### `modules/budget/initialize-budget-year.html`
 
 - **Módulo:** budget
-- **Lee (7):** academic_areas, academic_years, budget_assignments, budget_items, grades, programs, sections
+- **Lee (8):** academic_areas, academic_years, budget_assignments, budget_items, grades, programs, sections, workers
 - **Escribe (1):** **budget_assignments**
 
 ### `modules/budget/report-design.html`
