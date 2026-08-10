@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-05 13:12 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-10 15:10 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -847,7 +847,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/annual-fees.html` | config | embed | 368 |
 | `modules/config/grades.html` | config | GET | 450 |
 | `modules/config/index.html` | config | ND | 522 |
-| `modules/config/sections.html` | config | DELETE, GET, PATCH, POST | 414, 619, 713, 756 |
+| `modules/config/sections.html` | config | DELETE, GET, PATCH, POST | 414, 619, 713, 815 |
 | `modules/early-alerts/dashboard.html` | early-alerts | GET | 708, 726 |
 | `modules/early-alerts/index.html` | early-alerts | GET | 611 |
 | `modules/early-alerts/manage-alerts.html` | early-alerts | GET | 837 |
