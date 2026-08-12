@@ -248,6 +248,8 @@
         let cursoActual = null;
         let actividadActual = null;
         let estadoCursoActual = 'abierto';
+        let plantillasCache = { asistencia: [], ausencia: [] };
+        let firmaInstitucional = null;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -801,42 +803,269 @@
         }
 
         // ==========================================
+        // MOTOR DE ENVÍO — CÁLCULO DE PARES (§4)
+        // ==========================================
+        // La unidad de decisión es el par (estudiante convocado × familiar).
+        //  - Asistió alguien de la familia -> 'asistencia' a los familiares marcados.
+        //    A los no marcados: SILENCIO (fila con envio_status 'omitido').
+        //  - No asistió nadie -> 'ausencia' a todos los familiares.
+        //  - "Asistió otro familiar" cuenta como asistencia del estudiante pero no
+        //    dispara agradecimiento a nadie ni ausencia (§7.2): todos quedan omitidos.
+        function calcularPares() {
+            const datos = leerFormulario();
+            const pares = [];
+
+            datos.forEach(d => {
+                const est = estudiantesCache.find(e => e.student_id === d.student_id);
+                if (!est) return;
+
+                const tipo = d.asistio ? 'asistencia' : 'ausencia';
+
+                est.familiares.forEach(fm => {
+                    const marcado = d.familiares_marcados.includes(fm.family_member_id);
+                    const email = (fm.email || '').trim();
+
+                    let enviar = true;
+                    let motivo = null;
+
+                    if (tipo === 'asistencia' && !marcado) {
+                        enviar = false;
+                        motivo = d.familiares_marcados.length === 0
+                            ? 'Asistió otro familiar no registrado'
+                            : 'Silencio deliberado: otro familiar de la casa sí asistió';
+                    }
+
+                    if (enviar && !email) {
+                        enviar = false;
+                        motivo = 'El familiar no tiene correo registrado';
+                    }
+
+                    pares.push({
+                        estudiante_id: est.student_id,
+                        estudiante_nombre: est.nombre,
+                        curso_nombre: cursoActual ? cursoActual.course_name : '',
+                        family_name: est.family_name,
+                        family_member_id: fm.family_member_id,
+                        destinatario_nombre: fm.full_name || '',
+                        destinatario_email: email,
+                        tipo: tipo,
+                        enviar: enviar,
+                        motivo: motivo
+                    });
+                });
+            });
+
+            return pares;
+        }
+
+        // ==========================================
+        // MOTOR DE ENVÍO — PLANTILLAS Y ROTACIÓN (§5)
+        // ==========================================
+        async function cargarPlantillasActivas() {
+            const filas = await supabaseRequest(
+                '/familia_actividad_plantillas?plantilla_status=eq.active' +
+                '&select=plantilla_id,tipo,nombre,asunto,cuerpo_html&order=nombre'
+            ) || [];
+
+            plantillasCache = { asistencia: [], ausencia: [] };
+            filas.forEach(p => {
+                if (plantillasCache[p.tipo]) plantillasCache[p.tipo].push(p);
+            });
+        }
+
+        async function cargarFirmaInstitucional() {
+            const cfg = await supabaseRequest(
+                '/system_config?select=principal_name,principal_signature_url,organization_name&limit=1'
+            );
+            firmaInstitucional = (Array.isArray(cfg) && cfg.length) ? cfg[0] : null;
+        }
+
+        // Historial de rotación: última vez que cada destinatario recibió cada plantilla.
+        // Se consulta por lotes para no reventar la longitud de la URL de PostgREST.
+        async function cargarHistorialRotacion(pares) {
+            const ids = [...new Set(pares.filter(p => p.enviar).map(p => p.family_member_id))];
+            const historial = {};
+            const lote = 40;
+
+            for (let i = 0; i < ids.length; i += lote) {
+                const grupo = ids.slice(i, i + lote);
+                const filas = await supabaseRequest(
+                    `/familia_actividad_envios?envio_status=eq.enviado` +
+                    `&family_member_id=in.(${grupo.join(',')})` +
+                    `&select=family_member_id,plantilla_id,enviado_at`
+                ) || [];
+
+                filas.forEach(f => {
+                    if (!f.plantilla_id) return;
+                    if (!historial[f.family_member_id]) historial[f.family_member_id] = {};
+                    const previo = historial[f.family_member_id][f.plantilla_id];
+                    if (!previo || f.enviado_at > previo) {
+                        historial[f.family_member_id][f.plantilla_id] = f.enviado_at;
+                    }
+                });
+            }
+
+            return historial;
+        }
+
+        // §5.3: la que hace más tiempo no se le envía a ese destinatario.
+        // Nunca enviadas primero; empates al azar. No es sorteo puro.
+        function elegirPlantilla(tipo, familyMemberId, historial) {
+            const candidatas = plantillasCache[tipo] || [];
+            if (candidatas.length === 0) return null;
+
+            const usos = historial[familyMemberId] || {};
+            const nunca = candidatas.filter(p => !usos[p.plantilla_id]);
+
+            let pool;
+            if (nunca.length > 0) {
+                pool = nunca;
+            } else {
+                const masAntigua = candidatas.reduce((min, p) =>
+                    usos[p.plantilla_id] < usos[min.plantilla_id] ? p : min
+                );
+                const referencia = usos[masAntigua.plantilla_id];
+                pool = candidatas.filter(p => usos[p.plantilla_id] === referencia);
+            }
+
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        function formatearFechaEspanol(fechaIso) {
+            if (!fechaIso) return '';
+            // split en lugar de new Date(): evita el corrimiento a UTC que
+            // mostraría el día anterior en Colombia (UTC-5)
+            const p = String(fechaIso).split('-');
+            const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                           'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+            return `${parseInt(p[2], 10)} de ${meses[parseInt(p[1], 10) - 1]} de ${p[0]}`;
+        }
+
+        // split/join en vez de replace con regex: los valores pueden contener
+        // caracteres que replace interpretaría como patrones de sustitución
+        function renderizarTexto(texto, par) {
+            const vars = {
+                '{{nombre_evento}}': actividadActual ? actividadActual.nombre : '',
+                '{{fecha_evento}}': actividadActual ? formatearFechaEspanol(actividadActual.fecha) : '',
+                '{{familia}}': par.family_name || '',
+                '{{estudiante}}': par.estudiante_nombre || '',
+                '{{curso}}': par.curso_nombre || '',
+                '{{familiar}}': par.destinatario_nombre || ''
+            };
+
+            let salida = texto || '';
+            Object.keys(vars).forEach(k => {
+                salida = salida.split(k).join(vars[k]);
+            });
+            return salida;
+        }
+
+        // §5.5: firma fija de Rectoría desde system_config
+        function construirCuerpo(htmlPlantilla) {
+            const f = firmaInstitucional || {};
+            const imagen = f.principal_signature_url
+                ? `<img src="${f.principal_signature_url}" alt="Firma"
+                        style="height:70px;display:block;margin-bottom:6px;">`
+                : '';
+
+            return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;` +
+                   `color:#1f2937;line-height:1.6;max-width:600px;">
+                ${htmlPlantilla}
+                <div style="margin-top:28px;padding-top:14px;border-top:1px solid #d1d5db;">
+                    ${imagen}
+                    <div style="font-weight:bold;">${f.principal_name || ''}</div>
+                    <div style="color:#4b5563;">Rectoría · ${f.organization_name || 'Colegio Tilatá'}</div>
+                </div>
+            </div>`;
+        }
+
+        async function asignarPlantillas(pares) {
+            if (plantillasCache.asistencia.length === 0 && plantillasCache.ausencia.length === 0) {
+                await cargarPlantillasActivas();
+            }
+            if (!firmaInstitucional) {
+                await cargarFirmaInstitucional();
+            }
+
+            const historial = await cargarHistorialRotacion(pares);
+
+            pares.forEach(p => {
+                p.plantilla = null;
+                if (!p.enviar) return;
+
+                const pl = elegirPlantilla(p.tipo, p.family_member_id, historial);
+                if (!pl) {
+                    p.enviar = false;
+                    p.motivo = `No hay plantillas activas del tipo ${p.tipo}`;
+                    return;
+                }
+
+                p.plantilla = pl;
+                p.asunto = renderizarTexto(pl.asunto, p);
+                p.cuerpo = construirCuerpo(renderizarTexto(pl.cuerpo_html, p));
+            });
+
+            return pares;
+        }
+
+        // ==========================================
         // CIERRE
         // ==========================================
-        function abrirModalCerrar() {
+        async function abrirModalCerrar() {
             const datos = leerFormulario();
+            const pares = calcularPares();
+            await asignarPlantillas(pares);
 
             const conAsistencia = datos.filter(d => d.asistio).length;
-            const sinAsistencia = datos.length - conAsistencia;
 
-            // Familias sin ningún familiar con correo: no recibirán nada
-            let sinDestinatario = 0;
-            estudiantesCache.forEach(est => {
-                const conCorreo = est.familiares.filter(f => f.email && f.email.trim());
-                if (conCorreo.length === 0) sinDestinatario++;
-            });
+            const agradecimientos = pares.filter(p => p.enviar && p.tipo === 'asistencia').length;
+            const ausencias = pares.filter(p => p.enviar && p.tipo === 'ausencia').length;
+
+            const omitidos = pares.filter(p => !p.enviar);
+            const sinCorreo = omitidos.filter(p => p.motivo === 'El familiar no tiene correo registrado').length;
+            const faltanPlantillas = omitidos.filter(p => (p.motivo || '').indexOf('No hay plantillas activas') === 0).length;
+            const silencios = omitidos.length - sinCorreo - faltanPlantillas;
+
+            // Estudiantes cuya familia no tiene ningún familiar registrado
+            const sinFamiliares = estudiantesCache.filter(e => e.familiares.length === 0).length;
 
             let cuerpo = `
                 <div class="alert alert-info py-2">
                     <i class="bi bi-info-circle me-1"></i>
                     <strong>El envío de correos aún no está activo.</strong>
-                    Por ahora el cierre solo bloquea el registro. Cuando el motor de
-                    notificaciones entre en operación, este botón sí enviará.
+                    El cierre bloquea el registro. Las cifras de abajo son las que
+                    se enviarán cuando el motor entre en operación.
                 </div>
 
                 <p>Al confirmar, este curso queda <strong>cerrado</strong> y el registro
                 ya no se puede modificar.</p>
 
-                <p class="mb-2">Cuando el envío esté activo, este cierre significaría:</p>
+                <p class="mb-2">Correos que corresponden a este cierre:</p>
                 <ul class="mb-3">
-                    <li><strong>${conAsistencia}</strong> familia(s) recibirían agradecimiento</li>
-                    <li><strong>${sinAsistencia}</strong> familia(s) recibirían "te extrañamos"</li>
+                    <li><strong>${agradecimientos}</strong> de agradecimiento</li>
+                    <li><strong>${ausencias}</strong> de "te extrañamos"</li>
                 </ul>`;
 
-            if (sinDestinatario > 0) {
+            if (silencios > 0) {
+                cuerpo += `<div class="alert alert-secondary py-2">
+                    <i class="bi bi-volume-mute me-1"></i>
+                    ${silencios} familiar(es) no reciben nada a propósito: otro familiar
+                    de su casa sí asistió, o asistió alguien no registrado.
+                </div>`;
+            }
+
+            if (sinCorreo > 0) {
                 cuerpo += `<div class="alert alert-warning py-2">
                     <i class="bi bi-exclamation-triangle me-1"></i>
-                    ${sinDestinatario} familia(s) no tienen familiar con correo y no recibirán nada.
+                    ${sinCorreo} familiar(es) deberían recibir correo pero no lo tienen registrado.
+                </div>`;
+            }
+
+            if (sinFamiliares > 0) {
+                cuerpo += `<div class="alert alert-warning py-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    ${sinFamiliares} estudiante(s) no tienen familiares registrados.
+                    Esas familias no reciben nada.
                 </div>`;
             }
 
@@ -847,6 +1076,31 @@
                     Todas recibirán "te extrañamos". Si olvidaste registrar, cancela y revisa
                     antes de continuar.
                 </div>`;
+            }
+
+            if (faltanPlantillas > 0) {
+                cuerpo += `<div class="alert alert-danger py-2">
+                    <i class="bi bi-x-octagon me-1"></i>
+                    <strong>Faltan plantillas activas.</strong>
+                    ${faltanPlantillas} correo(s) no se pueden componer. Pide a Comunicaciones
+                    que active al menos una plantilla de cada tipo en el banco de mensajes
+                    antes de cerrar.
+                </div>`;
+            }
+
+            const muestra = pares.find(p => p.enviar && p.cuerpo);
+            if (muestra) {
+                cuerpo += `<details class="mb-2">
+                    <summary class="text-primary" style="cursor:pointer;">
+                        Ver un ejemplo del correo que se enviará
+                    </summary>
+                    <div class="border rounded p-2 mt-2"
+                         style="background-color:#f8f9fa;max-height:280px;overflow:auto;">
+                        <div class="small text-muted"><strong>Para:</strong> ${escapeHtml(muestra.destinatario_email)}</div>
+                        <div class="small text-muted mb-2"><strong>Asunto:</strong> ${escapeHtml(muestra.asunto)}</div>
+                        ${muestra.cuerpo}
+                    </div>
+                </details>`;
             }
 
             document.getElementById('cuerpo-modal-cerrar').innerHTML = cuerpo;
