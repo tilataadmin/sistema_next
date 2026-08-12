@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.4.2">
+    <meta name="page-version" content="26.8.12.1">
     <title>Registrar asistencia de familias - SchoolNet</title>
 
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -250,6 +250,8 @@
         let estadoCursoActual = 'abierto';
         let plantillasCache = { asistencia: [], ausencia: [] };
         let firmaInstitucional = null;
+        let paresPendientes = [];
+        let envioEnCurso = false;
 
         // ==========================================
         // INICIALIZACIÓN
@@ -1015,6 +1017,7 @@
             const datos = leerFormulario();
             const pares = calcularPares();
             await asignarPlantillas(pares);
+            paresPendientes = pares;
 
             const conAsistencia = datos.filter(d => d.asistio).length;
 
@@ -1112,13 +1115,17 @@
         }
 
         async function confirmarCierre() {
+            if (envioEnCurso) return;
+
             try {
                 mostrarLoading();
 
                 // 1. Persistir el registro definitivo
                 await persistirRegistro();
 
-                // 2. Marcar el curso como cerrado
+                // 2. Marcar el curso como cerrado ANTES de enviar.
+                //    Si se enviara primero, una caída dejaría correos ya salidos
+                //    sobre un curso que figura abierto: el peor estado posible.
                 await supabaseRequest(
                     `/familia_actividad_cursos?actividad_id=eq.${actividadActual.id}&curso_id=eq.${cursoActual.course_id}`,
                     {
@@ -1131,27 +1138,187 @@
                     }
                 );
 
-                if (modalCerrar) modalCerrar.hide();
-
-                // 3. El motor de envío aún no existe (pendiente de cuota de correo)
-                showMessage(
-                    'Curso cerrado correctamente. El envío de correos se activará cuando ' +
-                    'el motor de notificaciones entre en operación.',
-                    'success'
-                );
-
-                await cargarActividadesDelCurso();
-                ocultarBloquesDeRegistro();
-                document.getElementById('select-actividad').value = '';
-                document.getElementById('mensaje-inicial').classList.remove('d-none');
-
                 ocultarLoading();
 
+                // 3. Envío, con el modal abierto y el progreso a la vista
+                envioEnCurso = true;
+                bloquearSalida(true);
+                document.querySelector('#modal-cerrar .modal-footer').classList.add('d-none');
+
+                const resumen = await ejecutarEnvios(paresPendientes, pintarProgreso);
+
+                envioEnCurso = false;
+                bloquearSalida(false);
+
+                pintarResumenFinal(resumen);
+
             } catch (error) {
+                envioEnCurso = false;
+                bloquearSalida(false);
                 console.error('❌ Error cerrando curso:', error);
                 showMessage('Error al cerrar el curso: ' + error.message, 'danger');
                 ocultarLoading();
             }
+        }
+
+        // ==========================================
+        // MOTOR DE ENVÍO — EJECUCIÓN Y LOG (§6.4, §9)
+        // ==========================================
+        function bloquearSalida(activar) {
+            if (activar) {
+                window.addEventListener('beforeunload', avisarSalida);
+            } else {
+                window.removeEventListener('beforeunload', avisarSalida);
+            }
+        }
+
+        function avisarSalida(e) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+
+        // La fila del log se escribe ANTES del envío: es el candado de idempotencia.
+        // Si el POST fallara después de enviar, el par quedaría sin registro y una
+        // reanudación reenviaría el correo (§6.4 lo prohíbe).
+        async function registrarEnvio(par, status, mensajeError) {
+            const fila = {
+                actividad_id: parseInt(actividadActual.id, 10),
+                curso_id: cursoActual.course_id,
+                estudiante_id: par.estudiante_id,
+                family_member_id: par.family_member_id,
+                plantilla_id: par.plantilla ? par.plantilla.plantilla_id : null,
+                tipo: par.tipo,
+                destinatario_email: par.destinatario_email || '(sin correo)',
+                destinatario_nombre: par.destinatario_nombre || null,
+                estudiante_nombre: par.estudiante_nombre || null,
+                plantilla_nombre: par.plantilla ? par.plantilla.nombre : null,
+                asunto: par.asunto || null,
+                envio_status: status,
+                error_message: mensajeError || null,
+                enviado_at: new Date().toISOString()
+            };
+
+            const creada = await supabaseRequest('/familia_actividad_envios', {
+                method: 'POST',
+                body: JSON.stringify(fila)
+            });
+
+            return Array.isArray(creada) ? creada[0] : creada;
+        }
+
+        async function ejecutarEnvios(pares, onProgreso) {
+            const resumen = { enviados: 0, omitidos: 0, fallidos: 0, duplicados: 0 };
+            let procesados = 0;
+
+            if (onProgreso) onProgreso(0, pares.length, resumen);
+
+            for (const par of pares) {
+                procesados++;
+
+                try {
+                    if (!par.enviar) {
+                        await registrarEnvio(par, 'omitido', par.motivo);
+                        resumen.omitidos++;
+                    } else {
+                        // Candado primero, envío después
+                        const fila = await registrarEnvio(par, 'enviado', null);
+
+                        const ok = await sendNotification(
+                            par.destinatario_email, par.asunto, par.cuerpo, true
+                        );
+
+                        if (ok) {
+                            resumen.enviados++;
+                        } else {
+                            resumen.fallidos++;
+                            if (fila && fila.envio_id) {
+                                await supabaseRequest(
+                                    `/familia_actividad_envios?envio_id=eq.${fila.envio_id}`,
+                                    {
+                                        method: 'PATCH',
+                                        body: JSON.stringify({
+                                            envio_status: 'fallido',
+                                            error_message: 'El servicio de correo no confirmó el envío'
+                                        })
+                                    }
+                                );
+                            }
+                        }
+                    }
+                } catch (error) {
+                    // Violación del UNIQUE: el par ya fue procesado antes. No se reenvía.
+                    console.warn('Par no procesado:', par.destinatario_email, error.message);
+                    resumen.duplicados++;
+                }
+
+                if (onProgreso) onProgreso(procesados, pares.length, resumen);
+            }
+
+            return resumen;
+        }
+
+        function pintarProgreso(hechos, total, resumen) {
+            const pct = total === 0 ? 100 : Math.round((hechos / total) * 100);
+
+            document.getElementById('cuerpo-modal-cerrar').innerHTML = `
+                <p class="mb-2">
+                    <strong>Enviando correos.</strong>
+                    No cierres esta ventana ni el navegador hasta que termine.
+                </p>
+                <div class="progress mb-3" style="height:22px;">
+                    <div class="progress-bar" role="progressbar"
+                         style="width:${pct}%;background-color:#198754;">${pct}%</div>
+                </div>
+                <div class="small text-muted">
+                    ${hechos} de ${total} procesados ·
+                    ${resumen.enviados} enviados ·
+                    ${resumen.omitidos} omitidos ·
+                    ${resumen.fallidos} fallidos
+                </div>`;
+        }
+
+        function pintarResumenFinal(resumen) {
+            let extra = '';
+
+            if (resumen.fallidos > 0) {
+                extra += `<div class="alert alert-warning py-2 mb-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    ${resumen.fallidos} correo(s) no salieron. Quedaron registrados como
+                    fallidos y se pueden reintentar desde el tablero de la actividad.
+                </div>`;
+            }
+
+            if (resumen.duplicados > 0) {
+                extra += `<div class="alert alert-secondary py-2 mb-2">
+                    <i class="bi bi-shield-check me-1"></i>
+                    ${resumen.duplicados} par(es) ya habían sido procesados antes.
+                    No se reenviaron.
+                </div>`;
+            }
+
+            document.getElementById('cuerpo-modal-cerrar').innerHTML = `
+                <div class="alert alert-success py-2">
+                    <i class="bi bi-check-circle me-1"></i>
+                    <strong>Curso cerrado.</strong> El registro ya no se puede modificar.
+                </div>
+                <ul class="mb-3">
+                    <li><strong>${resumen.enviados}</strong> correo(s) enviados</li>
+                    <li><strong>${resumen.omitidos}</strong> omitidos deliberadamente</li>
+                </ul>
+                ${extra}
+                <button class="btn btn-primary" onclick="finalizarCierre()">
+                    <i class="bi bi-arrow-right-circle me-1"></i>Entendido
+                </button>`;
+        }
+
+        async function finalizarCierre() {
+            if (modalCerrar) modalCerrar.hide();
+            document.querySelector('#modal-cerrar .modal-footer').classList.remove('d-none');
+
+            await cargarActividadesDelCurso();
+            ocultarBloquesDeRegistro();
+            document.getElementById('select-actividad').value = '';
+            document.getElementById('mensaje-inicial').classList.remove('d-none');
         }
 
         // ==========================================
@@ -1187,6 +1354,7 @@
         window.alMarcarFamiliar = alMarcarFamiliar;
         window.guardarBorrador = guardarBorrador;
         window.abrirModalCerrar = abrirModalCerrar;
+        window.finalizarCierre = finalizarCierre;
         window.confirmarCierre = confirmarCierre;
         window.recargarTodo = recargarTodo;
 
