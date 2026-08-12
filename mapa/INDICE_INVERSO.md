@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-10 16:45 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-12 12:10 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -573,7 +573,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/config.html` | config | GET, PATCH | 761, 1172, 1178 |
 | `modules/config/enrollment-movements.html` | config | GET | 184 |
 | `modules/config/index.html` | config | GET | 941 |
-| `modules/config/students.html` | config | GET | 935 |
+| `modules/config/students.html` | config | GET | 957 |
 | `modules/config/year-closure-reversal.html` | config | PATCH | 629, 638 |
 | `modules/config/year-closure.html` | config | GET, PATCH | 474, 603, 1630, 2308, 2364 |
 | `modules/config/years.html` | config | GET, PATCH, POST | 529, 893, 923, 1000, 1033 |
@@ -655,7 +655,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/courses.html` | config | GET | 389 |
 | `modules/config/grades.html` | config | GET, PATCH, POST | 426, 711, 740, 800, 833 |
 | `modules/config/index.html` | config | ND | 530 |
-| `modules/config/students.html` | config | embed | 942 |
+| `modules/config/students.html` | config | embed | 964 |
 | `modules/config/year-closure.html` | config | GET, embed | 632, 641 |
 | `modules/early-alerts/dashboard.html` | early-alerts | embed | 904 |
 | `modules/early-alerts/index.html` | early-alerts | GET | 811 |
@@ -718,7 +718,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/courses.html` | config | GET, PATCH, POST | 363, 603, 624, 672, 700 |
 | `modules/config/grades.html` | config | GET | 863 |
 | `modules/config/index.html` | config | ND | 538 |
-| `modules/config/students.html` | config | GET, embed | 588, 695, 942, 1254, 1739 |
+| `modules/config/students.html` | config | GET, embed | 588, 717, 964, 1276, 1761 |
 | `modules/config/year-closure.html` | config | GET, POST | 641, 1115, 1157 |
 | `modules/early-alerts/dashboard.html` | early-alerts | embed | 904 |
 | `modules/early-alerts/index.html` | early-alerts | GET | 819 |
@@ -963,7 +963,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/eps.html` | config | embed | 300 |
 | `modules/config/families.html` | config | GET, embed | 371, 674 |
 | `modules/config/index.html` | config | GET | 827 |
-| `modules/config/students.html` | config | GET, ND, PATCH, POST | 670, 718, 942, 967, 1018, 1089, 1144, 1167, 1174, 1263 |
+| `modules/config/students.html` | config | GET, ND, PATCH, POST | 692, 740, 964, 989, 1040, 1111, 1166, 1189, 1196, 1285 |
 | `modules/config/year-closure-reversal.html` | config | GET, PATCH | 261, 654, 683 |
 | `modules/config/year-closure.html` | config | GET, PATCH | 651, 713, 1239, 2248, 2284 |
 | `modules/early-alerts/assigned-actions.html` | early-alerts | embed | 446 |
@@ -1182,7 +1182,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/config/families.html` | config | GET | 665 |
 | `modules/config/index.html` | config | GET | 823 |
-| `modules/config/students.html` | config | GET | 589, 696 |
+| `modules/config/students.html` | config | GET | 589, 718 |
 | `modules/config/year-closure-reversal.html` | config | GET | 739 |
 | `modules/config/year-closure.html` | config | GET, embed | 651, 713, 1239, 2571 |
 | `modules/environmental/water-balance-dashboard.html` | environmental | GET | 758 |
@@ -1441,7 +1441,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/config/families.html` | config | GET, ND, PATCH, POST | 371, 591, 623, 651, 721 |
-| `modules/config/students.html` | config | GET, POST | 587, 694, 1665, 1735, 1834 |
+| `modules/config/students.html` | config | GET, POST | 587, 716, 1687, 1757, 1856 |
 | `modules/early-alerts/assigned-actions.html` | early-alerts | embed | 446, 472 |
 | `modules/early-alerts/dashboard.html` | early-alerts | embed | 901 |
 | `modules/early-alerts/manage-alerts.html` | early-alerts | embed | 928, 1052, 1426, 1864 |
@@ -3854,7 +3854,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/config/enrollment-movements.html` | config | GET | 239 |
-| `modules/config/students.html` | config | POST | 953 |
+| `modules/config/students.html` | config | POST | 975 |
 
 ### svc_extracurricular_activity_grades
 
