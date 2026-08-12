@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.12.1">
+    <meta name="page-version" content="26.8.12.2">
     <title>Registrar asistencia de familias - SchoolNet</title>
 
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -167,6 +167,7 @@
             <div class="card-body">
                 <h5 class="mb-2"><i class="bi bi-lock me-2"></i>Curso cerrado</h5>
                 <p class="mb-0" id="texto-cerrado"></p>
+                <div id="bloque-reanudar" class="mt-3 d-none"></div>
             </div>
         </div>
 
@@ -463,6 +464,10 @@
 
             if (estadoCursoActual !== 'abierto') {
                 mostrarBloqueCerrado(conv);
+                // 'vencido' no se reanuda: nunca se enviaron correos y no deben enviarse
+                if (estadoCursoActual === 'cerrado') {
+                    await revisarEnviosPendientes();
+                }
                 return;
             }
 
@@ -495,7 +500,7 @@
         // ==========================================
         // CARGA DE ESTUDIANTES Y FAMILIARES
         // ==========================================
-        async function cargarEstudiantes() {
+        async function cargarEstudiantes(soloDatos) {
             try {
                 mostrarLoading();
 
@@ -506,9 +511,12 @@
                 const activos = estudiantes.filter(e => e.student_status?.status_code === 1);
 
                 if (activos.length === 0) {
-                    document.getElementById('lista-estudiantes').innerHTML =
-                        '<div class="alert alert-warning">Este curso no tiene estudiantes activos.</div>';
-                    document.getElementById('bloque-lista').classList.remove('d-none');
+                    estudiantesCache = [];
+                    if (!soloDatos) {
+                        document.getElementById('lista-estudiantes').innerHTML =
+                            '<div class="alert alert-warning">Este curso no tiene estudiantes activos.</div>';
+                        document.getElementById('bloque-lista').classList.remove('d-none');
+                    }
                     ocultarLoading();
                     return;
                 }
@@ -576,9 +584,10 @@
                     };
                 });
 
-                renderizarEstudiantes();
-
-                document.getElementById('bloque-lista').classList.remove('d-none');
+                if (!soloDatos) {
+                    renderizarEstudiantes();
+                    document.getElementById('bloque-lista').classList.remove('d-none');
+                }
                 ocultarLoading();
 
             } catch (error) {
@@ -813,8 +822,8 @@
         //  - No asistió nadie -> 'ausencia' a todos los familiares.
         //  - "Asistió otro familiar" cuenta como asistencia del estudiante pero no
         //    dispara agradecimiento a nadie ni ausencia (§7.2): todos quedan omitidos.
-        function calcularPares() {
-            const datos = leerFormulario();
+        function calcularPares(datos) {
+            datos = datos || leerFormulario();
             const pares = [];
 
             datos.forEach(d => {
@@ -1322,6 +1331,112 @@
         }
 
         // ==========================================
+        // MOTOR DE ENVÍO — REANUDACIÓN
+        // ==========================================
+        // En un curso cerrado no hay formulario que leer. Los pares se
+        // reconstruyen desde estudiantesCache, que ya trae lo persistido.
+        function leerRegistroPersistido() {
+            return estudiantesCache.map(est => {
+                const marcados = est.familiares
+                    .filter(f => est.marcados.has(f.family_member_id))
+                    .map(f => f.family_member_id);
+
+                return {
+                    student_id: est.student_id,
+                    asistencia_id: est.asistencia_id,
+                    familiares_marcados: marcados,
+                    todos_los_familiares: est.familiares.map(f => f.family_member_id),
+                    otro: est.otro,
+                    asistio: marcados.length > 0 || est.otro
+                };
+            });
+        }
+
+        async function revisarEnviosPendientes() {
+            const panel = document.getElementById('bloque-reanudar');
+            panel.classList.add('d-none');
+            panel.innerHTML = '';
+
+            try {
+                await cargarEstudiantes(true);
+                if (estudiantesCache.length === 0) return;
+
+                const esperados = calcularPares(leerRegistroPersistido());
+
+                const registrados = await supabaseRequest(
+                    `/familia_actividad_envios?actividad_id=eq.${actividadActual.id}` +
+                    `&curso_id=eq.${cursoActual.course_id}` +
+                    `&select=estudiante_id,family_member_id`
+                ) || [];
+
+                const yaProcesados = new Set(
+                    registrados.map(r => `${r.estudiante_id}|${r.family_member_id}`)
+                );
+
+                paresPendientes = esperados.filter(
+                    p => !yaProcesados.has(`${p.estudiante_id}|${p.family_member_id}`)
+                );
+
+                if (paresPendientes.length === 0) return;
+
+                const porEnviar = paresPendientes.filter(p => p.enviar).length;
+
+                panel.innerHTML = `
+                    <div class="alert alert-warning py-2 mb-2">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Este cierre quedó incompleto.</strong>
+                        ${paresPendientes.length} destinatario(s) nunca se procesaron,
+                        de los cuales ${porEnviar} deberían recibir correo. Lo más probable
+                        es que se haya cerrado el navegador durante el envío.
+                    </div>
+                    <button class="btn btn-warning" onclick="reanudarEnvios()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Completar el envío
+                    </button>`;
+
+                panel.classList.remove('d-none');
+
+            } catch (error) {
+                console.error('❌ Error revisando envíos pendientes:', error);
+            }
+        }
+
+        async function reanudarEnvios() {
+            if (envioEnCurso || paresPendientes.length === 0) return;
+
+            try {
+                mostrarLoading();
+                await asignarPlantillas(paresPendientes);
+                ocultarLoading();
+
+                document.getElementById('cuerpo-modal-cerrar').innerHTML = '';
+                document.querySelector('#modal-cerrar .modal-footer').classList.add('d-none');
+
+                if (!modalCerrar) {
+                    modalCerrar = new bootstrap.Modal(document.getElementById('modal-cerrar'));
+                }
+                modalCerrar.show();
+
+                envioEnCurso = true;
+                bloquearSalida(true);
+
+                const resumen = await ejecutarEnvios(paresPendientes, pintarProgreso);
+
+                envioEnCurso = false;
+                bloquearSalida(false);
+                paresPendientes = [];
+
+                pintarResumenFinal(resumen);
+
+            } catch (error) {
+                envioEnCurso = false;
+                bloquearSalida(false);
+                console.error('❌ Error reanudando envíos:', error);
+                showMessage('Error al completar el envío: ' + error.message, 'danger');
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
         // UTILIDADES
         // ==========================================
         async function recargarTodo() {
@@ -1355,6 +1470,7 @@
         window.guardarBorrador = guardarBorrador;
         window.abrirModalCerrar = abrirModalCerrar;
         window.finalizarCierre = finalizarCierre;
+        window.reanudarEnvios = reanudarEnvios;
         window.confirmarCierre = confirmarCierre;
         window.recargarTodo = recargarTodo;
 
