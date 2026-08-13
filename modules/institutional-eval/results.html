@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.6.10.1">
+    <meta name="page-version" content="26.8.13.1">
     <title>Resultados de Autoevaluación - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -93,6 +93,16 @@
         }
         .results-table .process-row { background: #f8f9fa; font-weight: 500; }
         .results-table .component-row { }
+        .results-table .component-row.has-obs td:first-child { cursor: pointer; }
+        .results-table .component-row.has-obs td:first-child:hover { color: #2563eb; text-decoration: underline; }
+        
+        /* Observaciones en modal */
+        .obs-item {
+            border-left: 3px solid #2563eb; background: #f8f9fa;
+            padding: 0.75rem 1rem; margin-bottom: 0.75rem; border-radius: 0 4px 4px 0;
+        }
+        .obs-item .obs-meta { font-size: 0.75rem; color: #6c757d; margin-bottom: 0.35rem; }
+        .obs-item .obs-text { font-size: 0.875rem; white-space: pre-wrap; }
         
         /* Celda de puntaje */
         .score-cell {
@@ -279,6 +289,24 @@
         </div><!-- fin results-content -->
 
     </div><!-- fin container-fluid -->
+
+    <!-- MODAL: OBSERVACIONES DEL COMPONENTE -->
+    <div class="modal fade" id="modalObservaciones" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-chat-left-text me-2"></i>Observaciones: <span id="modal-obs-titulo"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modal-obs-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- SCRIPTS - ORDEN CRÍTICO -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -879,7 +907,18 @@
                     const compsDelProceso = componentesCache.filter(c => c.process_id === proceso.process_id);
                     
                     compsDelProceso.forEach(comp => {
-                        tbHtml += `<tr class="component-row"><td class="ps-5">${comp.component_name}</td>`;
+                        const tieneObs = evaluacionesSeleccionadas.some(evalId =>
+                            (resultadosPorEval[evalId]?.ratings || []).some(r =>
+                                r.component_id === comp.component_id && r.observations && r.observations.trim()
+                            )
+                        );
+                        const obsIcon = tieneObs
+                            ? ` <i class="bi bi-chat-left-text-fill ms-1" style="font-size:0.7rem; color:#2563eb;"></i>`
+                            : '';
+                        const rowAttrs = tieneObs
+                            ? ` class="component-row has-obs" onclick="verObservaciones('${comp.component_id}')" title="Ver observaciones registradas"`
+                            : ` class="component-row"`;
+                        tbHtml += `<tr${rowAttrs}><td class="ps-5">${comp.component_name}${obsIcon}</td>`;
                         
                         evaluacionesSeleccionadas.forEach(evalId => {
                             const avg = resultadosPorEval[evalId]?.promedios.porComponente[comp.component_id];
@@ -899,6 +938,70 @@
             });
             
             tbody.innerHTML = tbHtml;
+        }
+
+        // ==========================================
+        // OBSERVACIONES DE UN COMPONENTE
+        // ==========================================
+        function verObservaciones(componentId) {
+            const comp = componentesCache.find(c => c.component_id === componentId);
+            if (!comp) return;
+            
+            let html = '';
+            
+            evaluacionesSeleccionadas.forEach(evalId => {
+                const data = resultadosPorEval[evalId];
+                if (!data) return;
+                
+                const ev = data.evaluacion;
+                const yearName = ev?.academic_years ? ev.academic_years.year_name : '';
+                const conObs = data.ratings.filter(r =>
+                    r.component_id === componentId && r.observations && r.observations.trim()
+                );
+                
+                if (conObs.length === 0) return;
+                
+                html += `
+                    <div class="mb-3">
+                        <div class="mb-2" style="font-weight:600; color: var(--module-primary);">
+                            ${ev?.evaluation_name || 'Evaluación'}${yearName ? ' · ' + yearName : ''}
+                        </div>
+                `;
+                
+                conObs.forEach(r => {
+                    const autor = r.worker_email || 'Valoración de consenso';
+                    html += `
+                        <div class="obs-item">
+                            <div class="obs-meta">
+                                <i class="bi bi-person me-1"></i>${autor}
+                                <span class="ms-3"><i class="bi bi-star me-1"></i>${r.rating_value} · ${obtenerNombreNivel(r.rating_value)}</span>
+                            </div>
+                            <div class="obs-text">${escaparHtml(r.observations)}</div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+            });
+            
+            if (!html) {
+                html = `
+                    <div class="text-muted text-center py-4">
+                        <i class="bi bi-chat-left-text d-block mb-2" style="font-size:1.75rem;"></i>
+                        No hay observaciones registradas para este componente
+                    </div>
+                `;
+            }
+            
+            document.getElementById('modal-obs-titulo').textContent = comp.component_name;
+            document.getElementById('modal-obs-body').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('modalObservaciones')).show();
+        }
+        
+        function escaparHtml(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto || '';
+            return div.innerHTML;
         }
         
         function renderizarCeldaVariacion(valorActual, valorAnterior) {
