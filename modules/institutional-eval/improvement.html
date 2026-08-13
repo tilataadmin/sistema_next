@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.28.21.00">
+    <meta name="page-version" content="26.8.13.1">
     <title>Plan de Mejoramiento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -70,6 +70,18 @@
         .score-inline.level-2 { color: #d97706; }
         .score-inline.level-3 { color: #0ea5e9; }
         .score-inline.level-4 { color: #059669; }
+        
+        /* Componente con observaciones */
+        .comp-row-obs { cursor: pointer; }
+        .comp-row-obs:hover { background: #eef2f7 !important; border-radius: 4px; }
+        
+        /* Observaciones en modal */
+        .obs-item {
+            border-left: 3px solid #2563eb; background: #f8f9fa;
+            padding: 0.75rem 1rem; margin-bottom: 0.75rem; border-radius: 0 4px 4px 0;
+        }
+        .obs-item .obs-meta { font-size: 0.75rem; color: #6c757d; margin-bottom: 0.35rem; }
+        .obs-item .obs-text { font-size: 0.875rem; white-space: pre-wrap; }
         
         /* Tarjetas de proyecto vinculado */
         .project-link-card {
@@ -224,6 +236,26 @@
         </div>
 
     </div><!-- fin container-fluid -->
+
+    <!-- ==========================================
+         MODAL: OBSERVACIONES DEL COMPONENTE
+         ========================================== -->
+    <div class="modal fade" id="modalObservaciones" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header" style="background: var(--module-light);">
+                    <h5 class="modal-title">
+                        <i class="bi bi-chat-left-text me-2"></i>Observaciones: <span id="modal-obs-titulo"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modal-obs-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 
     <!-- ==========================================
@@ -383,6 +415,7 @@
         let procesosCache = [];
         let componentesCache = [];
         let ratingsPromedios = {}; // { componentId: avg }
+        let ratingsCache = [];     // ratings completos con observaciones
         let vinculosCache = [];
         let proyectosCache = [];
         let milestonesCache = {};
@@ -496,8 +529,9 @@
             try {
                 // 1. Ratings para calcular promedios por componente
                 const ratings = await supabaseRequest(
-                    `/ie_component_ratings?select=component_id,rating_value&evaluation_id=eq.${selectedEvalId}`
+                    `/ie_component_ratings?select=component_id,rating_value,observations,worker_email&evaluation_id=eq.${selectedEvalId}`
                 );
+                ratingsCache = ratings;
                 
                 // Calcular promedio por componente
                 ratingsPromedios = {};
@@ -521,6 +555,7 @@
             } catch (error) {
                 console.error('❌ Error cargando datos de evaluación:', error);
                 ratingsPromedios = {};
+                ratingsCache = [];
                 vinculosCache = [];
             }
         }
@@ -680,15 +715,82 @@
                 const avg = ratingsPromedios[comp.component_id];
                 const isCritical = avg !== undefined && avg <= 2;
                 
+                const tieneObs = ratingsCache.some(r =>
+                    r.component_id === comp.component_id && r.observations && r.observations.trim()
+                );
+                const obsIcon = tieneObs
+                    ? ` <i class="bi bi-chat-left-text-fill ms-1" style="font-size:0.7rem; color:#2563eb;"></i>`
+                    : '';
+                const rowExtra = tieneObs
+                    ? ` comp-row-obs" onclick="verObservaciones('${comp.component_id}')" title="Ver observaciones registradas`
+                    : '';
+                
                 html += `
-                    <div class="d-flex justify-content-between align-items-center py-1 px-2 ${isCritical ? 'bg-danger bg-opacity-10 rounded' : ''}" style="font-size: 0.8rem;">
-                        <span class="${isCritical ? 'text-danger fw-500' : 'text-muted'}">${comp.component_name}</span>
+                    <div class="d-flex justify-content-between align-items-center py-1 px-2 ${isCritical ? 'bg-danger bg-opacity-10 rounded' : ''}${rowExtra}" style="font-size: 0.8rem;">
+                        <span class="${isCritical ? 'text-danger fw-500' : 'text-muted'}">${comp.component_name}${obsIcon}</span>
                         ${avg !== undefined ? `<span class="score-inline ${getNivelClass(avg)}" style="font-size:0.8rem;">${avg.toFixed(2)}</span>` : '<span class="text-muted">-</span>'}
                     </div>
                 `;
             });
             html += '</div>';
             return html;
+        }
+        
+        // ==========================================
+        // OBSERVACIONES DE UN COMPONENTE
+        // ==========================================
+        function verObservaciones(componentId) {
+            const comp = componentesCache.find(c => c.component_id === componentId);
+            if (!comp) return;
+            
+            const conObs = ratingsCache.filter(r =>
+                r.component_id === componentId && r.observations && r.observations.trim()
+            );
+            
+            let html = '';
+            
+            if (conObs.length === 0) {
+                html = `
+                    <div class="text-muted text-center py-4">
+                        <i class="bi bi-chat-left-text d-block mb-2" style="font-size:1.75rem;"></i>
+                        No hay observaciones registradas para este componente
+                    </div>
+                `;
+            } else {
+                const avg = ratingsPromedios[componentId];
+                if (avg !== undefined) {
+                    html += `
+                        <div class="mb-3 small text-muted">
+                            Promedio del componente:
+                            <span class="score-inline ${getNivelClass(avg)}">${avg.toFixed(2)}</span>
+                            · ${obtenerNombreNivel(Math.round(avg))}
+                        </div>
+                    `;
+                }
+                
+                conObs.forEach(r => {
+                    const autor = r.worker_email || 'Valoración de consenso';
+                    html += `
+                        <div class="obs-item">
+                            <div class="obs-meta">
+                                <i class="bi bi-person me-1"></i>${autor}
+                                <span class="ms-3"><i class="bi bi-star me-1"></i>${r.rating_value} · ${obtenerNombreNivel(r.rating_value)}</span>
+                            </div>
+                            <div class="obs-text">${escaparHtml(r.observations)}</div>
+                        </div>
+                    `;
+                });
+            }
+            
+            document.getElementById('modal-obs-titulo').textContent = comp.component_name;
+            document.getElementById('modal-obs-body').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('modalObservaciones')).show();
+        }
+        
+        function escaparHtml(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto || '';
+            return div.innerHTML;
         }
         
         function renderizarVinculosProceso(vinculos) {
