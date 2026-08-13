@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-12 12:10 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-12 20:09 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -14,7 +14,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [courses](#courses) | 59 | 2 | 4 |
 | [users](#users) | 58 | 4 | 11 |
 | [sections](#sections) | 55 | 1 | 4 |
-| [system_config](#systemconfig) | 54 | 3 | 2 |
+| [system_config](#systemconfig) | 55 | 3 | 2 |
 | [students](#students) | 50 | 4 | 9 |
 | [roles](#roles) | 33 | 1 | 1 |
 | [user_roles](#userroles) | 33 | 3 | 3 |
@@ -256,6 +256,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [dashboard_indicators](#dashboardindicators) | 2 | 1 | 0 |
 | [dashboard_variables](#dashboardvariables) | 2 | 1 | 0 |
 | [env_water_alert_history](#envwateralerthistory) | 2 | 1 | 0 |
+| [familia_actividad_envios](#familiaactividadenvios) | 2 | 1 | 0 |
+| [familia_actividad_plantillas](#familiaactividadplantillas) | 2 | 1 | 0 |
 | [form_access_workers](#formaccessworkers) | 2 | 1 | 0 |
 | [hr_clearance_admins](#hrclearanceadmins) | 2 | 1 | 0 |
 | [hr_clearance_areas](#hrclearanceareas) | 2 | 1 | 0 |
@@ -321,8 +323,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [facial_recognition_settings](#facialrecognitionsettings) | 1 | 0 | 0 |
 | [facial_recognition_training](#facialrecognitiontraining) | 1 | 1 | 0 |
 | [familia_actividad_asistencias_familiares](#familiaactividadasistenciasfamiliares) | 1 | 1 | 0 |
-| [familia_actividad_envios](#familiaactividadenvios) | 1 | 0 | 0 |
-| [familia_actividad_plantillas](#familiaactividadplantillas) | 1 | 1 | 0 |
 | [family_members](#familymembers) | 1 | 1 | 0 |
 | [hr_clearance_items](#hrclearanceitems) | 1 | 1 | 0 |
 | [hr_clearance_processes](#hrclearanceprocesses) | 1 | 1 | 0 |
@@ -675,7 +675,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | embed | 611, 860, 1045 |
 | `modules/general-tools/family-activities.html` | general-tools | embed | 762, 835 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 353 |
-| `modules/general-tools/family-attendance.html` | general-tools | embed | 323 |
+| `modules/general-tools/family-attendance.html` | general-tools | embed | 328 |
 | `modules/new-students/index.html` | new-students | GET | 639 |
 | `modules/new-students/new-students-report.html` | new-students | embed | 639 |
 | `modules/new-students/register-activities.html` | new-students | embed | 995 |
@@ -739,7 +739,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | GET, embed | 611, 860, 1045 |
 | `modules/general-tools/family-activities.html` | general-tools | GET, embed | 408, 762, 835 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 354 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET | 323 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 328 |
 | `modules/general-tools/lists.html` | general-tools | GET, embed | 740, 1224, 1773, 2025, 2508 |
 | `modules/general-tools/tasks.html` | general-tools | embed | 2229, 2291 |
 | `modules/new-students/index.html` | new-students | GET | 635 |
@@ -864,7 +864,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | embed | 611, 860, 1045, 1244 |
 | `modules/general-tools/family-activities.html` | general-tools | embed | 762, 835 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 352 |
-| `modules/general-tools/family-attendance.html` | general-tools | embed | 323 |
+| `modules/general-tools/family-attendance.html` | general-tools | embed | 328 |
 | `modules/general-tools/lists.html` | general-tools | GET | 793 |
 | `modules/hr/absence-reports.html` | hr | GET, embed | 625, 631 |
 | `modules/hr/clearances.html` | hr | GET, embed | 623, 869, 1077, 1640, 1830, 1969, 2249 |
@@ -934,6 +934,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | GET | 530 |
 | `modules/general-tools/family-activities.html` | general-tools | GET | 362 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 351 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 888 |
 | `modules/general-tools/family-messages.html` | general-tools | GET | 583 |
 | `modules/general-tools/generar-dias-tilata.html` | general-tools | GET | 264 |
 | `modules/general-tools/lists.html` | general-tools | GET | 622 |
@@ -988,7 +989,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | GET, embed | 860, 1045 |
 | `modules/general-tools/dashboard.html` | general-tools | embed | 804 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 399 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET | 498 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 507 |
 | `modules/general-tools/lists.html` | general-tools | GET | 1034, 1224, 1311, 1773, 2025, 2156, 2508 |
 | `modules/general-tools/registro-facial.html` | general-tools | GET | 869, 909 |
 | `modules/new-students/new-students-report.html` | new-students | GET, ND | 309, 639 |
@@ -1193,7 +1194,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/attendance-reports.html` | general-tools | GET | 1153, 1340, 1897 |
 | `modules/general-tools/community-query.html` | general-tools | embed | 860, 1045 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | embed | 399 |
-| `modules/general-tools/family-attendance.html` | general-tools | embed | 498 |
+| `modules/general-tools/family-attendance.html` | general-tools | embed | 507 |
 | `modules/general-tools/lists.html` | general-tools | embed | 1034, 1224, 1311, 1773, 2025, 2156, 2508 |
 | `modules/new-students/new-students-report.html` | new-students | embed | 309 |
 | `modules/security/id-cards.html` | security | embed | 678 |
@@ -3218,7 +3219,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | DELETE, GET, PATCH, POST | 408, 595, 686, 693, 926 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 355 |
-| `modules/general-tools/family-attendance.html` | general-tools | embed | 411 |
+| `modules/general-tools/family-attendance.html` | general-tools | embed | 416 |
 
 ### familia_actividad_asistencias
 
@@ -3226,7 +3227,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | GET | 907 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 410 |
-| `modules/general-tools/family-attendance.html` | general-tools | PATCH, POST | 751, 756 |
+| `modules/general-tools/family-attendance.html` | general-tools | PATCH, POST | 764, 769 |
 
 ### familia_actividad_cursos
 
@@ -3234,7 +3235,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | DELETE, GET, POST, embed | 408, 595, 719, 728, 744, 922 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 356 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH | 411, 868 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH | 416, 1138 |
 
 ### generated_contracts
 
@@ -3638,6 +3639,20 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/environmental/water-alerts.html` | environmental | GET, POST | 1178, 1282 |
 | `modules/environmental/water-reports.html` | environmental | embed | 1129 |
+
+### familia_actividad_envios
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/general-tools/family-activities.html` | general-tools | GET | 892 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH, POST | 903, 1210, 1244, 1366 |
+
+### familia_actividad_plantillas
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 876 |
+| `modules/general-tools/family-messages.html` | general-tools | GET, PATCH, POST | 603, 847, 860, 944 |
 
 ### form_access_workers
 
@@ -4079,19 +4094,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/family-attendance.html` | general-tools | DELETE, POST | 767, 779 |
-
-### familia_actividad_envios
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/general-tools/family-activities.html` | general-tools | GET | 892 |
-
-### familia_actividad_plantillas
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/general-tools/family-messages.html` | general-tools | GET, PATCH, POST | 603, 847, 860, 944 |
+| `modules/general-tools/family-attendance.html` | general-tools | DELETE, POST | 780, 792 |
 
 ### family_members
 
