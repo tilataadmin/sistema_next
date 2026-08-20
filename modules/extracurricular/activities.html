@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.5">
+    <meta name="page-version" content="26.8.20.1">
     <title>Actividades Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -151,9 +151,10 @@
                 </div>
                 <div class="card-body">
                     <p class="hint mb-3">
-                        Estimación sobre las actividades en la oferta. Nada se guarda: el precio se congela al publicar
-                        la temporada. Si algo cambia después de calcular —un mínimo, un valor, una sesión— hay que volver
-                        a calcular.
+                        Estimación sobre las actividades en la oferta. El sistema sugiere los tres valores; puede
+                        ajustarlos a mano en el desglose de cada actividad y quedan guardados. El precio definitivo
+                        se congela al publicar la temporada. Si algo cambia después de calcular —un mínimo, un valor,
+                        una sesión— hay que volver a calcular.
                     </p>
                     <div id="resultado-precios"></div>
                 </div>
@@ -329,7 +330,8 @@
         let modalActividad = null;
         let modalCostos = null;
         let actividadCostos = null; // actividad abierta en el modal de costos
-
+        let precioAbierto = null;   // activity_id del desglose desplegado, para reabrirlo tras guardar
+        let ultimoCalculo = null;   // res.actividades del último cálculo, para revalidar al guardar
         const ESTADOS = {
             draft:             { texto: 'Borrador',                clase: 'estado-draft' },
             published:         { texto: 'Publicada',               clase: 'estado-published' },
@@ -1242,7 +1244,12 @@
                         activity_name: a.activity_name,
                         modality: a.modality,
                         min_students: a.min_students,
-                        dias: a.dias
+                        dias: a.dias,
+                        // ecCalcularPrecios copia el objeto entero al detalle,
+                        // así que estos tres llegan intactos a renderOpcionesTarifa.
+                        override_price_none: a.override_price_none,
+                        override_price_linked: a.override_price_linked,
+                        override_price_unlinked: a.override_price_unlinked
                     })),
                     cacheConceptos,
                     cacheCostos,
@@ -1254,9 +1261,9 @@
                 return;
             }
 
+            ultimoCalculo = res.actividades;
             renderPrecios(res, ofertadas.length);
         }
-
         function renderPrecios(res, cuantas) {
             const cont = document.getElementById('resultado-precios');
             const tv = temporadaSel.transport_rate_linked;
@@ -1275,7 +1282,7 @@
             }
 
             res.actividades.forEach((d, idx) => {
-                const idCol = 'desglose-' + idx;
+                const idCol = 'desglose-' + d.activity_id;
                 const conError = d.errores.length > 0;
 
                 html += `
@@ -1303,7 +1310,7 @@
                         d.errores.map(e => `<li>${escaparHTML(e)}</li>`).join('') + '</ul>';
                 } else {
                     html += `
-                        <div class="collapse mt-3" id="${idCol}">
+                        <div class="collapse mt-3 ${precioAbierto === d.activity_id ? 'show' : ''}" id="${idCol}">
                             <div class="table-responsive">
                                 <table class="table table-sm tabla-desglose mb-2">
                                     <thead class="table-light">
@@ -1342,7 +1349,7 @@
                                     </tfoot>
                                 </table>
                             </div>
-                            ${hayTarifas ? renderOpcionesTarifa(d, tv, tnv) : `
+                            ${hayTarifas ? renderOpcionesTarifa(d, tv, tnv, esEditable()) : `
                             <div class="hint"><i class="bi bi-info-circle me-1"></i>La temporada no tiene tarifas de transporte digitadas, así que no se pueden mostrar las tres opciones que ve la familia.</div>`}
                         </div>`;
                 }
@@ -1353,25 +1360,205 @@
             cont.innerHTML = html;
         }
 
-        // Las tres opciones de la sección 6.7. El transporte se suma al precio,
-        // no entra al prorrateo: es un cobro por estudiante y por sesión.
-        function renderOpcionesTarifa(d, tv, tnv) {
-            const o = ecOpcionesTarifa(d.precio, d.sesiones, parseFloat(tv), parseFloat(tnv));
-            return `
+                // Las tres opciones de la sección 6.7, ahora ajustables.
+        //
+        // El sistema sugiere; el coordinador decide. Dejar un campo vacío
+        // significa "usar lo que sugiere el sistema", y por eso el valor
+        // sugerido va como placeholder: se ve sin haber sido digitado.
+        //
+        // El costo real del operador se muestra aparte y no se deforma nunca:
+        // es el número que Tesorería concilia contra su factura.
+        function renderOpcionesTarifa(d, tv, tnv, editable) {
+            const o = ecOpcionesTarifa(d.precio, d.sesiones, parseFloat(tv), parseFloat(tnv), {
+                none: d.override_price_none,
+                linked: d.override_price_linked,
+                unlinked: d.override_price_unlinked
+            });
+
+            const marca = ok => ok
+                ? '<span class="badge bg-warning text-dark ms-2" style="font-size:0.7rem;">ajustado</span>'
+                : '';
+
+            // Solo lectura cuando la temporada dejó de ser borrador.
+            if (!editable) {
+                return `
                 <div class="table-responsive">
                     <table class="table table-sm mb-0">
                         <thead class="table-light">
                             <tr><th>Opción para la familia</th><th class="text-end">Total</th></tr>
                         </thead>
                         <tbody>
-                            <tr><td>Sin transporte</td><td class="text-end">${fmtCOP(o.sinTransporte)}</td></tr>
-                            <tr><td>Con transporte · ruta vinculada <span class="hint">(${fmtCOP(parseFloat(tv))} × ${d.sesiones})</span></td><td class="text-end">${fmtCOP(o.conTransporteVinculada)}</td></tr>
-                            <tr><td>Con transporte · sin ruta <span class="hint">(${fmtCOP(parseFloat(tnv))} × ${d.sesiones})</span></td><td class="text-end">${fmtCOP(o.conTransporteNoVinculada)}</td></tr>
+                            <tr><td>Sin transporte${marca(o.ajustado.none)}</td>
+                                <td class="text-end">${fmtCOP(o.sinTransporte)}</td></tr>
+                            <tr><td>Con transporte · ruta vinculada${marca(o.ajustado.linked)}
+                                <span class="hint">(operador ${fmtCOP(o.transporteOperador.linked)})</span></td>
+                                <td class="text-end">${fmtCOP(o.conTransporteVinculada)}</td></tr>
+                            <tr><td>Con transporte · sin ruta${marca(o.ajustado.unlinked)}
+                                <span class="hint">(operador ${fmtCOP(o.transporteOperador.unlinked)})</span></td>
+                                <td class="text-end">${fmtCOP(o.conTransporteNoVinculada)}</td></tr>
                         </tbody>
                     </table>
                 </div>`;
+            }
+
+            const campo = (clave, valor) => `
+                <input type="number" min="0" step="1000" class="form-control form-control-sm text-end"
+                       id="aj-${clave}-${d.activity_id}"
+                       value="${valor === null || valor === undefined ? '' : parseFloat(valor)}"
+                       placeholder="${o.sugerido[clave]}" style="max-width:9rem;margin-left:auto;">`;
+
+            const linea = v => v === 0 ? ''
+                : `<div class="hint">${v > 0 ? 'Recargo' : 'Subsidio'} de ${fmtCOP(Math.abs(v))}</div>`;
+
+            const hayAjuste = o.ajustado.none || o.ajustado.linked || o.ajustado.unlinked;
+
+            return `
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-2">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Opción para la familia</th>
+                                <th class="text-end">Sugerido</th>
+                                <th class="text-end" style="width:10rem;">Se cobrará</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Sin transporte${marca(o.ajustado.none)}${linea(o.subsidio.none)}</td>
+                                <td class="text-end hint">${fmtCOP(o.sugerido.none)}</td>
+                                <td>${campo('none', d.override_price_none)}</td>
+                            </tr>
+                            <tr>
+                                <td>Con transporte · ruta vinculada${marca(o.ajustado.linked)}
+                                    <span class="hint">(operador ${fmtCOP(parseFloat(tv))} × ${d.sesiones} = ${fmtCOP(o.transporteOperador.linked)})</span>
+                                    ${linea(o.subsidio.linked)}</td>
+                                <td class="text-end hint">${fmtCOP(o.sugerido.linked)}</td>
+                                <td>${campo('linked', d.override_price_linked)}</td>
+                            </tr>
+                            <tr>
+                                <td>Con transporte · sin ruta${marca(o.ajustado.unlinked)}
+                                    <span class="hint">(operador ${fmtCOP(parseFloat(tnv))} × ${d.sesiones} = ${fmtCOP(o.transporteOperador.unlinked)})</span>
+                                    ${linea(o.subsidio.unlinked)}</td>
+                                <td class="text-end hint">${fmtCOP(o.sugerido.unlinked)}</td>
+                                <td>${campo('unlinked', d.override_price_unlinked)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="hint">
+                        Campo vacío = se usa el valor sugerido. Ajustar el precio sin transporte
+                        arrastra a los otros dos, salvo que también estén digitados.
+                    </span>
+                    <span>
+                        ${hayAjuste ? `<button class="btn btn-sm btn-outline-secondary"
+                            onclick="restaurarAjustePrecio('${d.activity_id}')">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar cálculo</button>` : ''}
+                        <button class="btn btn-sm btn-ec ms-1" onclick="guardarAjustePrecio('${d.activity_id}')">
+                            <i class="bi bi-save me-1"></i>Guardar ajuste</button>
+                    </span>
+                </div>`;
         }
 
+        // Lee los tres campos, valida y guarda. Un campo vacío se guarda como
+        // NULL: es la forma de decir "vuelve a usar el cálculo".
+        async function guardarAjustePrecio(activityId) {
+            if (!esEditable()) return;
+
+            const leer = clave => {
+                const el = document.getElementById(`aj-${clave}-${activityId}`);
+                const txt = (el?.value || '').trim();
+                if (txt === '') return null;
+                const n = parseFloat(txt);
+                return isNaN(n) ? NaN : n;
+            };
+
+            const vals = { none: leer('none'), linked: leer('linked'), unlinked: leer('unlinked') };
+
+            for (const k of ['none', 'linked', 'unlinked']) {
+                if (isNaN(vals[k])) { showMessage('Los valores deben ser números.', 'warning'); return; }
+                if (vals[k] !== null && vals[k] < 0) { showMessage('Los valores no pueden ser negativos.', 'warning'); return; }
+            }
+
+            // Se revalida con el motor porque el arrastre cambia los efectivos:
+            // digitar solo el precio base mueve los otros dos.
+            const d = (ultimoCalculo || []).find(x => x.activity_id === activityId);
+            if (!d) { showMessage('Vuelva a calcular los precios antes de ajustar.', 'warning'); return; }
+
+            const o = ecOpcionesTarifa(d.precio, d.sesiones,
+                parseFloat(temporadaSel.transport_rate_linked),
+                parseFloat(temporadaSel.transport_rate_unlinked), vals);
+
+            if (o.conTransporteNoVinculada < o.conTransporteVinculada) {
+                showMessage('El total sin ruta no puede ser menor que el de ruta vinculada. ' +
+                            'La base rechaza esa combinación al publicar.', 'warning');
+                return;
+            }
+
+            const avisos = [];
+            [['sin transporte', o.sinTransporte], ['con ruta vinculada', o.conTransporteVinculada],
+             ['sin ruta', o.conTransporteNoVinculada]].forEach(([n, v]) => {
+                if (v % 1000 !== 0) avisos.push(`El total ${n} (${fmtCOP(v)}) no es múltiplo de mil.`);
+            });
+            if (o.conTransporteVinculada < o.sinTransporte) {
+                avisos.push('El total con ruta vinculada quedó por debajo del total sin transporte.');
+            }
+
+            try {
+                mostrarLoading();
+                await supabaseRequest(`/svc_extracurricular_activities?activity_id=eq.${activityId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        override_price_none: vals.none,
+                        override_price_linked: vals.linked,
+                        override_price_unlinked: vals.unlinked,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                precioAbierto = activityId;
+                await cargarActividades();
+                calcularPrecios();
+                ocultarLoading();
+                showMessage(avisos.length === 0
+                    ? 'Ajuste guardado.'
+                    : 'Ajuste guardado. ' + avisos.join(' '),
+                    avisos.length === 0 ? 'success' : 'warning');
+            } catch (err) {
+                ocultarLoading();
+                console.error('❌ Error guardando el ajuste:', err);
+                showMessage('Error al guardar el ajuste: ' + (err.message || ''), 'danger');
+            }
+        }
+
+        // Borra los tres ajustes y devuelve la actividad al cálculo del motor.
+        async function restaurarAjustePrecio(activityId) {
+            if (!esEditable()) return;
+            if (!confirm('Se borran los tres valores ajustados y la actividad vuelve al precio calculado.\n\n¿Continuar?')) return;
+
+            try {
+                mostrarLoading();
+                await supabaseRequest(`/svc_extracurricular_activities?activity_id=eq.${activityId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        override_price_none: null,
+                        override_price_linked: null,
+                        override_price_unlinked: null,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+
+                precioAbierto = activityId;
+                await cargarActividades();
+                calcularPrecios();
+                ocultarLoading();
+                showMessage('Ajuste eliminado. La actividad vuelve al precio calculado.', 'success');
+            } catch (err) {
+                ocultarLoading();
+                console.error('❌ Error restaurando el cálculo:', err);
+                showMessage('Error al restaurar: ' + (err.message || ''), 'danger');
+            }
+        }
         // ==========================================
         // UTILIDADES
         // ==========================================
