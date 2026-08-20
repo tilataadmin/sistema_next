@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.31.4">
+    <meta name="page-version" content="26.8.20.1">
     <title>Temporadas de Extracurriculares - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1134,12 +1134,28 @@
                     activity_name: a.activity_name,
                     modality: a.modality,
                     min_students: a.min_students,
-                    dias: a.dias
+                    dias: a.dias,
+                    override_price_none: a.override_price_none,
+                    override_price_linked: a.override_price_linked,
+                    override_price_unlinked: a.override_price_unlinked
                 })),
                 conceptosPub,
                 costosPub,
                 sesionesPorDiaMapa()
             );
+        }
+
+        // Los tres totales efectivos de una actividad, con sus ajustes aplicados.
+        // Es lo que se congela al publicar y lo que verá la familia.
+        function opcionesPub(d) {
+            return ecOpcionesTarifa(d.precio, d.sesiones,
+                parseFloat(temporadaSel.transport_rate_linked),
+                parseFloat(temporadaSel.transport_rate_unlinked),
+                {
+                    none: d.override_price_none,
+                    linked: d.override_price_linked,
+                    unlinked: d.override_price_unlinked
+                });
         }
 
         function validacionesPublicacion() {
@@ -1213,6 +1229,28 @@
                 detalle: ofertadas.length > 0
                     ? ofertadas.length + ' actividad' + (ofertadas.length === 1 ? '' : 'es') + ' se publicarán.'
                     : 'Las actividades en borrador no se publican. Inclúyalas en la oferta desde Actividades.'
+            });
+
+            // Red de seguridad. Actividades bloquea esta combinación al guardar,
+            // pero un ajuste hecho directamente en la base la dejaría pasar y el
+            // CHECK de svc_extracurricular_activities la rechazaría a mitad del
+            // ciclo de publicación, con unas actividades ya congeladas y otras no.
+            const desordenadas = [];
+            if (res) {
+                res.actividades.filter(d => d.errores.length === 0).forEach(d => {
+                    const o = opcionesPub(d);
+                    if (o.conTransporteNoVinculada < o.conTransporteVinculada) {
+                        desordenadas.push(d.activity_name);
+                    }
+                });
+            }
+            v.push({
+                n: 8,
+                texto: 'Los tres totales de cada actividad guardan el orden correcto',
+                ok: desordenadas.length === 0,
+                detalle: desordenadas.length === 0
+                    ? ''
+                    : 'El total sin ruta es menor que el de ruta vinculada en: ' + desordenadas.join('; ') + '.'
             });
 
             return v;
@@ -1298,19 +1336,44 @@
                     </tr>`).join('') + '</tbody></table></div>';
 
             if (res && todoOk) {
+                const conAjuste = [];
+                const filas = res.actividades.map(d => {
+                    const o = opcionesPub(d);
+                    const ajustada = o.ajustado.none || o.ajustado.linked || o.ajustado.unlinked;
+                    if (ajustada) conAjuste.push(d.activity_name);
+                    return `<tr>
+                        <td>${escaparHTML(d.activity_name)}
+                            <span class="hint">· ${d.sesiones} sesiones</span>
+                            ${ajustada ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.7rem;">ajustada</span>' : ''}</td>
+                        <td class="text-end fw-semibold">${fmtCOP(o.sinTransporte)}</td>
+                        <td class="text-end">${fmtCOP(o.conTransporteVinculada)}</td>
+                        <td class="text-end">${fmtCOP(o.conTransporteNoVinculada)}</td>
+                    </tr>`;
+                }).join('');
+
                 html += '<div class="table-responsive mb-3"><table class="table table-sm mb-0">' +
-                    '<thead class="table-light"><tr><th>Se congelará</th><th class="text-end">Precio</th></tr></thead><tbody>' +
-                    res.actividades.map(d =>
-                        `<tr><td>${escaparHTML(d.activity_name)} <span class="hint">· ${d.sesiones} sesiones</span></td>
-                             <td class="text-end fw-semibold">${fmtCOP(d.precio)}</td></tr>`
-                    ).join('') + '</tbody></table></div>';
+                    '<thead class="table-light"><tr><th>Se congelará</th>' +
+                    '<th class="text-end">Sin transporte</th>' +
+                    '<th class="text-end">Ruta vinculada</th>' +
+                    '<th class="text-end">Sin ruta</th></tr></thead><tbody>' +
+                    filas + '</tbody></table></div>';
+
+                if (conAjuste.length > 0) {
+                    html += `<div class="alert alert-warning py-2 px-3 mb-3" style="font-size:0.85rem;">
+                        <i class="bi bi-pencil-square me-1"></i>
+                        <strong>${conAjuste.length} actividad(es) con valores ajustados a mano:</strong>
+                        ${escaparHTML(conAjuste.join('; '))}.
+                        Verifique que sigan siendo los vigentes: un ajuste hecho antes de cambiar un concepto,
+                        un mínimo o una sesión no se recalcula solo.
+                    </div>`;
+                }
             }
 
             html += `<button class="btn btn-ec" onclick="publicarTemporada()" ${todoOk ? '' : 'disabled'}>
                         <i class="bi bi-send me-1"></i>Publicar temporada
                      </button>
                      <div class="hint mt-2">
-                        Publicar congela el precio de cada actividad y las dos tarifas. A partir de ahí,
+                        Publicar congela los tres totales de cada actividad y las dos tarifas del operador. A partir de ahí,
                         cambiar un concepto, un mínimo o una sesión ya no mueve lo que paga una familia inscrita.
                      </div>`;
 
@@ -1328,13 +1391,17 @@
 
             const res = calcularPreciosOferta();
             const resumen = res.actividades
-                .map(d => `${d.activity_name}: ${fmtCOP(d.precio)}`)
+                .map(d => {
+                    const o = opcionesPub(d);
+                    return `${d.activity_name}: ${fmtCOP(o.sinTransporte)} / ` +
+                           `${fmtCOP(o.conTransporteVinculada)} / ${fmtCOP(o.conTransporteNoVinculada)}`;
+                })
                 .join('\n');
-
             if (!confirm(
-                `Se publicará "${temporadaSel.cycle_name}" con estos precios:\n\n${resumen}\n\n` +
-                `Quedan congelados. Cambiar después un concepto, un mínimo o una sesión no altera lo que ` +
-                `pague una familia ya inscrita.\n\n¿Continuar?`
+                `Se publicará "${temporadaSel.cycle_name}" con estos precios\n` +
+                `(sin transporte / ruta vinculada / sin ruta):\n\n${resumen}\n\n` +
+                `Quedan congelados. Cambiar después un concepto, un mínimo, una sesión o un ajuste ` +
+                `no altera lo que pague una familia ya inscrita.\n\n¿Continuar?`
             )) return;
 
             try {
@@ -1342,10 +1409,18 @@
 
                 // Primero los precios: si algo falla aquí, la temporada sigue en
                 // borrador y se puede reintentar. Al revés quedaría publicada sin precios.
-                for (const d of res.actividades) {
+                                for (const d of res.actividades) {
+                    const o = opcionesPub(d);
                     await supabaseRequest(`/svc_extracurricular_activities?activity_id=eq.${d.activity_id}`, {
                         method: 'PATCH',
-                        body: JSON.stringify({ frozen_price: d.precio, updated_at: new Date().toISOString() })
+                        body: JSON.stringify({
+                            // frozen_price es el total SIN transporte, ya con su ajuste
+                            // aplicado. No es d.precio: ese es lo que sugería el motor.
+                            frozen_price: o.sinTransporte,
+                            frozen_price_linked: o.conTransporteVinculada,
+                            frozen_price_unlinked: o.conTransporteNoVinculada,
+                            updated_at: new Date().toISOString()
+                        })
                     });
                 }
 
@@ -1473,7 +1548,17 @@
                 mostrarLoading();
                 await supabaseRequest(
                     `/svc_extracurricular_activities?cycle_id=eq.${temporadaSel.cycle_id}`,
-                    { method: 'PATCH', body: JSON.stringify({ frozen_price: null, updated_at: new Date().toISOString() }) }
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            // Los override_price_* NO se tocan: son la decisión del
+                            // coordinador y deben sobrevivir a una republicación.
+                            frozen_price: null,
+                            frozen_price_linked: null,
+                            frozen_price_unlinked: null,
+                            updated_at: new Date().toISOString()
+                        })
+                    }
                 );
                 await supabaseRequest(`/svc_extracurricular_cycles?cycle_id=eq.${temporadaSel.cycle_id}`, {
                     method: 'PATCH',
