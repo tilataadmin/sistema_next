@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-20 17:28 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-20 18:14 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -2541,7 +2541,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 345 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 392 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 440 |
-| `modules/extracurricular/seasons.html` | extracurricular | GET, PATCH | 614, 1092, 1346, 1474 |
+| `modules/extracurricular/seasons.html` | extracurricular | GET, PATCH | 614, 1092, 1414, 1549 |
 
 ### svc_extracurricular_cycles
 
@@ -2551,7 +2551,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 196 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 328 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 336 |
-| `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 450, 585, 589, 629, 1045, 1352, 1412, 1478 |
+| `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 450, 585, 589, 629, 1045, 1427, 1487, 1563 |
 
 ### svc_internal_event_services
 
@@ -2873,7 +2873,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/activities.html` | extracurricular | GET | 996 |
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 356 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET, PATCH | 517, 845 |
-| `modules/extracurricular/seasons.html` | extracurricular | GET | 1432 |
+| `modules/extracurricular/seasons.html` | extracurricular | GET | 1507 |
 
 ### svc_internal_events
 
