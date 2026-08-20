@@ -299,12 +299,70 @@ function ecCalcularPrecios(actividades, conceptos, costosPropios, sesionesPorDia
     return { sumaMinimos, actividades: resultado, errores };
 }
 
-// Las tres opciones que ve la familia (especificación 6.7)
-function ecOpcionesTarifa(precio, sesiones, tarifaVinculada, tarifaNoVinculada) {
+// Las tres opciones que ve la familia (especificación 6.7).
+//
+// Los tres valores son ajustables a mano. El quinto parámetro es opcional:
+// sin él la función se comporta exactamente como antes.
+//
+//   ajustes = { none, linked, unlinked }   null o ausente = usar el cálculo
+//
+// El total sin transporte es la base de los otros dos: si se ajusta, los dos
+// con transporte se recalculan sobre él. Así, redondear el precio base no
+// obliga a volver a digitar los otros dos. Ajustar uno de los de transporte
+// lo fija en ese valor y deja de seguir a la base.
+function ecOpcionesTarifa(precio, sesiones, tarifaVinculada, tarifaNoVinculada, ajustes) {
+    const aj = ajustes || {};
+
+    // Cadena vacía, null, undefined y basura se tratan igual: no hay ajuste.
+    const num = v => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+    };
+
+    const ajNone     = num(aj.none);
+    const ajLinked   = num(aj.linked);
+    const ajUnlinked = num(aj.unlinked);
+
+    const baseEfectiva = ajNone !== null ? ajNone : precio;
+
+    // Lo que cobra el operador. No se deforma nunca: es el número que se
+    // concilia contra su factura.
+    const transporteVinculada   = Math.round(sesiones * tarifaVinculada);
+    const transporteNoVinculada = Math.round(sesiones * tarifaNoVinculada);
+
+    const sugLinked   = baseEfectiva + transporteVinculada;
+    const sugUnlinked = baseEfectiva + transporteNoVinculada;
+
+    const efLinked   = ajLinked   !== null ? ajLinked   : sugLinked;
+    const efUnlinked = ajUnlinked !== null ? ajUnlinked : sugUnlinked;
+
     return {
-        sinTransporte: precio,
-        conTransporteVinculada: precio + Math.round(sesiones * tarifaVinculada),
-        conTransporteNoVinculada: precio + Math.round(sesiones * tarifaNoVinculada)
+        // Valores efectivos: los que se publican y los que ve la familia.
+        sinTransporte: baseEfectiva,
+        conTransporteVinculada: efLinked,
+        conTransporteNoVinculada: efUnlinked,
+
+        // Lo que propone el sistema en el estado actual.
+        sugerido: { none: precio, linked: sugLinked, unlinked: sugUnlinked },
+
+        // Qué campos vienen de una decisión humana.
+        ajustado: {
+            none:     ajNone     !== null,
+            linked:   ajLinked   !== null,
+            unlinked: ajUnlinked !== null
+        },
+
+        // Costo real del transporte, para conciliar con el operador.
+        transporteOperador: { linked: transporteVinculada, unlinked: transporteNoVinculada },
+
+        // Diferencia entre lo que se cobra y lo que sugería el sistema.
+        // Positivo = recargo. Negativo = subsidio.
+        subsidio: {
+            none:     baseEfectiva - precio,
+            linked:   efLinked   - sugLinked,
+            unlinked: efUnlinked - sugUnlinked
+        }
     };
 }
 
@@ -357,6 +415,24 @@ function ecAutoprueba() {
         ['Cerámica — con transporte no vinculada', opCeramica.conTransporteNoVinculada, 661000],
         ['Cerámica — conceptos aplicados', ceramica.conceptos.length, 3]
     ];
+
+    // Ajuste manual de los tres totales.
+    const opSin  = ecOpcionesTarifa(ajedrez.precio, ajedrez.sesiones, 15650, 19000);
+    const opBase = ecOpcionesTarifa(ajedrez.precio, ajedrez.sesiones, 15650, 19000, { none: 750000 });
+    const opTres = ecOpcionesTarifa(ajedrez.precio, ajedrez.sesiones, 15650, 19000,
+                                    { none: 750000, linked: 1250000, unlinked: 1380000 });
+
+    casos.push(['Ajuste — sin ajustes se comporta igual', opSin.conTransporteVinculada, 1279750]);
+    casos.push(['Ajuste — sin ajustes no marca nada',
+                opSin.ajustado.none || opSin.ajustado.linked || opSin.ajustado.unlinked, false]);
+    casos.push(['Ajuste — la base arrastra a la vinculada', opBase.conTransporteVinculada, 1297750]);
+    casos.push(['Ajuste — la base arrastra a la no vinculada', opBase.conTransporteNoVinculada, 1415000]);
+    casos.push(['Ajuste — la base queda marcada', opBase.ajustado.none, true]);
+    casos.push(['Ajuste — los tres digitados mandan', opTres.conTransporteNoVinculada, 1380000]);
+    casos.push(['Ajuste — subsidio a la ruta vinculada', opTres.subsidio.linked, -47750]);
+    casos.push(['Ajuste — recargo al sin transporte', opTres.subsidio.none, 18000]);
+    casos.push(['Ajuste — costo real del operador no se deforma',
+                opTres.transporteOperador.linked, 547750]);
 
     // Escenario adicional: mínimo que no divide exacto, para verificar el redondeo.
     // Honorarios:    180000 × 18 ÷ 7 = 462857,14 -> 462857

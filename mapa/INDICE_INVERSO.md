@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-13 18:40 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-20 17:28 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -578,7 +578,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/year-closure.html` | config | GET, PATCH | 474, 603, 1630, 2308, 2364 |
 | `modules/config/years.html` | config | GET, PATCH, POST | 529, 893, 923, 1000, 1033 |
 | `modules/environmental/reports.html` | environmental | GET | 405 |
-| `modules/extracurricular/activities.html` | extracurricular | embed | 400 |
+| `modules/extracurricular/activities.html` | extracurricular | embed | 402 |
 | `modules/extracurricular/attendance.html` | extracurricular | embed | 196 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | embed | 328 |
 | `modules/extracurricular/enrollments.html` | extracurricular | embed | 336 |
@@ -661,7 +661,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/early-alerts/index.html` | early-alerts | GET | 811 |
 | `modules/early-alerts/manage-alerts.html` | early-alerts | embed | 949, 1073 |
 | `modules/early-alerts/register-alerts.html` | early-alerts | embed | 478 |
-| `modules/extracurricular/activities.html` | extracurricular | GET | 480 |
+| `modules/extracurricular/activities.html` | extracurricular | GET | 482 |
 | `modules/follow-ups/confidential-notes.html` | follow-ups | embed | 801 |
 | `modules/follow-ups/course-follow-up-queries.html` | follow-ups | embed | 690 |
 | `modules/follow-ups/course-follow-ups.html` | follow-ups | embed | 667 |
@@ -2537,7 +2537,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, PATCH, POST | 555, 877, 881, 972, 1016 |
+| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, PATCH, POST | 557, 879, 883, 974, 1018, 1509, 1541 |
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 345 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 392 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 440 |
@@ -2547,7 +2547,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | GET | 400 |
+| `modules/extracurricular/activities.html` | extracurricular | GET | 402 |
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 196 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 328 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 336 |
@@ -2852,7 +2852,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, POST, embed | 555, 905, 914, 920 |
+| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, POST, embed | 557, 907, 916, 922 |
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 338 |
 | `modules/extracurricular/enrollments.html` | extracurricular | embed | 440 |
 | `modules/extracurricular/seasons.html` | extracurricular | embed | 1092 |
@@ -2861,7 +2861,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | GET | 469 |
+| `modules/extracurricular/activities.html` | extracurricular | GET | 471 |
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 235 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 430 |
 | `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 627, 690, 785, 790, 895 |
@@ -2870,7 +2870,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | GET | 994 |
+| `modules/extracurricular/activities.html` | extracurricular | GET | 996 |
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 356 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET, PATCH | 517, 845 |
 | `modules/extracurricular/seasons.html` | extracurricular | GET | 1432 |
@@ -3385,7 +3385,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, PATCH, POST | 499, 997, 1184, 1186, 1191 |
+| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, PATCH, POST | 501, 999, 1186, 1188, 1193 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 699 |
 | `modules/extracurricular/seasons.html` | extracurricular | GET | 1088 |
 
@@ -3393,7 +3393,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | GET | 491 |
+| `modules/extracurricular/activities.html` | extracurricular | GET | 493 |
 | `modules/extracurricular/cost-concepts.html` | extracurricular | DELETE, GET, PATCH, POST | 411, 672, 676, 715 |
 | `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET | 628, 1084 |
 
@@ -3875,7 +3875,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, POST, embed | 555, 932, 941, 947 |
+| `modules/extracurricular/activities.html` | extracurricular | DELETE, GET, POST, embed | 557, 934, 943, 949 |
 | `modules/extracurricular/enrollments.html` | extracurricular | embed | 440 |
 
 ### svc_maintenance_notifications
