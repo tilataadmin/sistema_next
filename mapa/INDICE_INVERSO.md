@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 11:42 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 12:05 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -494,7 +494,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-planners.html` | planning | GET | 389, 404 |
 | `modules/planning/my-units.html` | planning | GET | 351 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 413, 419 |
-| `modules/planning/planner-form.html` | planning | GET | 1537, 1553 |
+| `modules/planning/planner-form.html` | planning | GET | 1544, 1560 |
 | `modules/planning/planners.html` | planning | GET | 425, 450 |
 | `modules/planning/unit-form.html` | planning | GET | 1401, 1460 |
 | `modules/planning/units.html` | planning | GET | 414, 439 |
@@ -616,7 +616,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-planners.html` | planning | GET | 400 |
 | `modules/planning/my-units.html` | planning | GET | 362 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 439 |
-| `modules/planning/planner-form.html` | planning | GET | 1629 |
+| `modules/planning/planner-form.html` | planning | GET | 1636 |
 | `modules/planning/planners.html` | planning | GET | 444 |
 | `modules/planning/unit-form.html` | planning | GET | 1421, 1731 |
 | `modules/planning/units.html` | planning | GET | 433 |
@@ -689,7 +689,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-planners.html` | planning | GET, embed | 401, 444 |
 | `modules/planning/my-units.html` | planning | GET, embed | 370, 414 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 421 |
-| `modules/planning/planner-form.html` | planning | GET | 1550 |
+| `modules/planning/planner-form.html` | planning | GET | 1557 |
 | `modules/planning/planners.html` | planning | GET | 446 |
 | `modules/planning/unit-form.html` | planning | GET, embed | 1458, 1463 |
 | `modules/planning/units.html` | planning | GET | 435 |
@@ -754,7 +754,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-planners.html` | planning | embed | 444 |
 | `modules/planning/my-units.html` | planning | GET, embed | 370, 517, 820 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 468 |
-| `modules/planning/planner-form.html` | planning | GET | 1657 |
+| `modules/planning/planner-form.html` | planning | GET | 1664 |
 | `modules/planning/unit-form.html` | planning | GET, embed | 1463, 1579, 1641, 1781, 4058 |
 | `modules/procedures/execute-form.html` | procedures | ND | 512 |
 | `modules/procedures/execute-public.html` | procedures | ND | 450 |
@@ -879,7 +879,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/interdisc-unit-form.html` | planning | GET | 1067 |
 | `modules/planning/my-units.html` | planning | GET | 412 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 423 |
-| `modules/planning/planner-form.html` | planning | GET | 1555 |
+| `modules/planning/planner-form.html` | planning | GET | 1562 |
 | `modules/planning/planners.html` | planning | GET | 449 |
 | `modules/planning/unit-form.html` | planning | GET | 1461 |
 | `modules/planning/units.html` | planning | GET | 438 |
@@ -1249,7 +1249,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-planners.html` | planning | GET | 403, 439 |
 | `modules/planning/my-units.html` | planning | GET | 410 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 422 |
-| `modules/planning/planner-form.html` | planning | GET | 1552 |
+| `modules/planning/planner-form.html` | planning | GET | 1559 |
 | `modules/planning/planners.html` | planning | GET | 445 |
 | `modules/planning/unit-form.html` | planning | GET | 1448 |
 | `modules/planning/units.html` | planning | GET | 434 |
@@ -1268,7 +1268,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/interdisc-unit-form.html` | planning | GET | 1068 |
 | `modules/planning/my-units.html` | planning | GET | 411 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 424 |
-| `modules/planning/planner-form.html` | planning | GET | 1554 |
+| `modules/planning/planner-form.html` | planning | GET | 1561 |
 | `modules/planning/planners.html` | planning | GET | 448 |
 | `modules/planning/unit-form.html` | planning | GET | 1462 |
 | `modules/planning/units.html` | planning | GET | 437 |
@@ -1292,7 +1292,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-planners.html` | planning | GET | 402 |
 | `modules/planning/my-units.html` | planning | GET | 413 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 420 |
-| `modules/planning/planner-form.html` | planning | GET | 1551 |
+| `modules/planning/planner-form.html` | planning | GET | 1558 |
 | `modules/planning/planners.html` | planning | GET | 447 |
 | `modules/planning/unit-form.html` | planning | GET | 1459 |
 | `modules/planning/units.html` | planning | GET | 436 |
@@ -1743,7 +1743,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/dp-planner-form.html` | planning | GET | 344 |
 | `modules/planning/interdisc-unit-form.html` | planning | GET | 1069 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 425 |
-| `modules/planning/planner-form.html` | planning | GET | 1557 |
+| `modules/planning/planner-form.html` | planning | GET | 1564 |
 | `modules/planning/unit-form.html` | planning | GET | 1451 |
 
 ### sup_suppliers
@@ -1849,7 +1849,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-myp-planners.html` | planning | GET, POST | 452, 507 |
 | `modules/planning/my-planners.html` | planning | GET, POST | 601, 665 |
 | `modules/planning/myp-planner-form.html` | planning | GET, PATCH | 435, 512, 920 |
-| `modules/planning/planner-form.html` | planning | GET, PATCH | 1501, 1604, 3769 |
+| `modules/planning/planner-form.html` | planning | GET, PATCH | 1508, 1611, 3777 |
 | `modules/planning/planners.html` | planning | GET | 526 |
 
 ### procedure_steps
@@ -2160,7 +2160,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/dp-planner-form.html` | planning | GET, PATCH, POST | 798, 800, 812 |
 | `modules/planning/interdisc-unit-form.html` | planning | GET, PATCH, POST | 2767, 2780, 2802 |
 | `modules/planning/myp-planner-form.html` | planning | GET, PATCH, POST | 1044, 1046, 1058 |
-| `modules/planning/planner-form.html` | planning | GET, PATCH, POST | 2948, 2959, 3039 |
+| `modules/planning/planner-form.html` | planning | GET, PATCH, POST | 2956, 2967, 3047 |
 | `modules/planning/unit-form.html` | planning | PATCH, POST | 2197, 2386 |
 
 ### pln_connection_types
@@ -2171,7 +2171,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/coordinator-area.html` | planning | GET | 1274 |
 | `modules/planning/coordinator-program.html` | planning | GET | 1611 |
 | `modules/planning/coordinator-section.html` | planning | GET | 1603 |
-| `modules/planning/planner-form.html` | planning | GET | 1556 |
+| `modules/planning/planner-form.html` | planning | GET | 1563 |
 | `modules/planning/unit-form.html` | planning | GET | 1457 |
 
 ### pln_dp_outlines
@@ -3284,7 +3284,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/planning/dp-planner-form.html` | planning | DELETE, GET, POST | 531, 576, 577 |
 | `modules/planning/myp-planner-form.html` | planning | DELETE, GET, POST | 639, 684, 685 |
-| `modules/planning/planner-form.html` | planning | DELETE, GET, POST | 1597, 3649, 3658 |
+| `modules/planning/planner-form.html` | planning | DELETE, GET, POST | 1604, 3657, 3666 |
 
 ### pln_planner_cycles
 
@@ -3292,14 +3292,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/planning/dp-planner-form.html` | planning | DELETE, GET, PATCH | 593, 659, 664, 689 |
 | `modules/planning/myp-planner-form.html` | planning | DELETE, GET, PATCH, POST | 829, 895, 910, 935 |
-| `modules/planning/planner-form.html` | planning | DELETE, GET, PATCH | 2063, 2394, 2432, 2653 |
+| `modules/planning/planner-form.html` | planning | DELETE, GET, PATCH | 2071, 2402, 2440, 2661 |
 
 ### pln_unit_grades
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/planning/my-units.html` | planning | POST | 796 |
-| `modules/planning/planner-form.html` | planning | GET | 1576 |
+| `modules/planning/planner-form.html` | planning | GET | 1583 |
 | `modules/planning/unit-form.html` | planning | GET, POST | 1550, 1749, 1810 |
 
 ### project_participants
@@ -4269,13 +4269,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/planner-form.html` | planning | DELETE, GET, PATCH | 3198, 3314, 3490, 3535 |
+| `modules/planning/planner-form.html` | planning | DELETE, GET, PATCH | 3206, 3322, 3498, 3543 |
 
 ### pln_planner_connections
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/planner-form.html` | planning | DELETE, GET, POST | 1591, 1845, 1885, 1894 |
+| `modules/planning/planner-form.html` | planning | DELETE, GET, POST | 1598, 1852, 1892, 1901 |
 
 ### pln_planner_dp_components
 
