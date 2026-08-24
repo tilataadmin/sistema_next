@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.1">
+    <meta name="page-version" content="26.8.24.1">
     <title>Resolución de Solicitudes - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -405,6 +405,25 @@
                         <p>Cargando histórico de solicitudes...</p>
                     </div>
 
+                                        <!-- Filtro por año presupuestal -->
+                    <div id="historyFilterBar" class="d-none mb-3">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-auto">
+                                <label for="filtroAnioHistorial" class="form-label mb-0 small text-muted">
+                                    <i class="bi bi-funnel me-1"></i>Año presupuestal
+                                </label>
+                            </div>
+                            <div class="col-auto">
+                                <select id="filtroAnioHistorial" class="form-select form-select-sm">
+                                    <option value="all">Todos los años</option>
+                                </select>
+                            </div>
+                            <div class="col-auto">
+                                <span class="small text-muted" id="historyFilterInfo"></span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Tabla de histórico -->
                     <div id="historyWrapper" class="d-none">
                         <div class="table-responsive">
@@ -432,7 +451,7 @@
                     <div id="emptyStateHistory" class="empty-state d-none">
                         <i class="bi bi-clock-history" style="color:#6c757d;"></i>
                         <h4>Sin histórico</h4>
-                        <p>Aún no has resuelto solicitudes.</p>
+                        <p id="emptyHistoryText">Aún no has resuelto solicitudes.</p>
                     </div>
                 </div>
 
@@ -500,6 +519,7 @@
         let modalDetalle;
         let currentBudgetYearId = null;        // año presupuestal vigente (system_config)
         let yearNamesById = new Map();         // year_id -> year_name, para el badge de año
+        let filtroAnioHistorial = 'all';       // filtro de año en la pestaña Historial
 
         // ===== ELEMENTOS DEL DOM =====
         const elementos = {
@@ -645,9 +665,9 @@
                 const disponibleFormateado = formatearMoneda(disponible);
                 const valorFormateado = formatearMoneda(solicitud.requested_value);
                 
-                // Truncar detalle para la tabla
-                const detalleCorto = truncarTexto(solicitud.request_details, 50);
-                const tieneDetalleCompleto = solicitud.request_details.length > 50;
+                // Truncar detalle para la tabla (soporta detalles JSON estructurados)
+                const detalleCorto = resumenDetalle(solicitud.request_details, 50);
+                const tieneDetalleCompleto = detalleEsExpandible(solicitud.request_details);
                 
                 // Crear opciones del select según disponibilidad
                 const opcionesSelect = esSobreEjecucion 
@@ -749,7 +769,7 @@
                     };
                 });
 
-                document.getElementById('count-history').textContent = historicoData.length;
+                poblarFiltroAnios();
                 renderizarHistorico();
 
             } catch (error) {
@@ -763,12 +783,67 @@
             }
         }
 
+        // Puebla el filtro solo con los años realmente presentes en el histórico
+        // del usuario, para no ofrecer años que devolverían una tabla vacía.
+        function poblarFiltroAnios() {
+            const select = document.getElementById('filtroAnioHistorial');
+            const filterBar = document.getElementById('historyFilterBar');
+            if (!select || !filterBar) return;
+
+            const aniosPresentes = [...new Set(
+                historicoData.map(s => s.academic_year_id).filter(id => id)
+            )];
+
+            // Descendente por nombre: 2026-2027 antes que 2025-2026
+            aniosPresentes.sort((a, b) => {
+                const nombreA = yearNamesById.get(a) || '';
+                const nombreB = yearNamesById.get(b) || '';
+                return nombreB.localeCompare(nombreA);
+            });
+
+            select.innerHTML = '<option value="all">Todos los años</option>' +
+                aniosPresentes.map(id => {
+                    const nombre = yearNamesById.get(id) || 'Año sin nombre';
+                    const vigente = (id === currentBudgetYearId) ? ' (vigente)' : '';
+                    return `<option value="${id}">${escapeHtml(nombre + vigente)}</option>`;
+                }).join('');
+
+            // Si el año seleccionado ya no está disponible, volver a "Todos"
+            if (filtroAnioHistorial !== 'all' && !aniosPresentes.includes(filtroAnioHistorial)) {
+                filtroAnioHistorial = 'all';
+            }
+            select.value = filtroAnioHistorial;
+
+            // La barra solo aporta si hay más de un año entre el cual elegir
+            filterBar.classList.toggle('d-none', aniosPresentes.length < 2);
+        }
+
         function renderizarHistorico() {
             const tbody = document.getElementById('historicoTbody');
             const historyWrapper = document.getElementById('historyWrapper');
             const emptyStateHistory = document.getElementById('emptyStateHistory');
+            const filterInfo = document.getElementById('historyFilterInfo');
+            const emptyHistoryText = document.getElementById('emptyHistoryText');
 
-            if (!historicoData || historicoData.length === 0) {
+            // Filtro aplicado en cliente sobre los datos ya cargados: no re-consulta
+            const datosFiltrados = (filtroAnioHistorial === 'all')
+                ? historicoData
+                : historicoData.filter(s => s.academic_year_id === filtroAnioHistorial);
+
+            document.getElementById('count-history').textContent = datosFiltrados.length;
+
+            if (filterInfo) {
+                filterInfo.textContent = (filtroAnioHistorial === 'all')
+                    ? ''
+                    : `Mostrando ${datosFiltrados.length} de ${historicoData.length} solicitudes`;
+            }
+
+            if (!datosFiltrados || datosFiltrados.length === 0) {
+                if (emptyHistoryText) {
+                    emptyHistoryText.textContent = (filtroAnioHistorial === 'all')
+                        ? 'Aún no has resuelto solicitudes.'
+                        : 'No hay solicitudes para el año presupuestal seleccionado.';
+                }
                 historyWrapper.classList.add('d-none');
                 emptyStateHistory.classList.remove('d-none');
                 return;
@@ -788,13 +863,13 @@
 
             const fragment = document.createDocumentFragment();
 
-            historicoData.forEach(solicitud => {
+                datosFiltrados.forEach(solicitud => {
                 const tr = document.createElement('tr');
                 tr.setAttribute('data-request-id', solicitud.request_id);
 
                 const valorFormateado = formatearMoneda(solicitud.requested_value);
-                const detalleCorto = truncarTexto(solicitud.request_details, 50);
-                const tieneDetalleCompleto = solicitud.request_details.length > 50;
+                const detalleCorto = resumenDetalle(solicitud.request_details, 50);
+                const tieneDetalleCompleto = detalleEsExpandible(solicitud.request_details);
 
                 const st = statusMap[solicitud.request_status] || { label: solicitud.request_status, bg: '#e2e3e5', color: '#41464b', border: '#6c757d' };
                 const estadoBadge = `<span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${st.bg};color:${st.color};border:1px solid ${st.border};font-size:0.75rem;font-weight:600;">${st.label}</span>`;
@@ -854,6 +929,15 @@
         function configurarEventListeners() {
             // Inicializar modal de Bootstrap
             modalDetalle = new bootstrap.Modal(elementos.modalDetalle);
+
+            // Filtro de año presupuestal del historial
+            const selectAnio = document.getElementById('filtroAnioHistorial');
+            if (selectAnio) {
+                selectAnio.addEventListener('change', function() {
+                    filtroAnioHistorial = this.value;
+                    renderizarHistorico();
+                });
+            }
             
             // Atajos de teclado
             document.addEventListener('keydown', function(e) {
@@ -872,17 +956,21 @@
         }
 
         // ===== MODAL DE DETALLE =====
-        function mostrarDetalleCompleto(detalle, solicitante) {
+            function mostrarDetalleCompleto(detalle, solicitante) {
+            // Si el detalle es JSON estructurado se renderiza como desglose;
+            // si es HTML enriquecido de Quill se mantiene el comportamiento original.
+            const objDetalle = parsearDetalleJson(detalle);
+
             elementos.detalleCompletoContenido.innerHTML = `
                 <div class="mb-3">
                     <h6 class="text-primary mb-2">
                         <i class="bi bi-person-fill me-1"></i>Solicitado por: ${escapeHtml(solicitante)}
                     </h6>
                 </div>
-                <div class="border-top pt-3">
+                   <div class="border-top pt-3">
                     <h6 class="mb-2">Detalle de la solicitud:</h6>
                     <div class="detalle-enriquecido bg-white p-3 border rounded">
-                        ${detalle}
+                        ${objDetalle ? construirDesgloseDetalle(objDetalle) : detalle}
                     </div>
                 </div>
             `;
@@ -1226,6 +1314,110 @@
             }
             
             return nombreCompleto.trim() || 'Sin nombre';
+        }
+
+                // ===== DETALLES ESTRUCTURADOS (JSON) =====
+        // Algunos módulos (ej. tiqueteras de alimentación) guardan request_details
+        // como JSON serializado en lugar de HTML enriquecido. Se detecta y se
+        // renderiza legible, sin tocar el dato ni el módulo de origen.
+
+        // Etiquetas conocidas. Las claves no listadas se muestran con formato genérico.
+        const ETIQUETAS_DETALLE = {
+            guests:            'Invitados',
+            lunch_qty:         'Almuerzos',
+            snack_qty:         'Refrigerios',
+            lunch_unit_price:  'Valor unitario almuerzo',
+            snack_unit_price:  'Valor unitario refrigerio',
+            lunch_subtotal:    'Subtotal almuerzos',
+            snack_subtotal:    'Subtotal refrigerios',
+            total:             'Total',
+            observations:      'Observaciones'
+        };
+
+        // Devuelve el objeto si el texto es un JSON de objeto válido; null en cualquier otro caso.
+        function parsearDetalleJson(texto) {
+            if (!texto || typeof texto !== 'string') return null;
+            const limpio = texto.trim();
+            if (!limpio.startsWith('{')) return null;
+            try {
+                const obj = JSON.parse(limpio);
+                if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj;
+                return null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function etiquetaDetalle(clave) {
+            if (ETIQUETAS_DETALLE[clave]) return ETIQUETAS_DETALLE[clave];
+            const texto = clave.replace(/_/g, ' ');
+            return texto.charAt(0).toUpperCase() + texto.slice(1);
+        }
+
+        // Los campos cuyo nombre sugiere dinero se formatean como moneda.
+        function esClaveMonetaria(clave) {
+            return /(_price|subtotal|^total$|_total|_value|valor)/i.test(clave);
+        }
+
+        function formatearValorDetalle(clave, valor) {
+            if (valor === null || valor === undefined) return '';
+            if (typeof valor === 'number' && esClaveMonetaria(clave)) return formatearMoneda(valor);
+            if (typeof valor === 'boolean') return valor ? 'Sí' : 'No';
+            return String(valor);
+        }
+
+        // Resumen para la celda de la tabla: solo el campo identificable.
+        // Para tiqueteras es "guests"; para JSON desconocido, el primer texto no vacío.
+        function resumenDetalleJson(obj) {
+            if (obj.guests) return String(obj.guests);
+            for (const [clave, valor] of Object.entries(obj)) {
+                if (typeof valor === 'string' && valor.trim() && clave !== 'observations') {
+                    return valor;
+                }
+            }
+            return 'Solicitud con detalle estructurado';
+        }
+
+        // Desglose completo para el modal, omitiendo campos vacíos.
+        function construirDesgloseDetalle(obj) {
+            const filas = Object.entries(obj)
+                .filter(([clave, valor]) => {
+                    if (valor === null || valor === undefined) return false;
+                    if (typeof valor === 'string' && !valor.trim()) return false;
+                    return true;
+                })
+                .map(([clave, valor]) => `
+                    <tr>
+                        <td style="padding:6px 12px 6px 0;vertical-align:top;white-space:nowrap;color:#6c757d;">
+                            ${escapeHtml(etiquetaDetalle(clave))}
+                        </td>
+                        <td style="padding:6px 0;vertical-align:top;font-weight:500;">
+                            ${escapeHtml(formatearValorDetalle(clave, valor))}
+                        </td>
+                    </tr>
+                `).join('');
+
+            if (!filas) return '<p class="text-muted mb-0">La solicitud no tiene campos con información.</p>';
+
+            return `<table class="table table-sm mb-0" style="background:transparent;"><tbody>${filas}</tbody></table>`;
+        }
+
+        // Punto único de entrada: devuelve el resumen ya escapado para la celda.
+        function resumenDetalle(texto, maxLength) {
+            const obj = parsearDetalleJson(texto);
+            if (obj) {
+                const resumen = resumenDetalleJson(obj);
+                return (resumen.length <= maxLength)
+                    ? escapeHtml(resumen)
+                    : escapeHtml(resumen.substring(0, maxLength).trim()) + '...';
+            }
+            return truncarTexto(texto, maxLength);
+        }
+
+        // El detalle estructurado siempre es expandible: la celda muestra un solo campo.
+        function detalleEsExpandible(texto) {
+            if (parsearDetalleJson(texto)) return true;
+            return (texto || '').length > 50;
         }
 
         function truncarTexto(texto, maxLength) {
