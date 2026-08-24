@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.30.1">
+    <meta name="page-version" content="26.8.24.1">
     <title>Solicitud de Ejecución - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -192,6 +192,37 @@
         .detalle-cell:hover {
             white-space: normal;
             overflow: visible;
+        }
+        
+        /* Agrupación y totales por sub-ítem */
+        .fila-grupo-subitem td {
+            background-color: #e9ecef;
+            font-weight: 600;
+            color: #212529;
+            border-top: 2px solid #adb5bd;
+        }
+        
+        .fila-subtotal-subitem td {
+            background-color: #f8f9fa;
+            border-bottom: 2px solid #adb5bd;
+        }
+        
+        .fila-total-general td {
+            background-color: #6c757d;
+            color: white;
+            font-weight: 700;
+            border-top: 3px solid #495057;
+        }
+        
+        .desglose-subtotal {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        
+        .mis-solicitudes-table tbody tr.fila-grupo-subitem:hover td,
+        .mis-solicitudes-table tbody tr.fila-subtotal-subitem:hover td,
+        .mis-solicitudes-table tbody tr.fila-total-general:hover td {
+            background-color: inherit;
         }
         
         /* Estilos para recurrencia */
@@ -1173,81 +1204,197 @@
                 return;
             }
 
-            const fragment = document.createDocumentFragment();
+            // Estados que NO comprometen presupuesto
+            const ESTADOS_EXCLUIDOS = ['rejected', 'cancelled'];
+            // Estados que comprometen pero aún no están aprobados
+            const ESTADOS_PENDIENTES = ['pending', 'scheduled'];
             
+            const formatoMoneda = (valor) => new Intl.NumberFormat('es-CO').format(valor);
+
+            // ===== AGRUPACIÓN POR ASIGNACIÓN (assignment_id) =====
+            // misSolicitudesData ya viene ordenada por requested_at desc,
+            // por lo que el orden cronológico se conserva dentro de cada grupo.
+            const grupos = new Map();
             misSolicitudesData.forEach(solicitud => {
-                const tr = document.createElement('tr');
-                
-                // Determinar fecha a mostrar
-                let fechaMostrar;
-                if (solicitud.scheduled_date) {
-                    const fechaProg = new Date(solicitud.scheduled_date + 'T00:00:00');
-                    fechaMostrar = MESES[fechaProg.getMonth()] + ' ' + fechaProg.getFullYear();
-                } else {
-                    fechaMostrar = new Date(solicitud.requested_at).toLocaleDateString('es-CO');
+                const clave = solicitud.assignment_id;
+                if (!grupos.has(clave)) {
+                    grupos.set(clave, {
+                        assignment_id: clave,
+                        item_name: solicitud.item_name || 'Sin nombre',
+                        category_detail: solicitud.category_detail || '',
+                        solicitudes: []
+                    });
                 }
-                
-                const valorFormateado = new Intl.NumberFormat('es-CO').format(solicitud.requested_value);
-                const estadoBadge = obtenerBadgeEstado(solicitud.request_status);
-                const puedeEditar = solicitud.request_status === 'pending';
-                
-                // Limpiar HTML del detalle
-                const detalleTexto = solicitud.request_details.replace(/<[^>]*>/g, '').substring(0, 100);
-                
-                // Badge de recurrencia
-                const recurrenceBadge = solicitud.is_recurring 
-                    ? `<span class="badge-recurrence" title="Solicitud recurrente" 
-                         onclick="verGrupoRecurrencia('${solicitud.recurrence_group_id}')" 
-                         style="cursor: pointer;">
-                         <i class="bi bi-arrow-repeat"></i>
-                       </span>` 
+                grupos.get(clave).solicitudes.push(solicitud);
+            });
+
+            const gruposOrdenados = Array.from(grupos.values()).sort((a, b) => {
+                const porItem = a.item_name.localeCompare(b.item_name);
+                if (porItem !== 0) return porItem;
+                return a.category_detail.localeCompare(b.category_detail);
+            });
+
+            const fragment = document.createDocumentFragment();
+            let totalGeneralPendiente = 0;
+            let totalGeneralAprobado = 0;
+            let totalGeneralExcluidas = 0;
+
+            gruposOrdenados.forEach(grupo => {
+                let subtotalPendiente = 0;
+                let subtotalAprobado = 0;
+                let cantidadExcluidas = 0;
+
+                grupo.solicitudes.forEach(s => {
+                    const valor = Number(s.requested_value) || 0;
+                    if (ESTADOS_EXCLUIDOS.includes(s.request_status)) {
+                        cantidadExcluidas++;
+                    } else if (ESTADOS_PENDIENTES.includes(s.request_status)) {
+                        subtotalPendiente += valor;
+                    } else {
+                        subtotalAprobado += valor;
+                    }
+                });
+
+                const subtotalComprometido = subtotalPendiente + subtotalAprobado;
+                totalGeneralPendiente += subtotalPendiente;
+                totalGeneralAprobado += subtotalAprobado;
+                totalGeneralExcluidas += cantidadExcluidas;
+
+                // ----- Fila de encabezado de grupo -----
+                const trGrupo = document.createElement('tr');
+                trGrupo.className = 'fila-grupo-subitem';
+                const etiquetaDetalle = grupo.category_detail && grupo.category_detail !== grupo.item_name
+                    ? ` <span class="text-muted fw-normal">— ${escapeHtml(grupo.category_detail)}</span>`
                     : '';
-                
-                tr.innerHTML = `
-                    <td><small>${fechaMostrar}</small>${recurrenceBadge}</td>
-                    <td><strong>${escapeHtml(solicitud.item_name)}</strong></td>
-                    <td class="detalle-cell" title="${escapeHtml(detalleTexto)}">
-                        ${escapeHtml(detalleTexto)}${solicitud.request_details.length > 100 ? '...' : ''}
-                    </td>
-                    <td class="text-end"><strong>$${valorFormateado}</strong></td>
-                    <td class="text-center">${estadoBadge}</td>
-                    <td class="text-center">
-                        ${puedeEditar ? `
-                            <button class="btn btn-outline-warning btn-sm btn-editar-solicitud me-1" 
-                                    data-request-id="${solicitud.request_id}"
-                                    title="Editar solicitud">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm btn-cancelar-solicitud" 
-                                    data-request-id="${solicitud.request_id}"
-                                    title="Cancelar solicitud">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        ` : `
-                            <span class="text-muted" title="Solo puede cancelar solicitudes pendientes">
-                                <i class="bi bi-lock"></i>
-                            </span>
-                        `}
+                trGrupo.innerHTML = `
+                    <td colspan="6">
+                        <i class="bi bi-folder2-open me-1"></i>${escapeHtml(grupo.item_name)}${etiquetaDetalle}
+                        <span class="badge bg-secondary ms-2">${grupo.solicitudes.length} solicitud${grupo.solicitudes.length === 1 ? '' : 'es'}</span>
                     </td>
                 `;
-                
-                const botonEditar = tr.querySelector('.btn-editar-solicitud');
-                if (botonEditar) {
-                    botonEditar.addEventListener('click', function() {
-                        const requestId = this.dataset.requestId;
-                        abrirModalEditarSolicitud(requestId);
-                    });
-                }
-                
-                const botonCancelar = tr.querySelector('.btn-cancelar-solicitud');
-                if (botonCancelar) {
-                    botonCancelar.addEventListener('click', function() {
-                        const requestId = this.dataset.requestId;
-                        cancelarSolicitud(requestId);
-                    });
-                }                
-                fragment.appendChild(tr);
+                fragment.appendChild(trGrupo);
+
+                // ----- Filas de solicitudes del grupo -----
+                grupo.solicitudes.forEach(solicitud => {
+                    const tr = document.createElement('tr');
+                    
+                    // Determinar fecha a mostrar
+                    let fechaMostrar;
+                    if (solicitud.scheduled_date) {
+                        const fechaProg = new Date(solicitud.scheduled_date + 'T00:00:00');
+                        fechaMostrar = MESES[fechaProg.getMonth()] + ' ' + fechaProg.getFullYear();
+                    } else {
+                        fechaMostrar = new Date(solicitud.requested_at).toLocaleDateString('es-CO');
+                    }
+                    
+                    const valorFormateado = formatoMoneda(solicitud.requested_value);
+                    const estadoBadge = obtenerBadgeEstado(solicitud.request_status);
+                    const puedeEditar = solicitud.request_status === 'pending';
+                    const esExcluida = ESTADOS_EXCLUIDOS.includes(solicitud.request_status);
+                    
+                    // Limpiar HTML del detalle
+                    const detalleTexto = solicitud.request_details.replace(/<[^>]*>/g, '').substring(0, 100);
+                    
+                    // Badge de recurrencia
+                    const recurrenceBadge = solicitud.is_recurring 
+                        ? `<span class="badge-recurrence" title="Solicitud recurrente" 
+                             onclick="verGrupoRecurrencia('${solicitud.recurrence_group_id}')" 
+                             style="cursor: pointer;">
+                             <i class="bi bi-arrow-repeat"></i>
+                           </span>` 
+                        : '';
+                    
+                    tr.innerHTML = `
+                        <td class="ps-4"><small>${fechaMostrar}</small>${recurrenceBadge}</td>
+                        <td><small class="text-muted">${escapeHtml(grupo.item_name)}</small></td>
+                        <td class="detalle-cell" title="${escapeHtml(detalleTexto)}">
+                            ${escapeHtml(detalleTexto)}${solicitud.request_details.length > 100 ? '...' : ''}
+                        </td>
+                        <td class="text-end">
+                            <strong${esExcluida ? ' class="text-muted text-decoration-line-through"' : ''}>$${valorFormateado}</strong>
+                        </td>
+                        <td class="text-center">${estadoBadge}</td>
+                        <td class="text-center">
+                            ${puedeEditar ? `
+                                <button class="btn btn-outline-warning btn-sm btn-editar-solicitud me-1" 
+                                        data-request-id="${solicitud.request_id}"
+                                        title="Editar solicitud">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm btn-cancelar-solicitud" 
+                                        data-request-id="${solicitud.request_id}"
+                                        title="Cancelar solicitud">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            ` : `
+                                <span class="text-muted" title="Solo puede cancelar solicitudes pendientes">
+                                    <i class="bi bi-lock"></i>
+                                </span>
+                            `}
+                        </td>
+                    `;
+                    
+                    const botonEditar = tr.querySelector('.btn-editar-solicitud');
+                    if (botonEditar) {
+                        botonEditar.addEventListener('click', function() {
+                            const requestId = this.dataset.requestId;
+                            abrirModalEditarSolicitud(requestId);
+                        });
+                    }
+                    
+                    const botonCancelar = tr.querySelector('.btn-cancelar-solicitud');
+                    if (botonCancelar) {
+                        botonCancelar.addEventListener('click', function() {
+                            const requestId = this.dataset.requestId;
+                            cancelarSolicitud(requestId);
+                        });
+                    }
+                    
+                    fragment.appendChild(tr);
+                });
+
+                // ----- Fila de subtotal del grupo -----
+                const trSubtotal = document.createElement('tr');
+                trSubtotal.className = 'fila-subtotal-subitem';
+                const notaExcluidas = cantidadExcluidas > 0
+                    ? ` · <span class="text-muted">${cantidadExcluidas} no computada${cantidadExcluidas === 1 ? '' : 's'} (rechazada/cancelada)</span>`
+                    : '';
+                trSubtotal.innerHTML = `
+                    <td colspan="3" class="text-end">
+                        <span class="fw-semibold">Subtotal ${escapeHtml(grupo.item_name)}</span>
+                        <div class="desglose-subtotal">
+                            Pendiente: $${formatoMoneda(subtotalPendiente)} · 
+                            Aprobado/ejecutado: $${formatoMoneda(subtotalAprobado)}${notaExcluidas}
+                        </div>
+                    </td>
+                    <td class="text-end">
+                        <strong>$${formatoMoneda(subtotalComprometido)}</strong>
+                        <div class="desglose-subtotal">comprometido</div>
+                    </td>
+                    <td colspan="2"></td>
+                `;
+                fragment.appendChild(trSubtotal);
             });
+
+            // ===== FILA DE TOTAL GENERAL =====
+            const totalGeneralComprometido = totalGeneralPendiente + totalGeneralAprobado;
+            const trTotal = document.createElement('tr');
+            trTotal.className = 'fila-total-general';
+            const notaExcluidasTotal = totalGeneralExcluidas > 0
+                ? ` · ${totalGeneralExcluidas} no computada${totalGeneralExcluidas === 1 ? '' : 's'}`
+                : '';
+            trTotal.innerHTML = `
+                <td colspan="3" class="text-end">
+                    TOTAL GENERAL (${gruposOrdenados.length} sub-ítem${gruposOrdenados.length === 1 ? '' : 's'})
+                    <div class="desglose-subtotal text-white-50">
+                        Pendiente: $${formatoMoneda(totalGeneralPendiente)} · 
+                        Aprobado/ejecutado: $${formatoMoneda(totalGeneralAprobado)}${notaExcluidasTotal}
+                    </div>
+                </td>
+                <td class="text-end">$${formatoMoneda(totalGeneralComprometido)}</td>
+                <td colspan="2"></td>
+            `;
+            fragment.appendChild(trTotal);
             
             elementos.misSolicitudesTbody.innerHTML = '';
             elementos.misSolicitudesTbody.appendChild(fragment);
