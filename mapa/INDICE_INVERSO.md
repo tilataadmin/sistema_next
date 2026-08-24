@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 12:05 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 18:28 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -567,7 +567,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/initialize-budget-year.html` | budget | GET | 520, 638 |
 | `modules/budget/report-design.html` | budget | GET | 1392 |
 | `modules/budget/report-view.html` | budget | GET | 546 |
-| `modules/budget/request-resolution.html` | budget | GET | 570 |
+| `modules/budget/request-resolution.html` | budget | GET | 590 |
 | `modules/config/academic-assignments.html` | config | GET | 223 |
 | `modules/config/annual-fees.html` | config | GET | 259 |
 | `modules/config/config.html` | config | GET, PATCH | 761, 1172, 1178 |
@@ -914,7 +914,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/close-overruns.html` | budget | GET | 853 |
 | `modules/budget/close-transfer.html` | budget | GET | 934 |
 | `modules/budget/index.html` | budget | GET | 891 |
-| `modules/budget/request-resolution.html` | budget | GET | 567 |
+| `modules/budget/request-resolution.html` | budget | GET | 587 |
 | `modules/config/config.html` | config | GET, PATCH, POST | 743, 1100, 1106 |
 | `modules/config/year-closure-reversal.html` | config | PATCH | 617 |
 | `modules/config/year-closure.html` | config | PATCH | 2378 |
@@ -1223,7 +1223,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1230 |
 | `modules/budget/report-design.html` | budget | GET | 1436 |
 | `modules/budget/report-view.html` | budget | GET | 608 |
-| `modules/budget/request-resolution.html` | budget | PATCH | 945 |
+| `modules/budget/request-resolution.html` | budget | PATCH | 1033 |
 | `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
 | `modules/services/admissions-family.html` | services | GET, PATCH | 440, 666, 754, 927 |
 | `modules/services/approvals.html` | services | GET, PATCH | 1376, 1548 |
@@ -1533,7 +1533,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
 | `modules/budget/close-overruns.html` | budget | ND, PATCH | 586, 819 |
 | `modules/budget/execution-request.html` | budget | POST | 1894, 2003 |
-| `modules/budget/request-resolution.html` | budget | PATCH | 933 |
+| `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
 | `modules/services/admissions-family.html` | services | PATCH, POST | 654, 740, 911 |
 | `modules/services/approvals.html` | services | POST | 1539 |
 | `modules/services/svc-meal-tickets.html` | services | ND, POST | 458, 581, 584 |
