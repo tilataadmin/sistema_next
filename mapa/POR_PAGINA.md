@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-08-20 19:19 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 11:34 UTC. **No editar a mano.**
 
 **331 archivos** con acceso a datos.
 
@@ -926,7 +926,7 @@
 ### `modules/general-tools/family-attendance.html`
 
 - **Módulo:** general-tools
-- **Lee (10):** courses, familia_actividad_actividades, familia_actividad_cursos, familia_actividad_envios, familia_actividad_plantillas, grades, sections, student_status, students, system_config
+- **Lee (11):** courses, familia_actividad_actividades, familia_actividad_cursos, familia_actividad_envios, familia_actividad_plantillas, grades, sections, student_status, students, system_config, user_roles
 - **Escribe (4):** **familia_actividad_asistencias**, **familia_actividad_asistencias_familiares**, **familia_actividad_cursos**, **familia_actividad_envios**
 
 ### `modules/general-tools/family-messages.html`
