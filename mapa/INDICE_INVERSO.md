@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 18:56 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 19:05 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -3598,7 +3598,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/assign-requesters.html` | budget | POST | 1090 |
+| `modules/budget/assign-requesters.html` | budget | POST | 1087 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 245 |
 
 ### certificate_signer
