@@ -1,10 +1,10 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-08-24 18:28 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 18:56 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
-**307 referencias** provienen de consultas armadas en variables. El escáner sabe qué tabla se toca, pero no si se lee o se escribe. Por eso las cifras de escritura son un piso, no un total.
+**308 referencias** provienen de consultas armadas en variables. El escáner sabe qué tabla se toca, pero no si se lee o se escribe. Por eso las cifras de escritura son un piso, no un total.
 
 | Archivo | Referencias dudosas |
 |---|---:|
