@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.12.2">
+    <meta name="page-version" content="26.8.24.4">
     <title>Registrar asistencia de familias - SchoolNet</title>
 
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -126,7 +126,7 @@
                 <i class="bi bi-person-x fs-1 text-muted d-block mb-3"></i>
                 <h5>No tienes cursos asignados</h5>
                 <p class="text-muted mb-0">
-                    Esta pantalla es para directores de curso y directores de sección.
+                    Esta pantalla es para directores de curso, directores de sección y secretaría.
                     Si crees que deberías tener acceso, comunícate con Coordinación Académica.
                 </p>
             </div>
@@ -240,8 +240,15 @@
         // ==========================================
         // VARIABLES GLOBALES
         // ==========================================
+               // Roles con acceso a todos los cursos (mismos UUID en DEV y PROD)
+        const ROLES_TODOS_LOS_CURSOS = [
+            '0701332a-2718-401d-bb0e-3073ec5b50f6', // Secretaria de Rectoría
+            'd699fb3c-8dc7-42b2-be59-6b0d9b04e0b1'  // Secretaria Académica
+        ];
+
         let currentUser = null;
         let correoSesion = null;
+        let verTodosLosCursos = false;
         let cursosDisponibles = [];   // { course_id, course_name, propio, section_name, director_email }
         let actividadesCache = [];
         let estudiantesCache = [];    // { student_id, nombre, familiares:[], asistencia_id, otro }
@@ -273,7 +280,9 @@
                 currentUser = session.user;
                 correoSesion = (currentUser.user_mail || '').trim().toLowerCase();
 
-                if (!correoSesion) {
+                verTodosLosCursos = await usuarioVeTodosLosCursos();
+
+                if (!correoSesion && !verTodosLosCursos) {
                     showMessage('Tu usuario no tiene correo registrado. No es posible validar tus cursos.', 'danger');
                     return;
                 }
@@ -319,6 +328,27 @@
             }
         }
 
+                // ==========================================
+        // ROLES CON ACCESO AMPLIADO
+        // ==========================================
+        async function usuarioVeTodosLosCursos() {
+            try {
+                const roles = await supabaseRequest(
+                    `/user_roles?user_id=eq.${currentUser.user_id}&select=role_id`
+                ) || [];
+
+                const tieneRol = roles.some(r => ROLES_TODOS_LOS_CURSOS.includes(r.role_id));
+                if (tieneRol) {
+                    console.log('🗝️ Usuario con acceso a todos los cursos');
+                }
+                return tieneRol;
+
+            } catch (error) {
+                console.error('❌ Error verificando roles:', error);
+                return false;
+            }
+        }
+
         // ==========================================
         // RESOLUCIÓN DE CURSOS
         // ==========================================
@@ -329,7 +359,7 @@
                 '/courses?select=course_id,course_name,course_order,course_director_email,grades(section_id,sections(section_name,director_email,section_status))&course_status=eq.active&order=course_order'
             ) || [];
 
-            const mapa = new Map();
+                        const mapa = new Map();
 
             cursos.forEach(c => {
                 const seccion = c.grades?.sections || {};
@@ -339,7 +369,7 @@
                 const esPropio = dirCurso && dirCurso === correoSesion;
                 const esDeSuSeccion = dirSeccion && dirSeccion === correoSesion;
 
-                if (esPropio || esDeSuSeccion) {
+                if (esPropio || esDeSuSeccion || verTodosLosCursos) {
                     mapa.set(c.course_id, {
                         course_id: c.course_id,
                         course_name: c.course_name,
@@ -356,6 +386,27 @@
         function pintarSelectorCursos() {
             const select = document.getElementById('select-curso');
             const wrapper = document.getElementById('wrapper-select-curso');
+
+                        // Acceso ampliado: opción vacía y agrupación por sección
+            if (verTodosLosCursos) {
+                const porSeccion = new Map();
+                cursosDisponibles.forEach(c => {
+                    if (!porSeccion.has(c.section_name)) porSeccion.set(c.section_name, []);
+                    porSeccion.get(c.section_name).push(c);
+                });
+
+                select.innerHTML = '<option value="">Selecciona un curso...</option>' +
+                    Array.from(porSeccion.entries()).map(([seccion, cursos]) =>
+                        `<optgroup label="${escapeHtml(seccion)}">` +
+                        cursos.map(c =>
+                            `<option value="${c.course_id}">${escapeHtml(c.course_name)}</option>`
+                        ).join('') +
+                        `</optgroup>`
+                    ).join('');
+
+                wrapper.classList.remove('d-none');
+                return;
+            }
 
             select.innerHTML = cursosDisponibles.map(c =>
                 `<option value="${c.course_id}">
@@ -389,6 +440,20 @@
 
             if (!cursoActual || cursoActual.propio) {
                 aviso.classList.add('d-none');
+                return;
+            }
+
+                        if (verTodosLosCursos) {
+                aviso.classList.remove('alert-warning', 'aviso-ajeno');
+                aviso.classList.add('alert-info');
+                aviso.innerHTML = `
+                    <i class="bi bi-info-circle me-2"></i>
+                    Estás registrando <strong>${escapeHtml(cursoActual.course_name)}</strong>.
+                    ${cursoActual.director_email
+                        ? `Su director es <strong>${escapeHtml(cursoActual.director_email)}</strong>.`
+                        : 'Este curso <strong>no tiene director asignado</strong>.'}
+                    Quedará registrado que el cierre lo hiciste tú.`;
+                aviso.classList.remove('d-none');
                 return;
             }
 
