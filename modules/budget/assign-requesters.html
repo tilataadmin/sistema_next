@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.25.13.25">
+    <meta name="page-version" content="26.8.24.1">
     <title>Designar Solicitantes - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -231,20 +231,12 @@
                 <div class="d-flex align-items-center">
                     <i class="bi bi-people-fill text-primary me-3" style="font-size: 2rem;"></i>
                     <div>
-                        <h1 class="h3 mb-0">Designar Solicitantes</h1>
-                        <p class="text-muted mb-0">Autorizar trabajadores para hacer requerimientos en sus asignaciones presupuestales</p>
+                        <h1 class="h3 mb-0">
+                            Designar Solicitantes
+                            <span id="indicadorAnio" class="badge bg-primary align-middle ms-2 d-none" style="font-size: 0.8rem;"></span>
+                        </h1>
+                        <p class="text-muted mb-0">Autorizar trabajadores para hacer requerimientos en sus asignaciones presupuestales del año vigente</p>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tabla resumen de solicitantes asignados -->
-        <div id="seccionResumen" class="tabla-resumen">
-            <h5><i class="bi bi-list-check me-2"></i>Solicitantes autorizados actualmente</h5>
-            <div id="containerResumen">
-                <div class="text-center py-3">
-                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                    <span class="ms-2">Cargando...</span>
                 </div>
             </div>
         </div>
@@ -256,6 +248,17 @@
                 <select id="selectTrabajador" class="form-select">
                     <option value="">-- Seleccione un trabajador --</option>
                 </select>
+            </div>
+        </div>
+
+        <!-- Tabla resumen de solicitantes asignados -->
+        <div id="seccionResumen" class="tabla-resumen">
+            <h5><i class="bi bi-list-check me-2"></i>Solicitantes autorizados actualmente</h5>
+            <div id="containerResumen">
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span class="ms-2">Cargando...</span>
+                </div>
             </div>
         </div>
 
@@ -348,6 +351,8 @@
         let modalConfirmacion;
         let solicitantesAsignados = [];
         let esAdminPresupuesto = false;
+        let currentBudgetYearId = null;   // año presupuestal vigente (system_config)
+        let currentBudgetYearName = '';   // nombre del año, para mostrarlo en pantalla
                 
         // ===== ELEMENTOS DEL DOM =====
         const elementos = {
@@ -381,12 +386,43 @@
                 return false;
             }
         }
+
+                // ===== AÑO PRESUPUESTAL VIGENTE =====
+        // Esta pantalla solo debe operar sobre el año vigente: autorizar un solicitante
+        // sobre una asignación de otro año dejaría el registro apuntando al año equivocado.
+        async function cargarAnioPresupuestal() {
+            // system_config tiene dos FK a academic_years, por eso se desambigua
+            // con el nombre de la constraint.
+            const query = '/system_config?select=current_budget_year_id,academic_years!system_config_current_budget_year_fkey(year_name)&limit=1';
+            const data = await supabaseRequest(query);
+
+            if (!data || data.length === 0 || !data[0].current_budget_year_id) {
+                throw new Error('No hay un año presupuestal vigente configurado en el sistema');
+            }
+
+            currentBudgetYearId = data[0].current_budget_year_id;
+            currentBudgetYearName = data[0].academic_years?.year_name || '';
+
+            const indicador = document.getElementById('indicadorAnio');
+            if (indicador && currentBudgetYearName) {
+                indicador.textContent = currentBudgetYearName;
+                indicador.classList.remove('d-none');
+            }
+
+            return currentBudgetYearId;
+        }
+
+        // ===== CARGA DE DATOS =====
+        async function cargarDatosIniciales() {
         
         // ===== CARGA DE DATOS =====
         async function cargarDatosIniciales() {
             try {
                 showMessage('Cargando datos del formulario...', 'info');
                 
+                // El año debe resolverse antes de consultar asignaciones
+                await cargarAnioPresupuestal();
+
                 // Verificar si es admin de presupuesto
                 esAdminPresupuesto = await verificarRolAdminPresupuesto();
                 if (esAdminPresupuesto) {
@@ -451,10 +487,10 @@
             // Si no, cargar solo las del usuario
             let query;
             if (esAdminPresupuesto) {
-                query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,workers!budget_assignments_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,email),budget_items(item_name,budget_categories(category_name))`;
+                query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,workers!budget_assignments_worker_id_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,email),budget_items(item_name,budget_categories(category_name))&academic_year_id=eq.${currentBudgetYearId}`;
             } else {
-                query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,workers!budget_assignments_worker_id_fkey!inner(email),budget_items(item_name,budget_categories(category_name))&workers.email=eq.${userEmail}`;
-                }
+                query = `budget_assignments?select=assignment_id,assignment_category,category_detail,approved_value,workers!budget_assignments_worker_id_fkey!inner(email),budget_items(item_name,budget_categories(category_name))&workers.email=eq.${userEmail}&academic_year_id=eq.${currentBudgetYearId}`;
+            }
             
             const data = await supabaseRequest('/' + query);
             
@@ -549,7 +585,7 @@
                     <div class="estado-sin-solicitantes">
                         <i class="bi bi-person-plus" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
                         <p class="mb-0">No ha autorizado solicitantes aún.<br>
-                        <small>Seleccione un trabajador abajo para comenzar.</small></p>
+                        <small>Seleccione un trabajador arriba para comenzar.</small></p>
                     </div>
                 `;
                 return;
