@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 19:05 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 19:37 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -1534,7 +1534,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336, 1715 |
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
 | `modules/budget/close-overruns.html` | budget | ND, PATCH | 586, 819 |
-| `modules/budget/execution-request.html` | budget | POST | 1894, 2003 |
+| `modules/budget/execution-request.html` | budget | POST | 2041, 2150 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
 | `modules/services/admissions-family.html` | services | PATCH, POST | 654, 740, 911 |
 | `modules/services/approvals.html` | services | POST | 1539 |
@@ -4397,7 +4397,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/execution-request.html` | budget | POST | 1858 |
+| `modules/budget/execution-request.html` | budget | POST | 2005 |
 
 ### stm_eae_topics
 
