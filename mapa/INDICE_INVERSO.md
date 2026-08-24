@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 18:28 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 18:45 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -9,12 +9,12 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Tabla | Archivos | Escriben | Dudosas |
 |---|---:|---:|---:|
 | [workers](#workers) | 134 | 2 | 16 |
-| [academic_years](#academicyears) | 82 | 4 | 3 |
+| [academic_years](#academicyears) | 83 | 4 | 3 |
 | [grades](#grades) | 67 | 2 | 4 |
 | [courses](#courses) | 59 | 2 | 4 |
 | [users](#users) | 58 | 4 | 11 |
+| [system_config](#systemconfig) | 56 | 3 | 3 |
 | [sections](#sections) | 55 | 1 | 4 |
-| [system_config](#systemconfig) | 55 | 3 | 2 |
 | [students](#students) | 50 | 4 | 9 |
 | [user_roles](#userroles) | 34 | 3 | 3 |
 | [roles](#roles) | 33 | 1 | 1 |
@@ -558,6 +558,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/admissions/applicant-detail.html` | admissions | GET | 564 |
 | `modules/admissions/applicants.html` | admissions | GET | 373 |
 | `modules/admissions/module-config.html` | admissions | GET | 277 |
+| `modules/budget/assign-requesters.html` | budget | embed | 396 |
 | `modules/budget/budget-authorization.html` | budget | GET | 518 |
 | `modules/budget/budget-overview.html` | budget | ND | 748 |
 | `modules/budget/budget-queries.html` | budget | ND, embed | 855, 1011, 1200, 1336 |
@@ -836,6 +837,67 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/training/index.html` | training | ND | 604, 653 |
 | `modules/tte/index.html` | tte | GET | 803 |
 
+### system_config
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `assets/js/config.js` | (núcleo) | GET | 605, 861, 1045 |
+| `dashboard.html` | (raíz) | GET | 346 |
+| `login.html` | (raíz) | GET | 376 |
+| `modules/alumni/publico/aviso-privacidad.html` | alumni | GET | 206 |
+| `modules/budget/assign-requesters.html` | budget | ND | 396 |
+| `modules/budget/associate-invoices.html` | budget | GET | 1293 |
+| `modules/budget/budget-authorization.html` | budget | GET | 549 |
+| `modules/budget/budget-overview.html` | budget | GET | 744 |
+| `modules/budget/budget-queries.html` | budget | ND | 718 |
+| `modules/budget/budget-request.html` | budget | GET | 645 |
+| `modules/budget/budget-transfer.html` | budget | GET | 649, 722, 836 |
+| `modules/budget/category-detail.html` | budget | GET | 739 |
+| `modules/budget/close-overruns.html` | budget | GET | 853 |
+| `modules/budget/close-transfer.html` | budget | GET | 934 |
+| `modules/budget/index.html` | budget | GET | 891 |
+| `modules/budget/request-resolution.html` | budget | GET | 587 |
+| `modules/config/config.html` | config | GET, PATCH, POST | 743, 1100, 1106 |
+| `modules/config/year-closure-reversal.html` | config | PATCH | 617 |
+| `modules/config/year-closure.html` | config | PATCH | 2378 |
+| `modules/early-alerts/manage-alerts.html` | early-alerts | GET | 856 |
+| `modules/early-alerts/register-alerts.html` | early-alerts | GET | 405 |
+| `modules/environmental/daily-water-readings.html` | environmental | GET | 512, 1003 |
+| `modules/environmental/edit-daily-readings.html` | environmental | GET | 582 |
+| `modules/environmental/monthly-water-readings.html` | environmental | GET | 456 |
+| `modules/environmental/tree-map.html` | environmental | GET | 310 |
+| `modules/environmental/water-balance-dashboard.html` | environmental | GET | 736 |
+| `modules/follow-ups/general-queries.html` | follow-ups | GET | 752, 1527, 3104 |
+| `modules/follow-ups/manage-eae-issues.html` | follow-ups | GET | 837 |
+| `modules/follow-ups/manage-unescalated-issues.html` | follow-ups | GET | 545 |
+| `modules/follow-ups/query-confidential-notes.html` | follow-ups | GET | 235 |
+| `modules/follow-ups/review-individual-issues.html` | follow-ups | GET | 373 |
+| `modules/general-tools/attendance-reports.html` | general-tools | GET | 992 |
+| `modules/general-tools/community-query.html` | general-tools | GET | 530 |
+| `modules/general-tools/family-activities.html` | general-tools | GET | 362 |
+| `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 351 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 953 |
+| `modules/general-tools/family-messages.html` | general-tools | GET | 583 |
+| `modules/general-tools/generar-dias-tilata.html` | general-tools | GET | 264 |
+| `modules/general-tools/lists.html` | general-tools | GET | 622 |
+| `modules/general-tools/pedagogical-days.html` | general-tools | GET | 300 |
+| `modules/hr/clearances.html` | hr | GET | 1409 |
+| `modules/hr/work-calendar.html` | hr | GET | 661 |
+| `modules/hr/workers.html` | hr | GET | 3197 |
+| `modules/indicators/dashboard.html` | indicators | GET | 797 |
+| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 1519 |
+| `modules/procedures/execute-form-public.html` | procedures | GET | 271 |
+| `modules/procedures/execute-public.html` | procedures | GET | 301 |
+| `modules/procedures/track-public.html` | procedures | GET | 229 |
+| `modules/profile/mi-perfil.html` | profile | GET | 947, 1972 |
+| `modules/services/admissions-family.html` | services | GET | 433 |
+| `modules/services/approvals.html` | services | GET | 1367, 1599 |
+| `modules/services/js/commons.js` | services | GET | 928 |
+| `modules/services/svc-meal-tickets.html` | services | GET | 217 |
+| `modules/suppliers/portal.html` | suppliers | GET | 515 |
+| `modules/suppliers/register.html` | suppliers | GET, ND | 693, 775 |
+| `tilata-te-escucha.html` | (raíz) | GET | 252, 412 |
+
 ### sections
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -895,66 +957,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/tte/manage-requests.html` | tte | embed | 656 |
 | `modules/tte/respond-requests.html` | tte | embed | 435 |
 | `tilata-te-escucha.html` | (raíz) | embed | 273 |
-
-### system_config
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `assets/js/config.js` | (núcleo) | GET | 605, 861, 1045 |
-| `dashboard.html` | (raíz) | GET | 346 |
-| `login.html` | (raíz) | GET | 376 |
-| `modules/alumni/publico/aviso-privacidad.html` | alumni | GET | 206 |
-| `modules/budget/associate-invoices.html` | budget | GET | 1293 |
-| `modules/budget/budget-authorization.html` | budget | GET | 549 |
-| `modules/budget/budget-overview.html` | budget | GET | 744 |
-| `modules/budget/budget-queries.html` | budget | ND | 718 |
-| `modules/budget/budget-request.html` | budget | GET | 645 |
-| `modules/budget/budget-transfer.html` | budget | GET | 649, 722, 836 |
-| `modules/budget/category-detail.html` | budget | GET | 739 |
-| `modules/budget/close-overruns.html` | budget | GET | 853 |
-| `modules/budget/close-transfer.html` | budget | GET | 934 |
-| `modules/budget/index.html` | budget | GET | 891 |
-| `modules/budget/request-resolution.html` | budget | GET | 587 |
-| `modules/config/config.html` | config | GET, PATCH, POST | 743, 1100, 1106 |
-| `modules/config/year-closure-reversal.html` | config | PATCH | 617 |
-| `modules/config/year-closure.html` | config | PATCH | 2378 |
-| `modules/early-alerts/manage-alerts.html` | early-alerts | GET | 856 |
-| `modules/early-alerts/register-alerts.html` | early-alerts | GET | 405 |
-| `modules/environmental/daily-water-readings.html` | environmental | GET | 512, 1003 |
-| `modules/environmental/edit-daily-readings.html` | environmental | GET | 582 |
-| `modules/environmental/monthly-water-readings.html` | environmental | GET | 456 |
-| `modules/environmental/tree-map.html` | environmental | GET | 310 |
-| `modules/environmental/water-balance-dashboard.html` | environmental | GET | 736 |
-| `modules/follow-ups/general-queries.html` | follow-ups | GET | 752, 1527, 3104 |
-| `modules/follow-ups/manage-eae-issues.html` | follow-ups | GET | 837 |
-| `modules/follow-ups/manage-unescalated-issues.html` | follow-ups | GET | 545 |
-| `modules/follow-ups/query-confidential-notes.html` | follow-ups | GET | 235 |
-| `modules/follow-ups/review-individual-issues.html` | follow-ups | GET | 373 |
-| `modules/general-tools/attendance-reports.html` | general-tools | GET | 992 |
-| `modules/general-tools/community-query.html` | general-tools | GET | 530 |
-| `modules/general-tools/family-activities.html` | general-tools | GET | 362 |
-| `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 351 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET | 953 |
-| `modules/general-tools/family-messages.html` | general-tools | GET | 583 |
-| `modules/general-tools/generar-dias-tilata.html` | general-tools | GET | 264 |
-| `modules/general-tools/lists.html` | general-tools | GET | 622 |
-| `modules/general-tools/pedagogical-days.html` | general-tools | GET | 300 |
-| `modules/hr/clearances.html` | hr | GET | 1409 |
-| `modules/hr/work-calendar.html` | hr | GET | 661 |
-| `modules/hr/workers.html` | hr | GET | 3197 |
-| `modules/indicators/dashboard.html` | indicators | GET | 797 |
-| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 1519 |
-| `modules/procedures/execute-form-public.html` | procedures | GET | 271 |
-| `modules/procedures/execute-public.html` | procedures | GET | 301 |
-| `modules/procedures/track-public.html` | procedures | GET | 229 |
-| `modules/profile/mi-perfil.html` | profile | GET | 947, 1972 |
-| `modules/services/admissions-family.html` | services | GET | 433 |
-| `modules/services/approvals.html` | services | GET | 1367, 1599 |
-| `modules/services/js/commons.js` | services | GET | 928 |
-| `modules/services/svc-meal-tickets.html` | services | GET | 217 |
-| `modules/suppliers/portal.html` | suppliers | GET | 515 |
-| `modules/suppliers/register.html` | suppliers | GET, ND | 693, 775 |
-| `tilata-te-escucha.html` | (raíz) | GET | 252, 412 |
 
 ### students
 
@@ -1019,7 +1021,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `assets/js/sidebar.js` | (núcleo) | embed | 424 |
 | `diagnostico_permisos_training.html` | (raíz) | GET, embed | 95, 147 |
 | `login.html` | (raíz) | GET | 673 |
-| `modules/budget/assign-requesters.html` | budget | ND | 375 |
+| `modules/budget/assign-requesters.html` | budget | ND | 380 |
 | `modules/budget/index.html` | budget | GET | 872, 1139 |
 | `modules/config/index.html` | config | GET | 706 |
 | `modules/early-alerts/dashboard.html` | early-alerts | GET | 695 |
@@ -1058,7 +1060,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `assets/js/sidebar.js` | (núcleo) | embed | 424 |
 | `diagnostico_permisos_training.html` | (raíz) | embed | 95, 147 |
 | `modules/admissions/module-config.html` | admissions | GET | 279 |
-| `modules/budget/assign-requesters.html` | budget | embed | 375 |
+| `modules/budget/assign-requesters.html` | budget | embed | 380 |
 | `modules/budget/index.html` | budget | embed | 872, 1139 |
 | `modules/config/index.html` | config | embed | 706 |
 | `modules/early-alerts/dashboard.html` | early-alerts | embed | 695 |
@@ -3596,7 +3598,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/assign-requesters.html` | budget | POST | 1054 |
+| `modules/budget/assign-requesters.html` | budget | POST | 1090 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 245 |
 
 ### certificate_signer
