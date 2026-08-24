@@ -1,6 +1,6 @@
 # Acoplamiento — tablas escritas desde más de un módulo
 
-> Generado automáticamente el 2026-08-24 11:36 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 11:39 UTC. **No editar a mano.**
 
 Cada fila es un punto donde un cambio de estructura puede romper código de otro módulo.
 Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan excluidas.
