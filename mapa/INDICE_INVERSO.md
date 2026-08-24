@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 18:48 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-24 18:56 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -876,7 +876,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | GET | 530 |
 | `modules/general-tools/family-activities.html` | general-tools | GET | 362 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 351 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET | 953 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 971 |
 | `modules/general-tools/family-messages.html` | general-tools | GET | 583 |
 | `modules/general-tools/generar-dias-tilata.html` | general-tools | GET | 264 |
 | `modules/general-tools/lists.html` | general-tools | GET | 622 |
@@ -3230,7 +3230,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | GET | 907 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 410 |
-| `modules/general-tools/family-attendance.html` | general-tools | PATCH, POST | 829, 834 |
+| `modules/general-tools/family-attendance.html` | general-tools | PATCH, POST | 830, 835 |
 
 ### familia_actividad_cursos
 
@@ -3238,7 +3238,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | DELETE, GET, POST, embed | 408, 595, 719, 728, 744, 922 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 356 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH | 481, 1203 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH | 481, 1221 |
 
 ### generated_contracts
 
@@ -3648,13 +3648,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | GET | 892 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH, POST | 968, 1275, 1309, 1431 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH, POST | 986, 1293, 1327, 1449 |
 
 ### familia_actividad_plantillas
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/family-attendance.html` | general-tools | GET | 941 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 959 |
 | `modules/general-tools/family-messages.html` | general-tools | GET, PATCH, POST | 603, 847, 860, 944 |
 
 ### form_access_workers
@@ -4097,7 +4097,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/family-attendance.html` | general-tools | DELETE, POST | 845, 857 |
+| `modules/general-tools/family-attendance.html` | general-tools | DELETE, POST | 846, 858 |
 
 ### family_members
 
