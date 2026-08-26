@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-24 19:37 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-26 16:16 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **331 archivos**.
 
@@ -459,7 +459,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/projects.html` | general-tools | GET | 1144 |
 | `modules/general-tools/registro-facial.html` | general-tools | GET | 884, 927, 1350 |
 | `modules/general-tools/tasks.html` | general-tools | GET | 2123 |
-| `modules/hr/absence-config.html` | hr | GET, embed | 798, 813, 914, 939, 1069 |
+| `modules/hr/absence-config.html` | hr | GET, embed | 798, 813, 925, 950, 1080 |
 | `modules/hr/absence-reports.html` | hr | GET, embed | 625, 1331, 1530 |
 | `modules/hr/adjust-balances.html` | hr | GET, embed | 412, 635, 820 |
 | `modules/hr/authorize-absences.html` | hr | GET | 470, 1173, 1295 |
@@ -1653,7 +1653,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/adjust-balances.html` | (modules sin carpeta) | GET, POST | 497, 584, 763 |
-| `modules/hr/absence-config.html` | hr | DELETE, POST | 826, 875 |
+| `modules/hr/absence-config.html` | hr | DELETE, POST | 837, 886 |
 | `modules/hr/absence-reports.html` | hr | GET | 1137 |
 | `modules/hr/adjust-balances.html` | hr | GET, POST | 545, 635, 839 |
 | `modules/hr/authorize-absences.html` | hr | POST | 1075 |
@@ -1711,7 +1711,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `api/cron/auto-absences.js` | api | ND | 152, 315 |
-| `modules/hr/absence-config.html` | hr | GET, ND, PATCH, POST | 632, 666, 763, 1101, 1191 |
+| `modules/hr/absence-config.html` | hr | GET, ND, PATCH, POST | 632, 666, 763, 1112, 1202 |
 | `modules/hr/absence-reports.html` | hr | GET | 643 |
 | `modules/hr/authorize-absences.html` | hr | GET | 1137, 1261 |
 | `modules/hr/clearances.html` | hr | GET | 726 |
@@ -3668,14 +3668,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/absence-config.html` | hr | DELETE, GET, POST | 1069, 1160, 1185 |
+| `modules/hr/absence-config.html` | hr | DELETE, GET, POST | 1080, 1171, 1196 |
 | `modules/hr/clearances.html` | hr | GET | 539 |
 
 ### hr_clearance_areas
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/absence-config.html` | hr | DELETE, GET, PATCH, POST | 939, 1024, 1030, 1051 |
+| `modules/hr/absence-config.html` | hr | DELETE, GET, PATCH, POST | 950, 1035, 1041, 1062 |
 | `modules/hr/clearances.html` | hr | GET, embed | 538, 1077, 1830, 1969 |
 
 ### ie_expected_results
