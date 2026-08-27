@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-08-27 17:39 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 18:09 UTC. **No editar a mano.**
 
-**333 archivos** con acceso a datos.
+**334 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -757,6 +757,13 @@
 - **Módulo:** extracurricular
 - **Lee (9):** academic_years, svc_extracurricular_activities, svc_extracurricular_activity_costs, svc_extracurricular_activity_days, svc_extracurricular_cost_concepts, svc_extracurricular_cycle_days, svc_extracurricular_cycles, svc_extracurricular_enrollments, svc_transport_rates_extracurricular
 - **Escribe (4):** **svc_extracurricular_activities**, **svc_extracurricular_cost_concepts**, **svc_extracurricular_cycle_days**, **svc_extracurricular_cycles**
+
+### `modules/extracurricular/treasury.html`
+
+- **Módulo:** extracurricular
+- **Lee (1):** academic_years
+- **Escribe (1):** **svc_extracurricular_cycles**
+- **Sin determinar (2):** svc_extracurricular_cycles, svc_extracurricular_enrollments
 
 ### `modules/follow-ups/categories.html`
 

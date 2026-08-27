@@ -1,15 +1,15 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-27 17:39 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 18:09 UTC. **No editar a mano.**
 
-**398 tablas** referenciadas en **333 archivos**.
+**398 tablas** referenciadas en **334 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
 | Tabla | Archivos | Escriben | Dudosas |
 |---|---:|---:|---:|
 | [workers](#workers) | 134 | 2 | 16 |
-| [academic_years](#academicyears) | 83 | 4 | 3 |
+| [academic_years](#academicyears) | 84 | 4 | 3 |
 | [grades](#grades) | 67 | 2 | 4 |
 | [courses](#courses) | 59 | 2 | 4 |
 | [users](#users) | 58 | 4 | 11 |
@@ -95,6 +95,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [stm_docs](#stmdocs) | 6 | 4 | 0 |
 | [survey_respondent_profile](#surveyrespondentprofile) | 6 | 1 | 1 |
 | [survey_sections](#surveysections) | 6 | 1 | 0 |
+| [svc_extracurricular_cycles](#svcextracurricularcycles) | 6 | 2 | 1 |
 | [svc_module_config](#svcmoduleconfig) | 6 | 1 | 0 |
 | [svc_transport_nodes](#svctransportnodes) | 6 | 1 | 0 |
 | [teval_periods](#tevalperiods) | 6 | 1 | 1 |
@@ -124,7 +125,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [survey_responses](#surveyresponses) | 5 | 1 | 1 |
 | [svc_catering_menus](#svccateringmenus) | 5 | 1 | 0 |
 | [svc_extracurricular_activities](#svcextracurricularactivities) | 5 | 2 | 0 |
-| [svc_extracurricular_cycles](#svcextracurricularcycles) | 5 | 1 | 0 |
+| [svc_extracurricular_enrollments](#svcextracurricularenrollments) | 5 | 1 | 1 |
 | [svc_internal_event_services](#svcinternaleventservices) | 5 | 2 | 0 |
 | [svc_support_areas](#svcsupportareas) | 5 | 1 | 0 |
 | [teval_forms](#tevalforms) | 5 | 1 | 1 |
@@ -159,7 +160,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [survey_scale_options](#surveyscaleoptions) | 4 | 1 | 0 |
 | [svc_extracurricular_activity_days](#svcextracurricularactivitydays) | 4 | 1 | 0 |
 | [svc_extracurricular_cycle_days](#svcextracurricularcycledays) | 4 | 1 | 0 |
-| [svc_extracurricular_enrollments](#svcextracurricularenrollments) | 4 | 1 | 0 |
 | [svc_internal_events](#svcinternalevents) | 4 | 1 | 2 |
 | [svc_maintenance_priorities](#svcmaintenancepriorities) | 4 | 1 | 0 |
 | [svc_maintenance_requests](#svcmaintenancerequests) | 4 | 2 | 0 |
@@ -585,6 +585,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/enrollments.html` | extracurricular | embed | 336 |
 | `modules/extracurricular/extracurricular-engine.js` | extracurricular | GET | 40 |
 | `modules/extracurricular/seasons.html` | extracurricular | GET, embed | 381, 450 |
+| `modules/extracurricular/treasury.html` | extracurricular | embed | 381 |
 | `modules/follow-ups/general-queries.html` | follow-ups | GET, embed | 832, 1527 |
 | `modules/general-tools/community-query.html` | general-tools | GET | 817 |
 | `modules/general-tools/dashboard.html` | general-tools | GET | 705, 794 |
@@ -2253,6 +2254,17 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/surveys/results.html` | surveys | embed | 1334 |
 | `modules/surveys/sections.html` | surveys | DELETE, GET, PATCH, POST | 500, 677, 705, 763, 771 |
 
+### svc_extracurricular_cycles
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/extracurricular/activities.html` | extracurricular | GET | 402 |
+| `modules/extracurricular/attendance.html` | extracurricular | GET | 196 |
+| `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 328 |
+| `modules/extracurricular/enrollments.html` | extracurricular | GET | 336 |
+| `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 450, 585, 589, 629, 1045, 1427, 1487, 1563 |
+| `modules/extracurricular/treasury.html` | extracurricular | ND, PATCH | 381, 845 |
+
 ### svc_module_config
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -2546,15 +2558,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 440 |
 | `modules/extracurricular/seasons.html` | extracurricular | GET, PATCH | 614, 1092, 1414, 1549 |
 
-### svc_extracurricular_cycles
+### svc_extracurricular_enrollments
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | GET | 402 |
-| `modules/extracurricular/attendance.html` | extracurricular | GET | 196 |
-| `modules/extracurricular/cost-concepts.html` | extracurricular | GET | 328 |
-| `modules/extracurricular/enrollments.html` | extracurricular | GET | 336 |
-| `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 450, 585, 589, 629, 1045, 1427, 1487, 1563 |
+| `modules/extracurricular/activities.html` | extracurricular | GET | 996 |
+| `modules/extracurricular/attendance.html` | extracurricular | GET | 356 |
+| `modules/extracurricular/enrollments.html` | extracurricular | GET, PATCH | 517, 845 |
+| `modules/extracurricular/seasons.html` | extracurricular | GET | 1507 |
+| `modules/extracurricular/treasury.html` | extracurricular | ND | 447 |
 
 ### svc_internal_event_services
 
@@ -2868,15 +2880,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 235 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 430 |
 | `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 627, 690, 785, 790, 895 |
-
-### svc_extracurricular_enrollments
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/extracurricular/activities.html` | extracurricular | GET | 996 |
-| `modules/extracurricular/attendance.html` | extracurricular | GET | 356 |
-| `modules/extracurricular/enrollments.html` | extracurricular | GET, PATCH | 517, 845 |
-| `modules/extracurricular/seasons.html` | extracurricular | GET | 1507 |
 
 ### svc_internal_events
 

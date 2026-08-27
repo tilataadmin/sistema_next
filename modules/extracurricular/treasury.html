@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- VERSIÓN DE LA PÁGINA -->
+    <meta name="page-version" content="26.08.27.10.00">
+
+    <title>Consulta de Tesorería - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .loading-overlay.hidden { display: none; }
+
+        .loading-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0d6efd;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Tarjetas de cifras */
+        .kpi-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background-color: #ffffff;
+            padding: 1rem 1.25rem;
+            height: 100%;
+        }
+
+        .kpi-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 0.25rem;
+        }
+
+        .kpi-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #212529;
+            line-height: 1.2;
+        }
+
+        /* Estados de temporada */
+        .badge-estado { font-weight: 500; }
+        .estado-published         { background-color: #0d6efd; color: #fff; }
+        .estado-enrollment_closed { background-color: #fd7e14; color: #fff; }
+        .estado-delivered         { background-color: #198754; color: #fff; }
+        .estado-closed            { background-color: #6c757d; color: #fff; }
+
+        .tabla-tesoreria th {
+            font-size: 0.82rem;
+            white-space: nowrap;
+        }
+
+        .tabla-tesoreria td {
+            font-size: 0.88rem;
+            vertical-align: middle;
+        }
+
+        .valor-cobro {
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .fila-corregida { background-color: #fff8e1; }
+
+        .sin-minimo { color: #b02a37; font-weight: 500; }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="mb-0">Cargando...</p>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+
+        <!-- BREADCRUMBS -->
+        <nav aria-label="breadcrumb" class="mt-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="../../dashboard.html">
+                        <i class="bi bi-house me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="index.html">Extracurriculares</a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    Consulta de Tesorería
+                </li>
+            </ol>
+        </nav>
+
+        <!-- ENCABEZADO -->
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3">
+                    <i class="bi bi-cash-coin me-2"></i>
+                    Consulta de Tesorería
+                </h1>
+                <p class="text-muted">
+                    Inscripciones y valores a facturar por temporada. Solo lectura.
+                </p>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DE ALERTAS -->
+        <div id="alertContainer"></div>
+
+        <!-- SELECTOR DE TEMPORADA -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-12 col-md-5">
+                        <label for="selectTemporada" class="form-label mb-1">Temporada</label>
+                        <select class="form-select" id="selectTemporada">
+                            <option value="">Cargando temporadas...</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <div id="infoEstado" class="small text-muted"></div>
+                    </div>
+                    <div class="col-12 col-md-4 text-md-end">
+                        <button class="btn btn-outline-secondary me-2" id="btnActualizar">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+                        </button>
+                        <button class="btn btn-primary" id="btnExportar" disabled>
+                            <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AVISO DE TEMPORADA PROVISIONAL -->
+        <div id="avisoProvisional"></div>
+
+        <!-- CIFRAS -->
+        <div class="row g-3 mb-4" id="bloqueKpis" style="display:none;">
+            <div class="col-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Estudiantes</div>
+                    <div class="kpi-value" id="kpiEstudiantes">—</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Inscripciones</div>
+                    <div class="kpi-value" id="kpiInscripciones">—</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Actividades</div>
+                    <div class="kpi-value" id="kpiActividades">—</div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total a facturar</div>
+                    <div class="kpi-value" id="kpiTotal">—</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PESTAÑAS -->
+        <ul class="nav nav-tabs mb-3" id="tabsTesoreria" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-actividad-btn" data-bs-toggle="tab"
+                        data-bs-target="#tab-actividad" type="button" role="tab">
+                    <i class="bi bi-collection me-1"></i>Por actividad
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-detalle-btn" data-bs-toggle="tab"
+                        data-bs-target="#tab-detalle" type="button" role="tab">
+                    <i class="bi bi-list-ul me-1"></i>Detalle por inscripción
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-novedades-btn" data-bs-toggle="tab"
+                        data-bs-target="#tab-novedades" type="button" role="tab">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Novedades
+                    <span class="badge bg-secondary ms-1" id="badgeNovedades">0</span>
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content mb-5">
+
+            <!-- VISTA POR ACTIVIDAD -->
+            <div class="tab-pane fade show active" id="tab-actividad" role="tabpanel">
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 tabla-tesoreria">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Actividad</th>
+                                        <th>Días</th>
+                                        <th class="text-center">Inscritos</th>
+                                        <th class="text-center">Mínimo</th>
+                                        <th class="text-center">Sin transporte</th>
+                                        <th class="text-center">Ruta vinculada</th>
+                                        <th class="text-center">Ruta no vinculada</th>
+                                        <th class="text-end">Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyActividad"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA DETALLE -->
+            <div class="tab-pane fade" id="tab-detalle" role="tabpanel">
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 tabla-tesoreria">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Cód. estudiante</th>
+                                        <th>Cód. familia</th>
+                                        <th>Estudiante</th>
+                                        <th>Curso</th>
+                                        <th>Actividad</th>
+                                        <th>Días</th>
+                                        <th>Transporte</th>
+                                        <th class="text-end">Valor a cobrar</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyDetalle"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NOVEDADES POSTERIORES A LA ENTREGA -->
+            <div class="tab-pane fade" id="tab-novedades" role="tabpanel">
+                <div id="contenidoNovedades"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+
+    <script>
+        // ==========================================
+        // CONSTANTES
+        // ==========================================
+        const PERMISO = 'Consulta de Tesorería de extracurriculares';
+
+        // Estados de temporada visibles en esta pantalla.
+        // 'published' entra como vista provisional: se puede mirar, no exportar.
+        const ESTADOS_VISIBLES = ['published', 'enrollment_closed', 'delivered', 'closed'];
+
+        const ETIQUETA_ESTADO = {
+            published:         { texto: 'Publicada',              clase: 'estado-published' },
+            enrollment_closed: { texto: 'Inscripciones cerradas',  clase: 'estado-enrollment_closed' },
+            delivered:         { texto: 'Entregada a Tesorería',   clase: 'estado-delivered' },
+            closed:            { texto: 'Cerrada',                 clase: 'estado-closed' }
+        };
+
+        const DIAS = {
+            1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves',
+            5: 'Viernes', 6: 'Sábado', 7: 'Domingo'
+        };
+
+        // Textos acordados con el colegio. Deben leerse igual que en el portal.
+        const TRANSPORTE = {
+            none:     'Sin transporte',
+            linked:   'Con ruta vinculada',
+            unlinked: 'Con ruta no vinculada'
+        };
+
+        // ==========================================
+        // ESTADO EN MEMORIA
+        // ==========================================
+        let temporadas = [];
+        let temporadaSel = null;
+        let filas = [];        // inscripciones activas, ya normalizadas
+        let novedades = [];    // altas y retiros posteriores a la entrega
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess(PERMISO);
+                if (!hasAccess) return;
+
+                const session = getStoredSession();
+                if (!session) {
+                    showMessage('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 1500);
+                    return;
+                }
+
+                await inicializarPagina();
+
+            } catch (error) {
+                console.error('Error de inicialización:', error);
+                showMessage('Error de validación: ' + error.message, 'danger');
+            }
+        });
+
+        async function inicializarPagina() {
+            mostrarLoading();
+            try {
+                await cargarTemporadas();
+                configurarEventos();
+            } catch (error) {
+                console.error('Error inicializando:', error);
+                showMessage('Error al cargar la página: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        function configurarEventos() {
+            document.getElementById('selectTemporada')
+                .addEventListener('change', onCambioTemporada);
+            document.getElementById('btnActualizar')
+                .addEventListener('click', onCambioTemporada);
+            document.getElementById('btnExportar')
+                .addEventListener('click', exportarExcel);
+        }
+
+        // ==========================================
+        // CARGA DE TEMPORADAS
+        // ==========================================
+        async function cargarTemporadas() {
+            const estados = ESTADOS_VISIBLES.join(',');
+            const url = '/svc_extracurricular_cycles?select=cycle_id,cycle_name,season_status,start_date,end_date,delivered_at,delivered_by,academic_years(year_name)&season_status=in.(' + estados + ')&order=start_date.desc';
+
+            temporadas = await supabaseRequest(url) || [];
+
+            const select = document.getElementById('selectTemporada');
+
+            if (temporadas.length === 0) {
+                select.innerHTML = '<option value="">No hay temporadas disponibles</option>';
+                showMessage('No hay temporadas en estado consultable por Tesorería.', 'info');
+                return;
+            }
+
+            select.innerHTML = temporadas.map(t => {
+                const anio = t.academic_years ? t.academic_years.year_name : '';
+                return `<option value="${t.cycle_id}">${escapar(t.cycle_name)}${anio ? ' — ' + escapar(anio) : ''}</option>`;
+            }).join('');
+
+            select.value = temporadas[0].cycle_id;
+            await onCambioTemporada();
+        }
+
+        async function onCambioTemporada() {
+            const cycleId = document.getElementById('selectTemporada').value;
+            if (!cycleId) return;
+
+            temporadaSel = temporadas.find(t => t.cycle_id === cycleId);
+            if (!temporadaSel) return;
+
+            mostrarLoading();
+            try {
+                await cargarInscripciones(cycleId);
+                pintarEstado();
+                pintarKpis();
+                pintarPorActividad();
+                pintarDetalle();
+                pintarNovedades();
+            } catch (error) {
+                console.error('Error cargando inscripciones:', error);
+                showMessage('Error al cargar las inscripciones: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        // ==========================================
+        // CARGA DE INSCRIPCIONES
+        // ==========================================
+        async function cargarInscripciones(cycleId) {
+            const campos = [
+                'enrollment_id',
+                'enrollment_status',
+                'transport_option',
+                'validated_transport_option',
+                'transport_validated',
+                'frozen_activity_price',
+                'frozen_price_linked',
+                'frozen_price_unlinked',
+                'frozen_sessions',
+                'created_at',
+                'withdrawn_at',
+                'withdrawal_reason',
+                'students(student_code,family_id,student_first_name,student_last_name_1,student_last_name_2,courses(course_name))',
+                'svc_extracurricular_activities!svc_extracurricular_enrollments_activity_fkey(activity_name,activity_status,min_students,display_order)',
+                'svc_extracurricular_enrollment_days(day_of_week)'
+            ].join(',');
+
+            const url = '/svc_extracurricular_enrollments?select=' + campos + '&cycle_id=eq.' + cycleId;
+            const datos = await supabaseRequest(url) || [];
+
+            const normalizadas = datos.map(normalizar);
+
+            filas = normalizadas
+                .filter(f => f.estado === 'active')
+                .sort(ordenarFilas);
+
+            // Las novedades solo tienen sentido contra una fecha de entrega.
+            const entregada = temporadaSel.delivered_at ? new Date(temporadaSel.delivered_at) : null;
+
+            novedades = !entregada ? [] : normalizadas.filter(f => {
+                const alta   = f.creada  && new Date(f.creada)  > entregada;
+                const retiro = f.retirada && new Date(f.retirada) > entregada;
+                return alta || retiro;
+            }).map(f => ({
+                ...f,
+                tipoNovedad: (f.retirada && new Date(f.retirada) > entregada) ? 'retiro' : 'alta'
+            }));
+        }
+
+        /**
+         * Aplana una fila de PostgREST y resuelve el valor a cobrar.
+         * La opción validada manda cuando existe; si no, manda la declarada.
+         * El total NO se calcula: se elige entre los tres congelados de la fila.
+         */
+        function normalizar(r) {
+            const est = r.students || {};
+            const act = r.svc_extracurricular_activities || {};
+            const dias = (r.svc_extracurricular_enrollment_days || [])
+                .map(d => d.day_of_week)
+                .sort((a, b) => a - b);
+
+            const opcionEfectiva = r.validated_transport_option || r.transport_option;
+            const corregida = !!r.validated_transport_option
+                && r.validated_transport_option !== r.transport_option;
+
+            let valor;
+            if (opcionEfectiva === 'linked') {
+                valor = Number(r.frozen_price_linked);
+            } else if (opcionEfectiva === 'unlinked') {
+                valor = Number(r.frozen_price_unlinked);
+            } else {
+                valor = Number(r.frozen_activity_price);
+            }
+
+            const apellidos = [est.student_last_name_1, est.student_last_name_2]
+                .filter(Boolean).join(' ');
+
+            return {
+                id: r.enrollment_id,
+                estado: r.enrollment_status,
+                codEstudiante: est.student_code || null,
+                codFamilia: est.family_id || null,
+                estudiante: (apellidos + ' ' + (est.student_first_name || '')).trim(),
+                curso: est.courses ? est.courses.course_name : '',
+                actividad: act.activity_name || '',
+                actividadOrden: act.display_order === null || act.display_order === undefined ? 9999 : act.display_order,
+                minimo: act.min_students || 0,
+                dias: dias,
+                sesiones: r.frozen_sessions,
+                opcionDeclarada: r.transport_option,
+                opcionEfectiva: opcionEfectiva,
+                corregida: corregida,
+                valor: valor,
+                creada: r.created_at,
+                retirada: r.withdrawn_at,
+                motivoRetiro: r.withdrawal_reason || ''
+            };
+        }
+
+        function ordenarFilas(a, b) {
+            if (a.actividad !== b.actividad) return a.actividad.localeCompare(b.actividad, 'es');
+            return a.estudiante.localeCompare(b.estudiante, 'es');
+        }
+
+        // ==========================================
+        // ESTADO Y AVISO PROVISIONAL
+        // ==========================================
+        function pintarEstado() {
+            const info = document.getElementById('infoEstado');
+            const aviso = document.getElementById('avisoProvisional');
+            const btnExportar = document.getElementById('btnExportar');
+
+            const meta = ETIQUETA_ESTADO[temporadaSel.season_status]
+                || { texto: temporadaSel.season_status, clase: 'estado-closed' };
+
+            let html = `<span class="badge badge-estado ${meta.clase}">${meta.texto}</span>`;
+            if (temporadaSel.delivered_at) {
+                html += `<div class="mt-1">Entregada el ${fmtFechaHora(temporadaSel.delivered_at)}</div>`;
+            }
+            info.innerHTML = html;
+
+            const esProvisional = temporadaSel.season_status === 'published';
+
+            if (esProvisional) {
+                aviso.innerHTML = `
+                    <div class="alert alert-warning d-flex align-items-start" role="alert">
+                        <i class="bi bi-hourglass-split me-2 mt-1"></i>
+                        <div>
+                            <strong>Vista provisional.</strong> Esta temporada todavía tiene las inscripciones
+                            abiertas, así que las cifras van a cambiar. Sirve para anticipar el volumen,
+                            no para facturar. La exportación se habilita cuando coordinación cierre las inscripciones.
+                        </div>
+                    </div>`;
+                btnExportar.disabled = true;
+                btnExportar.title = 'Disponible cuando se cierren las inscripciones';
+            } else {
+                aviso.innerHTML = '';
+                btnExportar.disabled = filas.length === 0;
+                btnExportar.title = '';
+            }
+        }
+
+        // ==========================================
+        // CIFRAS
+        // ==========================================
+        function pintarKpis() {
+            document.getElementById('bloqueKpis').style.display = '';
+
+            const estudiantes = new Set(filas.map(f => f.codEstudiante)).size;
+            const actividades = new Set(filas.map(f => f.actividad)).size;
+            const total = filas.reduce((s, f) => s + f.valor, 0);
+
+            document.getElementById('kpiEstudiantes').textContent = estudiantes;
+            document.getElementById('kpiInscripciones').textContent = filas.length;
+            document.getElementById('kpiActividades').textContent = actividades;
+            document.getElementById('kpiTotal').textContent = fmtDinero(total);
+        }
+
+        // ==========================================
+        // VISTA POR ACTIVIDAD
+        // ==========================================
+        function pintarPorActividad() {
+            const tbody = document.getElementById('tbodyActividad');
+
+            if (filas.length === 0) {
+                tbody.innerHTML = filaVacia(8, 'Esta temporada no tiene inscripciones activas');
+                return;
+            }
+
+            const grupos = {};
+            filas.forEach(f => {
+                if (!grupos[f.actividad]) {
+                    grupos[f.actividad] = {
+                        nombre: f.actividad,
+                        orden: f.actividadOrden,
+                        minimo: f.minimo,
+                        dias: f.dias,
+                        inscritos: 0,
+                        none: 0, linked: 0, unlinked: 0,
+                        subtotal: 0
+                    };
+                }
+                const g = grupos[f.actividad];
+                g.inscritos += 1;
+                g[f.opcionEfectiva] = (g[f.opcionEfectiva] || 0) + 1;
+                g.subtotal += f.valor;
+            });
+
+            const lista = Object.values(grupos)
+                .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es'));
+
+            tbody.innerHTML = lista.map(g => {
+                const alerta = g.inscritos < g.minimo
+                    ? `<span class="sin-minimo" title="No alcanza el mínimo de la actividad">${g.inscritos}</span>`
+                    : g.inscritos;
+                return `
+                    <tr>
+                        <td>${escapar(g.nombre)}</td>
+                        <td>${nombresDias(g.dias)}</td>
+                        <td class="text-center">${alerta}</td>
+                        <td class="text-center text-muted">${g.minimo}</td>
+                        <td class="text-center">${g.none || 0}</td>
+                        <td class="text-center">${g.linked || 0}</td>
+                        <td class="text-center">${g.unlinked || 0}</td>
+                        <td class="text-end valor-cobro">${fmtDinero(g.subtotal)}</td>
+                    </tr>`;
+            }).join('');
+
+            const total = filas.reduce((s, f) => s + f.valor, 0);
+            tbody.innerHTML += `
+                <tr class="table-light fw-semibold">
+                    <td colspan="2">Total</td>
+                    <td class="text-center">${filas.length}</td>
+                    <td colspan="4"></td>
+                    <td class="text-end valor-cobro">${fmtDinero(total)}</td>
+                </tr>`;
+        }
+
+        // ==========================================
+        // VISTA DETALLE
+        // ==========================================
+        function pintarDetalle() {
+            const tbody = document.getElementById('tbodyDetalle');
+
+            if (filas.length === 0) {
+                tbody.innerHTML = filaVacia(8, 'Esta temporada no tiene inscripciones activas');
+                return;
+            }
+
+            tbody.innerHTML = filas.map(f => {
+                const marca = f.corregida
+                    ? ` <i class="bi bi-pencil-square text-warning" title="El colegio corrigió lo declarado por la familia"></i>`
+                    : '';
+                return `
+                    <tr class="${f.corregida ? 'fila-corregida' : ''}">
+                        <td>${f.codEstudiante || '-'}</td>
+                        <td>${f.codFamilia || '-'}</td>
+                        <td>${escapar(f.estudiante)}</td>
+                        <td>${escapar(f.curso)}</td>
+                        <td>${escapar(f.actividad)}</td>
+                        <td>${nombresDias(f.dias)}</td>
+                        <td>${TRANSPORTE[f.opcionEfectiva] || f.opcionEfectiva}${marca}</td>
+                        <td class="text-end valor-cobro">${fmtDinero(f.valor)}</td>
+                    </tr>`;
+            }).join('');
+        }
+
+        // ==========================================
+        // NOVEDADES POSTERIORES A LA ENTREGA
+        // ==========================================
+        function pintarNovedades() {
+            const cont = document.getElementById('contenidoNovedades');
+            const badge = document.getElementById('badgeNovedades');
+
+            badge.textContent = novedades.length;
+            badge.className = novedades.length > 0
+                ? 'badge bg-warning text-dark ms-1'
+                : 'badge bg-secondary ms-1';
+
+            if (!temporadaSel.delivered_at) {
+                cont.innerHTML = `
+                    <div class="alert alert-light border">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Esta temporada aún no se ha entregado a Tesorería. Las novedades aparecen
+                        cuando hay una fecha de entrega contra la cual comparar.
+                    </div>`;
+                return;
+            }
+
+            if (novedades.length === 0) {
+                cont.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        Sin movimientos desde la entrega del ${fmtFechaHora(temporadaSel.delivered_at)}.
+                    </div>`;
+                return;
+            }
+
+            const filasHtml = novedades.map(n => {
+                const esRetiro = n.tipoNovedad === 'retiro';
+                const etiqueta = esRetiro
+                    ? '<span class="badge bg-danger">Retiro — nota crédito</span>'
+                    : '<span class="badge bg-primary">Alta — cobro adicional</span>';
+                const fecha = esRetiro ? n.retirada : n.creada;
+                return `
+                    <tr>
+                        <td>${etiqueta}</td>
+                        <td>${fmtFechaHora(fecha)}</td>
+                        <td>${n.codEstudiante || '-'}</td>
+                        <td>${n.codFamilia || '-'}</td>
+                        <td>${escapar(n.estudiante)}</td>
+                        <td>${escapar(n.actividad)}</td>
+                        <td>${TRANSPORTE[n.opcionEfectiva] || n.opcionEfectiva}</td>
+                        <td class="text-end valor-cobro">${fmtDinero(n.valor)}</td>
+                        <td class="small text-muted">${escapar(n.motivoRetiro)}</td>
+                    </tr>`;
+            }).join('');
+
+            cont.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Movimientos ocurridos después de la entrega del
+                    <strong>${fmtFechaHora(temporadaSel.delivered_at)}</strong>.
+                    Los retiros se resuelven con nota crédito en Phidias; las altas, con un cobro adicional.
+                </div>
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 tabla-tesoreria">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Tipo</th>
+                                        <th>Fecha</th>
+                                        <th>Cód. estudiante</th>
+                                        <th>Cód. familia</th>
+                                        <th>Estudiante</th>
+                                        <th>Actividad</th>
+                                        <th>Transporte</th>
+                                        <th class="text-end">Valor</th>
+                                        <th>Motivo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${filasHtml}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        // ==========================================
+        // EXPORTACIÓN A EXCEL
+        // ==========================================
+        async function exportarExcel() {
+            if (!temporadaSel || filas.length === 0) return;
+
+            if (temporadaSel.season_status === 'published') {
+                showMessage('No se puede exportar una temporada con inscripciones abiertas.', 'warning');
+                return;
+            }
+
+            const primeraEntrega = !temporadaSel.delivered_at;
+
+            if (primeraEntrega) {
+                const ok = confirm(
+                    'Al exportar se deja constancia de la entrega a Tesorería con la fecha de hoy.\n\n' +
+                    'A partir de ese momento, las inscripciones nuevas y los retiros aparecen en la pestaña ' +
+                    'de Novedades para que se resuelvan con cobro adicional o nota crédito.\n\n' +
+                    '¿Continuar?'
+                );
+                if (!ok) return;
+            }
+
+            mostrarLoading();
+            try {
+                // 1. Construir el archivo
+                const encabezados = [
+                    'Código estudiante', 'Código familia', 'Estudiante', 'Curso',
+                    'Actividad', 'Días', 'Transporte', 'Valor a cobrar'
+                ];
+
+                const cuerpo = filas.map(f => [
+                    f.codEstudiante,
+                    f.codFamilia,
+                    f.estudiante,
+                    f.curso,
+                    f.actividad,
+                    nombresDias(f.dias),
+                    TRANSPORTE[f.opcionEfectiva] || f.opcionEfectiva,
+                    f.valor
+                ]);
+
+                const total = filas.reduce((s, f) => s + f.valor, 0);
+                cuerpo.push([]);
+                cuerpo.push(['', '', '', '', '', '', 'TOTAL', total]);
+
+                const hoja = XLSX.utils.aoa_to_sheet([encabezados, ...cuerpo]);
+                hoja['!cols'] = [
+                    { wch: 16 }, { wch: 14 }, { wch: 32 }, { wch: 14 },
+                    { wch: 24 }, { wch: 22 }, { wch: 22 }, { wch: 16 }
+                ];
+
+                const libro = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(libro, hoja, 'Cobros');
+
+                const nombreArchivo = 'Extracurriculares_' +
+                    temporadaSel.cycle_name.replace(/[^\wáéíóúÁÉÍÓÚñÑ -]/g, '').replace(/\s+/g, '_') +
+                    '_' + fechaHoyISO() + '.xlsx';
+
+                XLSX.writeFile(libro, nombreArchivo);
+
+                // 2. Registrar la entrega solo si es la primera vez.
+                //    Se hace después de generar el archivo: si la descarga falla,
+                //    no queda una entrega registrada que nadie recibió.
+                if (primeraEntrega) {
+                    await registrarEntrega();
+                }
+
+                showMessage('Archivo generado con ' + filas.length + ' inscripciones.', 'success');
+
+            } catch (error) {
+                console.error('Error exportando:', error);
+                showMessage('Error al generar el archivo: ' + error.message, 'danger');
+            } finally {
+                ocultarLoading();
+            }
+        }
+
+        /**
+         * Marca la temporada como entregada. Si estaba en 'enrollment_closed'
+         * también avanza el estado, que es la transición que describe el flujo.
+         * Si ya estaba en 'delivered' o 'closed' solo se registra la fecha.
+         */
+        async function registrarEntrega() {
+            const session = getStoredSession();
+            const userId = session && session.user ? session.user.user_id : null;
+
+            const cambios = {
+                delivered_at: new Date().toISOString(),
+                delivered_by: userId
+            };
+
+            if (temporadaSel.season_status === 'enrollment_closed') {
+                cambios.season_status = 'delivered';
+            }
+
+            await supabaseRequest(
+                '/svc_extracurricular_cycles?cycle_id=eq.' + temporadaSel.cycle_id,
+                { method: 'PATCH', body: JSON.stringify(cambios) }
+            );
+
+            // Refrescar el estado local y en el listado de temporadas
+            Object.assign(temporadaSel, cambios);
+            const idx = temporadas.findIndex(t => t.cycle_id === temporadaSel.cycle_id);
+            if (idx >= 0) Object.assign(temporadas[idx], cambios);
+
+            pintarEstado();
+            pintarNovedades();
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function fmtDinero(valor) {
+            const n = Number(valor) || 0;
+            return '$ ' + n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
+        }
+
+        function nombresDias(lista) {
+            if (!lista || lista.length === 0) return '-';
+            return lista.map(d => DIAS[d] || d).join(', ');
+        }
+
+        function fmtFechaHora(iso) {
+            if (!iso) return '-';
+            const d = new Date(iso);
+            return d.toLocaleString('es-CO', {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        function fechaHoyISO() {
+            const d = new Date();
+            const mes = String(d.getMonth() + 1).padStart(2, '0');
+            const dia = String(d.getDate()).padStart(2, '0');
+            return `${d.getFullYear()}-${mes}-${dia}`;
+        }
+
+        function filaVacia(columnas, texto) {
+            return `
+                <tr>
+                    <td colspan="${columnas}" class="text-center text-muted py-4">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2 mb-0">${texto}</p>
+                    </td>
+                </tr>`;
+        }
+
+        function escapar(texto) {
+            if (texto === null || texto === undefined) return '';
+            return String(texto)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function mostrarLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function ocultarLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
