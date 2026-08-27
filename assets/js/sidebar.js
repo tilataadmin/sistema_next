@@ -265,6 +265,7 @@ const MODULE_ITEM_ORDER = {
         'Tiqueteras',
         'Transporte de personal',
         'Aprobaciones de servicios',
+        'Seguimiento de autorizaciones',
         'Gestión de mantenimiento',
       'Reportes de servicios'
     ],
