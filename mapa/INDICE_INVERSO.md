@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-27 18:54 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 19:45 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -462,7 +462,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/absence-config.html` | hr | GET, embed | 798, 813, 925, 950, 1080 |
 | `modules/hr/absence-reports.html` | hr | GET, embed | 625, 1331, 1530 |
 | `modules/hr/adjust-balances.html` | hr | GET, embed | 412, 635, 820 |
-| `modules/hr/authorize-absences.html` | hr | GET | 470, 1173, 1295 |
+| `modules/hr/authorize-absences.html` | hr | GET | 470, 1179, 1301 |
 | `modules/hr/clearances.html` | hr | GET, embed | 523, 720, 744, 967, 1077, 1640, 1830, 1969, 2253 |
 | `modules/hr/divisions.html` | hr | GET, embed | 321, 341 |
 | `modules/hr/hr-dashboard.html` | hr | GET, embed | 699, 1018, 1078, 1191, 1271 |
@@ -1657,7 +1657,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/absence-config.html` | hr | DELETE, POST | 837, 886 |
 | `modules/hr/absence-reports.html` | hr | GET | 1137 |
 | `modules/hr/adjust-balances.html` | hr | GET, POST | 545, 635, 839 |
-| `modules/hr/authorize-absences.html` | hr | POST | 1075 |
+| `modules/hr/authorize-absences.html` | hr | POST | 1081 |
 | `modules/hr/hr-dashboard.html` | hr | GET | 744 |
 | `modules/hr/manage-absences.html` | hr | GET | 1984, 2005 |
 | `modules/hr/request-absence.html` | hr | GET | 833, 873 |
@@ -1670,7 +1670,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `api/cron/auto-absences.js` | api | ND | 304 |
 | `modules/general-tools/community-query.html` | general-tools | GET | 1222 |
-| `modules/hr/authorize-absences.html` | hr | GET | 1162, 1285 |
+| `modules/hr/authorize-absences.html` | hr | GET | 1168, 1291 |
 | `modules/hr/clearances.html` | hr | GET | 612, 865, 2275 |
 | `modules/hr/manage-absences.html` | hr | GET | 1016, 2251, 2417 |
 | `modules/hr/request-absence.html` | hr | GET | 1945, 2028, 2535 |
@@ -1714,7 +1714,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `api/cron/auto-absences.js` | api | ND | 152, 315 |
 | `modules/hr/absence-config.html` | hr | GET, ND, PATCH, POST | 632, 666, 763, 1112, 1202 |
 | `modules/hr/absence-reports.html` | hr | GET | 643 |
-| `modules/hr/authorize-absences.html` | hr | GET | 1137, 1261 |
+| `modules/hr/authorize-absences.html` | hr | GET | 1143, 1267 |
 | `modules/hr/clearances.html` | hr | GET | 726 |
 | `modules/hr/hr-dashboard.html` | hr | GET | 740 |
 | `modules/hr/manage-absences.html` | hr | GET | 857 |
@@ -1824,7 +1824,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/adjust-balances.html` | (modules sin carpeta) | GET | 515, 648 |
 | `modules/hr/absence-reports.html` | hr | GET, ND | 798, 923, 1160, 1331, 1514 |
 | `modules/hr/adjust-balances.html` | hr | GET, ND | 563, 699 |
-| `modules/hr/authorize-absences.html` | hr | GET, PATCH | 535, 725, 942, 1004, 1037, 1096, 1218 |
+| `modules/hr/authorize-absences.html` | hr | GET, PATCH | 731, 948, 1010, 1043, 1102, 1224 |
 | `modules/hr/hr-dashboard.html` | hr | GET | 677, 683, 745, 801, 881, 951, 1018, 1078, 1136, 1191 |
 | `modules/hr/manage-absences.html` | hr | GET, PATCH, POST | 691, 721, 1052, 1245, 1430, 1627, 1697, 1991, 2012, 2179 |
 | `modules/hr/request-absence.html` | hr | GET, ND, PATCH, POST | 846, 885, 1809, 1867, 2175, 2260, 2364, 2460, 2477 |
@@ -2742,7 +2742,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `dashboard.html` | (raíz) | GET | 512 |
-| `modules/hr/authorize-absences.html` | hr | GET, PATCH | 517, 738, 922, 934, 994 |
+| `modules/hr/authorize-absences.html` | hr | GET, PATCH | 519, 744, 928, 940, 1000 |
 | `modules/hr/manage-absences.html` | hr | GET, POST | 1258, 2306, 2317 |
 | `modules/hr/request-absence.html` | hr | GET, PATCH, POST | 2000, 2014, 2271, 2488, 2521 |
 
@@ -3255,7 +3255,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/hr/authorize-absences.html` | hr | GET | 743 |
+| `modules/hr/authorize-absences.html` | hr | GET | 749 |
 | `modules/hr/manage-absences.html` | hr | GET, POST | 1302, 1733, 2227 |
 | `modules/hr/request-absence.html` | hr | GET, POST | 1916, 2313 |
 
