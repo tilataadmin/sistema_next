@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-27 16:00 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 16:04 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **333 archivos**.
 
@@ -779,7 +779,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `assets/js/config.js` | (núcleo) | GET, ND, PATCH, embed | 577, 983, 1232, 1260, 1437, 2374, 2385 |
-| `assets/js/sidebar.js` | (núcleo) | GET | 424 |
+| `assets/js/sidebar.js` | (núcleo) | GET | 425 |
 | `diagnostico_permisos_training.html` | (raíz) | GET | 147 |
 | `login.html` | (raíz) | GET, ND, PATCH | 504, 574, 609, 882 |
 | `manual/my-ticket.html` | manual | GET, embed | 495, 607, 852 |
@@ -1018,7 +1018,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `assets/js/config.js` | (núcleo) | GET, embed | 1232, 1260, 1413, 1437 |
-| `assets/js/sidebar.js` | (núcleo) | embed | 424 |
+| `assets/js/sidebar.js` | (núcleo) | embed | 425 |
 | `diagnostico_permisos_training.html` | (raíz) | GET, embed | 95, 147 |
 | `login.html` | (raíz) | GET | 673 |
 | `modules/budget/assign-requesters.html` | budget | ND | 380 |
@@ -1057,7 +1057,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `assets/js/config.js` | (núcleo) | embed | 1232, 1260, 1413, 1437 |
-| `assets/js/sidebar.js` | (núcleo) | embed | 424 |
+| `assets/js/sidebar.js` | (núcleo) | embed | 425 |
 | `diagnostico_permisos_training.html` | (raíz) | embed | 95, 147 |
 | `modules/admissions/module-config.html` | admissions | GET | 279 |
 | `modules/budget/assign-requesters.html` | budget | embed | 380 |
@@ -1095,7 +1095,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `assets/js/config.js` | (núcleo) | GET, embed | 1250, 1260, 1346, 1437, 1457 |
-| `assets/js/sidebar.js` | (núcleo) | GET, embed | 414, 424 |
+| `assets/js/sidebar.js` | (núcleo) | GET, embed | 415, 425 |
 | `diagnostico_permisos_training.html` | (raíz) | GET, embed | 85, 131, 147 |
 | `login.html` | (raíz) | GET | 699 |
 | `manual/report-ticket.html` | manual | GET | 345 |
@@ -1127,7 +1127,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `assets/js/config.js` | (núcleo) | embed | 1260, 1437 |
-| `assets/js/sidebar.js` | (núcleo) | embed | 424 |
+| `assets/js/sidebar.js` | (núcleo) | embed | 425 |
 | `diagnostico_permisos_training.html` | (raíz) | GET, embed | 131, 147 |
 | `modules/budget/index.html` | budget | embed | 1139 |
 | `modules/early-alerts/index.html` | early-alerts | embed | 859 |
@@ -3941,7 +3941,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `assets/js/sidebar.js` | (núcleo) | ND | 1145 |
+| `assets/js/sidebar.js` | (núcleo) | ND | 1146 |
 | `modules/security/announcements.html` | security | GET, PATCH, POST | 239, 407, 416, 442 |
 
 ### task_collaborators
