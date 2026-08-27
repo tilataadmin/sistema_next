@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.20.1">
+    <meta name="page-version" content="26.8.27.1">
     <title>Configuración de Servicios - SchoolNet</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1460,6 +1460,18 @@
         // ==========================================
         // TAB 6: PARÁMETROS
         // ==========================================
+
+        // Los valores se insertan dentro de un atributo value="...". Sin escapar,
+        // una plantilla HTML con comillas dobles rompe el atributo y corrompe el
+        // resto de la pestaña. trip_auth_email_body tiene 12 comillas.
+        function escaparAtributo(texto) {
+            return String(texto == null ? '' : texto)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
         const PARAM_META = {
             days_before_imminent: { label: 'Días para estado "Inminente"', desc: 'Días antes de la fecha para cambio automático a estado Inminente.', type: 'number', order: 1 },
             min_days_advance: { label: 'Días mínimos de antelación', desc: 'Tiempo mínimo requerido para programar un servicio (en días).', type: 'number', order: 2 },
@@ -1467,7 +1479,18 @@
             meal_ticket_snack_price: { label: 'Precio refrigerio invitados', desc: 'Valor unitario del refrigerio para visitantes externos.', type: 'number', order: 4 },
             admissions_family_snack_price: { label: 'Precio refrigerio familias admisiones', desc: 'Valor unitario del refrigerio para atención a familias por admisiones.', type: 'number', order: 5 },
             admissions_family_lunch_price: { label: 'Precio almuerzo familias admisiones', desc: 'Valor unitario del almuerzo para atención a familias por admisiones.', type: 'number', order: 6 },
-            admissions_family_budget_item_id: { label: 'Ítem presupuestal admisiones familias', desc: 'ID del ítem presupuestal (budget_items) al que se cargan refrigerios y almuerzos. Por defecto: ATRAPAR.', type: 'text', order: 7 }
+            admissions_family_budget_item_id: { label: 'Ítem presupuestal admisiones familias', desc: 'ID del ítem presupuestal (budget_items) al que se cargan refrigerios y almuerzos. Por defecto: ATRAPAR.', type: 'text', order: 7 },
+
+            // Autorizaciones familiares de salidas
+            trip_auth_days_before_request: { label: 'Días para solicitar autorización', desc: 'Días antes de la salida en que se envía la solicitud a las familias.', type: 'number', order: 10 },
+            trip_auth_reminder_days: { label: 'Días de recordatorio', desc: 'Días antes del vencimiento en que se reenvía, separados por coma. Ejemplo: 3,1', type: 'text', order: 11 },
+            trip_auth_deadline_hours: { label: 'Horas de plazo', desc: 'Horas antes de la salida en que se cierra la posibilidad de responder.', type: 'number', order: 12 },
+            trip_auth_min_window_hours: { label: 'Ventana mínima (horas)', desc: 'Por debajo de este margen se advierte al responsable de la salida.', type: 'number', order: 13 },
+            trip_auth_portal_url: { label: 'Dirección del Portal de Familias', desc: 'Enlace que se incluye en el correo. Distinto en cada ambiente.', type: 'text', order: 14 },
+            trip_auth_email_subject: { label: 'Asunto del correo', desc: 'Admite variables entre llaves, por ejemplo {titulo} y {fecha}.', type: 'text', order: 15 },
+            trip_auth_email_body: { label: 'Cuerpo del correo (HTML)', desc: 'Plantilla del correo que reciben las familias. Es HTML: modifícala con cuidado.', type: 'textarea', order: 16 },
+            trip_auth_declaration_text: { label: 'Declaración que acepta la familia (HTML)', desc: 'Texto exacto que queda guardado como evidencia al responder. Es HTML: modifícala con cuidado.', type: 'textarea', order: 17 },
+            trip_auth_start_date: { label: '⚠ Fecha de arranque del sistema', desc: 'Formato AAAA-MM-DD. Mientras esté VACÍO no se genera ni se envía ninguna autorización. Al escribir una fecha, el sistema empieza a solicitar autorizaciones para las salidas programadas desde ese día en adelante. Las anteriores se manejan por fuera del sistema.', type: 'text', order: 18 }
         };
 
         async function cargarParametros() {
@@ -1488,19 +1511,50 @@
                 return;
             }
 
-            let html = '<h6 class="text-secondary mb-3"><i class="bi bi-sliders me-2"></i>Parámetros Generales</h6>';
+            // El estado del sistema de autorizaciones se lee de un vistazo: si
+            // el parámetro está vacío, nada se genera ni se envía. Sin este
+            // aviso, la única señal es un campo en blanco entre otros quince.
+            const fechaArranque = (cacheParametros.find(p => p.config_key === 'trip_auth_start_date') || {}).config_value;
+            const arranqueVacio = !fechaArranque || !String(fechaArranque).trim();
+
+            let html = arranqueVacio
+                ? `<div class="alert alert-secondary d-flex align-items-center">
+                       <i class="bi bi-pause-circle me-2 fs-5"></i>
+                       <div><strong>Autorizaciones de salidas: apagadas.</strong>
+                       No se genera ni se envía ninguna solicitud a las familias.
+                       Para activarlas, escribe una fecha en <em>Fecha de arranque del sistema</em>.</div>
+                   </div>`
+                : `<div class="alert alert-success d-flex align-items-center">
+                       <i class="bi bi-play-circle me-2 fs-5"></i>
+                       <div><strong>Autorizaciones de salidas: activas</strong> desde el ${fechaArranque}.
+                       Las salidas anteriores a esa fecha no generan solicitudes.</div>
+                   </div>`;
+
+            html += '<h6 class="text-secondary mb-3"><i class="bi bi-sliders me-2"></i>Parámetros Generales</h6>';
             html += '<div class="row g-3 mb-4">';
             cacheParametros.sort((a, b) => {
                 const orderA = PARAM_META[a.config_key]?.order ?? 99;
                 const orderB = PARAM_META[b.config_key]?.order ?? 99;
                 return orderA - orderB;
             }).forEach(p => {
-                const meta = PARAM_META[p.config_key] || { label: p.config_key, desc: p.config_description || '', type: 'text' };
+            const meta = PARAM_META[p.config_key] || { label: p.config_key, desc: p.config_description || '', type: 'text' };
+
+                // Las plantillas HTML no caben en un campo de una línea. Un
+                // textarea también expone .value, así que guardarParametros
+                // funciona igual sin cambios.
+                const campo = meta.type === 'textarea'
+                    ? `<textarea class="form-control" rows="6" style="font-family: monospace; font-size: 0.85rem;"
+                                 id="param-${p.config_key}" data-config-id="${p.config_id}"
+                                 data-config-key="${p.config_key}">${escaparAtributo(p.config_value)}</textarea>`
+                    : `<input type="${meta.type}" class="form-control" id="param-${p.config_key}"
+                              value="${escaparAtributo(p.config_value)}" data-config-id="${p.config_id}"
+                              data-config-key="${p.config_key}"${meta.type === 'number' ? ' min="1"' : ''}>`;
+
                 html += `
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 ${meta.type === 'textarea' ? '' : 'col-md-6'}">
                         <label class="config-label">${meta.label}</label>
                         <div class="config-description">${meta.desc}</div>
-                        <input type="${meta.type}" class="form-control" id="param-${p.config_key}" value="${p.config_value}" data-config-id="${p.config_id}" data-config-key="${p.config_key}" min="1">
+                        ${campo}
                     </div>
                 `;
             });

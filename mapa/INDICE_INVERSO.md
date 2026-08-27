@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-27 16:12 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 17:39 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **333 archivos**.
 
@@ -510,7 +510,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/user-roles.html` | security | GET | 466 |
 | `modules/services/admissions-family.html` | services | GET, embed | 332, 408, 440, 965 |
 | `modules/services/approvals.html` | services | GET, embed | 408, 476, 492, 508, 523, 1653, 1664, 1809, 2130, 2300 |
-| `modules/services/config.html` | services | GET, embed | 1621, 1656, 1738, 1998 |
+| `modules/services/config.html` | services | GET, embed | 1675, 1710, 1792, 2052 |
 | `modules/services/event-costs.html` | services | GET | 305 |
 | `modules/services/index.html` | services | GET | 880 |
 | `modules/services/internal-events.html` | services | GET, embed | 694, 810, 915, 937, 2092, 2098, 2529 |
@@ -1912,7 +1912,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/services/admissions-family.html` | services | GET | 335, 965 |
 | `modules/services/approvals.html` | services | GET | 1664 |
-| `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1738, 1801, 1815, 1832 |
+| `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1792, 1855, 1869, 1886 |
 | `modules/services/internal-events.html` | services | GET | 2529 |
 | `modules/services/pedagogical-trips.html` | services | GET | 1569 |
 | `modules/services/rep-trips.html` | services | GET | 1160 |
@@ -2259,7 +2259,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/services/admissions-family.html` | services | GET | 421 |
 | `modules/services/approvals.html` | services | GET | 439 |
-| `modules/services/config.html` | services | GET, PATCH | 1475, 1522 |
+| `modules/services/config.html` | services | GET, PATCH | 1498, 1576 |
 | `modules/services/internal-events.html` | services | GET | 790 |
 | `modules/services/js/commons.js` | services | GET | 166 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 310 |
@@ -2571,7 +2571,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | embed | 1809, 2439 |
-| `modules/services/config.html` | services | GET, PATCH, POST | 1656, 1721, 1723 |
+| `modules/services/config.html` | services | GET, PATCH, POST | 1710, 1775, 1777 |
 | `modules/services/event-costs.html` | services | GET | 335 |
 | `modules/services/index.html` | services | embed | 1011 |
 | `modules/services/internal-events.html` | services | GET, embed | 810, 2098 |
@@ -2891,7 +2891,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/config.html` | services | GET, PATCH, POST | 1845, 1910, 1912 |
+| `modules/services/config.html` | services | GET, PATCH, POST | 1899, 1964, 1966 |
 | `modules/services/maintenance-management.html` | services | GET, embed | 236, 264 |
 | `modules/services/maintenance-request.html` | services | GET | 275 |
 | `modules/services/my-maintenance-requests.html` | services | embed | 205 |
@@ -2909,7 +2909,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/config.html` | services | GET, PATCH, POST | 1927, 1981, 1983 |
+| `modules/services/config.html` | services | GET, PATCH, POST | 1981, 2035, 2037 |
 | `modules/services/maintenance-management.html` | services | GET, embed | 237, 264 |
 | `modules/services/maintenance-request.html` | services | GET | 263 |
 | `modules/services/my-maintenance-requests.html` | services | embed | 205 |
@@ -3381,7 +3381,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/community-query.html` | general-tools | embed | 834 |
-| `modules/services/config.html` | services | GET, PATCH, POST | 1550, 1604, 1606 |
+| `modules/services/config.html` | services | GET, PATCH, POST | 1604, 1658, 1660 |
 | `modules/services/student-services.html` | services | GET | 291 |
 
 ### svc_extracurricular_activity_costs
@@ -3885,7 +3885,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1998, 2056, 2069, 2086 |
+| `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 2052, 2110, 2123, 2140 |
 | `modules/services/maintenance-request.html` | services | GET | 592 |
 
 ### svc_pedagogical_trip_grades
