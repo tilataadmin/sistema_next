@@ -259,6 +259,7 @@ const MODULE_ITEM_ORDER = {
         'Salidas pedagógicas',
         'Salidas deportivas',
         'Salidas de representación',
+        'Seguimiento de autorizaciones',
         'Eventos internos',
         'Registro de costos de eventos',
         'Atención a familias por admisiones',
@@ -771,7 +772,7 @@ function renderModuleHTML(mod, modPerms, currentPath, openModuleId) {
                 const ib = order.indexOf(b.name);
                 if (ia === -1 && ib === -1) return 0;
                 if (ia === -1) return 1;
-                if (ib === -1) return 1;
+                if (ib === -1) return -1;
                 return ia - ib;
             });
         }

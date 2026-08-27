@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.8.27.1">
+    <title>Autorizaciones de salidas - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        :root { --service-primary: #1B365D; }
+
+        .fila-salida { cursor: pointer; }
+        .fila-salida:hover { background-color: #f4f7fb; }
+        .fila-alerta { background-color: #fff9f9; }
+
+        .cifra { font-weight: 700; }
+        .cifra-ok     { color: #14683f; }
+        .cifra-espera { color: #7a5b00; }
+        .cifra-alerta { color: #8c2f2d; }
+        .cifra-cero   { color: #adb5bd; font-weight: 400; }
+
+        .badge-estado { font-weight: 500; font-size: 0.78rem; padding: 0.35rem 0.55rem; }
+        .badge-modalidad { font-weight: 500; font-size: 0.75rem; }
+
+        .resumen-alcance {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.html">Inicio</a></li>
+                <li class="breadcrumb-item"><a href="index.html">Servicios</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Autorizaciones de salidas</li>
+            </ol>
+        </nav>
+
+        <div id="alertContainer"></div>
+
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+            <div>
+                <h3 class="mb-1"><i class="bi bi-pen me-2"></i>Autorizaciones de salidas</h3>
+                <p class="text-muted mb-0">Estado de las autorizaciones familiares, en las tres modalidades</p>
+            </div>
+            <button class="btn btn-outline-primary" onclick="cargar()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+            </button>
+        </div>
+
+        <div id="cargando" class="text-center text-muted py-5">
+            <span class="spinner-border spinner-border-sm me-2"></span>Cargando...
+        </div>
+
+        <div id="contenido" style="display: none;">
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-8">
+                    <div class="resumen-alcance" id="resumenAlcance"></div>
+                </div>
+                <div class="col-md-4 d-flex align-items-center">
+                    <div class="form-check form-switch ms-md-auto">
+                        <input class="form-check-input" type="checkbox" id="soloAtencion" onchange="renderTabla()">
+                        <label class="form-check-label" for="soloAtencion">
+                            Solo las que requieren atención
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Salida</th>
+                                    <th>Fecha</th>
+                                    <th>Estado</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-center">Autorizadas</th>
+                                    <th class="text-center">Pendientes</th>
+                                    <th class="text-center">No autorizadas</th>
+                                    <th class="text-center">Plazo vencido</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-muted small mt-3">
+                Se listan las salidas aprobadas con fecha desde hace 30 días en adelante.
+                Una salida próxima con cero autorizaciones aún no ha llegado a su fecha de disparo,
+                o su solicitud no está aprobada.
+            </p>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+    <script>
+        const MODALIDAD = {
+            pedagogical_trip: { nombre: 'Pedagógica',     clase: 'bg-primary' },
+            sports_trip:      { nombre: 'Deportiva',      clase: 'bg-success' },
+            rep_trip:         { nombre: 'Representación', clase: 'bg-info text-dark' }
+        };
+
+        const ESTADO_SALIDA = {
+            scheduled:   { texto: 'Programada', clase: 'bg-secondary' },
+            imminent:    { texto: 'Inminente',  clase: 'bg-warning text-dark' },
+            in_progress: { texto: 'En proceso', clase: 'bg-primary' },
+            completed:   { texto: 'Realizada',  clase: 'bg-success' },
+            suspended:   { texto: 'Suspendida', clase: 'bg-dark' },
+            cancelled:   { texto: 'Cancelada',  clase: 'bg-danger' }
+        };
+
+        let currentUser = null;
+        let datos = null;
+
+        // Las fechas sin hora se construyen al mediodía: con new Date('2026-09-01')
+        // el navegador asume medianoche UTC y en Colombia muestra el día anterior.
+        function fmtFecha(d) {
+            if (!d) return '';
+            return new Date(d + 'T12:00:00').toLocaleDateString('es-CO',
+                { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        function esc(t) {
+            const div = document.createElement('div');
+            div.textContent = t == null ? '' : String(t);
+            return div.innerHTML;
+        }
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Seguimiento de autorizaciones');
+                if (!hasAccess) return;
+
+                if (typeof loadAndApplyBrandColors === 'function') {
+                    await loadAndApplyBrandColors();
+                }
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showMessage('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 2000);
+                    return;
+                }
+                currentUser = session.user;
+
+                await cargar();
+
+            } catch (error) {
+                console.error('Error inicializando:', error);
+                document.getElementById('cargando').style.display = 'none';
+                showMessage('Error al cargar: ' + error.message, 'danger');
+            }
+        });
+
+        async function cargar() {
+            document.getElementById('cargando').style.display = 'block';
+            document.getElementById('contenido').style.display = 'none';
+
+            try {
+                // El alcance —todas las salidas o solo las propias— lo decide la
+                // función en Postgres, no esta página. Aquí solo se envía quién
+                // pregunta.
+                const resp = await supabaseRequest('/rpc/list_trip_authorizations', {
+                    method: 'POST',
+                    body: JSON.stringify({ p_user_id: currentUser.user_id })
+                });
+
+                if (!resp || resp.ok !== true) {
+                    document.getElementById('cargando').style.display = 'none';
+                    showMessage('No fue posible cargar las autorizaciones.', 'danger');
+                    return;
+                }
+
+                datos = resp;
+                renderResumen();
+                renderTabla();
+
+                document.getElementById('cargando').style.display = 'none';
+                document.getElementById('contenido').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error cargando:', error);
+                document.getElementById('cargando').style.display = 'none';
+                showMessage('No fue posible cargar las autorizaciones. Intenta de nuevo.', 'danger');
+            }
+        }
+
+        function requiereAtencion(s) {
+            // Tres motivos distintos, un solo criterio de atención: hay algo que
+            // alguien debe resolver antes de que salga el bus.
+            return s.vencidas > 0 || s.expiradas > 0 || s.negadas > 0 || s.total === 0;
+        }
+
+        function renderResumen() {
+            const salidas = datos.salidas || [];
+            const conAtencion = salidas.filter(requiereAtencion).length;
+
+            const alcance = datos.es_admin
+                ? 'Estás viendo las autorizaciones de <strong>todas las salidas</strong>.'
+                : 'Estás viendo las autorizaciones de <strong>las salidas que tú programaste</strong>.';
+
+            const atencion = conAtencion > 0
+                ? ` <span class="text-danger">${conAtencion} requiere(n) atención.</span>`
+                : ' Ninguna requiere atención en este momento.';
+
+            document.getElementById('resumenAlcance').innerHTML =
+                `<i class="bi bi-info-circle me-1"></i>${alcance} ${salidas.length} salida(s).${atencion}`;
+        }
+
+        function cifra(valor, clase) {
+            return valor > 0
+                ? `<span class="cifra ${clase}">${valor}</span>`
+                : '<span class="cifra-cero">0</span>';
+        }
+
+        function renderTabla() {
+            const filtrar = document.getElementById('soloAtencion').checked;
+            const salidas = (datos.salidas || []).filter(s => !filtrar || requiereAtencion(s));
+            const cuerpo = document.getElementById('tablaBody');
+
+            if (salidas.length === 0) {
+                cuerpo.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">
+                    ${filtrar ? 'Ninguna salida requiere atención.' : 'No hay salidas con autorizaciones.'}
+                </td></tr>`;
+                return;
+            }
+
+            cuerpo.innerHTML = salidas.map(function (s) {
+                const m = MODALIDAD[s.service_type] || { nombre: s.service_type, clase: 'bg-secondary' };
+                const e = ESTADO_SALIDA[s.trip_status] || { texto: s.trip_status, clase: 'bg-secondary' };
+
+                const sinGenerar = s.total === 0
+                    ? '<div class="small text-muted"><i class="bi bi-hourglass me-1"></i>Sin autorizaciones generadas</div>'
+                    : '';
+
+                return `<tr class="fila-salida ${requiereAtencion(s) ? 'fila-alerta' : ''}"
+                            onclick="abrirPanel('${s.service_type}', '${s.trip_id}')">
+                    <td>
+                        <div class="fw-semibold">${esc(s.titulo)}</div>
+                        <span class="badge badge-modalidad ${m.clase}">${m.nombre}</span>
+                        ${sinGenerar}
+                    </td>
+                    <td>${fmtFecha(s.trip_date)}</td>
+                    <td><span class="badge badge-estado ${e.clase}">${e.texto}</span></td>
+                    <td class="text-center">${s.total}</td>
+                    <td class="text-center">${cifra(s.autorizadas, 'cifra-ok')}</td>
+                    <td class="text-center">${cifra(s.pendientes, 'cifra-espera')}</td>
+                    <td class="text-center">${cifra(s.negadas, 'cifra-alerta')}</td>
+                    <td class="text-center">${cifra(s.vencidas + s.expiradas, 'cifra-alerta')}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function abrirPanel(serviceType, tripId) {
+            window.location.href =
+                `trip-authorizations.html?type=${encodeURIComponent(serviceType)}&trip=${encodeURIComponent(tripId)}`;
+        }
+
+        console.log('Índice de autorizaciones cargado');
+    </script>
+</body>
+</html>
