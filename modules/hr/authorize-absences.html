@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.03.20.10.00">
+    <meta name="page-version" content="26.8.27.1">
     <title>Autorizar Ausencias - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA -->
@@ -263,7 +263,7 @@
                     <label class="form-label fw-semibold">
                         <i class="bi bi-funnel me-1"></i>Estado
                     </label>
-                    <select class="form-select" id="filterStatus" onchange="applyFilters()">
+                    <select class="form-select" id="filterStatus" onchange="loadRequests()">
                         <option value="pending">Pendientes</option>
                         <option value="approved">Aprobadas</option>
                         <option value="rejected">Rechazadas</option>
@@ -510,57 +510,63 @@
         async function loadRequests() {
             try {
                 showLoading(true);
-                
+
                 const workerId = currentSession.worker_id;
-                
-                // Obtener todas las autorizaciones donde soy autorizador
+                const statusFilter = document.getElementById('filterStatus').value;
+                const statusParam = statusFilter === 'all' ? '' : '&status=eq.' + statusFilter;
+
+                // Una sola consulta: autorizaciones + solicitud + categoría + trabajador
                 const authData = await supabaseRequest(
-                    '/hr_absence_authorizations?authorizer_id=eq.' + workerId + 
-                    '&select=authorization_id,request_id,authorization_level,status,decision_date,comments,created_at'
+                    '/hr_absence_authorizations?authorizer_id=eq.' + workerId + statusParam +
+                    '&select=authorization_id,request_id,authorization_level,status,decision_date,comments,created_at,' +
+                    'hr_absence_requests(request_id,worker_id,start_date,end_date,start_time,end_time,is_full_day,total_days,created_at,' +
+                    'hr_absence_categories(name,is_paid),' +
+                    'worker:worker_id(worker_first_name,worker_last_name_1,worker_last_name_2,email))'
                 );
-                
+
                 if (!authData || authData.length === 0) {
-                    renderEmptyState('No tienes solicitudes de ausencia para autorizar.');
+                    renderEmptyState(
+                        statusFilter === 'pending'
+                            ? 'No tienes solicitudes pendientes de autorización.'
+                            : 'No hay solicitudes con el estado seleccionado.'
+                    );
                     allRequests = [];
                     filteredRequests = [];
                     return;
                 }
-                
+
                 console.log(`📋 ${authData.length} autorizaciones encontradas`);
-                
-                // Para cada autorización, obtener datos completos de la solicitud
+
+                // Aplanar el resultado embebido (sin consultas adicionales)
                 const requests = [];
-                
+
                 for (const auth of authData) {
-                    const requestData = await supabaseRequest(
-                        '/hr_absence_requests?request_id=eq.' + auth.request_id + 
-                        '&select=*,hr_absence_categories(name,is_paid),worker:worker_id(worker_first_name,worker_last_name_1,worker_last_name_2,email)'
-                    );
-                    
-                    if (requestData && requestData.length > 0) {
-                        const request = requestData[0];
-                        requests.push({
-                            ...request,
-                            authorization_id: auth.authorization_id,
-                            authorization_level: auth.authorization_level,
-                            authorization_status: auth.status,
-                            authorization_decision_date: auth.decision_date,
-                            authorization_comments: auth.comments,
-                            authorization_created_at: auth.created_at
-                        });
-                    }
+                    const embedded = auth.hr_absence_requests;
+                    const request = Array.isArray(embedded) ? embedded[0] : embedded;
+
+                    if (!request) continue;
+
+                    requests.push({
+                        ...request,
+                        authorization_id: auth.authorization_id,
+                        authorization_level: auth.authorization_level,
+                        authorization_status: auth.status,
+                        authorization_decision_date: auth.decision_date,
+                        authorization_comments: auth.comments,
+                        authorization_created_at: auth.created_at
+                    });
                 }
-                
+
                 // Ordenar por fecha de creación (más antiguas primero - FIFO)
                 requests.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-                
+
                 allRequests = requests;
-                
+
                 // Aplicar filtros
                 applyFilters();
-                
+
                 console.log(`✅ ${requests.length} solicitudes cargadas`);
-                
+
             } catch (error) {
                 console.error('❌ Error al cargar solicitudes:', error);
                 showMessage('Error al cargar solicitudes: ' + error.message, 'danger');
@@ -614,7 +620,7 @@
             document.getElementById('filterDateFrom').value = '';
             document.getElementById('filterDateTo').value = '';
             document.getElementById('filterWorker').value = '';
-            applyFilters();
+            loadRequests();
         }
         
         // ==========================================
