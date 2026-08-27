@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="page-version" content="26.8.27.1">
+    <title>Autorizaciones de la salida - SchoolNet</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --service-primary: #1B365D;
+        }
+
+        .contador-card {
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+            background: #fff;
+            height: 100%;
+        }
+        .contador-valor { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
+        .contador-etiqueta { font-size: 0.8rem; color: #6c757d; }
+
+        .contador-card.destacado-ok      { border-color: #14683f; }
+        .contador-card.destacado-alerta  { border-color: #8c2f2d; }
+        .contador-card.destacado-espera  { border-color: #7a5b00; }
+
+        .valor-ok      { color: #14683f; }
+        .valor-alerta  { color: #8c2f2d; }
+        .valor-espera  { color: #7a5b00; }
+        .valor-neutro  { color: var(--service-primary); }
+
+        .badge-estado { font-weight: 500; font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+
+        .motivo-negativa {
+            font-size: 0.85rem;
+            color: #8c2f2d;
+            background: #fdf1f0;
+            border-radius: 6px;
+            padding: 0.35rem 0.6rem;
+            margin-top: 0.35rem;
+            display: inline-block;
+        }
+
+        .fila-alerta { background-color: #fff9f9; }
+
+        .tabla-correos td { font-size: 0.875rem; }
+
+        .caja-info {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.html">Inicio</a></li>
+                <li class="breadcrumb-item"><a href="index.html">Servicios</a></li>
+                <li class="breadcrumb-item" id="migaSalidas"><a href="#" id="migaSalidasLink">Salidas</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Autorizaciones</li>
+            </ol>
+        </nav>
+
+        <div id="alertContainer"></div>
+
+        <div id="cargando" class="text-center text-muted py-5">
+            <span class="spinner-border spinner-border-sm me-2"></span>Cargando autorizaciones...
+        </div>
+
+        <div id="contenido" style="display: none;">
+
+            <!-- Encabezado -->
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+                <div>
+                    <h3 class="mb-1"><i class="bi bi-pen me-2"></i><span id="tituloSalida"></span></h3>
+                    <p class="text-muted mb-0" id="subtituloSalida"></p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-secondary" onclick="volverASalidas()">
+                        <i class="bi bi-arrow-left me-1"></i>Volver
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="cargarPanel()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Avisos de excepción -->
+            <div id="avisos"></div>
+
+            <!-- Contadores -->
+            <div class="row g-3 mb-4" id="contadores"></div>
+
+            <!-- Tabla -->
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-people me-2"></i>Estudiantes</span>
+                    <span class="text-muted small" id="consultadoEn"></span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Estudiante</th>
+                                    <th>Curso</th>
+                                    <th>Estado</th>
+                                    <th>Respondió</th>
+                                    <th class="text-center">Plazo</th>
+                                    <th class="text-center">Correos</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablaBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-muted small mt-3">
+                Esta pantalla es de consulta. El reenvío de solicitudes y la reapertura de casos
+                individuales se harán desde aquí en una entrega posterior.
+            </p>
+
+        </div>
+    </div>
+
+    <!-- Modal: bitácora de correos de un estudiante -->
+    <div class="modal fade" id="modalCorreos" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-envelope me-2"></i><span id="modalCorreosTitulo"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalCorreosBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/config.js"></script>
+    <script>
+        // ==========================================
+        // PÁGINA SATÉLITE
+        // Requiere trip y type en la URL. Por eso su permiso lleva url_path NULL:
+        // valida acceso pero no debe aparecer como ítem del menú lateral, que no
+        // sabría qué salida abrir.
+        // ==========================================
+
+        const PAGINA_POR_TIPO = {
+            pedagogical_trip: { pagina: 'pedagogical-trips.html', nombre: 'Salidas pedagógicas' },
+            sports_trip:      { pagina: 'sports-trips.html',      nombre: 'Salidas deportivas' },
+            rep_trip:         { pagina: 'rep-trips.html',         nombre: 'Salidas de representación' }
+        };
+
+        const ESTADOS = {
+            pending:    { texto: 'Pendiente',     clase: 'bg-warning text-dark' },
+            authorized: { texto: 'Autorizada',    clase: 'bg-success' },
+            denied:     { texto: 'No autorizada', clase: 'bg-danger' },
+            expired:    { texto: 'Plazo vencido', clase: 'bg-danger' },
+            cancelled:  { texto: 'Cancelada',     clase: 'bg-secondary' },
+            superseded: { texto: 'Reemplazada',   clase: 'bg-secondary' }
+        };
+
+        const ESTADO_SALIDA = {
+            scheduled:   'Programada',
+            imminent:    'Inminente',
+            in_progress: 'En proceso',
+            completed:   'Realizada',
+            suspended:   'Suspendida',
+            cancelled:   'Cancelada'
+        };
+
+        let currentUser = null;
+        let esAdminAutorizaciones = false;
+        let datosPanel = null;
+
+        const params = new URLSearchParams(window.location.search);
+        const TRIP_ID = params.get('trip');
+        const SERVICE_TYPE = params.get('type');
+
+        // Las fechas sin hora se construyen al mediodía: con new Date('2026-09-01')
+        // el navegador asume medianoche UTC y en Colombia muestra el día anterior.
+        function fmtFecha(d) {
+            if (!d) return '';
+            return new Date(d + 'T12:00:00').toLocaleDateString('es-CO',
+                { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        function fmtFechaHora(t) {
+            if (!t) return '';
+            return new Date(t).toLocaleString('es-CO',
+                { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+        }
+
+        function esc(texto) {
+            const div = document.createElement('div');
+            div.textContent = texto == null ? '' : String(texto);
+            return div.innerHTML;
+        }
+
+        // ==========================================
+        // ARRANQUE
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                const hasAccess = await validatePageAccess('Seguimiento de autorizaciones');
+                if (!hasAccess) return;
+
+                if (typeof loadAndApplyBrandColors === 'function') {
+                    await loadAndApplyBrandColors();
+                }
+
+                const session = getStoredSession();
+                if (!session || !session.user) {
+                    showMessage('Sesión no válida. Redirigiendo...', 'warning');
+                    setTimeout(() => window.location.href = '../../login.html', 2000);
+                    return;
+                }
+                currentUser = session.user;
+
+                if (!TRIP_ID || !PAGINA_POR_TIPO[SERVICE_TYPE]) {
+                    document.getElementById('cargando').style.display = 'none';
+                    showMessage('Falta la salida en la dirección. Abre esta pantalla desde el listado de salidas.', 'warning');
+                    return;
+                }
+
+                // Enlace de regreso al listado que corresponde a la modalidad.
+                const destino = PAGINA_POR_TIPO[SERVICE_TYPE];
+                const enlace = document.getElementById('migaSalidasLink');
+                enlace.textContent = destino.nombre;
+                enlace.href = destino.pagina;
+
+                try {
+                    esAdminAutorizaciones = await checkUserPermission(
+                        currentUser.user_id, 'Administrador de autorizaciones de salidas');
+                } catch (error) {
+                    console.warn('No se pudo verificar el permiso de administrador:', error);
+                    esAdminAutorizaciones = false;
+                }
+
+                await cargarPanel();
+
+            } catch (error) {
+                console.error('Error inicializando el panel:', error);
+                document.getElementById('cargando').style.display = 'none';
+                showMessage('Error al cargar el panel: ' + error.message, 'danger');
+            }
+        });
+
+        function volverASalidas() {
+            const destino = PAGINA_POR_TIPO[SERVICE_TYPE];
+            window.location.href = destino ? destino.pagina : 'index.html';
+        }
+
+        // ==========================================
+        // CARGA
+        // ==========================================
+        async function cargarPanel() {
+            document.getElementById('cargando').style.display = 'block';
+            document.getElementById('contenido').style.display = 'none';
+
+            try {
+                const resp = await supabaseRequest('/rpc/get_trip_authorization_panel', {
+                    method: 'POST',
+                    body: JSON.stringify({ p_service_type: SERVICE_TYPE, p_trip_id: TRIP_ID })
+                });
+
+                if (!resp || resp.ok !== true) {
+                    document.getElementById('cargando').style.display = 'none';
+                    const err = resp && resp.error;
+                    showMessage(err === 'salida_no_encontrada'
+                        ? 'No encontramos esa salida.'
+                        : 'No fue posible cargar las autorizaciones.', 'danger');
+                    return;
+                }
+
+                // Control de acceso por salida. El motivo de negativa es texto
+                // libre escrito por la familia y puede contener información
+                // médica o económica: quien no creó la salida no lo ve, salvo
+                // que tenga el permiso de administrador.
+                if (!esAdminAutorizaciones && resp.salida.created_by !== currentUser.user_id) {
+                    document.getElementById('cargando').style.display = 'none';
+                    showMessage('Solo puedes consultar las autorizaciones de las salidas que tú programaste.', 'warning');
+                    return;
+                }
+
+                datosPanel = resp;
+                render();
+
+                document.getElementById('cargando').style.display = 'none';
+                document.getElementById('contenido').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error cargando el panel:', error);
+                document.getElementById('cargando').style.display = 'none';
+                showMessage('No fue posible cargar las autorizaciones. Intenta de nuevo.', 'danger');
+            }
+        }
+
+        // ==========================================
+        // RENDER
+        // ==========================================
+        function render() {
+            const s = datosPanel.salida;
+            const c = datosPanel.contadores;
+
+            document.getElementById('tituloSalida').textContent = s.titulo || 'Salida';
+            document.getElementById('subtituloSalida').textContent =
+                `${PAGINA_POR_TIPO[SERVICE_TYPE].nombre} · ${fmtFecha(s.trip_date)} · ${ESTADO_SALIDA[s.trip_status] || s.trip_status}`;
+            document.getElementById('consultadoEn').textContent =
+                'Consultado ' + fmtFechaHora(datosPanel.consultado_en);
+
+            renderAvisos(c);
+            renderContadores(c);
+            renderTabla();
+        }
+
+        function renderAvisos(c) {
+            const avisos = [];
+
+            if (c.total === 0) {
+                avisos.push(`<div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Todavía no se han generado autorizaciones para esta salida. Se generan de forma
+                    automática algunos días antes de la fecha, y solo después de que la solicitud
+                    esté aprobada.
+                </div>`);
+            }
+
+            // Estudiantes en el roster sin autorización. Un estudiante sin
+            // autorización no viaja, así que este caso no puede quedar mudo.
+            if (c.sin_solicitud > 0) {
+                const lista = datosPanel.sin_solicitud.map(function (e) {
+                    return `<li>${esc(e.estudiante)} <span class="text-muted">· ${esc(e.curso)}</span></li>`;
+                }).join('');
+                avisos.push(`<div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>${c.sin_solicitud} estudiante(s) del listado sin solicitud de autorización.</strong>
+                    Si ya se generaron las demás, estos quedaron por fuera y no podrán viajar.
+                    <ul class="mb-0 mt-2">${lista}</ul>
+                </div>`);
+            }
+
+            // Autorización creada pero sin un solo correo registrado: no hay
+            // familiar activo con correo. La familia nunca se enteró.
+            if (c.sin_correo > 0) {
+                avisos.push(`<div class="alert alert-danger">
+                    <i class="bi bi-envelope-slash me-2"></i>
+                    <strong>${c.sin_correo} estudiante(s) sin ningún correo enviado.</strong>
+                    No tienen familiar activo con correo registrado, así que su familia no recibió
+                    la solicitud. Hay que actualizar sus datos de contacto.
+                </div>`);
+            }
+
+            if (c.vencidas > 0) {
+                avisos.push(`<div class="alert alert-warning">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <strong>${c.vencidas} solicitud(es) con el plazo vencido y aún sin respuesta.</strong>
+                    Pasarán a "Plazo vencido" en la próxima revisión automática.
+                </div>`);
+            }
+
+            document.getElementById('avisos').innerHTML = avisos.join('');
+        }
+
+        function renderContadores(c) {
+            const tarjetas = [
+                { etiqueta: 'Total',         valor: c.total,       clase: 'valor-neutro',  borde: '' },
+                { etiqueta: 'Autorizadas',   valor: c.autorizadas, clase: 'valor-ok',      borde: 'destacado-ok' },
+                { etiqueta: 'Pendientes',    valor: c.pendientes,  clase: 'valor-espera',  borde: 'destacado-espera' },
+                { etiqueta: 'No autorizadas',valor: c.negadas,     clase: 'valor-alerta',  borde: c.negadas > 0 ? 'destacado-alerta' : '' },
+                { etiqueta: 'Plazo vencido', valor: c.expiradas + c.vencidas, clase: 'valor-alerta', borde: (c.expiradas + c.vencidas) > 0 ? 'destacado-alerta' : '' },
+                { etiqueta: 'Canceladas',    valor: c.canceladas,  clase: 'valor-neutro',  borde: '' }
+            ];
+
+            document.getElementById('contadores').innerHTML = tarjetas.map(function (t) {
+                return `<div class="col-6 col-md-4 col-lg-2">
+                    <div class="contador-card ${t.borde}">
+                        <div class="contador-valor ${t.clase}">${t.valor}</div>
+                        <div class="contador-etiqueta">${t.etiqueta}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function renderTabla() {
+            const filas = datosPanel.autorizaciones;
+            const cuerpo = document.getElementById('tablaBody');
+
+            if (!filas || filas.length === 0) {
+                cuerpo.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">
+                    Sin autorizaciones generadas.
+                </td></tr>`;
+                return;
+            }
+
+            cuerpo.innerHTML = filas.map(function (f) {
+                const est = ESTADOS[f.estado] || { texto: f.estado, clase: 'bg-secondary' };
+                const numCorreos = (f.correos || []).length;
+
+                const alerta = (f.estado === 'pending' && f.vencida) || numCorreos === 0;
+
+                const motivo = f.motivo_negativa
+                    ? `<div class="motivo-negativa"><i class="bi bi-chat-left-quote me-1"></i>${esc(f.motivo_negativa)}</div>`
+                    : '';
+
+                const respondio = f.respondio
+                    ? `${esc(f.respondio)}<div class="text-muted small">${fmtFechaHora(f.respondio_en)}</div>`
+                    : '<span class="text-muted">—</span>';
+
+                const plazo = f.estado === 'pending'
+                    ? (f.vencida
+                        ? `<span class="text-danger small">Vencido<br>${fmtFechaHora(f.deadline_at)}</span>`
+                        : `<span class="small">${fmtFechaHora(f.deadline_at)}</span>`)
+                    : '<span class="text-muted">—</span>';
+
+                // El ciclo solo se muestra cuando es mayor que 1: en el caso
+                // normal es ruido, y cuando aparece señala un reinicio.
+                const ciclo = f.ciclo > 1
+                    ? ` <span class="badge bg-info text-dark">Ciclo ${f.ciclo}</span>` : '';
+
+                const botonCorreos = numCorreos === 0
+                    ? '<span class="badge bg-danger">Sin envíos</span>'
+                    : `<button class="btn btn-sm btn-outline-secondary"
+                               onclick="verCorreos('${f.authorization_id}')">
+                           ${numCorreos} <i class="bi bi-envelope ms-1"></i>
+                       </button>`;
+
+                return `<tr class="${alerta ? 'fila-alerta' : ''}">
+                    <td>${esc(f.estudiante)}${ciclo}${motivo}</td>
+                    <td>${esc(f.curso)}</td>
+                    <td><span class="badge badge-estado ${est.clase}">${est.texto}</span></td>
+                    <td>${respondio}</td>
+                    <td class="text-center">${plazo}</td>
+                    <td class="text-center">${botonCorreos}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ==========================================
+        // BITÁCORA DE CORREOS
+        // ==========================================
+        function verCorreos(authorizationId) {
+            const f = datosPanel.autorizaciones.find(a => a.authorization_id === authorizationId);
+            if (!f) return;
+
+            document.getElementById('modalCorreosTitulo').textContent = f.estudiante;
+
+            const filas = (f.correos || []).map(function (e) {
+                const tipo = { initial: 'Inicial', reminder: 'Recordatorio',
+                               reset: 'Reinicio', reopen: 'Reapertura' }[e.email_type] || e.email_type;
+
+                const estado = e.send_status === 'sent'
+                    ? '<span class="badge bg-success">Enviado</span>'
+                    : '<span class="badge bg-danger">Falló</span>';
+
+                // error_message lleva dos cosas: la causa de un fallo real y la
+                // marca de los envíos simulados en desarrollo.
+                const nota = e.error_message
+                    ? `<div class="text-muted small">${esc(e.error_message)}</div>` : '';
+
+                return `<tr>
+                    <td>${esc(e.sent_to)}${nota}</td>
+                    <td>${tipo}</td>
+                    <td>${fmtFechaHora(e.sent_at)}</td>
+                    <td>${estado}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('modalCorreosBody').innerHTML = filas
+                ? `<table class="table table-sm tabla-correos mb-0">
+                       <thead><tr><th>Destinatario</th><th>Tipo</th><th>Fecha</th><th>Estado</th></tr></thead>
+                       <tbody>${filas}</tbody>
+                   </table>
+                   <p class="text-muted small mt-3 mb-0">
+                       Si aquí falta un familiar, revisa sus datos de contacto en el módulo de familias.
+                   </p>`
+                : '<p class="text-muted mb-0">No hay envíos registrados para este estudiante.</p>';
+
+            new bootstrap.Modal(document.getElementById('modalCorreos')).show();
+        }
+
+        console.log('Panel de autorizaciones cargado');
+    </script>
+</body>
+</html>
