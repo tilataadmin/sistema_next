@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-08-27 14:36 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 15:45 UTC. **No editar a mano.**
 
-**331 archivos** con acceso a datos.
+**332 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1680,6 +1680,13 @@
 - **Lee (7):** budget_assignments, budget_items, budget_requesters, svc_module_config, svc_service_type_notifications, system_config, workers
 - **Escribe (2):** **budget_assignments**, **execution_requests**
 - **Sin determinar (1):** execution_requests
+
+### `modules/services/trip-authorizations.html`
+
+- **Módulo:** services
+- **Lee (0):** —
+- **Escribe (0):** —
+- **Funciones (1):** get_trip_authorization_panel
 
 ### `modules/suppliers/catalogs.html`
 
