@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-27 18:23 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-27 18:54 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -3241,7 +3241,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | DELETE, GET, POST, embed | 408, 595, 719, 728, 744, 922 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 356 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH | 481, 1221 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH | 481, 1229 |
 
 ### generated_contracts
 
@@ -3651,7 +3651,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/family-activities.html` | general-tools | GET | 892 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH, POST | 986, 1293, 1327, 1449 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET, PATCH, POST | 986, 1301, 1335, 1457 |
 
 ### familia_actividad_plantillas
 
