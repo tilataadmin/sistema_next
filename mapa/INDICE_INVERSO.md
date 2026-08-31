@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-31 13:50 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-31 13:59 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -513,7 +513,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/config.html` | services | GET, embed | 1675, 1710, 1792, 2052 |
 | `modules/services/event-costs.html` | services | GET | 305 |
 | `modules/services/index.html` | services | GET | 880 |
-| `modules/services/internal-events.html` | services | GET, embed | 694, 810, 915, 937, 2092, 2098, 2529 |
+| `modules/services/internal-events.html` | services | GET, embed | 693, 809, 914, 936, 2091, 2097, 2528 |
 | `modules/services/js/commons.js` | services | GET | 117, 152, 169, 764 |
 | `modules/services/maintenance-management.html` | services | GET, embed | 215, 238, 264, 408 |
 | `modules/services/maintenance-request.html` | services | GET, embed | 233, 592 |
@@ -822,7 +822,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/users.html` | security | GET, PATCH, POST | 657, 1126, 1151, 1209, 1313 |
 | `modules/services/admissions-family.html` | services | ND, embed | 316, 486, 489 |
 | `modules/services/index.html` | services | GET, ND | 634, 683, 872, 1215 |
-| `modules/services/internal-events.html` | services | GET, embed | 684, 967, 2092 |
+| `modules/services/internal-events.html` | services | embed | 966, 2091 |
 | `modules/services/js/commons.js` | services | GET | 112, 145 |
 | `modules/services/maintenance-management.html` | services | GET | 212 |
 | `modules/services/maintenance-request.html` | services | GET | 225 |
@@ -1901,7 +1901,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `dashboard.html` | (raíz) | GET | 378 |
 | `modules/services/approvals.html` | services | ND, PATCH | 476, 492, 508, 523, 1295, 1557 |
 | `modules/services/index.html` | services | GET | 1008, 1127, 1134 |
-| `modules/services/internal-events.html` | services | PATCH, POST, embed | 967, 1759, 1789, 1974, 2092 |
+| `modules/services/internal-events.html` | services | PATCH, POST, embed | 966, 1758, 1788, 1973, 2091 |
 | `modules/services/pedagogical-trips.html` | services | embed | 998, 2244 |
 | `modules/services/rep-trips.html` | services | PATCH, POST, embed | 490, 1027, 1066 |
 | `modules/services/reports.html` | services | ND | 798 |
@@ -1914,7 +1914,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/admissions-family.html` | services | GET | 335, 965 |
 | `modules/services/approvals.html` | services | GET | 1664 |
 | `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1792, 1855, 1869, 1886 |
-| `modules/services/internal-events.html` | services | GET | 2529 |
+| `modules/services/internal-events.html` | services | GET | 2528 |
 | `modules/services/pedagogical-trips.html` | services | GET | 1569 |
 | `modules/services/rep-trips.html` | services | GET | 1160 |
 | `modules/services/sports-trips.html` | services | GET | 1223 |
@@ -2272,7 +2272,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/admissions-family.html` | services | GET | 421 |
 | `modules/services/approvals.html` | services | GET | 439 |
 | `modules/services/config.html` | services | GET, PATCH | 1498, 1576 |
-| `modules/services/internal-events.html` | services | GET | 790 |
+| `modules/services/internal-events.html` | services | GET | 789 |
 | `modules/services/js/commons.js` | services | GET | 166 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 310 |
 
@@ -2544,7 +2544,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET, embed | 2154, 2317, 2405 |
 | `modules/services/config.html` | services | GET, PATCH, POST | 1392, 1448, 1450 |
-| `modules/services/internal-events.html` | services | GET, embed | 870, 1990, 2095 |
+| `modules/services/internal-events.html` | services | GET, embed | 869, 1989, 2094 |
 | `modules/services/js/commons.js` | services | GET | 168 |
 | `modules/services/pedagogical-trips.html` | services | embed | 2076 |
 
@@ -2575,7 +2575,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | GET | 1173, 1352, 1809, 2439 |
 | `modules/services/event-costs.html` | services | PATCH | 619, 685, 715, 740 |
 | `modules/services/index.html` | services | GET | 1011 |
-| `modules/services/internal-events.html` | services | DELETE, GET, POST | 1785, 1872, 1993, 2098 |
+| `modules/services/internal-events.html` | services | DELETE, GET, POST | 1784, 1871, 1992, 2097 |
 | `modules/services/reports.html` | services | embed | 685 |
 
 ### svc_support_areas
@@ -2586,7 +2586,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/config.html` | services | GET, PATCH, POST | 1710, 1775, 1777 |
 | `modules/services/event-costs.html` | services | GET | 335 |
 | `modules/services/index.html` | services | embed | 1011 |
-| `modules/services/internal-events.html` | services | GET, embed | 810, 2098 |
+| `modules/services/internal-events.html` | services | GET, embed | 809, 2097 |
 
 ### teval_forms
 
@@ -2887,7 +2887,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/services/approvals.html` | services | embed | 523 |
 | `modules/services/index.html` | services | GET, embed | 1006, 1011 |
-| `modules/services/internal-events.html` | services | GET, ND, PATCH, POST | 967, 1754, 1766, 1802, 1974, 2092, 2326 |
+| `modules/services/internal-events.html` | services | GET, ND, PATCH, POST | 966, 1753, 1765, 1801, 1973, 2091, 2325 |
 | `modules/services/reports.html` | services | ND | 685 |
 
 ### svc_maintenance_priorities
@@ -3408,7 +3408,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 1346, 2405 |
-| `modules/services/internal-events.html` | services | DELETE, GET, POST | 1784, 1853, 1990, 2095 |
+| `modules/services/internal-events.html` | services | DELETE, GET, POST | 1783, 1852, 1989, 2094 |
 | `modules/services/reports.html` | services | embed | 685 |
 
 ### svc_maintenance_history
