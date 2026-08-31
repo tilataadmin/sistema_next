@@ -3,7 +3,14 @@ WITH cols AS (
     string_agg(
       '  ' || a.attname || ' ' || pg_catalog.format_type(a.atttypid, a.atttypmod)
       || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
-      || COALESCE(' DEFAULT ' || pg_catalog.pg_get_expr(ad.adbin, ad.adrelid), ''),
+      || COALESCE(' DEFAULT ' || pg_catalog.pg_get_expr(ad.adbin, ad.adrelid), '')
+      || COALESCE(
+           ' /* ' || replace(
+                       replace(
+                         replace(pg_catalog.col_description(c.oid, a.attnum), E'\n', ' '),
+                       E'\r', ' '),
+                     '*/', '* /') || ' */',
+           ''),
       E',\n' ORDER BY a.attnum
     ) AS body
   FROM pg_catalog.pg_class c
@@ -26,7 +33,12 @@ cons AS (
   GROUP BY c.conrelid
 )
 SELECT string_agg(
-  'CREATE TABLE public.' || cl.relname || E' (\n'
+  COALESCE(
+    '-- ' || replace(
+               replace(pg_catalog.obj_description(cl.oid, 'pg_class'), E'\n', ' '),
+             E'\r', ' ') || E'\n',
+    '')
+  || 'CREATE TABLE public.' || cl.relname || E' (\n'
   || cols.body
   || COALESCE(E',\n' || cons.body, '')
   || E'\n);',
