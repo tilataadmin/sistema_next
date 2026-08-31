@@ -1,8 +1,8 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-31 13:43 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-31 13:46 UTC. **No editar a mano.**
 
-**399 tablas** referenciadas en **334 archivos**.
+**398 tablas** referenciadas en **334 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
@@ -126,6 +126,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [svc_catering_menus](#svccateringmenus) | 5 | 1 | 0 |
 | [svc_extracurricular_activities](#svcextracurricularactivities) | 5 | 2 | 0 |
 | [svc_extracurricular_enrollments](#svcextracurricularenrollments) | 5 | 1 | 1 |
+| [svc_internal_event_services](#svcinternaleventservices) | 5 | 2 | 0 |
 | [svc_support_areas](#svcsupportareas) | 5 | 1 | 0 |
 | [teval_forms](#tevalforms) | 5 | 1 | 1 |
 | [training_module_skills](#trainingmoduleskills) | 5 | 1 | 0 |
@@ -159,7 +160,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [survey_scale_options](#surveyscaleoptions) | 4 | 1 | 0 |
 | [svc_extracurricular_activity_days](#svcextracurricularactivitydays) | 4 | 1 | 0 |
 | [svc_extracurricular_cycle_days](#svcextracurricularcycledays) | 4 | 1 | 0 |
-| [svc_internal_event_services](#svcinternaleventservices) | 4 | 2 | 0 |
 | [svc_internal_events](#svcinternalevents) | 4 | 1 | 2 |
 | [svc_maintenance_priorities](#svcmaintenancepriorities) | 4 | 1 | 0 |
 | [svc_maintenance_requests](#svcmaintenancerequests) | 4 | 2 | 0 |
@@ -324,7 +324,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [facial_recognition_training](#facialrecognitiontraining) | 1 | 1 | 0 |
 | [familia_actividad_asistencias_familiares](#familiaactividadasistenciasfamiliares) | 1 | 1 | 0 |
 | [family_members](#familymembers) | 1 | 1 | 0 |
-| [filter](#filter) | 1 | 0 | 0 |
 | [hr_clearance_items](#hrclearanceitems) | 1 | 1 | 0 |
 | [hr_clearance_processes](#hrclearanceprocesses) | 1 | 1 | 0 |
 | [hr_clearance_worker_closures](#hrclearanceworkerclosures) | 1 | 1 | 0 |
@@ -2569,6 +2568,16 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/seasons.html` | extracurricular | GET | 1507 |
 | `modules/extracurricular/treasury.html` | extracurricular | ND | 447 |
 
+### svc_internal_event_services
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/services/approvals.html` | services | GET | 1173, 1352, 1809, 2439 |
+| `modules/services/event-costs.html` | services | PATCH | 619, 685, 715, 740 |
+| `modules/services/index.html` | services | GET | 1011 |
+| `modules/services/internal-events.html` | services | DELETE, GET, POST | 1785, 1872, 1993, 2098 |
+| `modules/services/reports.html` | services | embed | 685 |
+
 ### svc_support_areas
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -2871,15 +2880,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/extracurricular/attendance.html` | extracurricular | GET | 235 |
 | `modules/extracurricular/enrollments.html` | extracurricular | GET | 430 |
 | `modules/extracurricular/seasons.html` | extracurricular | DELETE, GET, PATCH, POST | 627, 690, 785, 790, 895 |
-
-### svc_internal_event_services
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 1173, 1352, 1809, 2439 |
-| `modules/services/event-costs.html` | services | PATCH | 619, 685, 715, 740 |
-| `modules/services/index.html` | services | GET | 1011 |
-| `modules/services/internal-events.html` | services | DELETE, GET, POST | 1785, 1872, 1993, 2098 |
 
 ### svc_internal_events
 
@@ -4107,12 +4107,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/config/families.html` | config | DELETE, GET, PATCH, POST, embed | 371, 854, 912, 920, 949 |
-
-### filter
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/services/reports.html` | services | embed | 685 |
 
 ### hr_clearance_items
 

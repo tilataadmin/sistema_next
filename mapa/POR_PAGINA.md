@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-08-31 13:43 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-31 13:46 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -1660,7 +1660,7 @@
 ### `modules/services/reports.html`
 
 - **Módulo:** services
-- **Lee (11):** filter, svc_extracurricular_daily_records, svc_extracurricular_vehicle_configs, svc_internal_event_catering, svc_pedagogical_trips, svc_rep_trips, svc_sports_trips, svc_staff_transport_daily_records, svc_staff_transport_routes, svc_transport_destinations, workers
+- **Lee (11):** svc_extracurricular_daily_records, svc_extracurricular_vehicle_configs, svc_internal_event_catering, svc_internal_event_services, svc_pedagogical_trips, svc_rep_trips, svc_sports_trips, svc_staff_transport_daily_records, svc_staff_transport_routes, svc_transport_destinations, workers
 - **Escribe (0):** —
 - **Sin determinar (2):** svc_internal_events, svc_service_requests
 
