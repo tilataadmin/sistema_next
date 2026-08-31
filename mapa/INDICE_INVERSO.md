@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-08-31 13:59 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-08-31 15:40 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -650,7 +650,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/admissions/documents-catalog.html` | admissions | GET | 334 |
 | `modules/admissions/form.html` | admissions | GET | 441 |
 | `modules/admissions/grade-age-ranges.html` | admissions | GET, PATCH | 344, 472 |
-| `modules/budget/initialize-budget-year.html` | budget | GET | 1177 |
+| `modules/budget/initialize-budget-year.html` | budget | GET | 1180 |
 | `modules/config/academic-areas.html` | config | GET, embed | 291, 426 |
 | `modules/config/academic-assignments.html` | config | GET | 244 |
 | `modules/config/annual-fees.html` | config | GET | 368 |
@@ -905,7 +905,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `dashboard.html` | (raíz) | embed | 449 |
 | `modules/admissions/grade-age-ranges.html` | admissions | GET, embed | 315, 344 |
-| `modules/budget/initialize-budget-year.html` | budget | GET, embed | 929, 1177 |
+| `modules/budget/initialize-budget-year.html` | budget | GET, embed | 929, 1180 |
 | `modules/config/academic-areas.html` | config | embed | 291 |
 | `modules/config/academic-assignments.html` | config | embed | 244 |
 | `modules/config/annual-fees.html` | config | embed | 368 |
@@ -1223,7 +1223,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/close-transfer.html` | budget | ND, PATCH | 883, 886, 901, 907 |
 | `modules/budget/index.html` | budget | GET | 1021, 1025, 1040 |
 | `modules/budget/initialize-budget-general.html` | budget | ND, POST | 669, 804, 831, 836, 847 |
-| `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1230 |
+| `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1233 |
 | `modules/budget/report-design.html` | budget | GET | 1436 |
 | `modules/budget/report-view.html` | budget | GET | 608 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1033 |
