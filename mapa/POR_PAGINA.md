@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-02 11:51 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-02 11:54 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -1279,7 +1279,7 @@
 ### `modules/new-students/registration-queries.html`
 
 - **Módulo:** new-students
-- **Lee (6):** courses, new_student_activities, new_student_activity_records, new_students, students, workers
+- **Lee (7):** academic_years, courses, new_student_activities, new_student_activity_records, new_students, students, workers
 - **Escribe (0):** —
 
 ### `modules/new-students/students-dashboard.html`
