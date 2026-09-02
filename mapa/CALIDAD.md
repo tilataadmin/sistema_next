@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-08-31 15:40 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-02 11:37 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
