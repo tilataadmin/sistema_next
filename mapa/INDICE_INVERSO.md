@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-02 11:43 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-02 11:48 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -606,7 +606,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/improvement.html` | institutional-eval | embed | 497 |
 | `modules/institutional-eval/index.html` | institutional-eval | GET | 936 |
 | `modules/institutional-eval/results.html` | institutional-eval | embed | 418 |
-| `modules/new-students/new-students-report.html` | new-students | GET | 632 |
+| `modules/new-students/new-students-report.html` | new-students | GET | 617 |
 | `modules/new-students/students-dashboard.html` | new-students | GET | 637 |
 | `modules/planning/coordinator-area.html` | planning | GET | 1128 |
 | `modules/planning/coordinator-program.html` | planning | GET | 1092 |
@@ -680,7 +680,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 353 |
 | `modules/general-tools/family-attendance.html` | general-tools | embed | 358 |
 | `modules/new-students/index.html` | new-students | GET | 639 |
-| `modules/new-students/new-students-report.html` | new-students | embed | 639 |
+| `modules/new-students/new-students-report.html` | new-students | embed | 644 |
 | `modules/new-students/register-activities.html` | new-students | embed | 995 |
 | `modules/planning/coordinator-program.html` | planning | GET | 1123 |
 | `modules/planning/coordinator-section.html` | planning | GET | 1128 |
@@ -746,7 +746,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/lists.html` | general-tools | GET, embed | 740, 1224, 1773, 2025, 2508 |
 | `modules/general-tools/tasks.html` | general-tools | embed | 2229, 2291 |
 | `modules/new-students/index.html` | new-students | GET | 635 |
-| `modules/new-students/new-students-report.html` | new-students | embed | 309, 639 |
+| `modules/new-students/new-students-report.html` | new-students | embed | 309, 644 |
 | `modules/new-students/register-activities.html` | new-students | embed | 604, 995 |
 | `modules/new-students/registration-queries.html` | new-students | embed | 530 |
 | `modules/new-students/students-dashboard.html` | new-students | embed | 780, 1256 |
@@ -996,7 +996,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/family-attendance.html` | general-tools | GET | 572 |
 | `modules/general-tools/lists.html` | general-tools | GET | 1034, 1224, 1311, 1773, 2025, 2156, 2508 |
 | `modules/general-tools/registro-facial.html` | general-tools | GET | 869, 909 |
-| `modules/new-students/new-students-report.html` | new-students | GET, ND | 309, 639 |
+| `modules/new-students/new-students-report.html` | new-students | GET, ND | 309, 644 |
 | `modules/new-students/register-activities.html` | new-students | GET | 604, 995 |
 | `modules/new-students/registration-queries.html` | new-students | embed | 530 |
 | `modules/new-students/students-dashboard.html` | new-students | embed | 780, 1256 |
@@ -2404,7 +2404,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/new-students/index.html` | new-students | GET | 658, 659 |
-| `modules/new-students/new-students-report.html` | new-students | ND | 606, 623 |
+| `modules/new-students/new-students-report.html` | new-students | ND | 606, 635 |
 | `modules/new-students/register-activities.html` | new-students | embed | 604 |
 | `modules/new-students/registration-queries.html` | new-students | GET | 530 |
 | `modules/new-students/students-dashboard.html` | new-students | GET, ND | 693, 755, 780, 1256 |
@@ -3785,7 +3785,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/new-students/actors.html` | new-students | DELETE, GET, POST | 541, 778, 815 |
-| `modules/new-students/new-students-report.html` | new-students | GET | 686 |
+| `modules/new-students/new-students-report.html` | new-students | GET | 690 |
 
 ### pln_action_scope
 
@@ -3869,7 +3869,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/config/enrollment-movements.html` | config | GET | 238 |
-| `modules/new-students/new-students-report.html` | new-students | POST | 645 |
+| `modules/new-students/new-students-report.html` | new-students | POST | 650 |
 
 ### student_withdrawals
 
