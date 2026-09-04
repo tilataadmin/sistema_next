@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-04 14:54 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-04 15:02 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -145,6 +145,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [env_water_readings_extraordinary](#envwaterreadingsextraordinary) | 4 | 1 | 1 |
 | [event_attendance](#eventattendance) | 4 | 1 | 0 |
 | [hr_absence_authorizations](#hrabsenceauthorizations) | 4 | 3 | 0 |
+| [ie_improvement_links](#ieimprovementlinks) | 4 | 1 | 1 |
 | [indicator_goals](#indicatorgoals) | 4 | 1 | 1 |
 | [institutions](#institutions) | 4 | 1 | 0 |
 | [leadership_grades](#leadershipgrades) | 4 | 1 | 0 |
@@ -206,7 +207,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [generated_contracts](#generatedcontracts) | 3 | 1 | 1 |
 | [hr_absence_attachments](#hrabsenceattachments) | 3 | 2 | 0 |
 | [ie_component_ratings](#iecomponentratings) | 3 | 1 | 0 |
-| [ie_improvement_links](#ieimprovementlinks) | 3 | 1 | 1 |
 | [new_student_activity_records](#newstudentactivityrecords) | 3 | 1 | 0 |
 | [pln_myp_concept_strategies](#plnmypconceptstrategies) | 3 | 1 | 0 |
 | [pln_planner_atl_skills](#plnplanneratlskills) | 3 | 3 | 0 |
@@ -456,7 +456,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/community-query.html` | general-tools | GET, embed | 1222, 1244 |
 | `modules/general-tools/lists.html` | general-tools | ND | 1522 |
 | `modules/general-tools/project-detail.html` | general-tools | GET | 1146 |
-| `modules/general-tools/projects.html` | general-tools | GET | 1144 |
+| `modules/general-tools/projects.html` | general-tools | GET | 1190 |
 | `modules/general-tools/registro-facial.html` | general-tools | GET | 884, 927, 1350 |
 | `modules/general-tools/tasks.html` | general-tools | GET | 2153 |
 | `modules/hr/absence-config.html` | hr | GET, embed | 798, 813, 925, 950, 1080 |
@@ -1173,7 +1173,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/dashboard.html` | general-tools | ND | 804 |
 | `modules/general-tools/project-detail.html` | general-tools | GET | 1181 |
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 698 |
-| `modules/general-tools/projects.html` | general-tools | GET | 762 |
+| `modules/general-tools/projects.html` | general-tools | GET | 792 |
 | `modules/general-tools/tasks.html` | general-tools | GET, ND, PATCH, POST | 2259, 2321, 3278, 3284, 3293, 3307, 3348, 3924, 3961, 3987 |
 | `modules/hr/workers.html` | hr | GET, PATCH, embed | 2448, 3232, 3235, 3629 |
 | `modules/indicators/improvement-dashboard.html` | indicators | ND | 703, 786 |
@@ -2438,7 +2438,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/project-detail.html` | general-tools | DELETE, GET, PATCH, POST, embed | 1169, 1181, 1854, 1863, 1886, 1909 |
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 695 |
-| `modules/general-tools/projects.html` | general-tools | GET | 759 |
+| `modules/general-tools/projects.html` | general-tools | GET | 789 |
 | `modules/general-tools/tasks.html` | general-tools | GET | 5630 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 1374 |
 
@@ -2448,7 +2448,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/project-detail.html` | general-tools | GET, PATCH | 1076, 1747, 1782, 2757 |
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 692 |
-| `modules/general-tools/projects.html` | general-tools | GET, PATCH, POST, embed | 647, 689, 694, 1301, 1315 |
+| `modules/general-tools/projects.html` | general-tools | GET, PATCH, POST, embed | 677, 719, 724, 1347, 1361 |
 | `modules/hr/workers.html` | hr | GET, PATCH, embed | 2460, 3283, 3286, 3677 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 560 |
 
@@ -2749,6 +2749,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/authorize-absences.html` | hr | GET, PATCH | 519, 744, 928, 940, 1000 |
 | `modules/hr/manage-absences.html` | hr | GET, POST | 1258, 2306, 2317 |
 | `modules/hr/request-absence.html` | hr | GET, PATCH, POST | 2000, 2014, 2271, 2488, 2521 |
+
+### ie_improvement_links
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/general-tools/projects.html` | general-tools | GET | 655 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 2093 |
+| `modules/institutional-eval/improvement.html` | institutional-eval | DELETE, GET, POST | 620, 1300, 1325 |
+| `modules/institutional-eval/index.html` | institutional-eval | ND | 572 |
 
 ### indicator_goals
 
@@ -3271,14 +3280,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 602 |
 | `modules/institutional-eval/results.html` | institutional-eval | GET | 432 |
 
-### ie_improvement_links
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET | 2093 |
-| `modules/institutional-eval/improvement.html` | institutional-eval | DELETE, GET, POST | 620, 1300, 1325 |
-| `modules/institutional-eval/index.html` | institutional-eval | ND | 572 |
-
 ### new_student_activity_records
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -3324,7 +3325,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/project-detail.html` | general-tools | GET, PATCH, POST | 1125, 1157, 1966, 1998, 2728, 2742 |
-| `modules/general-tools/projects.html` | general-tools | GET | 652, 694 |
+| `modules/general-tools/projects.html` | general-tools | GET | 682, 724 |
 | `modules/hr/workers.html` | hr | GET, PATCH | 2466, 3286, 3700 |
 
 ### stm_prom_topics_categories

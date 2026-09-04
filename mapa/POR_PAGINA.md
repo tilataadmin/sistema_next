@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-04 14:54 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-04 15:02 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -988,7 +988,7 @@
 ### `modules/general-tools/projects.html`
 
 - **Módulo:** general-tools
-- **Lee (5):** project_milestones, project_participants, projects, tasks, workers
+- **Lee (6):** ie_improvement_links, project_milestones, project_participants, projects, tasks, workers
 - **Escribe (1):** **projects**
 
 ### `modules/general-tools/registro-facial.html`
