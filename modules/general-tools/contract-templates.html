@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="25.12.02.13.13">
+    <meta name="page-version" content="26.9.4.1">
     <title>Plantillas de Contratos - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1587,138 +1587,309 @@
         }
 
         // ==========================================
-        // ✅ GENERAR PDF CON JSPDF - VERSIÓN LIVIANA (SIN HTML2CANVAS)
+        // ✅ GENERAR PDF CON JSPDF - RENDERIZADOR DE TEXTO ENRIQUECIDO
+        // Soporta negrilla, cursiva, subrayado, alineación
+        // (izquierda / centro / derecha / justificado), listas y sangrías.
         // ==========================================
+
+        // Cambiar a false si no se quiere repetir el título
+        // (las plantillas normalmente ya traen su propio encabezado).
+        const PDF_MOSTRAR_TITULO = true;
+
         async function generarPDF(htmlContent, title) {
             return new Promise((resolve, reject) => {
                 try {
                     const { jsPDF } = window.jspdf;
                     const pdf = new jsPDF('p', 'mm', 'a4');
-                    
-                    // Configuración de márgenes y área de contenido
-                    const pageWidth = 210; // mm (A4)
-                    const pageHeight = 297; // mm (A4)
-                    const margin = 20;
-                    const contentWidth = pageWidth - (margin * 2);
-                    const lineHeight = 7;
-                    let yPosition = margin;
-                    
-                    // Función para agregar nueva página si es necesario
-                    function checkPageBreak() {
-                        if (yPosition > pageHeight - margin) {
+
+                    const pageWidth   = 210;
+                    const pageHeight  = 297;
+                    const margin      = 20;
+                    const fontSize    = 11;
+                    const paraSpace   = 2.2;
+                    const indentStep  = 8;
+                    const hangingList = 7;
+
+                    const BASE = { bold: false, italic: false, underline: false };
+
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setFontSize(fontSize);
+
+                    let y = margin;
+
+                    function fontFor(st) {
+                        if (st.bold && st.italic) return 'bolditalic';
+                        if (st.bold) return 'bold';
+                        if (st.italic) return 'italic';
+                        return 'normal';
+                    }
+
+                    function measure(text, st) {
+                        pdf.setFont('helvetica', fontFor(st));
+                        return pdf.getTextWidth(text);
+                    }
+
+                    function ensureSpace(h) {
+                        if (y + h > pageHeight - margin) {
                             pdf.addPage();
-                            yPosition = margin;
+                            y = margin;
                         }
                     }
-                    
-                    // Procesar el HTML: eliminar etiquetas y extraer texto con formato básico
+
+                    function alignOf(el) {
+                        const c = (typeof el.className === 'string') ? el.className : '';
+                        if (c.indexOf('ql-align-center')  !== -1) return 'center';
+                        if (c.indexOf('ql-align-right')   !== -1) return 'right';
+                        if (c.indexOf('ql-align-justify') !== -1) return 'justify';
+                        const ta = (el.style && el.style.textAlign) || '';
+                        if (ta === 'center' || ta === 'right' || ta === 'justify') return ta;
+                        return 'left';
+                    }
+
+                    function indentOf(el) {
+                        const c = (typeof el.className === 'string') ? el.className : '';
+                        const m = c.match(/ql-indent-(\d+)/);
+                        return m ? parseInt(m[1], 10) : 0;
+                    }
+
+                    // ---------- 1. Recolectar fragmentos con estilo ----------
+                    function collectRuns(node, st, runs) {
+                        Array.from(node.childNodes).forEach(child => {
+                            if (child.nodeType === 3) {
+                                const t = child.textContent
+                                    .replace(/\u00A0/g, ' ')
+                                    .replace(/[\r\n\t]+/g, ' ')
+                                    .replace(/ {2,}/g, ' ');
+                                if (t) runs.push({ text: t, style: st });
+                            } else if (child.nodeType === 1) {
+                                const tag = child.tagName.toLowerCase();
+                                if (tag === 'br') { runs.push({ br: true }); return; }
+                                collectRuns(child, {
+                                    bold:      st.bold      || tag === 'strong' || tag === 'b',
+                                    italic:    st.italic    || tag === 'em'     || tag === 'i',
+                                    underline: st.underline || tag === 'u'      || tag === 'ins'
+                                }, runs);
+                            }
+                        });
+                    }
+
+                    // ---------- 2. HTML -> lista de bloques ----------
+                    const blocks = [];
+
+                    function pushBlock(el, opts) {
+                        opts = opts || {};
+                        const runs = [];
+                        collectRuns(el, {
+                            bold: !!opts.bold, italic: false, underline: false
+                        }, runs);
+                        blocks.push({
+                            align:   alignOf(el),
+                            indent:  indentOf(el) + (opts.extraIndent || 0),
+                            prefix:  opts.prefix || null,
+                            hanging: opts.prefix ? hangingList : 0,
+                            size:    opts.size || fontSize,
+                            runs:    runs
+                        });
+                    }
+
+                    function blockVacio() {
+                        return { align: 'left', indent: 0, prefix: null,
+                                 hanging: 0, size: fontSize, runs: [] };
+                    }
+
+                    function walkBlocks(node) {
+                        Array.from(node.childNodes).forEach(child => {
+                            if (child.nodeType === 3) {
+                                const t = child.textContent.replace(/\s+/g, ' ');
+                                if (t.trim()) {
+                                    const b = blockVacio();
+                                    b.runs = [{ text: t, style: BASE }];
+                                    blocks.push(b);
+                                }
+                                return;
+                            }
+                            if (child.nodeType !== 1) return;
+                            const tag = child.tagName.toLowerCase();
+
+                            if (tag === 'ol' || tag === 'ul') {
+                                const counters = {};
+                                Array.from(child.children).forEach(li => {
+                                    if (li.tagName.toLowerCase() !== 'li') return;
+                                    const lvl = indentOf(li);
+                                    counters[lvl] = (counters[lvl] || 0) + 1;
+                                    Object.keys(counters).forEach(k => {
+                                        if (parseInt(k, 10) > lvl) delete counters[k];
+                                    });
+                                    const isBullet = (tag === 'ul') ||
+                                                     (li.getAttribute('data-list') === 'bullet');
+                                    pushBlock(li, {
+                                        prefix: isBullet ? '\u2022' : (counters[lvl] + '.'),
+                                        extraIndent: 1
+                                    });
+                                });
+                                return;
+                            }
+
+                            if (tag === 'br') { blocks.push(blockVacio()); return; }
+
+                            if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
+                                pushBlock(child, {
+                                    size: tag === 'h1' ? 16 : (tag === 'h2' ? 14 : 12),
+                                    bold: true
+                                });
+                                return;
+                            }
+
+                            const anidados = ['p','div','ol','ul','h1','h2','h3','blockquote'];
+                            const tieneBloques = Array.from(child.children).some(g =>
+                                anidados.indexOf(g.tagName.toLowerCase()) !== -1);
+
+                            if (tieneBloques) { walkBlocks(child); return; }
+
+                            pushBlock(child);
+                        });
+                    }
+
+                    // ---------- 3. Componer y dibujar cada bloque ----------
+                    function renderBlock(b) {
+                        const size = b.size || fontSize;
+                        const lh   = size * 0.5;
+                        pdf.setFontSize(size);
+
+                        const left  = margin + (b.indent * indentStep) + b.hanging;
+                        const width = pageWidth - margin - left;
+
+                        // 3a. Tokenizar en palabras y espacios
+                        const tokens = [];
+                        b.runs.forEach(r => {
+                            if (r.br) { tokens.push({ br: true }); return; }
+                            r.text.split(/(\s+)/).forEach(piece => {
+                                if (piece === '') return;
+                                const esEspacio = /^\s+$/.test(piece);
+                                tokens.push({
+                                    text: esEspacio ? ' ' : piece,
+                                    space: esEspacio,
+                                    style: r.style
+                                });
+                            });
+                        });
+
+                        // 3b. Quiebre de líneas
+                        const lines = [];
+                        let line = [], lineW = 0;
+
+                        function cerrarLinea(forzada) {
+                            while (line.length && line[line.length - 1].space) {
+                                lineW -= line.pop().w;
+                            }
+                            lines.push({ items: line, forced: forzada });
+                            line = []; lineW = 0;
+                        }
+
+                        tokens.forEach(tk => {
+                            if (tk.br) { cerrarLinea(true); return; }
+                            if (tk.space && line.length === 0) return;
+
+                            let w = measure(tk.text, tk.style);
+
+                            // Palabra más larga que el ancho útil: cortar por caracteres
+                            if (!tk.space && w > width) {
+                                if (line.length) cerrarLinea(false);
+                                let buf = '';
+                                Array.from(tk.text).forEach(ch => {
+                                    const prueba = buf + ch;
+                                    if (measure(prueba, tk.style) > width && buf) {
+                                        line.push({ text: buf, space: false, style: tk.style,
+                                                    w: measure(buf, tk.style) });
+                                        cerrarLinea(false);
+                                        buf = ch;
+                                    } else {
+                                        buf = prueba;
+                                    }
+                                });
+                                if (buf) {
+                                    const bw = measure(buf, tk.style);
+                                    line.push({ text: buf, space: false, style: tk.style, w: bw });
+                                    lineW += bw;
+                                }
+                                return;
+                            }
+
+                            if (!tk.space && lineW + w > width && line.length > 0) {
+                                cerrarLinea(false);
+                            }
+
+                            line.push({ text: tk.text, space: tk.space, style: tk.style, w: w });
+                            lineW += w;
+                        });
+
+                        if (line.length) cerrarLinea(true);
+                        if (lines.length === 0) lines.push({ items: [], forced: true });
+
+                        // 3c. Dibujar
+                        lines.forEach((ln, idx) => {
+                            ensureSpace(lh);
+                            y += lh;
+
+                            const items = ln.items;
+                            let total = 0;
+                            items.forEach(i => { total += i.w; });
+
+                            let x = left;
+                            let extra = 0;
+
+                            if (b.align === 'center') {
+                                x = left + (width - total) / 2;
+                            } else if (b.align === 'right') {
+                                x = left + width - total;
+                            } else if (b.align === 'justify' && !ln.forced) {
+                                const nEsp = items.filter(i => i.space).length;
+                                if (nEsp > 0 && total < width) extra = (width - total) / nEsp;
+                            }
+                            if (x < left) x = left;
+
+                            if (b.prefix && idx === 0) {
+                                pdf.setFont('helvetica', 'normal');
+                                pdf.text(b.prefix, margin + (b.indent * indentStep), y);
+                            }
+
+                            items.forEach(it => {
+                                const adv = it.w + (it.space ? extra : 0);
+                                pdf.setFont('helvetica', fontFor(it.style));
+                                pdf.text(it.text, x, y);
+                                if (it.style.underline) {
+                                    pdf.setLineWidth(0.25);
+                                    pdf.line(x, y + 0.9, x + adv, y + 0.9);
+                                }
+                                x += adv;
+                            });
+                        });
+
+                        y += paraSpace;
+                        pdf.setFontSize(fontSize);
+                    }
+
+                    // ---------- 4. Ejecutar ----------
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = htmlContent;
-                    
-                    // Función recursiva para procesar nodos
-                    function processNode(node) {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            const text = node.textContent.trim();
-                            if (text) {
-                                // Dividir texto en líneas que quepan en el ancho
-                                const lines = pdf.splitTextToSize(text, contentWidth);
-                                lines.forEach(line => {
-                                    checkPageBreak();
-                                    pdf.text(line, margin, yPosition);
-                                    yPosition += lineHeight;
-                                });
-                            }
-                        } else if (node.nodeType === Node.ELEMENT_NODE) {
-                            const tagName = node.tagName.toLowerCase();
-                            
-                            // Manejar diferentes etiquetas
-                            switch(tagName) {
-                                case 'strong':
-                                case 'b':
-                                    pdf.setFont(undefined, 'bold');
-                                    Array.from(node.childNodes).forEach(child => processNode(child));
-                                    pdf.setFont(undefined, 'normal');
-                                    break;
-                                    
-                                case 'em':
-                                case 'i':
-                                    pdf.setFont(undefined, 'italic');
-                                    Array.from(node.childNodes).forEach(child => processNode(child));
-                                    pdf.setFont(undefined, 'normal');
-                                    break;
-                                    
-                                case 'u':
-                                    Array.from(node.childNodes).forEach(child => processNode(child));
-                                    break;
-                                    
-                                case 'p':
-                                    Array.from(node.childNodes).forEach(child => processNode(child));
-                                    yPosition += lineHeight; // Espacio extra después del párrafo
-                                    checkPageBreak();
-                                    break;
-                                    
-                                case 'br':
-                                    yPosition += lineHeight;
-                                    checkPageBreak();
-                                    break;
-                                    
-                                case 'ol':
-                                case 'ul':
-                                    let listIndex = 1;
-                                    Array.from(node.children).forEach(child => {
-                                        if (child.tagName.toLowerCase() === 'li') {
-                                            checkPageBreak();
-                                            const prefix = tagName === 'ol' ? `${listIndex}. ` : '• ';
-                                            const text = child.textContent.trim();
-                                            const lines = pdf.splitTextToSize(prefix + text, contentWidth - 10);
-                                            lines.forEach((line, idx) => {
-                                                checkPageBreak();
-                                                pdf.text(line, margin + (idx === 0 ? 0 : 10), yPosition);
-                                                yPosition += lineHeight;
-                                            });
-                                            listIndex++;
-                                        }
-                                    });
-                                    yPosition += lineHeight; // Espacio después de la lista
-                                    break;
-                                    
-                                case 'h1':
-                                case 'h2':
-                                case 'h3':
-                                    checkPageBreak();
-                                    pdf.setFontSize(tagName === 'h1' ? 16 : tagName === 'h2' ? 14 : 12);
-                                    pdf.setFont(undefined, 'bold');
-                                    const headingText = node.textContent.trim();
-                                    pdf.text(headingText, margin, yPosition);
-                                    yPosition += lineHeight * 1.5;
-                                    pdf.setFontSize(11);
-                                    pdf.setFont(undefined, 'normal');
-                                    break;
-                                    
-                                default:
-                                    // Para otros elementos, procesar sus hijos
-                                    Array.from(node.childNodes).forEach(child => processNode(child));
-                            }
-                        }
+                    walkBlocks(tempDiv);
+
+                    if (PDF_MOSTRAR_TITULO && title) {
+                        blocks.unshift({
+                            align: 'left', indent: 0, prefix: null, hanging: 0, size: 14,
+                            runs: [{ text: String(title),
+                                     style: { bold: true, italic: false, underline: false } }]
+                        });
                     }
-                    
-                    // Agregar título del documento (opcional)
-                    pdf.setFontSize(14);
-                    pdf.setFont(undefined, 'bold');
-                    pdf.text(title, margin, yPosition);
-                    yPosition += lineHeight * 2;
-                    pdf.setFontSize(11);
-                    pdf.setFont(undefined, 'normal');
-                    
-                    // Procesar el contenido HTML
-                    Array.from(tempDiv.childNodes).forEach(child => processNode(child));
-                    
-                    // Generar el blob del PDF
+
+                    blocks.forEach(renderBlock);
+
                     const pdfBlob = pdf.output('blob');
-                    console.log('✅ PDF generado - Tamaño:', (pdfBlob.size / 1024).toFixed(2), 'KB');
-                    
+                    console.log('✅ PDF generado -', blocks.length, 'bloques -',
+                                (pdfBlob.size / 1024).toFixed(2), 'KB');
+
                     resolve(pdfBlob);
-                    
+
                 } catch (error) {
                     console.error('❌ Error generando PDF:', error);
                     reject(error);
