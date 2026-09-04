@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.4.5">
+    <meta name="page-version" content="26.9.4.6">
     <title>Plan de Mejoramiento - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -931,10 +931,16 @@
             // Reset campos
             document.getElementById('vincular-nivel').value = 'process';
             document.getElementById('vincular-descripcion').value = '';
+            document.getElementById('vincular-tipo').value = 'project';
             document.getElementById('vincular-project-id').value = '';
+            document.getElementById('vincular-task-id').value = '';
             document.getElementById('buscar-proyecto').value = '';
-            document.getElementById('proyecto-seleccionado').style.display = 'none';
+            document.getElementById('buscar-tarea').value = '';
+            document.getElementById('objetivo-seleccionado').style.display = 'none';
             document.getElementById('vincular-componente-group').style.display = 'none';
+            
+            // Volver siempre a la pestaña de proyectos
+            bootstrap.Tab.getOrCreateInstance(document.getElementById('tab-vincular-proyecto')).show();
             
             // Poblar select de procesos agrupados por área
             const selectProceso = document.getElementById('vincular-proceso');
@@ -963,8 +969,9 @@
                 onProcesoVincularCambio();
             }
             
-            // Mostrar todos los proyectos
+            // Mostrar todos los proyectos y todas las tareas elegibles
             renderizarListaProyectos(proyectosCache);
+            renderizarListaTareas(tareasCache);
             
             new bootstrap.Modal(document.getElementById('modalVincular')).show();
         }
@@ -1053,22 +1060,126 @@
             const proyecto = proyectosCache.find(p => p.project_id === projectId);
             if (!proyecto) return;
             
+            document.getElementById('vincular-tipo').value = 'project';
             document.getElementById('vincular-project-id').value = projectId;
-            document.getElementById('proyecto-seleccionado-name').textContent = proyecto.project_name;
-            document.getElementById('proyecto-seleccionado').style.display = 'block';
+            document.getElementById('vincular-task-id').value = '';
+            document.getElementById('objetivo-seleccionado-name').textContent = `Proyecto: ${proyecto.project_name}`;
+            document.getElementById('objetivo-seleccionado').style.display = 'block';
+        }
+        
+        // ==========================================
+        // MODAL: PESTAÑA DE TAREAS
+        // ==========================================
+        function cambiarTipoVinculo(tipo) {
+            document.getElementById('vincular-tipo').value = tipo;
+            document.getElementById('vincular-project-id').value = '';
+            document.getElementById('vincular-task-id').value = '';
+            document.getElementById('objetivo-seleccionado').style.display = 'none';
+        }
+        
+        function textoPlano(html) {
+            const div = document.createElement('div');
+            div.innerHTML = html || '';
+            return (div.textContent || '').replace(/\s+/g, ' ').trim();
+        }
+        
+        function getTaskStateBadge(estado) {
+            const clases = {
+                'Asignada': 'bg-secondary',
+                'En Progreso': 'bg-primary',
+                'Terminada': 'bg-success'
+            };
+            return clases[estado] || 'bg-secondary';
+        }
+        
+        function renderizarListaTareas(lista) {
+            const container = document.getElementById('tareas-lista');
+            
+            if (lista.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center small py-3">No se encontraron tareas</p>';
+                return;
+            }
+            
+            let html = '';
+            lista.slice(0, 200).forEach(t => {
+                const desc = textoPlano(t.task_description) || 'Sin descripción';
+                const descCorta = desc.length > 90 ? desc.substring(0, 90) + '...' : desc;
+                const responsable = t.assigned_to_name || t.assigned_to_mail || 'Sin responsable';
+                
+                html += `
+                    <div class="d-flex justify-content-between align-items-center py-2 px-2 border-bottom" 
+                         style="cursor: pointer; transition: background 0.15s;"
+                         onmouseover="this.style.background='#f8f9fa'" 
+                         onmouseout="this.style.background='white'"
+                         onclick="seleccionarTarea(${t.task_id})">
+                        <div style="min-width: 0; flex: 1;">
+                            <div class="fw-500 small">${escaparHtml(descCorta)}</div>
+                            <div style="font-size: 0.7rem; color: #6c757d;">
+                                <span class="badge ${getTaskStateBadge(t.task_state)}" style="font-size: 0.65rem;">${escaparHtml(t.task_state || 'Asignada')}</span>
+                                <span class="ms-1">${escaparHtml(responsable)}</span>
+                                <span class="ms-1">· Vence ${formatearFecha(t.due_date)}</span>
+                            </div>
+                        </div>
+                        <i class="bi bi-chevron-right text-muted"></i>
+                    </div>
+                `;
+            });
+            
+            if (lista.length > 200) {
+                html += `<p class="text-muted text-center small py-2 mb-0">Se muestran las primeras 200 de ${lista.length}. Use el buscador para acotar.</p>`;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function filtrarTareas() {
+            const termino = document.getElementById('buscar-tarea').value.toLowerCase().trim();
+            
+            if (!termino) {
+                renderizarListaTareas(tareasCache);
+                return;
+            }
+            
+            const filtradas = tareasCache.filter(t =>
+                textoPlano(t.task_description).toLowerCase().includes(termino) ||
+                (t.assigned_to_name && t.assigned_to_name.toLowerCase().includes(termino)) ||
+                (t.assigned_to_mail && t.assigned_to_mail.toLowerCase().includes(termino))
+            );
+            
+            renderizarListaTareas(filtradas);
+        }
+        
+        function seleccionarTarea(taskId) {
+            const tarea = tareasCache.find(t => t.task_id === taskId);
+            if (!tarea) return;
+            
+            const desc = textoPlano(tarea.task_description) || 'Sin descripción';
+            const descCorta = desc.length > 70 ? desc.substring(0, 70) + '...' : desc;
+            
+            document.getElementById('vincular-tipo').value = 'task';
+            document.getElementById('vincular-task-id').value = taskId;
+            document.getElementById('vincular-project-id').value = '';
+            document.getElementById('objetivo-seleccionado-name').textContent = `Tarea #${taskId}: ${descCorta}`;
+            document.getElementById('objetivo-seleccionado').style.display = 'block';
         }
         
         async function guardarVinculo() {
             const processId = document.getElementById('vincular-proceso').value;
-            const projectId = document.getElementById('vincular-project-id').value;
             const nivel = document.getElementById('vincular-nivel').value;
+            const tipo = document.getElementById('vincular-tipo').value;
+            const projectId = document.getElementById('vincular-project-id').value;
+            const taskId = document.getElementById('vincular-task-id').value;
             
             if (!processId) {
                 showMessage('Debe seleccionar un proceso', 'warning');
                 return;
             }
-            if (!projectId) {
+            if (tipo === 'project' && !projectId) {
                 showMessage('Debe seleccionar un proyecto', 'warning');
+                return;
+            }
+            if (tipo === 'task' && !taskId) {
+                showMessage('Debe seleccionar una tarea', 'warning');
                 return;
             }
             
@@ -1081,23 +1192,30 @@
                 }
             }
             
+            const targetProcessId = nivel === 'process' ? processId : null;
+            
             // Verificar duplicado
             const existe = vinculosCache.find(v =>
-                v.project_id === projectId &&
-                v.process_id === (nivel === 'process' ? processId : null) &&
-                v.component_id === componentId
+                v.process_id === targetProcessId &&
+                v.component_id === componentId &&
+                (tipo === 'project'
+                    ? v.project_id === projectId
+                    : v.task_id === parseInt(taskId, 10))
             );
             
             if (existe) {
-                showMessage('Este proyecto ya está vinculado a este elemento', 'warning');
+                showMessage(tipo === 'project'
+                    ? 'Este proyecto ya está vinculado a este elemento'
+                    : 'Esta tarea ya está vinculada a este elemento', 'warning');
                 return;
             }
             
             const body = {
                 evaluation_id: selectedEvalId,
-                process_id: nivel === 'process' ? processId : null,
+                process_id: targetProcessId,
                 component_id: componentId,
-                project_id: projectId,
+                project_id: tipo === 'project' ? projectId : null,
+                task_id: tipo === 'task' ? parseInt(taskId, 10) : null,
                 link_description: document.getElementById('vincular-descripcion').value.trim() || null,
                 created_by: currentUser.user_id
             };
