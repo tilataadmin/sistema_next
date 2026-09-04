@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-04 14:11 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-04 14:17 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -2440,7 +2440,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 695 |
 | `modules/general-tools/projects.html` | general-tools | GET | 759 |
 | `modules/general-tools/tasks.html` | general-tools | GET | 5591 |
-| `modules/institutional-eval/improvement.html` | institutional-eval | GET | 1176 |
+| `modules/institutional-eval/improvement.html` | institutional-eval | GET | 1294 |
 
 ### projects
 
@@ -3696,7 +3696,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/institutional-eval/improvement.html` | institutional-eval | DELETE, GET, POST | 608, 1106, 1127 |
+| `modules/institutional-eval/improvement.html` | institutional-eval | DELETE, GET, POST | 608, 1224, 1245 |
 | `modules/institutional-eval/index.html` | institutional-eval | ND | 572 |
 
 ### ie_process_workers
