@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-04 14:45 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-04 14:54 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -206,6 +206,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [generated_contracts](#generatedcontracts) | 3 | 1 | 1 |
 | [hr_absence_attachments](#hrabsenceattachments) | 3 | 2 | 0 |
 | [ie_component_ratings](#iecomponentratings) | 3 | 1 | 0 |
+| [ie_improvement_links](#ieimprovementlinks) | 3 | 1 | 1 |
 | [new_student_activity_records](#newstudentactivityrecords) | 3 | 1 | 0 |
 | [pln_myp_concept_strategies](#plnmypconceptstrategies) | 3 | 1 | 0 |
 | [pln_planner_atl_skills](#plnplanneratlskills) | 3 | 3 | 0 |
@@ -262,7 +263,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [hr_clearance_admins](#hrclearanceadmins) | 2 | 1 | 0 |
 | [hr_clearance_areas](#hrclearanceareas) | 2 | 1 | 0 |
 | [ie_expected_results](#ieexpectedresults) | 2 | 1 | 1 |
-| [ie_improvement_links](#ieimprovementlinks) | 2 | 1 | 1 |
 | [ie_process_workers](#ieprocessworkers) | 2 | 1 | 0 |
 | [ie_rubrics](#ierubrics) | 2 | 1 | 0 |
 | [indicator_benchmarks](#indicatorbenchmarks) | 2 | 0 | 0 |
@@ -458,7 +458,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/project-detail.html` | general-tools | GET | 1146 |
 | `modules/general-tools/projects.html` | general-tools | GET | 1144 |
 | `modules/general-tools/registro-facial.html` | general-tools | GET | 884, 927, 1350 |
-| `modules/general-tools/tasks.html` | general-tools | GET | 2123 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 2153 |
 | `modules/hr/absence-config.html` | hr | GET, embed | 798, 813, 925, 950, 1080 |
 | `modules/hr/absence-reports.html` | hr | GET, embed | 625, 1331, 1530 |
 | `modules/hr/adjust-balances.html` | hr | GET, embed | 412, 635, 820 |
@@ -746,7 +746,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 354 |
 | `modules/general-tools/family-attendance.html` | general-tools | GET | 358 |
 | `modules/general-tools/lists.html` | general-tools | GET, embed | 740, 1224, 1773, 2025, 2508 |
-| `modules/general-tools/tasks.html` | general-tools | embed | 2229, 2291 |
+| `modules/general-tools/tasks.html` | general-tools | embed | 2259, 2321 |
 | `modules/new-students/index.html` | new-students | GET | 635 |
 | `modules/new-students/new-students-report.html` | new-students | embed | 309, 644 |
 | `modules/new-students/register-activities.html` | new-students | embed | 617, 1007 |
@@ -1174,7 +1174,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/project-detail.html` | general-tools | GET | 1181 |
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 698 |
 | `modules/general-tools/projects.html` | general-tools | GET | 762 |
-| `modules/general-tools/tasks.html` | general-tools | GET, ND, PATCH, POST | 2229, 2291, 3239, 3245, 3254, 3268, 3309, 3885, 3922, 3948 |
+| `modules/general-tools/tasks.html` | general-tools | GET, ND, PATCH, POST | 2259, 2321, 3278, 3284, 3293, 3307, 3348, 3924, 3961, 3987 |
 | `modules/hr/workers.html` | hr | GET, PATCH, embed | 2448, 3232, 3235, 3629 |
 | `modules/indicators/improvement-dashboard.html` | indicators | ND | 703, 786 |
 | `modules/indicators/improvement.html` | indicators | ND | 1191 |
@@ -1467,7 +1467,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/admissions/step4-form.html` | admissions | PATCH, POST | 268, 676 |
-| `modules/general-tools/tasks.html` | general-tools | GET, PATCH | 4145, 4334, 4346, 4428, 4459, 4555, 4703 |
+| `modules/general-tools/tasks.html` | general-tools | GET, PATCH | 4184, 4373, 4385, 4467, 4498, 4594, 4742 |
 | `modules/procedures/dashboard.html` | procedures | GET, ND | 346, 603, 1144 |
 | `modules/procedures/execute-form-public.html` | procedures | POST | 826 |
 | `modules/procedures/execute-form.html` | procedures | POST | 829 |
@@ -1483,7 +1483,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET | 4125, 4339 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 4164, 4378 |
 | `modules/procedures/dashboard.html` | procedures | GET, embed | 308, 346, 358, 1144 |
 | `modules/procedures/execute-form-public.html` | procedures | GET | 803 |
 | `modules/procedures/execute-form.html` | procedures | GET | 806 |
@@ -1550,7 +1550,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/admissions/step4-form.html` | admissions | GET | 240 |
-| `modules/general-tools/tasks.html` | general-tools | GET | 4561 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 4600 |
 | `modules/procedures/execute-form-public.html` | procedures | embed | 353 |
 | `modules/procedures/execute-form.html` | procedures | embed | 259, 342 |
 | `modules/procedures/execute-public.html` | procedures | embed | 409 |
@@ -1863,7 +1863,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET | 4133, 4220, 4299, 4418, 4484 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 4172, 4259, 4338, 4457, 4523 |
 | `modules/procedures/dashboard.html` | procedures | GET, embed | 346, 593, 1144 |
 | `modules/procedures/execute-public.html` | procedures | GET | 1060 |
 | `modules/procedures/execute.html` | procedures | GET, embed | 366, 1133 |
@@ -2001,7 +2001,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 4141, 4209, 4232, 4294, 4309, 4410, 4442, 4539, 4625, 4666 |
+| `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 4180, 4248, 4271, 4333, 4348, 4449, 4481, 4578, 4664, 4705 |
 | `modules/procedures/execute-public.html` | procedures | POST | 1113, 1180 |
 | `modules/procedures/execute.html` | procedures | POST | 1188, 1228 |
 | `modules/procedures/my-requests.html` | procedures | GET | 534 |
@@ -2131,7 +2131,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/dashboard.html` | general-tools | GET, embed | 736, 804 |
-| `modules/general-tools/tasks.html` | general-tools | GET, embed | 2154, 2229, 2291 |
+| `modules/general-tools/tasks.html` | general-tools | GET, embed | 2184, 2259, 2321 |
 | `modules/indicators/categories.html` | indicators | GET, PATCH, POST | 456, 716, 727, 768, 869, 877 |
 | `modules/indicators/dashboard-edit.html` | indicators | GET, embed | 589, 678 |
 | `modules/indicators/indicators.html` | indicators | GET, embed | 625, 704, 905 |
@@ -2439,7 +2439,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/general-tools/project-detail.html` | general-tools | DELETE, GET, PATCH, POST, embed | 1169, 1181, 1854, 1863, 1886, 1909 |
 | `modules/general-tools/projects-dashboard.html` | general-tools | GET | 695 |
 | `modules/general-tools/projects.html` | general-tools | GET | 759 |
-| `modules/general-tools/tasks.html` | general-tools | GET | 5591 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 5630 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 1374 |
 
 ### projects
@@ -2826,7 +2826,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET | 4599 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 4638 |
 | `modules/procedures/execute-public.html` | procedures | GET | 1083 |
 | `modules/procedures/execute.html` | procedures | GET | 1157 |
 | `modules/procedures/procedures.html` | procedures | DELETE, GET, POST | 1148, 1767, 1772, 1814 |
@@ -3271,6 +3271,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 602 |
 | `modules/institutional-eval/results.html` | institutional-eval | GET | 432 |
 
+### ie_improvement_links
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/general-tools/tasks.html` | general-tools | GET | 2093 |
+| `modules/institutional-eval/improvement.html` | institutional-eval | DELETE, GET, POST | 620, 1300, 1325 |
+| `modules/institutional-eval/index.html` | institutional-eval | ND | 572 |
+
 ### new_student_activity_records
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -3692,13 +3700,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 645 |
 | `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 590, 1348, 1356, 1402 |
 
-### ie_improvement_links
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/institutional-eval/improvement.html` | institutional-eval | DELETE, GET, POST | 620, 1300, 1325 |
-| `modules/institutional-eval/index.html` | institutional-eval | ND | 572 |
-
 ### ie_process_workers
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -3857,7 +3858,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET | 4251, 4325, 4693 |
+| `modules/general-tools/tasks.html` | general-tools | GET | 4290, 4364, 4732 |
 | `modules/procedures/procedures.html` | procedures | DELETE, GET, POST | 1143, 1737, 1752, 1811, 1877 |
 
 ### stm_confidential_notes
@@ -3955,7 +3956,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 2266, 3277, 3372, 3431, 3467, 4039 |
+| `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 2296, 3316, 3411, 3470, 3506, 4078 |
 | `modules/hr/workers.html` | hr | GET, PATCH | 2454, 3235, 3652 |
 
 ### teval_config
@@ -4500,19 +4501,19 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 3317, 3615, 3720, 4803, 5182 |
+| `modules/general-tools/tasks.html` | general-tools | GET, PATCH, POST | 3356, 3654, 3759, 4842, 5221 |
 
 ### task_documents
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET, POST | 5097, 5149, 5249, 5369 |
+| `modules/general-tools/tasks.html` | general-tools | GET, POST | 5136, 5188, 5288, 5408 |
 
 ### task_progress_notes
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/general-tools/tasks.html` | general-tools | GET, POST | 3744, 3936, 3958, 3967, 4064 |
+| `modules/general-tools/tasks.html` | general-tools | GET, POST | 3783, 3975, 3997, 4006, 4103 |
 
 ### test_grades
 
