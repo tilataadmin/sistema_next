@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-04 15:26 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-04 15:31 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -3261,7 +3261,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/contract-categories.html` | general-tools | GET | 464 |
-| `modules/general-tools/contract-templates.html` | general-tools | DELETE, GET, PATCH, POST | 950, 1251, 1561, 2065, 2207 |
+| `modules/general-tools/contract-templates.html` | general-tools | DELETE, GET, PATCH, POST | 950, 1251, 1566, 2070, 2212 |
 | `modules/general-tools/contracts-dashboard.html` | general-tools | GET, ND | 677, 1529 |
 
 ### hr_absence_attachments
