@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-04 14:45 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-04 14:54 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -1000,7 +1000,7 @@
 ### `modules/general-tools/tasks.html`
 
 - **Módulo:** general-tools
-- **Lee (16):** courses, form_fields, indicator_categories, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, procedures, project_milestones, task_collaborators, task_deliverables, task_documents, task_progress_notes, tasks, workers
+- **Lee (17):** courses, form_fields, ie_improvement_links, indicator_categories, procedure_instance_steps, procedure_instances, procedure_step_branches, procedure_step_parallel_assignments, procedure_steps, procedures, project_milestones, task_collaborators, task_deliverables, task_documents, task_progress_notes, tasks, workers
 - **Escribe (7):** **procedure_instance_steps**, **procedure_instances**, **task_collaborators**, **task_deliverables**, **task_documents**, **task_progress_notes**, **tasks**
 - **Sin determinar (1):** tasks
 
