@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.29.1">
+    <meta name="page-version" content="26.8.4.1">
     <title>Gestión de Tareas - SchoolNet</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
@@ -664,6 +664,16 @@
                         <option value="early-alerts">Alertas Tempranas</option>
                         <option value="general-tools">Herramientas Generales</option>
                         <option value="procedures">Procedimientos</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="filter-mejora" class="form-label">
+                        <i class="bi bi-building-check me-1"></i>Plan de Mejoramiento
+                    </label>
+                    <select class="form-select" id="filter-mejora">
+                        <option value="">Todas las tareas</option>
+                        <option value="linked">Solo vinculadas al plan</option>
+                        <option value="unlinked">Solo NO vinculadas</option>
                     </select>
                 </div>
                 <div class="col-md-3" id="filter-category-container">
@@ -1858,6 +1868,8 @@
         let misColaboraciones = [];
         let misRolesColaboracion = {};
         let hitosProyectoCache = []; // Hitos del proyecto actual (cuando viene de ?module=projects)
+        let tareasEnPlanMejora = new Set(); // task_id de tareas vinculadas a la evaluación institucional
+        
 
         let paginaActual = 1;
         let tareasFiltradas = [];
@@ -2023,9 +2035,10 @@
                 
                 inicializarEditoresQuill();
                 configurarEventos();
-                
+
                 await cargarCategorias();
                 await cargarTrabajadores();
+                await cargarVinculosPlanMejora();
                 await cargarTareas();
 
                 const urlParams = obtenerParametrosURL();
@@ -2073,6 +2086,22 @@
         }
         
         // ==========================================
+        // VÍNCULOS CON EL PLAN DE MEJORAMIENTO
+        // ==========================================
+        async function cargarVinculosPlanMejora() {
+            try {
+                const vinculos = await supabaseRequest(
+                    '/ie_improvement_links?select=task_id&task_id=not.is.null'
+                );
+                tareasEnPlanMejora = new Set(vinculos.map(v => v.task_id));
+                console.log('🏛️ Tareas vinculadas al plan de mejoramiento:', tareasEnPlanMejora.size);
+            } catch (error) {
+                console.error('❌ Error cargando vínculos del plan de mejoramiento:', error);
+                tareasEnPlanMejora = new Set();
+            }
+        }
+        
+        // ==========================================
         // CONFIGURACIÓN DE EVENTOS
         // ==========================================
         function configurarEventos() {
@@ -2082,6 +2111,7 @@
             document.getElementById('filter-status').addEventListener('change', aplicarFiltros);
             document.getElementById('filter-priority').addEventListener('change', aplicarFiltros);
             document.getElementById('filter-module').addEventListener('change', aplicarFiltros);
+            document.getElementById('filter-mejora').addEventListener('change', aplicarFiltros);
             document.getElementById('filter-search').addEventListener('input', aplicarFiltros);
             document.getElementById('filter-responsable').addEventListener('change', aplicarFiltros);
             document.getElementById('filter-category').addEventListener('change', aplicarFiltros);
@@ -2545,6 +2575,10 @@
                                 <span class="badge bg-info text-dark mb-2">
                                     ${moduleNames[tarea.module_type] || tarea.module_type}
                                 </span>
+                                ${tareasEnPlanMejora.has(tarea.task_id) ? `
+                                <span class="badge mb-2" style="background-color: #6f42c1;" title="Vinculada al plan de mejoramiento institucional">
+                                    <i class="bi bi-building-check me-1"></i>Plan de Mejoramiento
+                                </span>` : ''}
                                 ${tarea.category_id ? getCategoryBadgeHtml(tarea.category_id) : ''}
                                 
                                 <h6 class="card-title mt-2">
@@ -2675,6 +2709,7 @@
             const responsableFilter = document.getElementById('filter-responsable').value;
             const categoryFilter = document.getElementById('filter-category').value;
             const searchFilter = document.getElementById('filter-search').value.toLowerCase();
+            const mejoraFilter = document.getElementById('filter-mejora').value;
             const orderFilter = document.getElementById('filter-order').value;
             
             tareasFiltradas = tareasCache.filter(tarea => {
@@ -2684,7 +2719,10 @@
                 const matchResponsable = !responsableFilter || tarea.assigned_to_mail === responsableFilter;
                 const matchCategory = !categoryFilter || tarea.category_id === categoryFilter;
                 const matchSearch = !searchFilter || tarea.task_description?.toLowerCase().includes(searchFilter);
-                return matchStatus && matchPriority && matchModule && matchResponsable && matchCategory && matchSearch;
+                const matchMejora = !mejoraFilter
+                    || (mejoraFilter === 'linked' && tareasEnPlanMejora.has(tarea.task_id))
+                    || (mejoraFilter === 'unlinked' && !tareasEnPlanMejora.has(tarea.task_id));
+                return matchStatus && matchPriority && matchModule && matchResponsable && matchCategory && matchSearch && matchMejora;
             });
             
             tareasFiltradas = ordenarTareas(tareasFiltradas, orderFilter);
@@ -2832,6 +2870,7 @@
             document.getElementById('filter-module').value = '';
             document.getElementById('filter-responsable').value = '';
             document.getElementById('filter-category').value = '';
+            document.getElementById('filter-mejora').value = '';
             document.getElementById('filter-search').value = '';
             document.getElementById('filter-order').value = 'created_desc';
             renderizarTareas(tareasCache);
@@ -5730,14 +5769,18 @@
             const moduleFilter = document.getElementById('filter-module').value;
             const categoryFilter = document.getElementById('filter-category').value;
             const searchFilter = document.getElementById('filter-search').value.toLowerCase();
+            const mejoraFilter = document.getElementById('filter-mejora').value;
             
             tareasMatriz = tareasMatriz.filter(t => {
                 const matchPriority = !priorityFilter || t.task_priority === priorityFilter;
                 const matchModule = !moduleFilter || t.module_type === moduleFilter;
                 const matchCategory = !categoryFilter || t.category_id === categoryFilter;
                 const matchSearch = !searchFilter || t.task_description?.toLowerCase().includes(searchFilter);
-                return matchPriority && matchModule && matchCategory && matchSearch;
-            });
+                const matchMejora = !mejoraFilter
+                    || (mejoraFilter === 'linked' && tareasEnPlanMejora.has(t.task_id))
+                    || (mejoraFilter === 'unlinked' && !tareasEnPlanMejora.has(t.task_id));
+                return matchPriority && matchModule && matchCategory && matchSearch && matchMejora;
+            });            
             
             // 3. Clasificar
             const cuadrantes = { q1: [], q2: [], q3: [], q4: [] };
