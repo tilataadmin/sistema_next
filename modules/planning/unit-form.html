@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.28.1">
+    <meta name="page-version" content="26.9.7.1">
     <title>Unidad de Indagación</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1061,9 +1061,9 @@
                     <div class="field-group-title">Alcance</div>
 
                     <div class="mb-3">
-                        <label class="form-label" for="field-subjects-select">Materias vinculadas</label>
-                        <select class="form-select" id="field-subjects-select" size="6" multiple style="height: auto;"></select>
-                        <div class="field-hint">Mantenga Ctrl/Cmd presionado para seleccionar varias.</div>
+                        <label class="form-label">Materias vinculadas</label>
+                        <div class="checkbox-grid" id="grid-subjects"></div>
+                        <div class="field-hint">Marque todas las materias que participan en la unidad.</div>
                     </div>
 
                     <div id="subjects-descriptions"></div>
@@ -2452,6 +2452,14 @@
                     await onToggle(id, checked);
                 });
             });
+
+            // Solo lectura: aplicarModoSoloLectura() corre dentro de cargarUI(),
+            // antes de que renderUIData() pinte estos grids.
+            if (isReadOnly) {
+                container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.disabled = true;
+                });
+            }
         }
 
         // Renderiza ATL como árbol colapsable de 3 niveles.
@@ -2549,48 +2557,142 @@
         }
 
         function renderSubjectsSelect() {
-            const select = document.getElementById('field-subjects-select');
+            const container = document.getElementById('grid-subjects');
+            if (!container) return;
+
             const subjectsToShow = subjectIdsOfGrade.size > 0
                 ? allSubjects.filter(s => subjectIdsOfGrade.has(s.subject_id))
                 : allSubjects;
-            select.innerHTML = subjectsToShow.map(s => {
-                const sel = selectedSubjects.has(s.subject_id) ? 'selected' : '';
-                return `<option value="${s.subject_id}" ${sel}>${escapeHtml(s.subject_name)}</option>`;
+
+            if (subjectsToShow.length === 0) {
+                container.innerHTML = '<div class="text-muted small">No hay materias con asignación activa en este grado y año académico.</div>';
+                return;
+            }
+
+            container.innerHTML = subjectsToShow.map(s => {
+                const checked = selectedSubjects.has(s.subject_id);
+                return `
+                    <label class="checkbox-grid-item ${checked ? 'checked' : ''}" data-id="${s.subject_id}">
+                        <input type="checkbox" data-role="unit-subject" data-id="${s.subject_id}" ${checked ? 'checked' : ''}>
+                        <span>${escapeHtml(s.subject_name)}</span>
+                    </label>
+                `;
             }).join('');
 
-            select.addEventListener('change', async () => {
-                const newSelection = new Set(Array.from(select.selectedOptions).map(o => o.value));
-
-                // Detectar agregados
-                for (const id of newSelection) {
-                    if (!selectedSubjects.has(id)) {
-                        selectedSubjects.set(id, '');
-                        try {
-                            startSaving();
-                            await supabaseRequest('/pln_unit_subjects', {
-                                method: 'POST',
-                                body: JSON.stringify({ unit_id: unitId, subject_id: id, description: null })
-                            });
-                            doneSaving();
-                        } catch (e) { errorSaving(e); }
-                    }
-                }
-                // Detectar quitados
-                for (const id of Array.from(selectedSubjects.keys())) {
-                    if (!newSelection.has(id)) {
-                        selectedSubjects.delete(id);
-                        try {
-                            startSaving();
-                            await supabaseRequest(`/pln_unit_subjects?unit_id=eq.${unitId}&subject_id=eq.${id}`, { method: 'DELETE' });
-                            doneSaving();
-                        } catch (e) { errorSaving(e); }
-                    }
-                }
-                renderSubjectsDescriptions();
-                renderCoordinationsInfoBlock();
-                // Refrescar tablas de asignaturas en todos los ciclos: cambió el universo de materias disponibles
-                unitCycles.forEach(c => renderCycleSubjects(c.cycle_id));
+            container.querySelectorAll('input[data-role="unit-subject"]').forEach(cb => {
+                cb.addEventListener('change', () => onToggleUnitSubject(cb));
             });
+
+            // Solo lectura: se fuerza aquí porque aplicarModoSoloLectura() corre dentro
+            // de cargarUI(), antes de que renderUIData() pinte este grid.
+            if (isReadOnly) {
+                container.querySelectorAll('input[data-role="unit-subject"]').forEach(cb => {
+                    cb.disabled = true;
+                });
+            }
+        }
+
+        // Alta/baja individual de una materia vinculada a la UI.
+        // Cada checkbox es independiente: marcar una no afecta a las demás.
+        async function onToggleUnitSubject(checkbox) {
+            const subjectId = checkbox.dataset.id;
+            const checked = checkbox.checked;
+            const item = checkbox.closest('.checkbox-grid-item');
+
+            // Al desmarcar: advertir si hay contenido asociado que se perderá
+            if (!checked && !confirmarDesvinculacionMateria(subjectId)) {
+                checkbox.checked = true;
+                item.classList.add('checked');
+                return;
+            }
+
+            // Bloquear mientras procesa para evitar dobles clics
+            checkbox.disabled = true;
+
+            try {
+                startSaving();
+
+                if (checked) {
+                    await supabaseRequest('/pln_unit_subjects', {
+                        method: 'POST',
+                        body: JSON.stringify({ unit_id: unitId, subject_id: subjectId, description: null })
+                    });
+                    selectedSubjects.set(subjectId, '');
+                } else {
+                    // 1. Quitar la materia de todos los ciclos.
+                    //    pln_unit_cycle_subjects referencia academic_subjects, no
+                    //    pln_unit_subjects, así que no hay cascada: si no se borra aquí
+                    //    quedan filas huérfanas invisibles en la interfaz.
+                    const cycleIds = unitCycles.map(c => c.cycle_id);
+                    if (cycleIds.length > 0) {
+                        await supabaseRequest(
+                            `/pln_unit_cycle_subjects?cycle_id=in.(${cycleIds.join(',')})&subject_id=eq.${subjectId}`,
+                            { method: 'DELETE' }
+                        );
+                        Object.values(cycleSubjectsState).forEach(m => m.delete(subjectId));
+                    }
+
+                    // 2. Quitar la materia de la unidad.
+                    //    Las conexiones de pln_unit_subject_connections caen en cascada.
+                    await supabaseRequest(
+                        `/pln_unit_subjects?unit_id=eq.${unitId}&subject_id=eq.${subjectId}`,
+                        { method: 'DELETE' }
+                    );
+                    selectedSubjects.delete(subjectId);
+                    selectedSubjectConnections.delete(subjectId);
+                }
+
+                item.classList.toggle('checked', checked);
+                doneSaving();
+            } catch (err) {
+                // Revertir visualmente: la base de datos no cambió
+                checkbox.checked = !checked;
+                item.classList.toggle('checked', !checked);
+                errorSaving(err);
+            } finally {
+                checkbox.disabled = isReadOnly;
+            }
+
+            renderSubjectsDescriptions();
+            renderCoordinationsInfoBlock();
+            // Refrescar tablas de asignaturas en todos los ciclos: cambió el universo disponible
+            unitCycles.forEach(c => renderCycleSubjects(c.cycle_id));
+        }
+
+        // Devuelve true si se puede desvincular la materia.
+        // Solo pregunta cuando hay contenido asociado que se va a perder;
+        // desvincular una materia recién marcada no interrumpe al usuario.
+        function confirmarDesvinculacionMateria(subjectId) {
+            const subj = allSubjects.find(s => s.subject_id === subjectId);
+            const nombre = subj ? subj.subject_name : 'esta materia';
+
+            const tieneDescripcion = (selectedSubjects.get(subjectId) || '').trim().length > 0;
+            const numConexiones = (selectedSubjectConnections.get(subjectId) || new Set()).size;
+            const ciclosConLaMateria = unitCycles.filter(
+                c => cycleSubjectsState[c.cycle_id]?.has(subjectId)
+            );
+
+            const perdidas = [];
+            if (tieneDescripcion) {
+                perdidas.push('- La descripción de cómo conecta con la unidad');
+            }
+            if (numConexiones > 0) {
+                perdidas.push(`- ${numConexiones} tipo(s) de conexión marcados`);
+            }
+            if (ciclosConLaMateria.length > 0) {
+                const nums = ciclosConLaMateria.map(c => '#' + c.cycle_number).join(', ');
+                perdidas.push(`- Su participación en el/los ciclo(s) ${nums}, con sus conexiones`);
+            }
+
+            // Sin contenido asociado: desvincular sin preguntar
+            if (perdidas.length === 0) return true;
+
+            return confirm(
+                `¿Desvincular "${nombre}" de esta unidad?\n\n` +
+                'Se eliminará de forma permanente:\n' +
+                perdidas.join('\n') + '\n\n' +
+                'Esta acción no se puede deshacer.'
+            );
         }
 
         function renderSubjectsDescriptions() {
@@ -2621,6 +2723,7 @@
                             <textarea class="form-control form-control-sm subject-description"
                                 data-subject-id="${subjectId}"
                                 rows="2"
+                                ${isReadOnly ? 'disabled' : ''}
                                 placeholder="Cómo conecta esta materia con la unidad...">${escapeHtml(selectedSubjects.get(subjectId) || '')}</textarea>
                         </div>
                     `;
@@ -2715,7 +2818,7 @@
                 chip.innerHTML = `
                     ${isLead ? '<i class="bi bi-star-fill"></i>' : ''}
                     ${escapeHtml(name)}
-                    ${!isLead ? `<button type="button" class="chip-remove" data-id="${wid}" title="Quitar colaborador">&times;</button>` : ''}
+                    ${(!isLead && !isReadOnly) ? `<button type="button" class="chip-remove" data-id="${wid}" title="Quitar colaborador">&times;</button>` : ''}
                 `;
                 list.insertBefore(chip, input);
             });
