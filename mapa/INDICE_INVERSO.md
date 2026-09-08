@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-08 14:55 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 15:01 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -2001,7 +2001,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/coordinator-area.html` | planning | ND | 1638 |
+| `modules/planning/coordinator-area.html` | planning | ND | 1533, 1639, 1932, 1943, 2116, 2127, 3529 |
 | `modules/planning/dp-outline-form.html` | planning | GET, PATCH, POST | 821, 945, 954, 967 |
 | `modules/planning/dp-planner-form.html` | planning | GET, PATCH, POST | 798, 800, 812 |
 | `modules/planning/interdisc-unit-form.html` | planning | GET, PATCH, POST | 2767, 2780, 2802 |
@@ -2186,7 +2186,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/coordinator-area.html` | planning | GET | 3265 |
+| `modules/planning/coordinator-area.html` | planning | GET | 3270 |
 | `modules/planning/coordinator-program.html` | planning | GET | 3127 |
 | `modules/planning/coordinator-section.html` | planning | GET | 3119 |
 | `modules/planning/dp-outline-form.html` | planning | GET, PATCH | 542, 616, 983 |

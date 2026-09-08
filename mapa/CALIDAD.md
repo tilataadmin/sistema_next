@@ -1,10 +1,10 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-08 14:55 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 15:01 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
-**311 referencias** provienen de consultas armadas en variables. El escáner sabe qué tabla se toca, pero no si se lee o se escribe. Por eso las cifras de escritura son un piso, no un total.
+**317 referencias** provienen de consultas armadas en variables. El escáner sabe qué tabla se toca, pero no si se lee o se escribe. Por eso las cifras de escritura son un piso, no un total.
 
 | Archivo | Referencias dudosas |
 |---|---:|
@@ -17,6 +17,7 @@
 | `modules/procedures/execute.html` | 9 |
 | `modules/training/path-queries.html` | 9 |
 | `modules/indicators/improvement-dashboard.html` | 7 |
+| `modules/planning/coordinator-area.html` | 7 |
 | `modules/training/reports.html` | 7 |
 | `modules/budget/category-detail.html` | 6 |
 | `modules/general-tools/attendance-reports.html` | 6 |
@@ -37,7 +38,6 @@
 | `modules/config/students.html` | 4 |
 | `modules/early-alerts/manage-alerts.html` | 4 |
 | `modules/hr/index.html` | 4 |
-| `modules/indicators/dashboard.html` | 4 |
 
 ## Funciones de base de datos invocadas
 
