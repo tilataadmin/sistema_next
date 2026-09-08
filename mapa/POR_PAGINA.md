@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-08 19:30 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 19:37 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -1617,7 +1617,7 @@
 ### `modules/services/js/commons.js`
 
 - **Módulo:** services
-- **Lee (12):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, system_config, user_roles, users, workers
+- **Lee (13):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, svc_trip_authorizations, system_config, user_roles, users, workers
 - **Escribe (0):** —
 
 ### `modules/services/maintenance-management.html`
