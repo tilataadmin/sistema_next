@@ -662,6 +662,101 @@ const SvcCommons = (() => {
     }
 
     // ============================
+    // AUTORIZACIONES FAMILIARES
+    // ============================
+
+    /**
+     * Devuelve un Map student_id → autorización vigente para una salida.
+     * El listado de asistencia no se altera: esto solo informa al responsable
+     * qué familias respondieron antes de que marque quién sube al bus.
+     * @param {string} serviceType - pedagogical_trip | sports_trip | rep_trip
+     * @param {string} tripId
+     * @returns {Promise<Map<number, object>>}
+     */
+    async function cargarAutorizaciones(serviceType, tripId) {
+        const mapa = new Map();
+        try {
+            const filas = await supabaseRequest(
+                `/svc_trip_authorizations?select=student_id,authorization_status,deadline_at` +
+                `&service_type=eq.${serviceType}&trip_id=eq.${tripId}` +
+                `&authorization_status=neq.superseded`
+            );
+            (filas || []).forEach(a => mapa.set(a.student_id, a));
+        } catch (e) {
+            // Un fallo aquí no debe impedir el banderazo: se pierde el
+            // indicador, no la toma de asistencia.
+            console.warn('No fue posible cargar el estado de autorizaciones:', e);
+        }
+        return mapa;
+    }
+
+    /**
+     * Badge del estado de autorización de un estudiante.
+     * @param {object|undefined} auto - fila de svc_trip_authorizations
+     * @returns {string} HTML del badge
+     */
+    function distintivoAutorizacion(auto) {
+        if (!auto) return '<span class="badge bg-dark ms-2">Sin solicitud</span>';
+
+        switch (auto.authorization_status) {
+            case 'authorized':
+                return '<span class="badge bg-success ms-2">Autorizada</span>';
+            case 'denied':
+                return '<span class="badge bg-danger ms-2">No autorizada</span>';
+            case 'cancelled':
+                return '<span class="badge bg-secondary ms-2">Cancelada</span>';
+            case 'expired':
+                return '<span class="badge bg-danger ms-2">Sin respuesta</span>';
+            case 'pending':
+                return (auto.deadline_at && new Date(auto.deadline_at) < new Date())
+                    ? '<span class="badge bg-danger ms-2">Sin respuesta</span>'
+                    : '<span class="badge bg-warning text-dark ms-2">Pendiente</span>';
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * Aviso resumen sobre el listado. Sin autorizaciones generadas no hay nada
+     * que informar: marcar a todos como "sin solicitud" sería ruido, no alerta.
+     * @param {Map} autorizaciones
+     * @param {number} totalEstudiantes
+     * @returns {string} HTML del aviso
+     */
+    function avisoAutorizacionesHtml(autorizaciones, totalEstudiantes) {
+        if (!autorizaciones || autorizaciones.size === 0) {
+            return `<div class="alert alert-secondary py-2 mb-2 small">
+                <i class="bi bi-info-circle me-1"></i>
+                Esta salida no tiene autorizaciones familiares en el sistema.
+            </div>`;
+        }
+
+        let sinResponder = 0;
+        let negadas = 0;
+        autorizaciones.forEach(a => {
+            if (a.authorization_status === 'denied') negadas++;
+            else if (a.authorization_status === 'expired') sinResponder++;
+            else if (a.authorization_status === 'pending' && a.deadline_at && new Date(a.deadline_at) < new Date()) sinResponder++;
+        });
+
+        const sinSolicitud = Math.max(0, totalEstudiantes - autorizaciones.size);
+        const partes = [];
+        if (negadas > 0) partes.push(`${negadas} no autorizada(s)`);
+        if (sinResponder > 0) partes.push(`${sinResponder} sin respuesta`);
+        if (sinSolicitud > 0) partes.push(`${sinSolicitud} sin solicitud`);
+
+        return partes.length === 0
+            ? `<div class="alert alert-success py-2 mb-2 small">
+                   <i class="bi bi-check-circle me-1"></i>
+                   Todas las familias respondieron autorizando la participación.
+               </div>`
+            : `<div class="alert alert-warning py-2 mb-2 small">
+                   <i class="bi bi-exclamation-triangle me-1"></i>
+                   <strong>${partes.join(' · ')}.</strong> Revisa antes de marcar asistencia.
+               </div>`;
+    }
+
+    // ============================
     // BADGES DE ESTADO Y APROBACIÓN
     // ============================
 
@@ -1445,6 +1540,12 @@ const SvcCommons = (() => {
         updateTripStatus,
         checkAutoStatusTransitions,
         obtenerAsistentesHoy,
+
+        // Autorizaciones familiares
+        cargarAutorizaciones,
+        distintivoAutorizacion,
+        avisoAutorizacionesHtml,
+
         statusBadgeHtml,
         approvalBadgeHtml,
         approvalDetailHtml,
