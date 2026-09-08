@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.28.1">
+    <meta name="page-version" content="26.9.8.1">
     <title>Coordinación de asignatura — Planeación</title>
 
     <!-- Bootstrap -->
@@ -1570,6 +1570,27 @@
         }
 
         // ============================================================
+        // HELPER: consultas con listas IN largas
+        // ============================================================
+        // PostgREST recibe los IDs en la query string. Con más de ~200 UUIDs
+        // la URL supera el límite del servidor y devuelve 400 Bad Request.
+        // Este helper parte la lista en lotes y concatena los resultados.
+        const IN_CHUNK_SIZE = 150;
+
+        async function supabaseRequestChunked(ids, buildEndpoint, chunkSize = IN_CHUNK_SIZE) {
+            const unicos = [...new Set(ids)].filter(Boolean);
+            if (unicos.length === 0) return [];
+
+            const resultados = [];
+            for (let i = 0; i < unicos.length; i += chunkSize) {
+                const lote = unicos.slice(i, i + chunkSize);
+                const filas = await supabaseRequest(buildEndpoint(lote.join(','))) || [];
+                resultados.push(...filas);
+            }
+            return resultados;
+        }
+
+        // ============================================================
         // CONTEO DE CICLOS POR PLANEADOR
         // ============================================================
         async function contarCiclosPorPlaneador(planners) {
@@ -1612,9 +1633,10 @@
             comments = comments.concat(plannerComments);
 
             if (cycleIds.length > 0) {
-                const cycleComments = await supabaseRequest(
-                    `/pln_comments?select=comment_id,entity_type,entity_id,author_id,parent_comment_id,comment_status&entity_type=eq.planner_cycle&entity_id=in.(${cycleIds.join(',')})&comment_status=eq.active`
-                ) || [];
+                const cycleComments = await supabaseRequestChunked(
+                    cycleIds,
+                    (lote) => `/pln_comments?select=comment_id,entity_type,entity_id,author_id,parent_comment_id,comment_status&entity_type=eq.planner_cycle&entity_id=in.(${lote})&comment_status=eq.active`
+                );
                 comments = comments.concat(cycleComments);
             }
 
