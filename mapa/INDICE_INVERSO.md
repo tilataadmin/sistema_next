@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-08 14:19 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 14:55 UTC. **No editar a mano.**
 
 **398 tablas** referenciadas en **334 archivos**.
 
@@ -72,6 +72,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [env_water_meters](#envwatermeters) | 7 | 1 | 1 |
 | [event_registrations](#eventregistrations) | 7 | 2 | 1 |
 | [leadership_dimensions](#leadershipdimensions) | 7 | 1 | 0 |
+| [pln_comments](#plncomments) | 7 | 6 | 1 |
 | [procedure_instance_steps](#procedureinstancesteps) | 7 | 3 | 0 |
 | [survey_applications](#surveyapplications) | 7 | 1 | 2 |
 | [svc_transport_destinations](#svctransportdestinations) | 7 | 1 | 0 |
@@ -86,7 +87,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [indicator_categories](#indicatorcategories) | 6 | 1 | 0 |
 | [leadership_attributes](#leadershipattributes) | 6 | 1 | 0 |
 | [organizational_subareas](#organizationalsubareas) | 6 | 1 | 1 |
-| [pln_comments](#plncomments) | 6 | 6 | 0 |
 | [pln_connection_types](#plnconnectiontypes) | 6 | 1 | 0 |
 | [pln_dp_outlines](#plndpoutlines) | 6 | 2 | 0 |
 | [pln_ib_themes](#plnibthemes) | 6 | 1 | 0 |
@@ -1997,6 +1997,18 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/leadership-reports.html` | teacher-eval | GET | 345 |
 | `modules/teacher-eval/leadership-survey.html` | teacher-eval | embed | 333, 602 |
 
+### pln_comments
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/planning/coordinator-area.html` | planning | ND | 1638 |
+| `modules/planning/dp-outline-form.html` | planning | GET, PATCH, POST | 821, 945, 954, 967 |
+| `modules/planning/dp-planner-form.html` | planning | GET, PATCH, POST | 798, 800, 812 |
+| `modules/planning/interdisc-unit-form.html` | planning | GET, PATCH, POST | 2767, 2780, 2802 |
+| `modules/planning/myp-planner-form.html` | planning | GET, PATCH, POST | 1044, 1046, 1058 |
+| `modules/planning/planner-form.html` | planning | GET, PATCH, POST | 2956, 2967, 3047 |
+| `modules/planning/unit-form.html` | planning | PATCH, POST | 2197, 2386 |
+
 ### procedure_instance_steps
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -2159,17 +2171,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/workers.html` | hr | GET, embed | 1229, 1623 |
 | `modules/security/user-roles.html` | security | embed | 466 |
 
-### pln_comments
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/planning/dp-outline-form.html` | planning | GET, PATCH, POST | 821, 945, 954, 967 |
-| `modules/planning/dp-planner-form.html` | planning | GET, PATCH, POST | 798, 800, 812 |
-| `modules/planning/interdisc-unit-form.html` | planning | GET, PATCH, POST | 2767, 2780, 2802 |
-| `modules/planning/myp-planner-form.html` | planning | GET, PATCH, POST | 1044, 1046, 1058 |
-| `modules/planning/planner-form.html` | planning | GET, PATCH, POST | 2956, 2967, 3047 |
-| `modules/planning/unit-form.html` | planning | PATCH, POST | 2197, 2386 |
-
 ### pln_connection_types
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -2185,7 +2186,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/coordinator-area.html` | planning | GET | 3243 |
+| `modules/planning/coordinator-area.html` | planning | GET | 3265 |
 | `modules/planning/coordinator-program.html` | planning | GET | 3127 |
 | `modules/planning/coordinator-section.html` | planning | GET | 3119 |
 | `modules/planning/dp-outline-form.html` | planning | GET, PATCH | 542, 616, 983 |
