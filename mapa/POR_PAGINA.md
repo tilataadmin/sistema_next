@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-08 14:19 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 14:55 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -1300,6 +1300,7 @@
 - **Módulo:** planning
 - **Lee (12):** academic_areas, academic_years, pln_connection_types, pln_dp_outlines, pln_ib_atl_skills, pln_ib_key_concepts, pln_ib_themes, pln_planners, pln_units, programs, users, workers
 - **Escribe (0):** —
+- **Sin determinar (1):** pln_comments
 
 ### `modules/planning/coordinator-program.html`
 
