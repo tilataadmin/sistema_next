@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.22.1">
+    <meta name="page-version" content="26.9.8.1">
     <title>Salidas Pedagógicas - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -511,6 +511,7 @@
                             <i class="bi bi-x-lg me-1"></i>Desmarcar todos
                         </button>
                     </div>
+                    <div id="banderazoAvisoAutorizaciones" class="mb-2"></div>
                     <div id="banderazoListaEstudiantes" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px;"></div>
                     <div class="alert alert-warning mt-3 mb-0">
                         <i class="bi bi-exclamation-triangle me-2"></i>
@@ -1870,8 +1871,27 @@
                     .filter(Boolean);
                 const asistentesHoy = await SvcCommons.obtenerAsistentesHoy(documentosBanderazo);
                 
+                // Estado de autorización familiar. El listado no se altera: el
+                // responsable sigue decidiendo quién sube al bus, pero lo hace
+                // viendo qué familias respondieron y cuáles no.
+                const autorizaciones = new Map();
+                try {
+                    const autoRows = await supabaseRequest(
+                        `/svc_trip_authorizations?select=student_id,authorization_status,deadline_at` +
+                        `&service_type=eq.pedagogical_trip&trip_id=eq.${tripId}` +
+                        `&authorization_status=neq.superseded`
+                    );
+                    (autoRows || []).forEach(a => autorizaciones.set(a.student_id, a));
+                } catch (e) {
+                    // Un fallo aquí no debe impedir el banderazo: se pierde el
+                    // indicador, no la toma de asistencia.
+                    console.warn('No fue posible cargar el estado de autorizaciones:', e);
+                }
+
+                renderizarAvisoAutorizaciones(autorizaciones, estudiantes.length);
+
                 // Renderizar lista
-                renderizarBanderazoEstudiantes(estudiantes, asistentesHoy);
+                renderizarBanderazoEstudiantes(estudiantes, asistentesHoy, autorizaciones);
                 actualizarContadorBanderazo();
 
                 document.getElementById('banderazoBuscar').value = '';
@@ -1887,7 +1907,68 @@
             }
         }
 
-        function renderizarBanderazoEstudiantes(estudiantes, asistentesHoy = new Set()) {
+        // Sin autorizaciones generadas no hay nada que informar por estudiante:
+        // marcarlos a todos como "sin solicitud" sería ruido, no alerta.
+        function renderizarAvisoAutorizaciones(autorizaciones, totalEstudiantes) {
+            const cont = document.getElementById('banderazoAvisoAutorizaciones');
+            if (!cont) return;
+
+            if (autorizaciones.size === 0) {
+                cont.innerHTML = `<div class="alert alert-secondary py-2 mb-0 small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Esta salida no tiene autorizaciones familiares en el sistema.
+                </div>`;
+                return;
+            }
+
+            let sinResponder = 0;
+            let negadas = 0;
+            autorizaciones.forEach(a => {
+                if (a.authorization_status === 'denied') negadas++;
+                else if (a.authorization_status === 'expired') sinResponder++;
+                else if (a.authorization_status === 'pending' && a.deadline_at && new Date(a.deadline_at) < new Date()) sinResponder++;
+            });
+
+            const sinSolicitud = totalEstudiantes - autorizaciones.size;
+            const partes = [];
+            if (negadas > 0) partes.push(`${negadas} no autorizada(s)`);
+            if (sinResponder > 0) partes.push(`${sinResponder} sin respuesta`);
+            if (sinSolicitud > 0) partes.push(`${sinSolicitud} sin solicitud`);
+
+            cont.innerHTML = partes.length === 0
+                ? `<div class="alert alert-success py-2 mb-0 small">
+                       <i class="bi bi-check-circle me-1"></i>
+                       Todas las familias respondieron autorizando la participación.
+                   </div>`
+                : `<div class="alert alert-warning py-2 mb-0 small">
+                       <i class="bi bi-exclamation-triangle me-1"></i>
+                       <strong>${partes.join(' · ')}.</strong>
+                       Revisa antes de marcar asistencia.
+                   </div>`;
+        }
+
+        function distintivoAutorizacion(auto) {
+            if (!auto) return '<span class="badge bg-dark ms-2">Sin solicitud</span>';
+
+            switch (auto.authorization_status) {
+                case 'authorized':
+                    return '<span class="badge bg-success ms-2">Autorizada</span>';
+                case 'denied':
+                    return '<span class="badge bg-danger ms-2">No autorizada</span>';
+                case 'cancelled':
+                    return '<span class="badge bg-secondary ms-2">Cancelada</span>';
+                case 'expired':
+                    return '<span class="badge bg-danger ms-2">Sin respuesta</span>';
+                case 'pending':
+                    return (auto.deadline_at && new Date(auto.deadline_at) < new Date())
+                        ? '<span class="badge bg-danger ms-2">Sin respuesta</span>'
+                        : '<span class="badge bg-warning text-dark ms-2">Pendiente</span>';
+                default:
+                    return '';
+            }
+        }
+
+        function renderizarBanderazoEstudiantes(estudiantes, asistentesHoy = new Set(), autorizaciones = new Map()) {
             const container = document.getElementById('banderazoListaEstudiantes');
 
             const porCurso = {};
@@ -1924,7 +2005,7 @@
                                 <input class="form-check-input banderazo-check" type="checkbox"
                                        id="band_${est.student_id}" value="${est.student_id}"
                                        ${checked} onchange="toggleBanderazoEstudiante(this)">
-                                <label class="form-check-label" for="band_${est.student_id}">${nombre}</label>
+                                <label class="form-check-label" for="band_${est.student_id}">${nombre}${autorizaciones.size > 0 ? distintivoAutorizacion(autorizaciones.get(est.student_id)) : ''}</label>
                             </div>
                         </div>`;
                 });
