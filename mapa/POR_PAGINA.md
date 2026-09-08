@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-08 19:44 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 19:50 UTC. **No editar a mano.**
 
 **334 archivos** con acceso a datos.
 
@@ -1641,7 +1641,7 @@
 ### `modules/services/pedagogical-trips.html`
 
 - **Módulo:** services
-- **Lee (15):** grades, sections, svc_catering_menus, svc_pedagogical_trip_adults, svc_pedagogical_trip_attendance, svc_pedagogical_trip_catering, svc_pedagogical_trip_grades, svc_pedagogical_trips, svc_service_requests, svc_service_type_notifications, svc_transport_destinations, svc_transport_nodes, svc_trip_authorizations, svc_trip_transport_nodes, workers
+- **Lee (14):** grades, sections, svc_catering_menus, svc_pedagogical_trip_adults, svc_pedagogical_trip_attendance, svc_pedagogical_trip_catering, svc_pedagogical_trip_grades, svc_pedagogical_trips, svc_service_requests, svc_service_type_notifications, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
 - **Escribe (1):** **svc_pedagogical_trips**
 - **Sin determinar (1):** svc_pedagogical_trips
 - **Funciones (8):** calculate_transport_cost, create_pedagogical_trip, execute_trip_banderazo, get_pedagogical_trip_students, get_workers_with_permission, suspend_trip, transition_trip_statuses, update_pedagogical_trip
