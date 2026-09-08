@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-08 19:37 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-08 19:40 UTC. **No editar a mano.**
 
 **399 tablas** referenciadas en **334 archivos**.
 
@@ -2291,7 +2291,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/js/commons.js` | services | GET | 165 |
 | `modules/services/pedagogical-trips.html` | services | embed | 2156, 2327, 2497 |
 | `modules/services/rep-trips.html` | services | embed | 1277, 1323, 1685 |
-| `modules/services/sports-trips.html` | services | embed | 1353, 1399, 1760 |
+| `modules/services/sports-trips.html` | services | embed | 1353, 1399, 1770 |
 
 ### teval_periods
 
@@ -2984,7 +2984,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 492 |
 | `modules/services/index.html` | services | GET | 1005, 1145, 1160 |
 | `modules/services/reports.html` | services | GET | 415, 545 |
-| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 503, 1113, 1165, 1547, 1746 |
+| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 503, 1113, 1165, 1547, 1756 |
 
 ### svc_trip_transport_nodes
 
@@ -2993,7 +2993,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | GET | 2109, 2281 |
 | `modules/services/pedagogical-trips.html` | services | GET | 2156, 2327, 2497 |
 | `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1061, 1131, 1277, 1323, 1685 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1122, 1194, 1353, 1399, 1760 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1122, 1194, 1353, 1399, 1770 |
 
 ### teval_form_questions
 
@@ -3918,7 +3918,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2130 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1125, 1203, 1325, 1407, 1771 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1125, 1203, 1325, 1407, 1781 |
 
 ### svc_staff_transport_daily_records
 
@@ -4505,7 +4505,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1119, 1179, 1543, 1598, 1698, 1720, 1764 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1119, 1179, 1543, 1598, 1708, 1730, 1774 |
 
 ### task_deliverables
 
