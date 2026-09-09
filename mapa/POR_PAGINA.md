@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-09 11:45 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 11:52 UTC. **No editar a mano.**
 
 **335 archivos** con acceso a datos.
 
