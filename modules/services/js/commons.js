@@ -1306,6 +1306,29 @@ const SvcCommons = (() => {
 
         let html = '';
         opts.adults.forEach(a => {
+            // Una fila apunta a un worker o a un acompañante externo. El externo
+            // no ofrece "Reemplazar" porque el selector busca en workers y
+            // mezclar los dos catálogos ahí confunde más de lo que ayuda.
+            const esExterno = !a.worker_id && a.external_adult_id;
+
+            if (esExterno) {
+                const nombreExterno = a.external ? a.external.full_name : 'Acompañante externo';
+                html += `
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom" id="editAdult_${a.external_adult_id}">
+                    <div>
+                        <i class="bi bi-person-badge me-1"></i>
+                        <strong>${escapeHtml(nombreExterno)}</strong>
+                        <span class="badge bg-secondary ms-2">Externo</span>
+                    </div>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-outline-danger" onclick="SvcCommons.removeExternalAdultFromTrip('${opts.tableName}','${opts.tripIdField}','${opts.tripId}','${opts.tripTableName}','${a.external_adult_id}')" title="Eliminar">
+                            <i class="bi bi-person-dash"></i>
+                        </button>
+                    </div>
+                </div>`;
+                return;
+            }
+
             const w = a.workers;
             const name = w ? workerFullName(w) : 'N/A';
             const wId = a.worker_id;
@@ -1476,6 +1499,38 @@ const SvcCommons = (() => {
         }
     }
 
+    /**
+     * Elimina un acompañante externo de una salida y ajusta el conteo.
+     * Gemela de removeAdultFromTrip, que filtra por worker_id: aquí la fila se
+     * identifica por external_adult_id.
+     */
+    async function removeExternalAdultFromTrip(tableName, tripIdField, tripId, tripTableName, externalAdultId) {
+        if (!confirm('¿Confirma eliminar este acompañante externo? Esta acción no se puede deshacer.')) return;
+
+        try {
+            await supabaseRequest(`/${tableName}?${tripIdField}=eq.${tripId}&external_adult_id=eq.${externalAdultId}`, {
+                method: 'DELETE'
+            });
+
+            const tripArr = await supabaseRequest(`/${tripTableName}?select=num_adults&${tripIdField}=eq.${tripId}`);
+            const currentNum = tripArr && tripArr[0] ? (tripArr[0].num_adults || 0) : 0;
+            const newNum = Math.max(0, currentNum - 1);
+
+            await supabaseRequest(`/${tripTableName}?${tripIdField}=eq.${tripId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ num_adults: newNum })
+            });
+
+            if (typeof showMessage === 'function') showMessage('Acompañante externo eliminado correctamente', 'success');
+
+            document.dispatchEvent(new CustomEvent('svcAdultsChanged', { detail: { tripId } }));
+
+        } catch (error) {
+            console.error('Error eliminando acompañante externo:', error);
+            if (typeof showMessage === 'function') showMessage('Error al eliminar: ' + error.message, 'danger');
+        }
+    }
+
     // ============================
     // EXPORT PÚBLICO
     // ============================
@@ -1569,6 +1624,7 @@ const SvcCommons = (() => {
         showReplaceAdultUI,
         filterReplaceOptions,
         confirmReplaceAdult,
-        removeAdultFromTrip
+        removeAdultFromTrip,
+        removeExternalAdultFromTrip
     };
 })();
