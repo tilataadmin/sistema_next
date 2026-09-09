@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-09 12:18 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 13:35 UTC. **No editar a mano.**
 
 **400 tablas** referenciadas en **335 archivos**.
 
@@ -2292,7 +2292,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/js/commons.js` | services | GET | 165 |
 | `modules/services/pedagogical-trips.html` | services | embed | 2084, 2255, 2425 |
 | `modules/services/rep-trips.html` | services | embed | 1277, 1323, 1695 |
-| `modules/services/sports-trips.html` | services | embed | 1473, 1519, 1893 |
+| `modules/services/sports-trips.html` | services | embed | 1473, 1519, 1894 |
 
 ### teval_periods
 
@@ -3012,7 +3012,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | GET | 2109, 2281 |
 | `modules/services/pedagogical-trips.html` | services | GET | 2084, 2255, 2425 |
 | `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1061, 1131, 1277, 1323, 1695 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1231, 1303, 1473, 1519, 1893 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1231, 1303, 1473, 1519, 1894 |
 
 ### teval_form_questions
 
@@ -3929,7 +3929,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2130 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1234, 1312, 1322, 1444, 1527, 1904 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1234, 1312, 1322, 1444, 1527, 1905 |
 
 ### svc_staff_transport_daily_records
 
@@ -4509,7 +4509,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1228, 1288, 1666, 1721, 1831, 1853, 1897 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1228, 1288, 1666, 1721, 1831, 1853, 1898 |
 
 ### svc_trip_authorizations
 
