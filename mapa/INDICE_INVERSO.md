@@ -1,8 +1,8 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-08 20:03 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 11:27 UTC. **No editar a mano.**
 
-**399 tablas** referenciadas en **334 archivos**.
+**400 tablas** referenciadas en **335 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
@@ -140,9 +140,11 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [budget_payments](#budgetpayments) | 4 | 1 | 3 |
 | [budget_transfers](#budgettransfers) | 4 | 2 | 1 |
 | [chart_of_accounts](#chartofaccounts) | 4 | 2 | 1 |
+| [document_types](#documenttypes) | 4 | 0 | 0 |
 | [early_alert_causes](#earlyalertcauses) | 4 | 1 | 0 |
 | [env_tree_care_log](#envtreecarelog) | 4 | 2 | 1 |
 | [env_water_readings_extraordinary](#envwaterreadingsextraordinary) | 4 | 1 | 1 |
+| [eps_entities](#epsentities) | 4 | 1 | 1 |
 | [event_attendance](#eventattendance) | 4 | 1 | 0 |
 | [hr_absence_authorizations](#hrabsenceauthorizations) | 4 | 3 | 0 |
 | [ie_improvement_links](#ieimprovementlinks) | 4 | 1 | 1 |
@@ -194,9 +196,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [contract_types](#contracttypes) | 3 | 1 | 0 |
 | [dashboard_invitations](#dashboardinvitations) | 3 | 1 | 0 |
 | [dashboards](#dashboards) | 3 | 2 | 0 |
-| [document_types](#documenttypes) | 3 | 0 | 0 |
 | [env_water_readings_monthly](#envwaterreadingsmonthly) | 3 | 1 | 0 |
-| [eps_entities](#epsentities) | 3 | 1 | 1 |
 | [event_group_enrollments](#eventgroupenrollments) | 3 | 2 | 0 |
 | [event_groups](#eventgroups) | 3 | 1 | 0 |
 | [event_institutions](#eventinstitutions) | 3 | 1 | 0 |
@@ -378,6 +378,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [sup_otp_codes](#supotpcodes) | 1 | 1 | 0 |
 | [sup_supplier_notifications](#supsuppliernotifications) | 1 | 1 | 0 |
 | [svc_admissions_family_services](#svcadmissionsfamilyservices) | 1 | 1 | 1 |
+| [svc_external_adults](#svcexternaladults) | 1 | 1 | 0 |
 | [svc_extracurricular_attendance](#svcextracurricularattendance) | 1 | 1 | 0 |
 | [svc_extracurricular_daily_records](#svcextracurriculardailyrecords) | 1 | 0 | 0 |
 | [svc_extracurricular_enrollment_days](#svcextracurricularenrollmentdays) | 1 | 0 | 0 |
@@ -2707,6 +2708,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/tax-types.html` | budget | GET | 505 |
 | `modules/budget/upload-combo.html` | budget | GET, POST | 846, 864, 932, 946 |
 
+### document_types
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/config/students.html` | config | GET | 591 |
+| `modules/hr/workers.html` | hr | GET | 1148 |
+| `modules/profile/mi-perfil.html` | profile | GET | 1975 |
+| `modules/services/external-adults.html` | services | GET, embed | 218, 252 |
+
 ### early_alert_causes
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -2733,6 +2743,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/environmental/extraordinary-water-readings.html` | environmental | GET, ND, POST | 777, 821, 886 |
 | `modules/environmental/water-meters.html` | environmental | GET | 767 |
 | `modules/environmental/water-reports.html` | environmental | GET | 1323 |
+
+### eps_entities
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/config/eps.html` | config | ND, PATCH, POST | 300, 504, 528, 553, 592 |
+| `modules/config/students.html` | config | GET | 592 |
+| `modules/hr/workers.html` | hr | GET | 1149 |
+| `modules/services/external-adults.html` | services | GET, embed | 219, 252 |
 
 ### event_attendance
 
@@ -3178,14 +3197,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/indicators/dashboard-edit.html` | indicators | DELETE, GET, PATCH | 492, 563, 1000, 1311, 1381, 1409, 1444 |
 | `modules/indicators/dashboard.html` | indicators | GET, embed | 575, 586 |
 
-### document_types
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/config/students.html` | config | GET | 591 |
-| `modules/hr/workers.html` | hr | GET | 1148 |
-| `modules/profile/mi-perfil.html` | profile | GET | 1975 |
-
 ### env_water_readings_monthly
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -3193,14 +3204,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/environmental/monthly-water-readings.html` | environmental | DELETE, GET, PATCH, POST | 642, 826, 838, 880 |
 | `modules/environmental/water-meters.html` | environmental | GET | 759 |
 | `modules/environmental/water-reports.html` | environmental | GET | 1250 |
-
-### eps_entities
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/config/eps.html` | config | ND, PATCH, POST | 300, 504, 528, 553, 592 |
-| `modules/config/students.html` | config | GET | 592 |
-| `modules/hr/workers.html` | hr | GET | 1149 |
 
 ### event_group_enrollments
 
@@ -4439,6 +4442,12 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/admissions-family.html` | services | ND, PATCH, POST | 486, 489, 689, 728, 897 |
+
+### svc_external_adults
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/services/external-adults.html` | services | GET, PATCH, POST | 252, 396, 402 |
 
 ### svc_extracurricular_attendance
 

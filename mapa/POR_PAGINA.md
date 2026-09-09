@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-08 20:03 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 11:27 UTC. **No editar a mano.**
 
-**334 archivos** con acceso a datos.
+**335 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1598,6 +1598,12 @@
 - **Módulo:** services
 - **Lee (2):** svc_support_areas, workers
 - **Escribe (1):** **svc_internal_event_services**
+
+### `modules/services/external-adults.html`
+
+- **Módulo:** services
+- **Lee (3):** document_types, eps_entities, svc_external_adults
+- **Escribe (1):** **svc_external_adults**
 
 ### `modules/services/index.html`
 
