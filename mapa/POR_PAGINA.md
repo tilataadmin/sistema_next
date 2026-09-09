@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-09 12:03 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 12:11 UTC. **No editar a mano.**
 
 **335 archivos** con acceso a datos.
 
@@ -1674,7 +1674,7 @@
 ### `modules/services/sports-teams.html`
 
 - **Módulo:** services
-- **Lee (8):** courses, grades, student_status, students, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams
+- **Lee (9):** courses, grades, student_status, students, svc_external_adults, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams
 - **Escribe (4):** **svc_sports_categories**, **svc_sports_disciplines**, **svc_sports_team_members**, **svc_sports_teams**
 
 ### `modules/services/sports-trips.html`
