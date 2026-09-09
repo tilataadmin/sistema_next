@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-09 13:35 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 17:32 UTC. **No editar a mano.**
 
 **400 tablas** referenciadas en **335 archivos**.
 
@@ -660,7 +660,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/academic-assignments.html` | config | GET | 244 |
 | `modules/config/annual-fees.html` | config | GET | 368 |
 | `modules/config/courses.html` | config | GET | 389 |
-| `modules/config/grades.html` | config | GET, PATCH, POST | 426, 711, 740, 800, 833 |
+| `modules/config/grades.html` | config | GET, PATCH, POST | 427, 712, 741, 801, 834 |
 | `modules/config/index.html` | config | ND | 530 |
 | `modules/config/students.html` | config | embed | 964 |
 | `modules/config/year-closure.html` | config | GET, embed | 632, 641 |
@@ -723,7 +723,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `dashboard.html` | (raíz) | embed | 445, 449, 480 |
 | `modules/config/academic-assignments.html` | config | GET | 353 |
 | `modules/config/courses.html` | config | GET, PATCH, POST | 363, 603, 624, 672, 700 |
-| `modules/config/grades.html` | config | GET | 863 |
+| `modules/config/grades.html` | config | GET | 864 |
 | `modules/config/index.html` | config | ND | 538 |
 | `modules/config/students.html` | config | GET, embed | 588, 717, 964, 1276, 1761 |
 | `modules/config/year-closure.html` | config | GET, POST | 641, 1115, 1157 |
@@ -914,7 +914,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/config/academic-areas.html` | config | embed | 291 |
 | `modules/config/academic-assignments.html` | config | embed | 244 |
 | `modules/config/annual-fees.html` | config | embed | 368 |
-| `modules/config/grades.html` | config | GET | 450 |
+| `modules/config/grades.html` | config | GET | 451 |
 | `modules/config/index.html` | config | ND | 522 |
 | `modules/config/sections.html` | config | DELETE, GET, PATCH, POST | 414, 619, 713, 815 |
 | `modules/early-alerts/dashboard.html` | early-alerts | GET | 708, 726 |
@@ -1243,7 +1243,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/budget/initialize-budget-year.html` | budget | GET | 1013 |
-| `modules/config/grades.html` | config | GET | 464 |
+| `modules/config/grades.html` | config | GET | 465 |
 | `modules/config/programs.html` | config | DELETE, GET, PATCH, POST | 330, 560, 588, 646, 676 |
 | `modules/planning/coordinator-area.html` | planning | GET | 1050 |
 | `modules/planning/coordinator-program.html` | planning | GET | 1076 |
