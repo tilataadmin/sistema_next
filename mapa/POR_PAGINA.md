@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-09 11:27 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 11:32 UTC. **No editar a mano.**
 
 **335 archivos** con acceso a datos.
 
@@ -1680,7 +1680,7 @@
 ### `modules/services/sports-trips.html`
 
 - **Módulo:** services
-- **Lee (15):** courses, students, svc_service_requests, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams, svc_sports_trip_adults, svc_sports_trip_attendance, svc_sports_trips, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
+- **Lee (16):** courses, students, svc_external_adults, svc_service_requests, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams, svc_sports_trip_adults, svc_sports_trip_attendance, svc_sports_trips, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
 - **Escribe (5):** **svc_service_requests**, **svc_sports_trip_adults**, **svc_sports_trip_attendance**, **svc_sports_trips**, **svc_trip_transport_nodes**
 
 ### `modules/services/staff-transport.html`
