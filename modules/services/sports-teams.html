@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.02.07.22.00">
+    <meta name="page-version" content="26.9.9.2">
     <title>Equipos Deportivos - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -318,14 +318,24 @@
                             </select>
                         </div>
                         <hr>
-                        <h6 class="text-secondary">Entrenador externo (opcional)</h6>
+                        <h6 class="text-secondary">Entrenador</h6>
                         <div class="mb-3">
-                            <label class="form-label">Nombre del entrenador</label>
-                            <input type="text" class="form-control" id="equipo-coach-nombre">
+                            <label class="form-label">Acompañante externo</label>
+                            <select class="form-select" id="equipo-coach-externo">
+                                <option value="">Sin entrenador asignado</option>
+                            </select>
+                            <div class="form-text">
+                                Se toma del catálogo de acompañantes externos, con su documento y EPS.
+                                Viaja con el equipo y queda preseleccionado en las salidas.
+                                <a href="external-adults.html" target="_blank">Administrar acompañantes externos</a>.
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Contacto</label>
-                            <input type="text" class="form-control" id="equipo-coach-contacto" placeholder="Teléfono o correo">
+                        <div class="mb-3" id="coach-legacy-wrap" style="display:none;">
+                            <div class="alert alert-warning py-2 small mb-0">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Este equipo tiene registrado <strong id="coach-legacy-text"></strong> como texto libre,
+                                sin documento ni EPS. Selecciona el entrenador del catálogo para reemplazarlo.
+                            </div>
                         </div>
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="equipo-activo" checked>
@@ -358,7 +368,7 @@
         let timeoutBusqueda = null;
 
         let modalDisciplina, modalCategoria, modalEquipo;
-
+        let catalogoExternos = [];
         const GENERO_LABELS = { male: 'Masculino', female: 'Femenino', mixed: 'Mixto' };
         const GENERO_BADGE = { male: 'badge-male', female: 'badge-female', mixed: 'badge-mixed' };
         const badgeEstado = a => a ? '<span class="badge badge-active">Activo</span>' : '<span class="badge badge-inactive">Inactivo</span>';
@@ -394,6 +404,8 @@
                 modalDisciplina = new bootstrap.Modal(document.getElementById('modal-disciplina'));
                 modalCategoria = new bootstrap.Modal(document.getElementById('modal-categoria'));
                 modalEquipo = new bootstrap.Modal(document.getElementById('modal-equipo'));
+
+                await cargarExternos();
 
                 await Promise.all([
                     cargarDisciplinas(),
@@ -548,7 +560,7 @@
         // ==========================================
         async function cargarEquipos() {
             try {
-                const data = await supabaseRequest('/svc_sports_teams?select=*,svc_sports_disciplines(discipline_name),svc_sports_categories(category_name,category_order)&order=svc_sports_disciplines(discipline_name).asc,svc_sports_categories(category_order).asc');
+                const data = await supabaseRequest('/svc_sports_teams?select=*,svc_sports_disciplines(discipline_name),svc_sports_categories(category_name,category_order),coach:svc_external_adults(full_name,phone)&order=svc_sports_disciplines(discipline_name).asc,svc_sports_categories(category_order).asc');
                 cacheEquipos = data || [];
 
                 // Cargar conteo de integrantes por equipo
@@ -583,7 +595,17 @@
                 const catName = eq.svc_sports_categories?.category_name || '—';
                 const genLabel = GENERO_LABELS[eq.gender] || eq.gender;
                 const genBadge = GENERO_BADGE[eq.gender] || '';
-                const coach = eq.coach_name ? `${eq.coach_name}${eq.coach_contact ? ' <small class="text-muted">(' + eq.coach_contact + ')</small>' : ''}` : '<span class="text-muted">—</span>';
+                // El catálogo manda. El texto libre se marca como pendiente de
+                // migrar, para que se vea de un vistazo qué equipos faltan.
+                let coach;
+                if (eq.coach) {
+                    coach = `${eq.coach.full_name}${eq.coach.phone ? ' <small class="text-muted">(' + eq.coach.phone + ')</small>' : ''}`;
+                } else if (eq.coach_name) {
+                    coach = `${eq.coach_name}${eq.coach_contact ? ' <small class="text-muted">(' + eq.coach_contact + ')</small>' : ''}
+                             <span class="badge bg-warning text-dark ms-1">Sin catálogo</span>`;
+                } else {
+                    coach = '<span class="text-muted">—</span>';
+                }
                 const selected = equipoSeleccionado === eq.team_id ? 'selected' : '';
 
                 return `
@@ -622,10 +644,32 @@
             selectModal.innerHTML = '<option value="">Seleccionar...</option>' + opts;
         }
 
+        // El entrenador deja de escribirse a mano: se toma del catálogo, que es
+        // el que tiene documento y EPS para la planilla de la salida.
+        async function cargarExternos() {
+            try {
+                catalogoExternos = await supabaseRequest(
+                    '/svc_external_adults?select=external_adult_id,full_name,sport_category' +
+                    '&adult_status=eq.active&order=full_name'
+                ) || [];
+            } catch (e) {
+                console.warn('No fue posible cargar acompañantes externos:', e);
+                catalogoExternos = [];
+            }
+
+            const sel = document.getElementById('equipo-coach-externo');
+            sel.innerHTML = '<option value="">Sin entrenador asignado</option>' +
+                catalogoExternos.map(e => {
+                    const detalle = e.sport_category ? ` (${e.sport_category})` : '';
+                    return `<option value="${e.external_adult_id}">${e.full_name}${detalle}</option>`;
+                }).join('');
+        }
+
         function abrirModalEquipo() {
             document.getElementById('form-equipo').reset();
             document.getElementById('equipo-id').value = '';
             document.getElementById('equipo-activo').checked = true;
+            document.getElementById('coach-legacy-wrap').style.display = 'none';
             document.getElementById('modal-equipo-title').innerHTML = '<i class="bi bi-people me-2"></i>Nuevo Equipo';
             modalEquipo.show();
         }
@@ -637,8 +681,18 @@
             document.getElementById('equipo-disciplina').value = eq.discipline_id;
             document.getElementById('equipo-categoria').value = eq.category_id;
             document.getElementById('equipo-genero').value = eq.gender;
-            document.getElementById('equipo-coach-nombre').value = eq.coach_name || '';
-            document.getElementById('equipo-coach-contacto').value = eq.coach_contact || '';
+            document.getElementById('equipo-coach-externo').value = eq.coach_external_id || '';
+
+            // Mientras queden equipos sin migrar, el nombre viejo se muestra como
+            // aviso para que sea evidente qué falta enlazar.
+            const legacyWrap = document.getElementById('coach-legacy-wrap');
+            if (!eq.coach_external_id && eq.coach_name) {
+                document.getElementById('coach-legacy-text').textContent = eq.coach_name;
+                legacyWrap.style.display = '';
+            } else {
+                legacyWrap.style.display = 'none';
+            }
+
             document.getElementById('equipo-activo').checked = eq.is_active;
             document.getElementById('modal-equipo-title').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Equipo';
             modalEquipo.show();
@@ -651,8 +705,11 @@
                 discipline_id: document.getElementById('equipo-disciplina').value,
                 category_id: document.getElementById('equipo-categoria').value,
                 gender: document.getElementById('equipo-genero').value,
-                coach_name: document.getElementById('equipo-coach-nombre').value.trim() || null,
-                coach_contact: document.getElementById('equipo-coach-contacto').value.trim() || null,
+                coach_external_id: document.getElementById('equipo-coach-externo').value || null,
+                // Al enlazar el entrenador del catálogo, el texto libre deja de
+                // tener sentido: mantener los dos invita a que se contradigan.
+                coach_name: document.getElementById('equipo-coach-externo').value ? null : undefined,
+                coach_contact: document.getElementById('equipo-coach-externo').value ? null : undefined,
                 is_active: document.getElementById('equipo-activo').checked
             };
             try {

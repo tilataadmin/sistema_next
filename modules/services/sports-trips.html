@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.7.2.2">
+    <meta name="page-version" content="26.9.9.8">
     <title>Salidas Deportivas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -171,7 +171,15 @@
                                 </div>
                                 <select class="form-select form-select-sm" id="wz_adult_workers_select" size="4" style="display:none;"></select>
                                 <div id="wz_adults_badges" class="d-flex flex-wrap gap-1 mt-1"></div>
-                                <div class="mt-1"><span class="badge bg-info" id="wz_adults_count">0 adultos seleccionados</span></div>
+
+                                <label class="form-label mt-3">Acompañantes externos</label>
+                                <div class="input-group mb-2">
+                                    <select class="form-select form-select-sm" id="wz_external_select"></select>
+                                    <button class="btn btn-outline-primary" type="button" onclick="agregarExternoDeportivas()"><i class="bi bi-plus"></i></button>
+                                </div>
+                                <div id="wz_externals_badges" class="d-flex flex-wrap gap-1 mt-1"></div>
+
+                                <div class="mt-2"><span class="badge bg-info" id="wz_adults_count">0 adultos seleccionados</span></div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Hora de salida <span class="text-danger">*</span></label>
@@ -402,6 +410,7 @@
         let catalogApprovers = [];
         let catalogMenus = [];
         let catalogWorkers = [];
+        let catalogExternalAdults = [];
         let moduleConfig = {};
         let currentSession = null;
         let currentWorker = null;
@@ -414,6 +423,10 @@
         let selectedDepartureNodes = [];
         let selectedArrivalNodes = [];
         let selectedAdultWorkers = [];
+        // Los externos van aparte porque no son workers: se llevan en su propio
+        // arreglo para no alterar los helpers compartidos con las otras dos
+        // modalidades, que sí asumen personal del colegio.
+        let selectedExternalAdults = [];
         let calculatedTransport = { rate: 0, capacity: 0, count: 0, total: 0 };
         let pendingStatusChange = { tripId: null, newStatus: null };
         let editingTripId = null;
@@ -479,11 +492,22 @@
                 catalogMenus = common.menus;
                 catalogWorkers = common.workers;
 
+                // Acompañantes externos: entrenadores contratados por servicios
+                // que viajan con el equipo pero no están en workers.
+                try {
+                    catalogExternalAdults = await supabaseRequest(
+                        '/svc_external_adults?select=external_adult_id,full_name,sport_category' +
+                        '&adult_status=eq.active&order=full_name'
+                    ) || [];
+                } catch (e) {
+                    console.warn('No fue posible cargar acompañantes externos:', e);
+                    catalogExternalAdults = [];
+                }
                 // Catálogos específicos de deportivas
                 const [disciplines, categories, teams] = await Promise.all([
                     supabaseRequest('/svc_sports_disciplines?select=discipline_id,discipline_name&is_active=eq.true&order=discipline_name'),
                     supabaseRequest('/svc_sports_categories?select=category_id,category_name,category_order&is_active=eq.true&order=category_order,category_name'),
-                    supabaseRequest('/svc_sports_teams?select=team_id,discipline_id,category_id,gender,coach_name,coach_contact,is_active&is_active=eq.true')
+                    supabaseRequest('/svc_sports_teams?select=team_id,discipline_id,category_id,gender,coach_name,coach_contact,coach_external_id,is_active&is_active=eq.true')
                 ]);
 
                 catalogDisciplines = disciplines || [];
@@ -628,6 +652,7 @@
             selectedDepartureNodes = [];
             selectedArrivalNodes = [];
             selectedAdultWorkers = [];
+            selectedExternalAdults = [];
             calculatedTransport = { rate: 0, capacity: 0, count: 0, total: 0 };
 
             document.getElementById('wz_trip_name').value = '';
@@ -648,6 +673,7 @@
             // Reset adultos
             document.getElementById('wz_adult_search').value = '';
             document.getElementById('wz_adults_badges').innerHTML = '';
+            renderExternosLocal();
             document.getElementById('wz_adults_count').textContent = '0 adultos seleccionados';
 
             // Reset equipo
@@ -733,6 +759,64 @@
                 countBadgeId: 'wz_adults_count',
                 onRemoveFn: 'removerAdultoDeportivas'
             });
+            renderExternosLocal();
+        }
+
+        // ==========================================
+        // ACOMPAÑANTES EXTERNOS
+        // ==========================================
+        function poblarSelectExternos() {
+            const sel = document.getElementById('wz_external_select');
+            const disponibles = catalogExternalAdults.filter(
+                e => !selectedExternalAdults.includes(e.external_adult_id)
+            );
+
+            if (disponibles.length === 0) {
+                sel.innerHTML = '<option value="">No hay acompañantes externos disponibles</option>';
+                return;
+            }
+
+            sel.innerHTML = '<option value="">Seleccionar acompañante externo...</option>' +
+                disponibles.map(e => {
+                    const detalle = e.sport_category ? ` (${e.sport_category})` : '';
+                    return `<option value="${e.external_adult_id}">${SvcCommons.escapeHtml(e.full_name + detalle)}</option>`;
+                }).join('');
+        }
+
+        function agregarExternoDeportivas() {
+            const sel = document.getElementById('wz_external_select');
+            const id = sel.value;
+            if (!id || selectedExternalAdults.includes(id)) return;
+
+            selectedExternalAdults.push(id);
+            renderExternosLocal();
+            calculateTransportCost();
+        }
+
+        window.removerExternoDeportivas = function (id) {
+            selectedExternalAdults = selectedExternalAdults.filter(x => x !== id);
+            renderExternosLocal();
+            calculateTransportCost();
+        };
+
+        function renderExternosLocal() {
+            const container = document.getElementById('wz_externals_badges');
+            container.innerHTML = selectedExternalAdults.map(id => {
+                const e = catalogExternalAdults.find(c => c.external_adult_id === id);
+                const nombre = e ? e.full_name : 'Acompañante';
+                return `<span class="badge bg-secondary p-2">
+                    <i class="bi bi-person-badge me-1"></i>${SvcCommons.escapeHtml(nombre)}
+                    <i class="bi bi-x-circle ms-1" style="cursor:pointer" onclick="removerExternoDeportivas('${id}')"></i>
+                </span>`;
+            }).join('');
+
+            poblarSelectExternos();
+
+            // El contador es el total que ocupa cupo en el bus, no solo el
+            // personal del colegio.
+            const total = selectedAdultWorkers.length + selectedExternalAdults.length;
+            document.getElementById('wz_adults_count').textContent =
+                `${total} adulto${total !== 1 ? 's' : ''} seleccionado${total !== 1 ? 's' : ''}`;
         }
 
         // ==========================================
@@ -782,7 +866,7 @@
 
         function calculateTransportCost() {
             const destId = document.getElementById('wz_destination').value;
-            const totalParticipants = selectedTeamMembers.length + selectedAdultWorkers.length;
+            const totalParticipants = selectedTeamMembers.length + selectedAdultWorkers.length + selectedExternalAdults.length;
 
             calculatedTransport = SvcCommons.calcularCostoTransporte({
                 destinationId: destId,
@@ -797,7 +881,7 @@
             }
 
             const numStudents = selectedTeamMembers.length;
-            const numAdults = selectedAdultWorkers.length;
+            const numAdults = selectedAdultWorkers.length + selectedExternalAdults.length;
             const mod = document.getElementById('wz_modality').value;
 
             document.getElementById('costParticipants').textContent = `${numStudents} estudiantes + ${numAdults} adultos = ${totalParticipants}`;
@@ -856,6 +940,14 @@
             selectedTeamId = null;
             selectedTeamMembers = [];
 
+            // Al cambiar de equipo, el entrenador del equipo anterior no debe
+            // quedarse pegado en la lista.
+            const previos = catalogExternalAdults
+                .filter(e => catalogTeams.some(t => t.coach_external_id === e.external_adult_id))
+                .map(e => e.external_adult_id);
+            selectedExternalAdults = selectedExternalAdults.filter(id => !previos.includes(id));
+            renderExternosLocal();
+
             if (!disciplineId || !categoryId) return;
 
             const team = catalogTeams.find(t =>
@@ -886,7 +978,24 @@
 
             document.getElementById('teamName').textContent = `${disc?.discipline_name || ''} - ${cat?.category_name || ''}`;
             document.getElementById('teamGender').textContent = `(${GENDER_LABELS[team.gender] || team.gender})`;
-            document.getElementById('teamCoach').textContent = team.coach_name ? `Entrenador: ${team.coach_name}` : 'Sin entrenador asignado';
+           // El entrenador del equipo viaja siempre: se preselecciona al elegir
+            // el equipo en vez de tener que agregarlo a mano cada vez. Se puede
+            // quitar si un día manda a un asistente.
+            const coachExterno = team.coach_external_id
+                ? catalogExternalAdults.find(e => e.external_adult_id === team.coach_external_id)
+                : null;
+
+            if (coachExterno) {
+                document.getElementById('teamCoach').textContent = `Entrenador: ${coachExterno.full_name}`;
+                if (!selectedExternalAdults.includes(coachExterno.external_adult_id)) {
+                    selectedExternalAdults.push(coachExterno.external_adult_id);
+                    renderExternosLocal();
+                }
+            } else {
+                document.getElementById('teamCoach').textContent = team.coach_name
+                    ? `Entrenador: ${team.coach_name} (sin catálogo)`
+                    : 'Sin entrenador asignado';
+            }
             document.getElementById('teamMemberCount').textContent = `${selectedTeamMembers.length} estudiantes`;
             document.getElementById('teamInfo').classList.remove('d-none');
 
@@ -974,7 +1083,7 @@
             const eventTime = document.getElementById('wz_event_time').value;
             const depTime = document.getElementById('wz_departure_time').value;
             const retTime = document.getElementById('wz_return_time').value;
-            const numAdults = selectedAdultWorkers.length;
+            const numAdults = selectedAdultWorkers.length + selectedExternalAdults.length;
             const destSel = document.getElementById('wz_destination');
             const destName = destSel.options[destSel.selectedIndex]?.text || '-';
             const specific = document.getElementById('wz_specific_destination').value;
@@ -1098,7 +1207,7 @@
                         specific_destination: document.getElementById('wz_specific_destination').value.trim() || null,
                         team_id: selectedTeamId,
                         transport_modality: document.getElementById('wz_modality').value,
-                        num_adults: selectedAdultWorkers.length,
+                        num_adults: selectedAdultWorkers.length + selectedExternalAdults.length,
                         planned_students: selectedTeamMembers.length,
                         family_notice: getFamilyNoticeHtml(),
                         frozen_transport_rate: calculatedTransport.rate,
@@ -1148,7 +1257,7 @@
                         specific_destination: document.getElementById('wz_specific_destination').value.trim() || null,
                         team_id: selectedTeamId,
                         transport_modality: document.getElementById('wz_modality').value,
-                        num_adults: selectedAdultWorkers.length,
+                        num_adults: selectedAdultWorkers.length + selectedExternalAdults.length,
                         planned_students: selectedTeamMembers.length,
                         family_notice: getFamilyNoticeHtml(),
                         trip_status: 'scheduled',
@@ -1203,6 +1312,16 @@
                     await supabaseRequest('/svc_sports_trip_adults', {
                         method: 'POST',
                         body: JSON.stringify(adultRecords)
+                    });
+                }
+
+                // 5b. Acompañantes externos. Van en la misma tabla: cada fila
+                // apunta a un worker o a un externo, nunca a los dos.
+                if (selectedExternalAdults.length > 0) {
+                    const externalRecords = selectedExternalAdults.map(eId => ({ trip_id: tripId, external_adult_id: eId }));
+                    await supabaseRequest('/svc_sports_trip_adults', {
+                        method: 'POST',
+                        body: JSON.stringify(externalRecords)
                     });
                 }
 
@@ -1322,9 +1441,10 @@
                 // Cargar adultos
                 let tripAdults = [];
                 try {
-                    tripAdults = await supabaseRequest(`/svc_sports_trip_adults?select=worker_id&trip_id=eq.${tripId}`);
+                    tripAdults = await supabaseRequest(`/svc_sports_trip_adults?select=worker_id,external_adult_id&trip_id=eq.${tripId}`);
                 } catch(e) {}
-                selectedAdultWorkers = (tripAdults || []).map(a => a.worker_id);
+                selectedAdultWorkers = (tripAdults || []).filter(a => a.worker_id).map(a => a.worker_id);
+                selectedExternalAdults = (tripAdults || []).filter(a => a.external_adult_id).map(a => a.external_adult_id);
                 renderBadgesLocal();
 
                 // Step 2: Equipo
@@ -1405,15 +1525,18 @@
             let tripAdults = [];
             try {
                 tripAdults = await supabaseRequest(
-                    `/svc_sports_trip_adults?select=worker_id,workers(worker_first_name,worker_last_name_1,worker_last_name_2)&trip_id=eq.${tripId}`
+                `/svc_sports_trip_adults?select=worker_id,external_adult_id,workers(worker_first_name,worker_last_name_1,worker_last_name_2),external:svc_external_adults(full_name)&trip_id=eq.${tripId}`
                 );
             } catch (e) { console.error(e); }
 
             const depNodes = (nodes || []).filter(n => n.node_role === 'departure').map(n => n.svc_transport_nodes?.node_name || '-');
             const arrNodes = (nodes || []).filter(n => n.node_role === 'arrival').map(n => n.svc_transport_nodes?.node_name || '-');
+            // Una fila apunta a un worker o a un externo. El externo se marca
+            // para que quede claro que no es personal del colegio.
             const adultWorkerNames = (tripAdults || []).map(a => {
-                const w = a.workers;
-                return w ? SvcCommons.workerFullName(w) : '-';
+                if (a.workers) return SvcCommons.workerFullName(a.workers);
+                if (a.external) return `${a.external.full_name} (externo)`;
+                return '-';
             });
 
             const discipline = team?.svc_sports_disciplines?.discipline_name || '-';
@@ -1610,6 +1733,11 @@
                     asistentesHoy = await SvcCommons.obtenerAsistentesHoy(docs);
                 }
                 
+                // Estado de autorización familiar. El listado no se altera: el
+                // responsable sigue decidiendo quién viaja, pero lo hace viendo
+                // qué familias respondieron y cuáles no.
+                const autorizaciones = await SvcCommons.cargarAutorizaciones('sports_trip', tripId);
+
                 let html = `
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
@@ -1618,6 +1746,10 @@
                             <strong class="text-danger">Desvinculados:</strong> ${unlinked.length}
                         </div>
                     </div>`;
+
+                if (attending.length > 0) {
+                    html += SvcCommons.avisoAutorizacionesHtml(autorizaciones, attending.length);
+                }
                 
                 if (canEdit && attending.length > 0) {
                     // Vista de banderazo con checkboxes pre-marcados según asistencia escolar
@@ -1635,6 +1767,7 @@
                                     <div>
                                         <strong>${SvcCommons.escapeHtml(studentName)}</strong>
                                         <small class="text-muted ms-2">${course}</small>
+                                        ${autorizaciones.size > 0 ? SvcCommons.distintivoAutorizacion(autorizaciones.get(s?.student_id)) : ''}
                                     </div>
                                 </div>
                             </div>`;
@@ -1747,6 +1880,7 @@
                         `/svc_sports_trips?select=*,` +
                         `destination:svc_transport_destinations(destination_name),` +
                         `team:svc_sports_teams(gender,coach_name,coach_contact,` +
+                            `coach:svc_external_adults(full_name),` +
                             `discipline:svc_sports_disciplines(discipline_name),` +
                             `category:svc_sports_categories(category_name)),` +
                         `request:svc_service_requests(` +
@@ -1769,8 +1903,10 @@
                         `&trip_id=eq.${tripId}&is_attending=eq.true`
                     ),
                     supabaseRequest(
-                        `/svc_sports_trip_adults?select=worker_id,` +
+                        `/svc_sports_trip_adults?select=worker_id,external_adult_id,` +
                         `workers(worker_first_name,worker_last_name_1,worker_last_name_2,worker_id_doc,worker_phone,` +
+                            `document_type:document_types(document_type_abbr),eps:eps_entities(eps_name)),` +
+                        `external:svc_external_adults(full_name,id_document,phone,` +
                             `document_type:document_types(document_type_abbr),eps:eps_entities(eps_name))` +
                         `&trip_id=eq.${tripId}`
                     )
@@ -1805,15 +1941,47 @@
                     .filter(a => a.students)
                     .sort((a, b) => (a.students.student_last_name_1 || '').localeCompare(b.students.student_last_name_1 || ''));
 
+                // Personal del colegio y acompañantes externos van en la misma
+                // tabla de la planilla. Los externos se normalizan a la forma que
+                // espera pdfTablaAdultos, que fue escrita para workers.
                 const profesores = (adultos || [])
-                    .filter(a => a.workers)
-                    .sort((a, b) => (a.workers.worker_last_name_1 || '').localeCompare(b.workers.worker_last_name_1 || ''));
+                    .map(a => {
+                        if (a.workers) {
+                            return {
+                                orden: a.workers.worker_last_name_1 || '',
+                                worker_first_name: a.workers.worker_first_name,
+                                worker_last_name_1: a.workers.worker_last_name_1,
+                                worker_last_name_2: a.workers.worker_last_name_2,
+                                worker_id_doc: a.workers.worker_id_doc,
+                                worker_phone: a.workers.worker_phone,
+                                document_type: a.workers.document_type,
+                                eps: a.workers.eps
+                            };
+                        }
+                        if (a.external) {
+                            return {
+                                orden: a.external.full_name || '',
+                                worker_first_name: a.external.full_name,
+                                worker_last_name_1: '',
+                                worker_last_name_2: null,
+                                worker_id_doc: a.external.id_document,
+                                worker_phone: a.external.phone,
+                                document_type: a.external.document_type,
+                                eps: a.external.eps
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.orden.localeCompare(b.orden));
 
                 // Info del equipo
                 const disciplina = team?.discipline?.discipline_name || '';
                 const categoria = team?.category?.category_name || '';
                 const genero = GENDER_LABELS[team?.gender] || '';
-                const entrenador = team?.coach_name || '';
+                // El catálogo manda; coach_name queda como respaldo mientras
+                // haya equipos sin migrar.
+                const entrenador = team?.coach?.full_name || team?.coach_name || '';
 
                 // 2. Crear PDF
                 const { jsPDF } = window.jspdf;

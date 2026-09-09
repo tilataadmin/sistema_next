@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-08 15:01 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 13:35 UTC. **No editar a mano.**
 
-**334 archivos** con acceso a datos.
+**335 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1599,6 +1599,12 @@
 - **Lee (2):** svc_support_areas, workers
 - **Escribe (1):** **svc_internal_event_services**
 
+### `modules/services/external-adults.html`
+
+- **Módulo:** services
+- **Lee (3):** document_types, eps_entities, svc_external_adults
+- **Escribe (1):** **svc_external_adults**
+
 ### `modules/services/index.html`
 
 - **Módulo:** services
@@ -1617,7 +1623,7 @@
 ### `modules/services/js/commons.js`
 
 - **Módulo:** services
-- **Lee (12):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, system_config, user_roles, users, workers
+- **Lee (13):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, svc_trip_authorizations, system_config, user_roles, users, workers
 - **Escribe (0):** —
 
 ### `modules/services/maintenance-management.html`
@@ -1668,13 +1674,13 @@
 ### `modules/services/sports-teams.html`
 
 - **Módulo:** services
-- **Lee (8):** courses, grades, student_status, students, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams
+- **Lee (9):** courses, grades, student_status, students, svc_external_adults, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams
 - **Escribe (4):** **svc_sports_categories**, **svc_sports_disciplines**, **svc_sports_team_members**, **svc_sports_teams**
 
 ### `modules/services/sports-trips.html`
 
 - **Módulo:** services
-- **Lee (15):** courses, students, svc_service_requests, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams, svc_sports_trip_adults, svc_sports_trip_attendance, svc_sports_trips, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
+- **Lee (16):** courses, students, svc_external_adults, svc_service_requests, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_team_members, svc_sports_teams, svc_sports_trip_adults, svc_sports_trip_attendance, svc_sports_trips, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, workers
 - **Escribe (5):** **svc_service_requests**, **svc_sports_trip_adults**, **svc_sports_trip_attendance**, **svc_sports_trips**, **svc_trip_transport_nodes**
 
 ### `modules/services/staff-transport.html`

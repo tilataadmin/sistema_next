@@ -1,8 +1,8 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-08 15:01 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 13:35 UTC. **No editar a mano.**
 
-**398 tablas** referenciadas en **334 archivos**.
+**400 tablas** referenciadas en **335 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
@@ -140,9 +140,11 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [budget_payments](#budgetpayments) | 4 | 1 | 3 |
 | [budget_transfers](#budgettransfers) | 4 | 2 | 1 |
 | [chart_of_accounts](#chartofaccounts) | 4 | 2 | 1 |
+| [document_types](#documenttypes) | 4 | 0 | 0 |
 | [early_alert_causes](#earlyalertcauses) | 4 | 1 | 0 |
 | [env_tree_care_log](#envtreecarelog) | 4 | 2 | 1 |
 | [env_water_readings_extraordinary](#envwaterreadingsextraordinary) | 4 | 1 | 1 |
+| [eps_entities](#epsentities) | 4 | 1 | 1 |
 | [event_attendance](#eventattendance) | 4 | 1 | 0 |
 | [hr_absence_authorizations](#hrabsenceauthorizations) | 4 | 3 | 0 |
 | [ie_improvement_links](#ieimprovementlinks) | 4 | 1 | 1 |
@@ -194,9 +196,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [contract_types](#contracttypes) | 3 | 1 | 0 |
 | [dashboard_invitations](#dashboardinvitations) | 3 | 1 | 0 |
 | [dashboards](#dashboards) | 3 | 2 | 0 |
-| [document_types](#documenttypes) | 3 | 0 | 0 |
 | [env_water_readings_monthly](#envwaterreadingsmonthly) | 3 | 1 | 0 |
-| [eps_entities](#epsentities) | 3 | 1 | 1 |
 | [event_group_enrollments](#eventgroupenrollments) | 3 | 2 | 0 |
 | [event_groups](#eventgroups) | 3 | 1 | 0 |
 | [event_institutions](#eventinstitutions) | 3 | 1 | 0 |
@@ -222,6 +222,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [sup_tax_regimes](#suptaxregimes) | 3 | 1 | 1 |
 | [survey_master_segments](#surveymastersegments) | 3 | 1 | 0 |
 | [svc_access_types](#svcaccesstypes) | 3 | 1 | 0 |
+| [svc_external_adults](#svcexternaladults) | 3 | 1 | 0 |
 | [svc_extracurricular_activity_costs](#svcextracurricularactivitycosts) | 3 | 1 | 0 |
 | [svc_extracurricular_cost_concepts](#svcextracurricularcostconcepts) | 3 | 2 | 0 |
 | [svc_internal_event_catering](#svcinternaleventcatering) | 3 | 1 | 0 |
@@ -388,6 +389,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [svc_pedagogical_trip_catering](#svcpedagogicaltripcatering) | 1 | 0 | 0 |
 | [svc_rep_trip_attendance](#svcreptripattendance) | 1 | 1 | 0 |
 | [svc_sports_trip_attendance](#svcsportstripattendance) | 1 | 1 | 0 |
+| [svc_trip_authorizations](#svctripauthorizations) | 1 | 0 | 0 |
 | [task_deliverables](#taskdeliverables) | 1 | 1 | 0 |
 | [task_documents](#taskdocuments) | 1 | 1 | 0 |
 | [task_progress_notes](#taskprogressnotes) | 1 | 1 | 0 |
@@ -514,15 +516,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/event-costs.html` | services | GET | 305 |
 | `modules/services/index.html` | services | GET | 880 |
 | `modules/services/internal-events.html` | services | GET, embed | 693, 809, 914, 936, 2091, 2097, 2528 |
-| `modules/services/js/commons.js` | services | GET | 117, 152, 169, 764 |
+| `modules/services/js/commons.js` | services | GET | 117, 152, 169, 859 |
 | `modules/services/maintenance-management.html` | services | GET, embed | 215, 238, 264, 408 |
 | `modules/services/maintenance-request.html` | services | GET, embed | 233, 592 |
 | `modules/services/my-maintenance-requests.html` | services | GET, embed | 181, 205, 318 |
-| `modules/services/pedagogical-trips.html` | services | GET, embed | 737, 1569, 2074 |
+| `modules/services/pedagogical-trips.html` | services | GET, embed | 738, 1570, 2083 |
 | `modules/services/rep-groups.html` | services | GET, embed | 253, 269 |
 | `modules/services/rep-trips.html` | services | embed | 475, 490, 1160, 1331 |
 | `modules/services/reports.html` | services | embed | 798 |
-| `modules/services/sports-trips.html` | services | embed | 1223, 1407 |
+| `modules/services/sports-trips.html` | services | embed | 1342, 1527 |
 | `modules/services/svc-meal-tickets.html` | services | GET, embed | 206, 510, 581 |
 | `modules/suppliers/manage.html` | suppliers | GET | 668 |
 | `modules/suppliers/my-suppliers.html` | suppliers | GET | 335 |
@@ -628,7 +630,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/profile/mi-perfil.html` | profile | GET | 946, 1967 |
 | `modules/security/index.html` | security | GET | 962 |
 | `modules/services/index.html` | services | GET | 1319 |
-| `modules/services/js/commons.js` | services | GET, embed | 928, 1021 |
+| `modules/services/js/commons.js` | services | GET, embed | 1023, 1116 |
 | `modules/services/student-services.html` | services | GET | 300 |
 | `modules/suppliers/index.html` | suppliers | GET | 918 |
 | `modules/surveys/dashboard.html` | surveys | GET | 644 |
@@ -702,9 +704,9 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/execute-public.html` | procedures | ND | 453 |
 | `modules/procedures/execute.html` | procedures | ND | 511 |
 | `modules/services/approvals.html` | services | embed | 476 |
-| `modules/services/pedagogical-trips.html` | services | GET, embed | 709, 998, 2068, 2244 |
+| `modules/services/pedagogical-trips.html` | services | GET, embed | 710, 999, 2077, 2253 |
 | `modules/services/rep-groups.html` | services | embed | 387, 470 |
-| `modules/services/sports-teams.html` | services | embed | 708, 792 |
+| `modules/services/sports-teams.html` | services | embed | 765, 849 |
 | `modules/services/student-services.html` | services | GET | 277 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 415 |
 | `modules/teacher-eval/monitor.html` | teacher-eval | embed | 296 |
@@ -766,8 +768,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/execute.html` | procedures | ND | 508 |
 | `modules/services/rep-groups.html` | services | embed | 387, 470 |
 | `modules/services/rep-trips.html` | services | embed | 832, 1521 |
-| `modules/services/sports-teams.html` | services | embed | 708, 792 |
-| `modules/services/sports-trips.html` | services | embed | 875, 1598 |
+| `modules/services/sports-teams.html` | services | embed | 765, 849 |
+| `modules/services/sports-trips.html` | services | embed | 967, 1721 |
 | `modules/services/student-services.html` | services | GET | 331 |
 | `modules/surveys/results.html` | surveys | embed | 1374 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 415 |
@@ -896,7 +898,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/profile/mi-perfil.html` | profile | GET | 947, 1972 |
 | `modules/services/admissions-family.html` | services | GET | 433 |
 | `modules/services/approvals.html` | services | GET | 1367, 1599 |
-| `modules/services/js/commons.js` | services | GET | 928 |
+| `modules/services/js/commons.js` | services | GET | 1023 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 217 |
 | `modules/suppliers/portal.html` | suppliers | GET | 515 |
 | `modules/suppliers/register.html` | suppliers | GET, ND | 693, 775 |
@@ -952,7 +954,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/execute-form.html` | procedures | ND | 515 |
 | `modules/procedures/execute-public.html` | procedures | ND | 455 |
 | `modules/procedures/execute.html` | procedures | ND | 513 |
-| `modules/services/pedagogical-trips.html` | services | embed | 709 |
+| `modules/services/pedagogical-trips.html` | services | embed | 710 |
 | `modules/teacher-eval/forms.html` | teacher-eval | GET, embed | 328, 382 |
 | `modules/teacher-eval/monitor.html` | teacher-eval | embed | 277, 296 |
 | `modules/teacher-eval/my-results.html` | teacher-eval | embed | 378 |
@@ -1008,8 +1010,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/id-cards.html` | security | GET, ND, PATCH | 678, 818, 866, 905, 1282 |
 | `modules/services/rep-groups.html` | services | GET, embed | 387, 470 |
 | `modules/services/rep-trips.html` | services | embed | 832, 1521 |
-| `modules/services/sports-teams.html` | services | GET, embed | 708, 792 |
-| `modules/services/sports-trips.html` | services | embed | 875, 1598 |
+| `modules/services/sports-teams.html` | services | GET, embed | 765, 849 |
+| `modules/services/sports-trips.html` | services | embed | 967, 1721 |
 | `modules/services/student-services.html` | services | GET | 359 |
 | `modules/surveys/dashboard.html` | surveys | GET | 928, 936 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | GET | 415 |
@@ -1207,7 +1209,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/new-students/new-students-report.html` | new-students | embed | 309 |
 | `modules/security/id-cards.html` | security | embed | 678 |
 | `modules/services/rep-groups.html` | services | embed | 470 |
-| `modules/services/sports-teams.html` | services | embed | 792 |
+| `modules/services/sports-teams.html` | services | embed | 849 |
 | `modules/services/student-services.html` | services | embed | 359 |
 | `modules/surveys/dashboard.html` | surveys | embed | 928, 936 |
 
@@ -1906,10 +1908,10 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | ND, PATCH | 476, 492, 508, 523, 1295, 1557 |
 | `modules/services/index.html` | services | GET | 1008, 1127, 1134 |
 | `modules/services/internal-events.html` | services | PATCH, POST, embed | 966, 1758, 1788, 1973, 2091 |
-| `modules/services/pedagogical-trips.html` | services | embed | 998, 2244 |
+| `modules/services/pedagogical-trips.html` | services | embed | 999, 2253 |
 | `modules/services/rep-trips.html` | services | PATCH, POST, embed | 490, 1027, 1066 |
 | `modules/services/reports.html` | services | ND | 798 |
-| `modules/services/sports-trips.html` | services | PATCH, POST, embed | 503, 1084, 1129 |
+| `modules/services/sports-trips.html` | services | PATCH, POST, embed | 527, 1193, 1238 |
 
 ### svc_service_type_notifications
 
@@ -1919,9 +1921,9 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | GET | 1664 |
 | `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1792, 1855, 1869, 1886 |
 | `modules/services/internal-events.html` | services | GET | 2528 |
-| `modules/services/pedagogical-trips.html` | services | GET | 1569 |
+| `modules/services/pedagogical-trips.html` | services | GET | 1570 |
 | `modules/services/rep-trips.html` | services | GET | 1160 |
-| `modules/services/sports-trips.html` | services | GET | 1223 |
+| `modules/services/sports-trips.html` | services | GET | 1342 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 266, 510 |
 
 ### training_module_roles
@@ -2040,10 +2042,10 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 476, 492, 508 |
 | `modules/services/config.html` | services | GET, PATCH, POST, embed | 1084, 1137, 1139, 1155 |
 | `modules/services/js/commons.js` | services | GET | 163 |
-| `modules/services/pedagogical-trips.html` | services | embed | 998 |
+| `modules/services/pedagogical-trips.html` | services | embed | 999 |
 | `modules/services/rep-trips.html` | services | embed | 490 |
 | `modules/services/reports.html` | services | embed | 527, 545, 563 |
-| `modules/services/sports-trips.html` | services | embed | 503 |
+| `modules/services/sports-trips.html` | services | embed | 527 |
 
 ### training_axes
 
@@ -2288,9 +2290,9 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 2109, 2281 |
 | `modules/services/config.html` | services | GET, PATCH, POST | 1318, 1375, 1377 |
 | `modules/services/js/commons.js` | services | GET | 165 |
-| `modules/services/pedagogical-trips.html` | services | embed | 2075, 2246, 2416 |
-| `modules/services/rep-trips.html` | services | embed | 1277, 1323, 1685 |
-| `modules/services/sports-trips.html` | services | embed | 1353, 1399, 1760 |
+| `modules/services/pedagogical-trips.html` | services | embed | 2084, 2255, 2425 |
+| `modules/services/rep-trips.html` | services | embed | 1277, 1323, 1695 |
+| `modules/services/sports-trips.html` | services | embed | 1473, 1519, 1894 |
 
 ### teval_periods
 
@@ -2551,7 +2553,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/config.html` | services | GET, PATCH, POST | 1392, 1448, 1450 |
 | `modules/services/internal-events.html` | services | GET, embed | 869, 1989, 2094 |
 | `modules/services/js/commons.js` | services | GET | 168 |
-| `modules/services/pedagogical-trips.html` | services | embed | 2076 |
+| `modules/services/pedagogical-trips.html` | services | embed | 2085 |
 
 ### svc_extracurricular_activities
 
@@ -2706,6 +2708,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/tax-types.html` | budget | GET | 505 |
 | `modules/budget/upload-combo.html` | budget | GET, POST | 846, 864, 932, 946 |
 
+### document_types
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/config/students.html` | config | GET | 591 |
+| `modules/hr/workers.html` | hr | GET | 1148 |
+| `modules/profile/mi-perfil.html` | profile | GET | 1975 |
+| `modules/services/external-adults.html` | services | GET, embed | 218, 252 |
+
 ### early_alert_causes
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -2732,6 +2743,15 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/environmental/extraordinary-water-readings.html` | environmental | GET, ND, POST | 777, 821, 886 |
 | `modules/environmental/water-meters.html` | environmental | GET | 767 |
 | `modules/environmental/water-reports.html` | environmental | GET | 1323 |
+
+### eps_entities
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/config/eps.html` | config | ND, PATCH, POST | 300, 504, 528, 553, 592 |
+| `modules/config/students.html` | config | GET | 592 |
+| `modules/hr/workers.html` | hr | GET | 1149 |
+| `modules/services/external-adults.html` | services | GET, embed | 219, 252 |
 
 ### event_attendance
 
@@ -2937,7 +2957,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/services/approvals.html` | services | embed | 476 |
 | `modules/services/index.html` | services | GET | 1004, 1144, 1157 |
-| `modules/services/pedagogical-trips.html` | services | DELETE, GET, ND, PATCH | 998, 1804, 1836, 2068, 2244, 2385, 2404 |
+| `modules/services/pedagogical-trips.html` | services | DELETE, GET, ND, PATCH | 999, 1805, 1837, 2077, 2253, 2394, 2413 |
 | `modules/services/reports.html` | services | GET | 412, 527 |
 
 ### svc_rep_groups
@@ -2955,8 +2975,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/community-query.html` | general-tools | embed | 782 |
 | `modules/services/approvals.html` | services | embed | 492 |
-| `modules/services/sports-teams.html` | services | GET, PATCH, POST, embed | 483, 536, 538, 551 |
-| `modules/services/sports-trips.html` | services | GET, embed | 485, 503 |
+| `modules/services/sports-teams.html` | services | GET, PATCH, POST, embed | 495, 548, 550, 563 |
+| `modules/services/sports-trips.html` | services | GET, embed | 509, 527 |
 
 ### svc_sports_disciplines
 
@@ -2964,8 +2984,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/community-query.html` | general-tools | embed | 782 |
 | `modules/services/approvals.html` | services | embed | 492 |
-| `modules/services/sports-teams.html` | services | GET, PATCH, POST, embed | 419, 468, 470, 551 |
-| `modules/services/sports-trips.html` | services | GET, embed | 484, 503 |
+| `modules/services/sports-teams.html` | services | GET, PATCH, POST, embed | 431, 480, 482, 563 |
+| `modules/services/sports-trips.html` | services | GET, embed | 508, 527 |
 
 ### svc_sports_teams
 
@@ -2973,8 +2993,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/general-tools/community-query.html` | general-tools | embed | 782 |
 | `modules/services/approvals.html` | services | embed | 492 |
-| `modules/services/sports-teams.html` | services | GET, PATCH, POST | 551, 660, 662 |
-| `modules/services/sports-trips.html` | services | GET, embed | 486, 503 |
+| `modules/services/sports-teams.html` | services | GET, PATCH, POST | 563, 717, 719 |
+| `modules/services/sports-trips.html` | services | GET, embed | 510, 527 |
 
 ### svc_sports_trips
 
@@ -2983,16 +3003,16 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 492 |
 | `modules/services/index.html` | services | GET | 1005, 1145, 1160 |
 | `modules/services/reports.html` | services | GET | 415, 545 |
-| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 503, 1113, 1165, 1547, 1746 |
+| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 527, 1222, 1274, 1670, 1879 |
 
 ### svc_trip_transport_nodes
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2109, 2281 |
-| `modules/services/pedagogical-trips.html` | services | GET | 2075, 2246, 2416 |
-| `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1061, 1131, 1277, 1323, 1685 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1122, 1194, 1353, 1399, 1760 |
+| `modules/services/pedagogical-trips.html` | services | GET | 2084, 2255, 2425 |
+| `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1061, 1131, 1277, 1323, 1695 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1231, 1303, 1473, 1519, 1894 |
 
 ### teval_form_questions
 
@@ -3177,14 +3197,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/indicators/dashboard-edit.html` | indicators | DELETE, GET, PATCH | 492, 563, 1000, 1311, 1381, 1409, 1444 |
 | `modules/indicators/dashboard.html` | indicators | GET, embed | 575, 586 |
 
-### document_types
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/config/students.html` | config | GET | 591 |
-| `modules/hr/workers.html` | hr | GET | 1148 |
-| `modules/profile/mi-perfil.html` | profile | GET | 1975 |
-
 ### env_water_readings_monthly
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -3192,14 +3204,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/environmental/monthly-water-readings.html` | environmental | DELETE, GET, PATCH, POST | 642, 826, 838, 880 |
 | `modules/environmental/water-meters.html` | environmental | GET | 759 |
 | `modules/environmental/water-reports.html` | environmental | GET | 1250 |
-
-### eps_entities
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/config/eps.html` | config | ND, PATCH, POST | 300, 504, 528, 553, 592 |
-| `modules/config/students.html` | config | GET | 592 |
-| `modules/hr/workers.html` | hr | GET | 1149 |
 
 ### event_group_enrollments
 
@@ -3401,6 +3405,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/config.html` | services | GET, PATCH, POST | 1604, 1658, 1660 |
 | `modules/services/student-services.html` | services | GET | 291 |
 
+### svc_external_adults
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/services/external-adults.html` | services | GET, PATCH, POST | 252, 396, 402 |
+| `modules/services/sports-teams.html` | services | GET, embed | 563, 651 |
+| `modules/services/sports-trips.html` | services | GET, embed | 498, 1527 |
+
 ### svc_extracurricular_activity_costs
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -3454,7 +3466,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | embed | 508 |
-| `modules/services/rep-trips.html` | services | GET, PATCH, POST | 490, 1055, 1102, 1470, 1672 |
+| `modules/services/rep-trips.html` | services | GET, PATCH, POST | 490, 1055, 1102, 1470, 1682 |
 | `modules/services/reports.html` | services | GET | 418, 563 |
 
 ### svc_sports_team_members
@@ -3462,8 +3474,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/general-tools/community-query.html` | general-tools | GET | 782 |
-| `modules/services/sports-teams.html` | services | GET, PATCH, POST | 555, 708, 840, 845, 870, 884 |
-| `modules/services/sports-trips.html` | services | GET | 875 |
+| `modules/services/sports-teams.html` | services | GET, PATCH, POST | 567, 765, 897, 902, 927, 941 |
+| `modules/services/sports-trips.html` | services | GET | 967 |
 
 ### svc_student_year_services
 
@@ -3903,21 +3915,21 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | embed | 476 |
-| `modules/services/pedagogical-trips.html` | services | embed | 998, 2068, 2244 |
+| `modules/services/pedagogical-trips.html` | services | embed | 999, 2077, 2253 |
 
 ### svc_rep_trip_adults
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2300 |
-| `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1062, 1140, 1258, 1331, 1696 |
+| `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1062, 1140, 1258, 1331, 1706 |
 
 ### svc_sports_trip_adults
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2130 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1125, 1203, 1325, 1407, 1771 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1234, 1312, 1322, 1444, 1527, 1905 |
 
 ### svc_staff_transport_daily_records
 
@@ -4473,31 +4485,37 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/pedagogical-trips.html` | services | GET | 2074, 2245, 2427 |
+| `modules/services/pedagogical-trips.html` | services | GET | 2083, 2254, 2436 |
 
 ### svc_pedagogical_trip_attendance
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/pedagogical-trips.html` | services | GET | 1855, 2420 |
+| `modules/services/pedagogical-trips.html` | services | GET | 1856, 2429 |
 
 ### svc_pedagogical_trip_catering
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/pedagogical-trips.html` | services | GET | 2076, 2247 |
+| `modules/services/pedagogical-trips.html` | services | GET | 2085, 2256 |
 
 ### svc_rep_trip_attendance
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/rep-trips.html` | services | DELETE, GET, PATCH, POST | 1060, 1116, 1466, 1521, 1624, 1647, 1689 |
+| `modules/services/rep-trips.html` | services | DELETE, GET, PATCH, POST | 1060, 1116, 1466, 1521, 1634, 1657, 1699 |
 
 ### svc_sports_trip_attendance
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1119, 1179, 1543, 1598, 1698, 1720, 1764 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1228, 1288, 1666, 1721, 1831, 1853, 1898 |
+
+### svc_trip_authorizations
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/services/js/commons.js` | services | GET | 679 |
 
 ### task_deliverables
 
