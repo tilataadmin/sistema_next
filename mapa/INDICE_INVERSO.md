@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-09 11:39 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-09 11:45 UTC. **No editar a mano.**
 
 **400 tablas** referenciadas en **335 archivos**.
 
@@ -524,7 +524,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-groups.html` | services | GET, embed | 253, 269 |
 | `modules/services/rep-trips.html` | services | embed | 475, 490, 1160, 1331 |
 | `modules/services/reports.html` | services | embed | 798 |
-| `modules/services/sports-trips.html` | services | embed | 1307, 1491 |
+| `modules/services/sports-trips.html` | services | embed | 1317, 1502 |
 | `modules/services/svc-meal-tickets.html` | services | GET, embed | 206, 510, 581 |
 | `modules/suppliers/manage.html` | suppliers | GET | 668 |
 | `modules/suppliers/my-suppliers.html` | suppliers | GET | 335 |
@@ -769,7 +769,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-groups.html` | services | embed | 387, 470 |
 | `modules/services/rep-trips.html` | services | embed | 832, 1521 |
 | `modules/services/sports-teams.html` | services | embed | 708, 792 |
-| `modules/services/sports-trips.html` | services | embed | 959, 1682 |
+| `modules/services/sports-trips.html` | services | embed | 959, 1693 |
 | `modules/services/student-services.html` | services | GET | 331 |
 | `modules/surveys/results.html` | surveys | embed | 1374 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 415 |
@@ -1011,7 +1011,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-groups.html` | services | GET, embed | 387, 470 |
 | `modules/services/rep-trips.html` | services | embed | 832, 1521 |
 | `modules/services/sports-teams.html` | services | GET, embed | 708, 792 |
-| `modules/services/sports-trips.html` | services | embed | 959, 1682 |
+| `modules/services/sports-trips.html` | services | embed | 959, 1693 |
 | `modules/services/student-services.html` | services | GET | 359 |
 | `modules/surveys/dashboard.html` | surveys | GET | 928, 936 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | GET | 415 |
@@ -1923,7 +1923,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/internal-events.html` | services | GET | 2528 |
 | `modules/services/pedagogical-trips.html` | services | GET | 1570 |
 | `modules/services/rep-trips.html` | services | GET | 1160 |
-| `modules/services/sports-trips.html` | services | GET | 1307 |
+| `modules/services/sports-trips.html` | services | GET | 1317 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 266, 510 |
 
 ### training_module_roles
@@ -2292,7 +2292,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/js/commons.js` | services | GET | 165 |
 | `modules/services/pedagogical-trips.html` | services | embed | 2084, 2255, 2425 |
 | `modules/services/rep-trips.html` | services | embed | 1277, 1323, 1695 |
-| `modules/services/sports-trips.html` | services | embed | 1437, 1483, 1854 |
+| `modules/services/sports-trips.html` | services | embed | 1448, 1494, 1865 |
 
 ### teval_periods
 
@@ -3003,7 +3003,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 492 |
 | `modules/services/index.html` | services | GET | 1005, 1145, 1160 |
 | `modules/services/reports.html` | services | GET | 415, 545 |
-| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 527, 1197, 1249, 1631, 1840 |
+| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 527, 1197, 1249, 1642, 1851 |
 
 ### svc_trip_transport_nodes
 
@@ -3012,7 +3012,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | GET | 2109, 2281 |
 | `modules/services/pedagogical-trips.html` | services | GET | 2084, 2255, 2425 |
 | `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1061, 1131, 1277, 1323, 1695 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1206, 1278, 1437, 1483, 1854 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1206, 1278, 1448, 1494, 1865 |
 
 ### teval_form_questions
 
@@ -3928,7 +3928,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2130 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1209, 1287, 1409, 1491, 1865 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1209, 1287, 1297, 1419, 1502, 1876 |
 
 ### svc_staff_transport_daily_records
 
@@ -4508,7 +4508,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1203, 1263, 1627, 1682, 1792, 1814, 1858 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1203, 1263, 1638, 1693, 1803, 1825, 1869 |
 
 ### svc_trip_authorizations
 
