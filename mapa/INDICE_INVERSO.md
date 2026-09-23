@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-23 17:53 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 18:37 UTC. **No editar a mano.**
 
 **401 tablas** referenciadas en **336 archivos**.
 
@@ -511,7 +511,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/id-cards.html` | security | GET, ND, PATCH | 573, 815, 857, 896, 1282 |
 | `modules/security/ticket-categories.html` | security | GET | 124 |
 | `modules/security/user-roles.html` | security | GET | 466 |
-| `modules/services/admissions-family.html` | services | GET, embed | 332, 408, 440, 965 |
+| `modules/services/admissions-family.html` | services | GET, embed | 338, 414, 446, 955 |
 | `modules/services/approvals.html` | services | GET, embed | 408, 476, 492, 508, 523, 1653, 1664, 1809, 2130, 2300 |
 | `modules/services/config.html` | services | GET, embed | 1675, 1710, 1792, 2052 |
 | `modules/services/event-costs.html` | services | GET | 305 |
@@ -826,7 +826,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/ticket-management.html` | security | GET, embed | 225, 456, 568 |
 | `modules/security/user-roles.html` | security | GET | 306 |
 | `modules/security/users.html` | security | GET, PATCH, POST | 657, 1126, 1151, 1209, 1313 |
-| `modules/services/admissions-family.html` | services | ND, embed | 316, 486, 489 |
+| `modules/services/admissions-family.html` | services | ND, embed | 322, 492, 495 |
 | `modules/services/index.html` | services | GET, ND | 634, 683, 872, 1215 |
 | `modules/services/internal-events.html` | services | embed | 967, 2092 |
 | `modules/services/js/commons.js` | services | GET | 112, 145 |
@@ -897,7 +897,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/execute-public.html` | procedures | GET | 301 |
 | `modules/procedures/track-public.html` | procedures | GET | 229 |
 | `modules/profile/mi-perfil.html` | profile | GET | 947, 1972 |
-| `modules/services/admissions-family.html` | services | GET | 433 |
+| `modules/services/admissions-family.html` | services | GET | 439 |
 | `modules/services/approvals.html` | services | GET | 1367, 1599 |
 | `modules/services/js/commons.js` | services | GET | 1023 |
 | `modules/services/js/consumption-adjust.js` | services | GET | 395 |
@@ -1051,7 +1051,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/ticket-management.html` | security | GET | 735 |
 | `modules/security/user-roles.html` | security | DELETE, GET, POST | 341, 452, 632, 641 |
 | `modules/security/users.html` | security | DELETE, GET, POST | 1176, 1190, 1216 |
-| `modules/services/admissions-family.html` | services | embed | 316 |
+| `modules/services/admissions-family.html` | services | embed | 322 |
 | `modules/services/index.html` | services | GET, embed | 634, 683, 955, 1215 |
 | `modules/services/js/commons.js` | services | GET | 138 |
 | `modules/suppliers/index.html` | suppliers | GET, embed | 454, 677, 817 |
@@ -1090,7 +1090,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/security-overview.html` | security | GET | 194 |
 | `modules/security/user-roles.html` | security | GET | 327 |
 | `modules/security/users.html` | security | GET | 646 |
-| `modules/services/admissions-family.html` | services | embed | 316 |
+| `modules/services/admissions-family.html` | services | embed | 322 |
 | `modules/services/index.html` | services | embed | 634, 683, 955, 1215 |
 | `modules/suppliers/index.html` | suppliers | embed | 454, 677, 817 |
 | `modules/surveys/index.html` | surveys | embed | 589, 602, 755, 891 |
@@ -1122,7 +1122,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/role-permissions.html` | security | GET | 485 |
 | `modules/security/security-overview.html` | security | GET | 193 |
 | `modules/security/ticket-management.html` | security | GET | 232 |
-| `modules/services/admissions-family.html` | services | embed | 316 |
+| `modules/services/admissions-family.html` | services | embed | 322 |
 | `modules/services/index.html` | services | embed | 1215 |
 | `modules/suppliers/index.html` | suppliers | embed | 817 |
 | `modules/surveys/index.html` | surveys | embed | 602, 891 |
@@ -1152,7 +1152,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/role-permissions.html` | security | DELETE, GET, POST | 510, 642, 818, 827, 1040, 1049 |
 | `modules/security/security-overview.html` | security | GET | 197 |
 | `modules/security/ticket-management.html` | security | GET | 723 |
-| `modules/services/admissions-family.html` | services | embed | 316 |
+| `modules/services/admissions-family.html` | services | embed | 322 |
 | `modules/services/index.html` | services | embed | 1215 |
 | `modules/services/js/commons.js` | services | GET | 132 |
 | `modules/suppliers/index.html` | suppliers | embed | 817 |
@@ -1236,7 +1236,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/report-view.html` | budget | GET | 608 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1033 |
 | `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
-| `modules/services/admissions-family.html` | services | GET, PATCH | 440, 666, 754, 927 |
+| `modules/services/admissions-family.html` | services | GET, PATCH | 446, 672, 760 |
 | `modules/services/approvals.html` | services | GET, PATCH | 1376, 1548 |
 | `modules/services/svc-meal-tickets.html` | services | GET, PATCH, embed | 240, 253, 473, 581, 584 |
 
@@ -1545,7 +1545,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/close-overruns.html` | budget | ND, PATCH | 586, 819 |
 | `modules/budget/execution-request.html` | budget | POST | 2041, 2150 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
-| `modules/services/admissions-family.html` | services | PATCH, POST | 654, 740, 911 |
+| `modules/services/admissions-family.html` | services | PATCH, POST | 660, 746 |
 | `modules/services/approvals.html` | services | POST | 1539 |
 | `modules/services/svc-meal-tickets.html` | services | ND, POST | 458, 581, 584 |
 
@@ -1919,7 +1919,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/admissions-family.html` | services | GET | 335, 965 |
+| `modules/services/admissions-family.html` | services | GET | 341, 955 |
 | `modules/services/approvals.html` | services | GET | 1664 |
 | `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1792, 1855, 1869, 1886 |
 | `modules/services/internal-events.html` | services | GET | 2620 |
@@ -2278,7 +2278,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/admissions-family.html` | services | GET | 421 |
+| `modules/services/admissions-family.html` | services | GET | 427 |
 | `modules/services/approvals.html` | services | GET | 439 |
 | `modules/services/config.html` | services | GET, PATCH | 1498, 1576 |
 | `modules/services/internal-events.html` | services | GET | 790 |
@@ -4458,7 +4458,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/admissions-family.html` | services | ND, PATCH, POST | 486, 489, 689, 728, 897 |
+| `modules/services/admissions-family.html` | services | ND, PATCH, POST | 492, 495, 695, 734, 918 |
 
 ### svc_consumption_adjustments
 
