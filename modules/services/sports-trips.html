@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.23.1">
+    <meta name="page-version" content="26.9.23.2">
     <title>Salidas Deportivas - SchoolNet</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -395,7 +395,7 @@
     <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     <script src="js/commons.js"></script>
-
+    <script src="js/consumption-adjust.js"></script>
     <script>
         // ==========================================
         // GLOBAL STATE
@@ -1601,27 +1601,75 @@
                     </div>
                 </div>`;
 
-            // Catering section
+            // Catering section (solicitado vs. real)
+            let historialAjusteHTML = '';
             if (trip.catering_menu_id) {
                 const menuInfo = catalogMenus.find(m => m.menu_id === trip.catering_menu_id);
                 const menuName = menuInfo ? menuInfo.menu_name : 'Menú no disponible';
+                const cantSolicitada = trip.catering_quantity || 0;
+                const cateringAjustado = trip.catering_delivered_quantity !== null && trip.catering_delivered_quantity !== undefined;
+                const cantReal = cateringAjustado ? trip.catering_delivered_quantity : cantSolicitada;
+                const valorReal = cateringAjustado ? Number(trip.total_catering_delivered_value || 0) : Number(trip.total_catering_value || 0);
+                const notaSolicitado = (cateringAjustado && cantReal !== cantSolicitada)
+                    ? `<div class="small text-secondary fst-italic">Solicitado: ${cantSolicitada} porciones — $${SvcCommons.formatNumber(trip.total_catering_value || 0)}</div>`
+                    : '';
+
+                const [disponibilidadAjuste, historial] = await Promise.all([
+                    ConsumptionAdjust.canAdjust({
+                        userId: currentSession.user.user_id,
+                        serviceDate: trip.trip_date,
+                        isApproved: req?.request_status === 'approved',
+                        isClosedStatus: ['suspended', 'cancelled'].includes(trip.trip_status)
+                    }),
+                    ConsumptionAdjust.renderHistory(SERVICE_TYPE_AJUSTE, tripId)
+                ]);
+                historialAjusteHTML = historial;
+
+                detalleAjusteActual = {
+                    tripId: tripId,
+                    title: trip.trip_name,
+                    subtitle: SvcCommons.formatDateDisplay(trip.trip_date),
+                    deadline: disponibilidadAjuste.deadline,
+                    concepts: [{
+                        concept: 'catering',
+                        label: `Refrigerio — ${menuName}`,
+                        unitPrice: trip.frozen_catering_unit_price,
+                        requested: cantSolicitada,
+                        current: cantReal
+                    }]
+                };
+
+                const botonAjusteHTML = disponibilidadAjuste.allowed
+                    ? `<div class="col-12 mt-2"><button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirAjusteConsumo()"><i class="bi bi-sliders me-1"></i>Ajustar consumo</button><span class="small text-muted ms-2">Disponible hasta el ${ConsumptionAdjust.formatDate(disponibilidadAjuste.deadline)}</span></div>`
+                    : '';
+
                 html += `
                     <div class="detail-section">
                         <h6><i class="bi bi-cup-straw me-1"></i>Refrigerios</h6>
                         <div class="row g-2">
                             <div class="col-md-4"><div class="detail-label">Menú</div><div class="detail-value">${SvcCommons.escapeHtml(menuName)}</div></div>
-                            <div class="col-md-4"><div class="detail-label">Cantidad</div><div class="detail-value">${trip.catering_quantity || 0} porciones</div></div>
-                            <div class="col-md-4"><div class="detail-label">Valor refrigerios</div><div class="cost-total">$${SvcCommons.formatNumber(trip.total_catering_value || 0)}</div></div>
+                            <div class="col-md-4"><div class="detail-label">Cantidad</div><div class="detail-value">${cantReal} porciones</div></div>
+                            <div class="col-md-4"><div class="detail-label">Valor refrigerios</div><div class="cost-total">$${SvcCommons.formatNumber(valorReal)}</div></div>
+                            ${notaSolicitado ? `<div class="col-12">${notaSolicitado}</div>` : ''}
+                            ${botonAjusteHTML}
                         </div>
                     </div>`;
             }
 
-            // Cost total
+            // Cost total (con el valor real de refrigerios si hubo ajuste)
+            const valorRefrigeriosEfectivo = Number(trip.total_catering_delivered_value ?? trip.total_catering_value ?? 0);
             html += `
                 <div class="detail-section">
                     <h6><i class="bi bi-calculator me-1"></i>Costo Total</h6>
-                    ${SvcCommons.costSummaryHtml(trip.total_transport_value || 0, trip.total_catering_value || 0)}
+                    ${SvcCommons.costSummaryHtml(trip.total_transport_value || 0, valorRefrigeriosEfectivo)}
                 </div>`;
+
+            if (historialAjusteHTML) {
+                html += `
+                <div class="detail-section">
+                    <div class="row g-2">${historialAjusteHTML}</div>
+                </div>`;
+            }
 
             document.getElementById('detailTitle').innerHTML = `<i class="bi bi-trophy me-2"></i>${SvcCommons.escapeHtml(trip.trip_name)}`;
             document.getElementById('detailBody').innerHTML = html;
@@ -1673,6 +1721,39 @@
         // ==========================================
         // STATUS CHANGES
         // ==========================================
+        // ==========================================
+        // AJUSTE DE CONSUMO (refrigerios)
+        // ==========================================
+        const SERVICE_TYPE_AJUSTE = 'sports_trip';
+        let detalleAjusteActual = null;
+
+        function abrirAjusteConsumo() {
+            if (!detalleAjusteActual) return;
+            const d = detalleAjusteActual;
+            const abrir = () => ConsumptionAdjust.open({
+                serviceType: SERVICE_TYPE_AJUSTE,
+                serviceId: d.tripId,
+                userId: currentSession.user.user_id,
+                title: d.title,
+                subtitle: d.subtitle,
+                deadline: d.deadline,
+                concepts: d.concepts,
+                onClosed: async ({ saved }) => {
+                    if (saved) await loadTrips();
+                    await openTripDetail(d.tripId);
+                }
+            });
+
+            const modalDetalleEl = document.getElementById('tripDetailModal');
+            const modalDetalle = bootstrap.Modal.getInstance(modalDetalleEl);
+            if (modalDetalle && modalDetalleEl.classList.contains('show')) {
+                modalDetalleEl.addEventListener('hidden.bs.modal', abrir, { once: true });
+                modalDetalle.hide();
+            } else {
+                abrir();
+            }
+        }
+
         async function changeStatus(tripId, newStatus) {
             if (newStatus === 'in_progress') {
                 if (!confirm('¿Confirma que los vehículos están saliendo? Esta acción marca el inicio de la salida.')) return;
