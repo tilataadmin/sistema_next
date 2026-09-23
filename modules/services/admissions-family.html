@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.23.2">
-    <title>Atención a Familias por Admisiones - SchoolNet</title>
+    <meta name="page-version" content="26.9.23.3">
+    <title>Atención a Familias por Admisiones </title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -497,6 +497,7 @@
 
                 const data = await supabaseRequest(query);
                 cacheSolicitudes = data || [];
+                await calcularDisponibilidadAjuste();
                 renderSolicitudes();
             } catch (error) {
                 console.error('❌ Error cargando solicitudes:', error);
@@ -532,6 +533,9 @@
                 if (puedeEntregar) {
                     acciones += `<button class="btn btn-sm btn-outline-success" onclick="abrirModalEntrega('${s.service_id}')" title="Marcar como entregado"><i class="bi bi-check-circle"></i></button>`;
                 }
+                if (s._ajuste && s._ajuste.allowed) {
+                    acciones += `<button class="btn btn-sm btn-outline-primary ms-1" onclick="abrirAjusteAdmisiones('${s.service_id}')" title="Ajustar consumo (hasta ${ConsumptionAdjust.formatDate(s._ajuste.deadline)})"><i class="bi bi-sliders"></i></button>`;
+                }
                 if (!acciones) {
                     acciones = '<span class="text-muted"><i class="bi bi-lock"></i></span>';
                 }
@@ -561,6 +565,60 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        // ==========================================
+        // AJUSTE DE CONSUMO POSTERIOR A LA ENTREGA
+        // ==========================================
+        async function calcularDisponibilidadAjuste() {
+            const entregadas = cacheSolicitudes.filter(s => s.service_status === 'delivered');
+            if (entregadas.length === 0) return;
+            if (!(await ConsumptionAdjust.hasPermission(currentUser.user_id))) return;
+
+            await Promise.all(entregadas.map(async s => {
+                s._ajuste = await ConsumptionAdjust.canAdjust({
+                    userId: currentUser.user_id,
+                    serviceDate: s.service_date,
+                    isApproved: true,
+                    isClosedStatus: false
+                });
+            }));
+        }
+
+        function abrirAjusteAdmisiones(serviceId) {
+            const s = cacheSolicitudes.find(x => x.service_id === serviceId);
+            if (!s || !s._ajuste || !s._ajuste.allowed) return;
+
+            const conceptos = [
+                {
+                    concept: 'snack',
+                    label: 'Refrigerios',
+                    unitPrice: Number(s.snack_unit_price || configSnackPrice),
+                    requested: s.snack_quantity || 0,
+                    current: s.delivered_snack_quantity ?? (s.snack_quantity || 0)
+                },
+                {
+                    concept: 'lunch',
+                    label: 'Almuerzos',
+                    unitPrice: Number(s.lunch_unit_price || configLunchPrice),
+                    requested: s.lunch_quantity || 0,
+                    current: s.delivered_lunch_quantity ?? (s.lunch_quantity || 0)
+                }
+            ].filter(c => c.unitPrice > 0);
+
+            const fechaObj = new Date(s.service_date + 'T00:00:00');
+            ConsumptionAdjust.open({
+                serviceType: 'admissions_family',
+                serviceId: s.service_id,
+                userId: currentUser.user_id,
+                title: s.description || 'Atención a familias',
+                subtitle: fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+                deadline: s._ajuste.deadline,
+                concepts: conceptos,
+                onClosed: async ({ saved }) => {
+                    if (saved) await cargarSolicitudes();
+                }
+            });
         }
 
         function obtenerBadgeEstado(status) {
