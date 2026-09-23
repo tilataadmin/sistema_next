@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-23 14:24 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 18:50 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -41,16 +41,19 @@
 
 ## Funciones de base de datos invocadas
 
-**14 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
+**17 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
 
 | Función | Archivos |
 |---|---:|
 | get_workers_with_permission | 3 |
 | pln_create_planner_cycle | 2 |
+| adjust_service_consumption | 2 |
 | fn_extracurricular_enroll | 1 |
 | pln_create_planner_criterion | 1 |
 | pln_create_unit_cycle | 1 |
+| budget_adjust_executed | 1 |
 | list_trip_authorizations | 1 |
+| svc_adjustment_deadline | 1 |
 | transition_trip_statuses | 1 |
 | calculate_transport_cost | 1 |
 | update_pedagogical_trip | 1 |

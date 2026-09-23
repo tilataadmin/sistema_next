@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-23 14:24 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 18:50 UTC. **No editar a mano.**
 
-**335 archivos** con acceso a datos.
+**336 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1569,9 +1569,10 @@
 ### `modules/services/admissions-family.html`
 
 - **Módulo:** services
-- **Lee (10):** budget_assignments, permissions, role_permissions, roles, svc_module_config, svc_service_type_notifications, system_config, user_roles, users, workers
-- **Escribe (3):** **budget_assignments**, **execution_requests**, **svc_admissions_family_services**
+- **Lee (11):** budget_assignments, execution_requests, permissions, role_permissions, roles, svc_module_config, svc_service_type_notifications, system_config, user_roles, users, workers
+- **Escribe (2):** **execution_requests**, **svc_admissions_family_services**
 - **Sin determinar (2):** svc_admissions_family_services, users
+- **Funciones (2):** adjust_service_consumption, budget_adjust_executed
 
 ### `modules/services/approvals.html`
 
@@ -1625,6 +1626,13 @@
 - **Módulo:** services
 - **Lee (13):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, svc_trip_authorizations, system_config, user_roles, users, workers
 - **Escribe (0):** —
+
+### `modules/services/js/consumption-adjust.js`
+
+- **Módulo:** services
+- **Lee (2):** svc_consumption_adjustments, system_config
+- **Escribe (0):** —
+- **Funciones (2):** adjust_service_consumption, svc_adjustment_deadline
 
 ### `modules/services/maintenance-management.html`
 

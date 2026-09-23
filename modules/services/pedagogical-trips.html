@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.8.2">
+    <meta name="page-version" content="26.9.23.3">
     <title>Salidas Pedagógicas - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -588,6 +588,7 @@
     <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
     <script src="../../assets/js/config.js"></script>
     <script src="js/commons.js"></script>
+    <script src="js/consumption-adjust.js"></script>
 
     <script>
         // ==========================================
@@ -2084,7 +2085,7 @@
                     ),
                     supabaseRequest(`/svc_pedagogical_trip_adults?select=worker_id,workers(worker_first_name,worker_last_name_1,worker_last_name_2)&trip_id=eq.${tripId}`),
                     supabaseRequest(`/svc_trip_transport_nodes?select=node_id,node_role,svc_transport_nodes(node_name)&service_type=eq.pedagogical_trip&trip_id=eq.${tripId}&order=node_role,node_order`),
-                    supabaseRequest(`/svc_pedagogical_trip_catering?select=menu_id,quantity,frozen_unit_price,total_value,display_order,menu:svc_catering_menus(menu_name)&trip_id=eq.${tripId}&order=display_order`)
+                    supabaseRequest(`/svc_pedagogical_trip_catering?select=id,menu_id,quantity,frozen_unit_price,total_value,delivered_quantity,delivered_total_value,display_order,menu:svc_catering_menus(menu_name)&trip_id=eq.${tripId}&order=display_order`)
                 ]);
 
                 if (!salida || salida.length === 0) { showMessage('No se encontró la salida', 'danger'); return; }
@@ -2130,32 +2131,42 @@
                 const aprobador = datos.request?.workers ? `${datos.request.workers.worker_first_name} ${datos.request.workers.worker_last_name_1}` : 'N/A';
                 const estadoSolicitud = datos.request?.request_status || 'N/A';
 
-                // Refrigerios desde nueva tabla
+                // Refrigerios desde tabla de líneas (solicitado vs. real)
                 const refrigeriosDetalle = (tripCatering || []).sort((a, b) => (a.display_order || 1) - (b.display_order || 1));
                 let refrigeriosHTML = 'No incluye';
                 if (refrigeriosDetalle.length > 0) {
                     refrigeriosHTML = refrigeriosDetalle.map(r => {
                         const nombre = r.menu?.menu_name || 'Menú';
-                        return `<div>• ${SvcCommons.escapeHtml(nombre)}: ${r.quantity} × $${SvcCommons.formatNumber(r.frozen_unit_price)} = <strong>$${SvcCommons.formatNumber(r.total_value)}</strong></div>`;
+                        const ajustada = r.delivered_quantity !== null && r.delivered_quantity !== undefined;
+                        const cant = ajustada ? r.delivered_quantity : r.quantity;
+                        const total = ajustada ? r.delivered_total_value : r.total_value;
+                        const nota = (ajustada && cant !== r.quantity) ? ` <span class="text-secondary fst-italic">(solicitado: ${r.quantity})</span>` : '';
+                        return `<div>• ${SvcCommons.escapeHtml(nombre)}: ${cant} × $${SvcCommons.formatNumber(r.frozen_unit_price)} = <strong>$${SvcCommons.formatNumber(total)}</strong>${nota}</div>`;
                     }).join('');
                 }
+                const valorRefrigerios = Number(datos.total_catering_delivered_value ?? datos.total_catering_value ?? 0);
 
-                // Entradas diferenciadas
+                // Entradas diferenciadas (solicitado: planeados / adultos; real: ajuste si existe)
                 let entradasHTML = 'No incluye';
-                const tieneEntEst = datos.entrance_value_students !== null && datos.entrance_value_students !== undefined && datos.entrance_value_students > 0;
-                const tieneEntAdu = datos.entrance_value_adults !== null && datos.entrance_value_adults !== undefined && datos.entrance_value_adults > 0;
+                const tieneEntEst = Number(datos.entrance_value_students) > 0;
+                const tieneEntAdu = Number(datos.entrance_value_adults) > 0;
+                const entEstAjustada = datos.entrance_delivered_students !== null && datos.entrance_delivered_students !== undefined;
+                const entAduAjustada = datos.entrance_delivered_adults !== null && datos.entrance_delivered_adults !== undefined;
                 if (tieneEntEst || tieneEntAdu) {
                     const lineas = [];
                     if (tieneEntEst) {
-                        const subEst = datos.entrance_value_students * (datos.actual_students || datos.planned_students || 0);
-                        lineas.push(`<div>• Estudiantes: $${SvcCommons.formatNumber(datos.entrance_value_students)} c/u = <strong>$${SvcCommons.formatNumber(subEst)}</strong></div>`);
+                        const cantEst = entEstAjustada ? datos.entrance_delivered_students : (datos.planned_students || 0);
+                        const notaEst = (entEstAjustada && cantEst !== (datos.planned_students || 0)) ? ` <span class="text-secondary fst-italic">(solicitado: ${datos.planned_students || 0})</span>` : '';
+                        lineas.push(`<div>• Estudiantes: ${cantEst} × $${SvcCommons.formatNumber(datos.entrance_value_students)} = <strong>$${SvcCommons.formatNumber(cantEst * Number(datos.entrance_value_students))}</strong>${notaEst}</div>`);
                     }
                     if (tieneEntAdu) {
-                        const subAdu = datos.entrance_value_adults * (datos.num_adults || 0);
-                        lineas.push(`<div>• Adultos: $${SvcCommons.formatNumber(datos.entrance_value_adults)} c/u = <strong>$${SvcCommons.formatNumber(subAdu)}</strong></div>`);
+                        const cantAdu = entAduAjustada ? datos.entrance_delivered_adults : (datos.num_adults || 0);
+                        const notaAdu = (entAduAjustada && cantAdu !== (datos.num_adults || 0)) ? ` <span class="text-secondary fst-italic">(solicitado: ${datos.num_adults || 0})</span>` : '';
+                        lineas.push(`<div>• Adultos: ${cantAdu} × $${SvcCommons.formatNumber(datos.entrance_value_adults)} = <strong>$${SvcCommons.formatNumber(cantAdu * Number(datos.entrance_value_adults))}</strong>${notaAdu}</div>`);
                     }
                     entradasHTML = lineas.join('');
                 }
+                const valorEntradas = Number(datos.total_entrance_delivered_value ?? datos.total_entrance_value ?? 0);
 
                 const adultWorkerNames = (tripAdults || []).map(a => {
                     const w = a.workers;
@@ -2165,8 +2176,59 @@
                 const depNodes = (tripNodes || []).filter(n => n.node_role === 'departure').map(n => n.svc_transport_nodes?.node_name || '-');
                 const arrNodes = (tripNodes || []).filter(n => n.node_role === 'arrival').map(n => n.svc_transport_nodes?.node_name || '-');
 
-                const costoTotal = (datos.total_transport_value || 0) + (datos.total_catering_value || 0) + (datos.total_entrance_value || 0);
+                                const costoTotal = Number(datos.total_transport_value || 0) + valorRefrigerios + valorEntradas;
+                const costoSolicitado = Number(datos.total_transport_value || 0) + Number(datos.total_catering_value || 0) + Number(datos.total_entrance_value || 0);
 
+                // Ajuste de consumo: conceptos, disponibilidad e historial
+                const conceptosAjuste = [];
+                refrigeriosDetalle.forEach(r => conceptosAjuste.push({
+                    concept: 'catering',
+                    lineId: r.id,
+                    label: `Refrigerio — ${r.menu?.menu_name || 'Menú'}`,
+                    unitPrice: r.frozen_unit_price,
+                    requested: r.quantity,
+                    current: r.delivered_quantity ?? r.quantity
+                }));
+                if (tieneEntEst) conceptosAjuste.push({
+                    concept: 'entrance_students',
+                    label: 'Entradas estudiantes',
+                    unitPrice: datos.entrance_value_students,
+                    requested: datos.planned_students || 0,
+                    current: datos.entrance_delivered_students ?? (datos.planned_students || 0),
+                    suggested: (!entEstAjustada && datos.actual_students !== null && datos.actual_students !== undefined) ? datos.actual_students : undefined
+                });
+                if (tieneEntAdu) conceptosAjuste.push({
+                    concept: 'entrance_adults',
+                    label: 'Entradas adultos',
+                    unitPrice: datos.entrance_value_adults,
+                    requested: datos.num_adults || 0,
+                    current: datos.entrance_delivered_adults ?? (datos.num_adults || 0)
+                });
+
+                const [disponibilidadAjuste, historialHTML] = await Promise.all([
+                    conceptosAjuste.length > 0
+                        ? ConsumptionAdjust.canAdjust({
+                            userId: currentUser.user_id,
+                            serviceDate: datos.trip_date,
+                            isApproved: estadoSolicitud === 'approved',
+                            isClosedStatus: ['suspended', 'cancelled'].includes(datos.trip_status)
+                        })
+                        : Promise.resolve({ allowed: false, deadline: null }),
+                    ConsumptionAdjust.renderHistory('pedagogical_trip', tripId)
+                ]);
+
+                detalleAjusteActual = {
+                    tripId: tripId,
+                    title: datos.trip_title || `Salida a ${destino}`,
+                    subtitle: `${SvcCommons.formatDateDisplay(datos.trip_date)} — ${grados}`,
+                    deadline: disponibilidadAjuste.deadline,
+                    concepts: conceptosAjuste
+                };
+
+                const botonAjusteHTML = disponibilidadAjuste.allowed
+                    ? `<div class="col-12"><button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirAjusteConsumo()"><i class="bi bi-sliders me-1"></i>Ajustar consumo</button><span class="small text-muted ms-2">Disponible hasta el ${ConsumptionAdjust.formatDate(disponibilidadAjuste.deadline)}</span></div>`
+                    : '';
+                
                 const detalleHTML = `
                     <div class="row g-3">
                         ${datos.trip_title ? `<div class="col-12"><strong>Título:</strong><br><span class="fs-5">${SvcCommons.escapeHtml(datos.trip_title)}</span></div>` : ''}
@@ -2188,13 +2250,16 @@
                         
                         <div class="col-12 mt-4"><h6 class="border-bottom pb-2"><i class="bi bi-currency-dollar me-2"></i>Costos</h6></div>
                         <div class="col-md-4"><strong>Transporte:</strong><br>$${SvcCommons.formatNumber(datos.total_transport_value || 0)}</div>
-                        <div class="col-md-4"><strong>Refrigerios:</strong><br>${refrigeriosDetalle.length > 0 ? '$' + SvcCommons.formatNumber(datos.total_catering_value || 0) : 'No incluye'}${refrigeriosDetalle.length > 0 ? `<div class="small text-muted mt-1">${refrigeriosHTML}</div>` : ''}</div>
-                        <div class="col-md-4"><strong>Entradas:</strong><br>${(tieneEntEst || tieneEntAdu) ? '$' + SvcCommons.formatNumber(datos.total_entrance_value || 0) : 'No incluye'}${(tieneEntEst || tieneEntAdu) ? `<div class="small text-muted mt-1">${entradasHTML}</div>` : ''}</div>
-                        <div class="col-12"><strong class="fs-5">Costo Total:</strong> <span class="fs-4 text-primary fw-bold">$${SvcCommons.formatNumber(costoTotal)}</span></div>
-
+                        <div class="col-md-4"><strong>Refrigerios:</strong><br>${refrigeriosDetalle.length > 0 ? '$' + SvcCommons.formatNumber(valorRefrigerios) : 'No incluye'}${refrigeriosDetalle.length > 0 ? `<div class="small text-muted mt-1">${refrigeriosHTML}</div>` : ''}</div>
+                        <div class="col-md-4"><strong>Entradas:</strong><br>${(tieneEntEst || tieneEntAdu) ? '$' + SvcCommons.formatNumber(valorEntradas) : 'No incluye'}${(tieneEntEst || tieneEntAdu) ? `<div class="small text-muted mt-1">${entradasHTML}</div>` : ''}</div>
+                        <div class="col-12"><strong class="fs-5">Costo Total:</strong> <span class="fs-4 text-primary fw-bold">$${SvcCommons.formatNumber(costoTotal)}</span>${costoTotal !== costoSolicitado ? `<span class="small text-muted ms-2">(solicitado: $${SvcCommons.formatNumber(costoSolicitado)})</span>` : ''}</div>
+                        ${botonAjusteHTML}
+                        
                         <div class="col-12 mt-4"><h6 class="border-bottom pb-2"><i class="bi bi-clipboard-check me-2"></i>Aprobación</h6></div>
                         <div class="col-md-6"><strong>Aprobador:</strong><br>${aprobador}</div>
                         <div class="col-md-6"><strong>Estado:</strong><br>${getBadgeEstadoSolicitud(estadoSolicitud)}</div>
+
+                        ${historialHTML}
 
                         ${estudiantesHTML}
                     </div>`;
@@ -2217,6 +2282,38 @@
             } catch (error) {
                 console.error('❌ Error al ver detalle:', error);
                 showMessage('Error al cargar los detalles de la salida', 'danger');
+            }
+        }
+
+        // ==========================================
+        // AJUSTE DE CONSUMO (refrigerios y entradas)
+        // ==========================================
+        let detalleAjusteActual = null;
+
+        function abrirAjusteConsumo() {
+            if (!detalleAjusteActual) return;
+            const d = detalleAjusteActual;
+            const abrir = () => ConsumptionAdjust.open({
+                serviceType: 'pedagogical_trip',
+                serviceId: d.tripId,
+                userId: currentUser.user_id,
+                title: d.title,
+                subtitle: d.subtitle,
+                deadline: d.deadline,
+                concepts: d.concepts,
+                onClosed: async ({ saved }) => {
+                    if (saved) await cargarSalidas();
+                    await verDetalleSalida(d.tripId);
+                }
+            });
+
+            const modalDetalleEl = document.getElementById('modalDetalle');
+            const modalDetalle = bootstrap.Modal.getInstance(modalDetalleEl);
+            if (modalDetalle && modalDetalleEl.classList.contains('show')) {
+                modalDetalleEl.addEventListener('hidden.bs.modal', abrir, { once: true });
+                modalDetalle.hide();
+            } else {
+                abrir();
             }
         }
 
