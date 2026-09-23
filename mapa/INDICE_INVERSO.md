@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-23 16:07 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 16:12 UTC. **No editar a mano.**
 
 **401 tablas** referenciadas en **336 archivos**.
 
