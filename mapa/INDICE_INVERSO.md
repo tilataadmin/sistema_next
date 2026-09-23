@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-23 14:24 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 15:01 UTC. **No editar a mano.**
 
 **400 tablas** referenciadas en **335 archivos**.
 
@@ -762,7 +762,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/my-units.html` | planning | GET, embed | 370, 517, 820 |
 | `modules/planning/myp-planner-form.html` | planning | GET | 468 |
 | `modules/planning/planner-form.html` | planning | GET | 1664 |
-| `modules/planning/unit-form.html` | planning | GET, embed | 1463, 1579, 1641, 1781, 4161 |
+| `modules/planning/unit-form.html` | planning | GET, embed | 1463, 1579, 1641, 1781, 4164 |
 | `modules/procedures/execute-form.html` | procedures | ND | 512 |
 | `modules/procedures/execute-public.html` | procedures | ND | 450 |
 | `modules/procedures/execute.html` | procedures | ND | 508 |
@@ -2009,7 +2009,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/interdisc-unit-form.html` | planning | GET, PATCH, POST | 2767, 2780, 2802 |
 | `modules/planning/myp-planner-form.html` | planning | GET, PATCH, POST | 1044, 1046, 1058 |
 | `modules/planning/planner-form.html` | planning | GET, PATCH, POST | 2956, 2967, 3047 |
-| `modules/planning/unit-form.html` | planning | PATCH, POST | 2197, 2386 |
+| `modules/planning/unit-form.html` | planning | PATCH, POST | 2200, 2389 |
 
 ### procedure_instance_steps
 
@@ -2432,7 +2432,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/coordinator-area.html` | planning | GET | 1303 |
 | `modules/planning/coordinator-program.html` | planning | GET | 1334 |
 | `modules/planning/my-units.html` | planning | GET, POST, embed | 503, 510, 783 |
-| `modules/planning/unit-form.html` | planning | GET, PATCH, POST | 1537, 1722, 2985, 4077 |
+| `modules/planning/unit-form.html` | planning | GET, PATCH, POST | 1537, 1722, 2988, 4080 |
 | `modules/planning/units.html` | planning | GET | 515 |
 
 ### project_milestones
@@ -3866,7 +3866,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/planning/my-units.html` | planning | GET, POST | 510, 827, 855 |
-| `modules/planning/unit-form.html` | planning | DELETE, GET, POST | 1587, 1617, 1680, 1689, 1699, 1762, 1813, 2833, 2873 |
+| `modules/planning/unit-form.html` | planning | DELETE, GET, POST | 1587, 1617, 1680, 1689, 1699, 1762, 1813, 2836, 2876 |
 
 ### procedure_step_branches
 
@@ -4354,19 +4354,19 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/unit-form.html` | planning | DELETE, POST | 3697, 3709 |
+| `modules/planning/unit-form.html` | planning | DELETE, POST | 3700, 3712 |
 
 ### pln_unit_cycle_subjects
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/unit-form.html` | planning | DELETE, POST | 3632, 3652 |
+| `modules/planning/unit-form.html` | planning | DELETE, POST | 3635, 3655 |
 
 ### pln_unit_cycles
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/unit-form.html` | planning | DELETE, GET, PATCH | 1884, 3041, 3227, 3275 |
+| `modules/planning/unit-form.html` | planning | DELETE, GET, PATCH | 1884, 3044, 3230, 3278 |
 
 ### pln_unit_key_concepts
 
@@ -4384,13 +4384,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/unit-form.html` | planning | DELETE, GET, POST | 1812, 2761, 2768 |
+| `modules/planning/unit-form.html` | planning | DELETE, GET, POST | 1812, 2764, 2771 |
 
 ### pln_unit_subjects
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/planning/unit-form.html` | planning | DELETE, GET, PATCH, POST | 1811, 2616, 2637, 2792 |
+| `modules/planning/unit-form.html` | planning | DELETE, GET, PATCH, POST | 1811, 2619, 2640, 2795 |
 
 ### pln_unit_tilata_attributes
 
