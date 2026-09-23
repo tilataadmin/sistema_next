@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.23.3">
+    <meta name="page-version" content="26.9.23.4">
     <title>Atención a Familias por Admisiones </title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -731,13 +731,14 @@
                 // ----------------------------------------
                 // PASO 2: Incrementar executed_value
                 // ----------------------------------------
-                const currentExecuted = assignmentData.executed_value || 0;
-                await supabaseRequest(`/budget_assignments?assignment_id=eq.${assignmentData.assignment_id}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ executed_value: currentExecuted + totalInt })
+                const nuevoEjecutado = await supabaseRequest('/rpc/budget_adjust_executed', {
+                    method: 'POST',
+                    body: JSON.stringify({ p_assignment_id: assignmentData.assignment_id, p_delta: totalInt })
                 });
-                // Actualizar caché local
-                assignmentData.executed_value = currentExecuted + totalInt;
+                // Actualizar caché local con el valor real devuelto por la base de datos
+                if (nuevoEjecutado !== null && nuevoEjecutado !== undefined) {
+                    assignmentData.executed_value = Number(nuevoEjecutado);
+                }
 
                 // ----------------------------------------
                 // PASO 3: Crear registro en la tabla propia
@@ -816,15 +817,22 @@
                     });
                 }
 
-                // 3. Reversar executed_value en budget_assignments
-                if (assignmentData) {
-                    const currentExecuted = assignmentData.executed_value || 0;
-                    const nuevoValor = Math.max(0, currentExecuted - totalInt);
-                    await supabaseRequest(`/budget_assignments?assignment_id=eq.${assignmentData.assignment_id}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ executed_value: nuevoValor })
+                // 3. Reversar executed_value en el rubro de la solicitud presupuestal (suma atómica)
+                let assignmentReversar = assignmentData ? assignmentData.assignment_id : null;
+                if (servicio.execution_request_id) {
+                    const erData = await supabaseRequest(`/execution_requests?request_id=eq.${servicio.execution_request_id}&select=assignment_id`);
+                    if (erData && erData.length > 0 && erData[0].assignment_id) {
+                        assignmentReversar = erData[0].assignment_id;
+                    }
+                }
+                if (assignmentReversar) {
+                    const nuevoEjecutado = await supabaseRequest('/rpc/budget_adjust_executed', {
+                        method: 'POST',
+                        body: JSON.stringify({ p_assignment_id: assignmentReversar, p_delta: -totalInt })
                     });
-                    assignmentData.executed_value = nuevoValor;
+                    if (assignmentData && assignmentReversar === assignmentData.assignment_id && nuevoEjecutado !== null && nuevoEjecutado !== undefined) {
+                        assignmentData.executed_value = Number(nuevoEjecutado);
+                    }
                 }
 
                 showMessage('Solicitud cancelada y afectación presupuestal reversada', 'success');
