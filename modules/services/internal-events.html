@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.31.1">
+    <meta name="page-version" content="26.9.23.1">
     
     <title>Eventos Internos - SchoolNet</title>
     
@@ -610,6 +610,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
     <script src="../../assets/js/config.js"></script>
+    <script src="js/consumption-adjust.js"></script>
     <script>
         // ==========================================
         // VARIABLES GLOBALES
@@ -2097,7 +2098,10 @@
                 const services = await supabaseRequest(`/svc_internal_event_services?event_id=eq.${eventId}&select=*,area:svc_support_areas(area_id,area_name,responsible_worker_id,responsable:workers!svc_support_areas_responsible_worker_fkey(worker_first_name,worker_last_name_1))`);
                 
                 // Renderizar detalle
-                renderEventDetail(event[0], catering, services);
+                // Ajuste de consumo: disponibilidad, historial y conceptos
+                const ajusteInfo = await prepararAjusteConsumo(event[0], catering);
+
+                renderEventDetail(event[0], catering, services, ajusteInfo);
                 
                 // Mostrar modal
                 const modalEl = document.getElementById('viewEventModal');
@@ -2115,7 +2119,74 @@
             }
         }
 
-        function renderEventDetail(event, catering, services) {
+        // ==========================================
+        // AJUSTE DE CONSUMO (refrigerios)
+        // ==========================================
+        let detalleAjusteActual = null;
+
+        async function prepararAjusteConsumo(ev, catering) {
+            detalleAjusteActual = null;
+            if (!ev || !catering || catering.length === 0) return null;
+
+            const grupoLabel = { students: 'estudiantes', adults: 'adultos' };
+            const conceptos = catering.map(item => ({
+                concept: 'catering',
+                lineId: item.id,
+                label: `Refrigerio ${grupoLabel[item.target_group] || ''} — ${item.menu?.menu_name || 'Menú'}`,
+                unitPrice: item.frozen_unit_price,
+                requested: item.quantity,
+                current: item.delivered_quantity ?? item.quantity
+            }));
+
+            const [disponibilidad, historyHtml] = await Promise.all([
+                ConsumptionAdjust.canAdjust({
+                    userId: currentUserId,
+                    serviceDate: ev.event_date,
+                    isApproved: ev.request?.request_status === 'approved',
+                    isClosedStatus: ['suspended', 'cancelled'].includes(ev.event_status)
+                }),
+                ConsumptionAdjust.renderHistory('internal_event', ev.event_id)
+            ]);
+
+            detalleAjusteActual = {
+                eventId: ev.event_id,
+                title: ev.event_name,
+                subtitle: formatDateDisplay(ev.event_date),
+                deadline: disponibilidad.deadline,
+                concepts: conceptos
+            };
+
+            return { allowed: disponibilidad.allowed, deadline: disponibilidad.deadline, historyHtml };
+        }
+
+        function abrirAjusteConsumo() {
+            if (!detalleAjusteActual) return;
+            const d = detalleAjusteActual;
+            const abrir = () => ConsumptionAdjust.open({
+                serviceType: 'internal_event',
+                serviceId: d.eventId,
+                userId: currentUserId,
+                title: d.title,
+                subtitle: d.subtitle,
+                deadline: d.deadline,
+                concepts: d.concepts,
+                onClosed: async ({ saved }) => {
+                    if (saved) await loadEvents();
+                    await viewEvent(d.eventId);
+                }
+            });
+
+            const modalDetalleEl = document.getElementById('viewEventModal');
+            const modalDetalle = bootstrap.Modal.getInstance(modalDetalleEl);
+            if (modalDetalle && modalDetalleEl.classList.contains('show')) {
+                modalDetalleEl.addEventListener('hidden.bs.modal', abrir, { once: true });
+                modalDetalle.hide();
+            } else {
+                abrir();
+            }
+        }
+
+        function renderEventDetail(event, catering, services, ajusteInfo = null) {
             const modalBody = document.getElementById('viewEventBody');
             
             let html = `
@@ -2161,51 +2232,72 @@
             }
             
            // Refrigerios
-            let totalCatering = 0;
+                        let totalCatering = 0;
+            let totalCateringSolicitado = 0;
             if (catering && catering.length > 0) {
                 html += `
                     <div class="event-detail-section">
                         <h6><i class="bi bi-cup-straw"></i> Refrigerios</h6>
                 `;
-                
+
+                // Valor efectivo de una línea: real si fue ajustada, solicitado si no
+                const lineaAjustada = i => i.delivered_quantity !== null && i.delivered_quantity !== undefined;
+                const valorLinea = i => lineaAjustada(i) ? (parseFloat(i.delivered_total_value) || 0) : (parseFloat(i.total_value) || 0);
+                const itemLinea = item => {
+                    const cant = lineaAjustada(item) ? item.delivered_quantity : item.quantity;
+                    const nota = (lineaAjustada(item) && item.delivered_quantity !== item.quantity)
+                        ? ` <span class="text-secondary fst-italic small">(solicitado: ${item.quantity})</span>`
+                        : '';
+                    return `<li>${item.menu.menu_name} x ${cant} = 
+                            <span class="text-primary fw-bold">$${formatCurrency(valorLinea(item))}</span>${nota}</li>`;
+                };
+
                 // Agrupar por target_group
                 const cateringByGroup = { students: [], adults: [] };
-                
+
                 catering.forEach(item => {
                     if (cateringByGroup[item.target_group]) {
                         cateringByGroup[item.target_group].push(item);
                     }
-                    totalCatering += parseFloat(item.total_value) || 0;
+                    totalCatering += valorLinea(item);
+                    totalCateringSolicitado += parseFloat(item.total_value) || 0;
                 });
-            
+
                 if (cateringByGroup.students.length > 0) {
-                    const subtotalStudents = cateringByGroup.students.reduce((sum, i) => sum + (parseFloat(i.total_value) || 0), 0);
+                    const subtotalStudents = cateringByGroup.students.reduce((sum, i) => sum + valorLinea(i), 0);
                     html += '<p class="mb-1"><strong>Estudiantes:</strong></p><ul>';
-                    cateringByGroup.students.forEach(item => {
-                        html += `<li>${item.menu.menu_name} x ${item.quantity} = 
-                            <span class="text-primary fw-bold">$${formatCurrency(item.total_value)}</span></li>`;
-                    });
+                    cateringByGroup.students.forEach(item => { html += itemLinea(item); });
                     html += '</ul>';
                     html += `<p class="text-end mb-2"><small>Subtotal estudiantes: <strong>$${formatCurrency(subtotalStudents)}</strong></small></p>`;
                 }
-            
+
                 if (cateringByGroup.adults.length > 0) {
-                    const subtotalAdults = cateringByGroup.adults.reduce((sum, i) => sum + (parseFloat(i.total_value) || 0), 0);
+                    const subtotalAdults = cateringByGroup.adults.reduce((sum, i) => sum + valorLinea(i), 0);
                     html += '<p class="mb-1"><strong>Adultos:</strong></p><ul>';
-                    cateringByGroup.adults.forEach(item => {
-                        html += `<li>${item.menu.menu_name} x ${item.quantity} = 
-                            <span class="text-primary fw-bold">$${formatCurrency(item.total_value)}</span></li>`;
-                    });
+                    cateringByGroup.adults.forEach(item => { html += itemLinea(item); });
                     html += '</ul>';
                     html += `<p class="text-end mb-2"><small>Subtotal adultos: <strong>$${formatCurrency(subtotalAdults)}</strong></small></p>`;
                 }
-            
+
                 html += `
                     <div class="text-end mt-2 pt-2" style="border-top: 2px solid #dee2e6;">
                         <strong>Total Refrigerios: <span class="text-primary">$${formatCurrency(totalCatering)}</span></strong>
+                        ${totalCatering !== totalCateringSolicitado ? `<br><small class="text-secondary fst-italic">Solicitado: $${formatCurrency(totalCateringSolicitado)}</small>` : ''}
                     </div>
                 `;
-                
+
+                if (ajusteInfo && ajusteInfo.allowed) {
+                    html += `
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirAjusteConsumo()"><i class="bi bi-sliders me-1"></i>Ajustar consumo</button>
+                        <span class="small text-muted ms-2">Disponible hasta el ${ConsumptionAdjust.formatDate(ajusteInfo.deadline)}</span>
+                    </div>`;
+                }
+
+                if (ajusteInfo && ajusteInfo.historyHtml) {
+                    html += `<div class="row mt-3">${ajusteInfo.historyHtml}</div>`;
+                }
+
                 html += `</div>`;
             }
             
