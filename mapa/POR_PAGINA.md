@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-23 15:34 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 16:01 UTC. **No editar a mano.**
 
-**335 archivos** con acceso a datos.
+**336 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1625,6 +1625,13 @@
 - **Módulo:** services
 - **Lee (13):** academic_years, attendance, role_permissions, svc_catering_menus, svc_module_config, svc_transport_destinations, svc_transport_nodes, svc_transport_rates_students, svc_trip_authorizations, system_config, user_roles, users, workers
 - **Escribe (0):** —
+
+### `modules/services/js/consumption-adjust.js`
+
+- **Módulo:** services
+- **Lee (2):** svc_consumption_adjustments, system_config
+- **Escribe (0):** —
+- **Funciones (2):** adjust_service_consumption, svc_adjustment_deadline
 
 ### `modules/services/maintenance-management.html`
 

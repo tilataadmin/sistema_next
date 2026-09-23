@@ -1,8 +1,8 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-23 15:34 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 16:01 UTC. **No editar a mano.**
 
-**400 tablas** referenciadas en **335 archivos**.
+**401 tablas** referenciadas en **336 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
@@ -13,7 +13,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [grades](#grades) | 67 | 2 | 4 |
 | [courses](#courses) | 59 | 2 | 4 |
 | [users](#users) | 58 | 4 | 11 |
-| [system_config](#systemconfig) | 56 | 3 | 3 |
+| [system_config](#systemconfig) | 57 | 3 | 3 |
 | [sections](#sections) | 55 | 1 | 4 |
 | [students](#students) | 50 | 4 | 9 |
 | [user_roles](#userroles) | 34 | 3 | 3 |
@@ -380,6 +380,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [sup_otp_codes](#supotpcodes) | 1 | 1 | 0 |
 | [sup_supplier_notifications](#supsuppliernotifications) | 1 | 1 | 0 |
 | [svc_admissions_family_services](#svcadmissionsfamilyservices) | 1 | 1 | 1 |
+| [svc_consumption_adjustments](#svcconsumptionadjustments) | 1 | 0 | 0 |
 | [svc_extracurricular_attendance](#svcextracurricularattendance) | 1 | 1 | 0 |
 | [svc_extracurricular_daily_records](#svcextracurriculardailyrecords) | 1 | 0 | 0 |
 | [svc_extracurricular_enrollment_days](#svcextracurricularenrollmentdays) | 1 | 0 | 0 |
@@ -899,6 +900,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/admissions-family.html` | services | GET | 433 |
 | `modules/services/approvals.html` | services | GET | 1367, 1599 |
 | `modules/services/js/commons.js` | services | GET | 1023 |
+| `modules/services/js/consumption-adjust.js` | services | GET | 395 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 217 |
 | `modules/suppliers/portal.html` | suppliers | GET | 515 |
 | `modules/suppliers/register.html` | suppliers | GET, ND | 693, 775 |
@@ -4457,6 +4459,12 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/admissions-family.html` | services | ND, PATCH, POST | 486, 489, 689, 728, 897 |
+
+### svc_consumption_adjustments
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/services/js/consumption-adjust.js` | services | GET | 439 |
 
 ### svc_extracurricular_attendance
 
