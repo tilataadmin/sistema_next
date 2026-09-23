@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.27.1">
+    <meta name="page-version" content="26.9.23.1">
     <title>Portal de Familias - Colegio Tilatá</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -391,6 +391,7 @@
         // Estado del detalle de autorización que está abierto
         let detalleActual = null;
         let mostrandoMotivo = false;
+        let nodoSeleccionado = null;
 
         const DIAS = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo' };
 
@@ -826,6 +827,7 @@
         async function abrirAutorizacion(authorizationId) {
             limpiarMensaje();
             mostrandoMotivo = false;
+            nodoSeleccionado = null;
             document.getElementById('detalle-titulo').textContent = 'Autorización';
             document.getElementById('detalle-contenido').innerHTML =
                 `<div class="text-center text-muted py-4">
@@ -848,6 +850,10 @@
                 }
 
                 detalleActual = data;
+                // Con un solo nodo no hay nada que elegir: queda preseleccionado.
+                if (data.requiere_nodo && (data.nodos_regreso || []).length === 1) {
+                    nodoSeleccionado = data.nodos_regreso[0].node_id;
+                }
                 renderDetalle();
 
             } catch (error) {
@@ -876,7 +882,8 @@
                 ['Destino', s.destino],
                 ['Transporte', s.modalidad_transporte],
                 ['Alimentación', s.servicio_alimentacion],
-                ['Acompañantes', s.acompanantes]
+                ['Acompañantes', s.acompanantes],
+                ['Nodo de regreso', d.nodo_regreso_elegido]
             ].filter(function (f) { return f[1] !== null && f[1] !== undefined && String(f[1]).trim() !== ''; })
              .map(function (f) {
                  return `<tr><td>${escaparHtml(f[0])}</td><td>${escaparHtml(f[1])}</td></tr>`;
@@ -911,6 +918,8 @@
                     explicacion = `El plazo para responder venció el ${fmtFechaHora(d.deadline_at)}. Comunícate con el colegio.`;
                 } else if (d.motivo_bloqueo === 'salida_no_disponible') {
                     explicacion = 'Esta salida ya no admite respuestas.';
+                } else if (d.motivo_bloqueo === 'sin_nodos_regreso') {
+                    explicacion = 'Esta salida aún no tiene nodos de regreso definidos. Comunícate con el colegio.';
                 } else {
                     explicacion = 'Esta autorización no admite respuesta en este momento.';
                 }
@@ -938,6 +947,33 @@
             }
 
             // --- Caso pendiente: se puede responder ---
+            // Selector de nodo: solo deportivas con regreso, y solo en el camino
+            // de "Autorizo" (al negar, el nodo no aplica).
+            const nodos = d.nodos_regreso || [];
+            const selectorNodo = (d.requiere_nodo && !mostrandoMotivo)
+                ? `<div class="mb-3">
+                       <div class="fw-semibold mb-2"><i class="bi bi-geo-alt me-1"></i>Nodo de regreso</div>
+                       <p class="small text-muted mb-2">
+                           Selecciona dónde descenderá ${escaparHtml(s.estudiante || 'tu hijo')} al regreso.
+                           Esta elección no se puede cambiar después de autorizar.
+                       </p>
+                       ${nodos.map(function (n) {
+                           const id = escaparHtml(n.node_id);
+                           const marcado = n.node_id === nodoSeleccionado ? 'checked' : '';
+                           const desc = n.descripcion
+                               ? `<div class="small text-muted">${escaparHtml(n.descripcion)}</div>` : '';
+                           return `<div class="form-check mb-1">
+                                       <input class="form-check-input" type="radio" name="nodo-regreso"
+                                              id="nodo-${id}" value="${id}" ${marcado}
+                                              onchange="elegirNodo(this.value)">
+                                       <label class="form-check-label" for="nodo-${id}">
+                                           ${escaparHtml(n.nombre)}${desc}
+                                       </label>
+                                   </div>`;
+                       }).join('')}
+                   </div>`
+                : '';
+
             const declaracion = `<div class="bloque-declaracion mb-3">${d.declaracion || ''}</div>`;
 
             const plazo = `<p class="text-muted small">
@@ -969,8 +1005,27 @@
                        </button>
                    </div>`;
 
-            document.getElementById('detalle-contenido').innerHTML =
-                tabla + descripcion + aviso + declaracion + plazo + motivo;
+                        document.getElementById('detalle-contenido').innerHTML =
+                tabla + descripcion + aviso + selectorNodo + declaracion + plazo + motivo;
+            actualizarNodoDeclaracion();
+        }
+
+        function nombreNodoSeleccionado() {
+            const nodos = (detalleActual && detalleActual.nodos_regreso) || [];
+            const n = nodos.find(function (x) { return x.node_id === nodoSeleccionado; });
+            return n ? n.nombre : null;
+        }
+
+        function elegirNodo(nodeId) {
+            nodoSeleccionado = nodeId;
+            actualizarNodoDeclaracion();
+        }
+
+        // La declaración trae un <span data-nodo-regreso> de get_authorization_detail.
+        // Se actualiza en sitio, sin volver a pintar la vista.
+        function actualizarNodoDeclaracion() {
+            const span = document.querySelector('#detalle-contenido [data-nodo-regreso]');
+            if (span) span.textContent = nombreNodoSeleccionado() || '(por seleccionar)';
         }
 
         function pedirMotivo() {
@@ -990,8 +1045,17 @@
             const motivo = motivoCampo ? motivoCampo.value.trim() : '';
 
             const s = detalleActual.salida || {};
+            const requiereNodo = decision === 'authorized' && detalleActual.requiere_nodo;
+            const nombreNodo = nombreNodoSeleccionado();
+
+            if (requiereNodo && !nombreNodo) {
+                mostrarMensaje('Selecciona el nodo donde descenderá tu hijo al regreso.', 'warning');
+                return;
+            }
+
             const confirmar = decision === 'authorized'
-                ? `¿Autorizar la participación de ${s.estudiante} en ${s.titulo}?`
+                ? `¿Autorizar la participación de ${s.estudiante} en ${s.titulo}?` +
+                  (requiereNodo ? `\n\nNodo de regreso: ${nombreNodo}` : '')
                 : `¿Confirmas que NO autorizas la participación de ${s.estudiante} en ${s.titulo}?`;
 
             if (!confirm(confirmar)) return;
@@ -1005,7 +1069,8 @@
                     token: sessionToken,
                     authorization_id: detalleActual.authorization_id,
                     decision: decision,
-                    denial_reason: decision === 'denied' ? (motivo || null) : null
+                    denial_reason: decision === 'denied' ? (motivo || null) : null,
+                    return_node_id: requiereNodo ? nodoSeleccionado : null
                 });
 
                 if (!data.ok) {
@@ -1021,7 +1086,8 @@
                 }
 
                 const texto = decision === 'authorized'
-                    ? `Listo. Registramos tu autorización para <strong>${escaparHtml(s.titulo)}</strong>.`
+                    ? `Listo. Registramos tu autorización para <strong>${escaparHtml(s.titulo)}</strong>.` +
+                      (requiereNodo ? ` Nodo de regreso: <strong>${escaparHtml(nombreNodo)}</strong>.` : '')
                     : `Registramos que NO autorizas la participación en <strong>${escaparHtml(s.titulo)}</strong>. El colegio se comunicará contigo.`;
 
                 await cargarDatos('autorizaciones');
