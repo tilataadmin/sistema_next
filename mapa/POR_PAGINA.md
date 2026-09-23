@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-23 18:45 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 18:50 UTC. **No editar a mano.**
 
 **336 archivos** con acceso a datos.
 
@@ -1569,10 +1569,10 @@
 ### `modules/services/admissions-family.html`
 
 - **Módulo:** services
-- **Lee (10):** budget_assignments, permissions, role_permissions, roles, svc_module_config, svc_service_type_notifications, system_config, user_roles, users, workers
-- **Escribe (3):** **budget_assignments**, **execution_requests**, **svc_admissions_family_services**
+- **Lee (11):** budget_assignments, execution_requests, permissions, role_permissions, roles, svc_module_config, svc_service_type_notifications, system_config, user_roles, users, workers
+- **Escribe (2):** **execution_requests**, **svc_admissions_family_services**
 - **Sin determinar (2):** svc_admissions_family_services, users
-- **Funciones (1):** adjust_service_consumption
+- **Funciones (2):** adjust_service_consumption, budget_adjust_executed
 
 ### `modules/services/approvals.html`
 
