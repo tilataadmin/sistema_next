@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-23 16:14 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-23 16:18 UTC. **No editar a mano.**
 
 **401 tablas** referenciadas en **336 archivos**.
 
@@ -770,7 +770,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-groups.html` | services | embed | 387, 470 |
 | `modules/services/rep-trips.html` | services | embed | 832, 1521 |
 | `modules/services/sports-teams.html` | services | embed | 765, 849 |
-| `modules/services/sports-trips.html` | services | embed | 967, 1737 |
+| `modules/services/sports-trips.html` | services | embed | 967, 1818 |
 | `modules/services/student-services.html` | services | GET | 331 |
 | `modules/surveys/results.html` | surveys | embed | 1374 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 415 |
@@ -1013,7 +1013,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-groups.html` | services | GET, embed | 387, 470 |
 | `modules/services/rep-trips.html` | services | embed | 832, 1521 |
 | `modules/services/sports-teams.html` | services | GET, embed | 765, 849 |
-| `modules/services/sports-trips.html` | services | embed | 967, 1737 |
+| `modules/services/sports-trips.html` | services | embed | 967, 1818 |
 | `modules/services/student-services.html` | services | GET | 359 |
 | `modules/surveys/dashboard.html` | surveys | GET | 928, 936 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | GET | 415 |
@@ -2294,7 +2294,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/js/commons.js` | services | GET | 165 |
 | `modules/services/pedagogical-trips.html` | services | embed | 2085, 2352, 2522 |
 | `modules/services/rep-trips.html` | services | embed | 1277, 1323, 1695 |
-| `modules/services/sports-trips.html` | services | embed | 1489, 1535, 1910 |
+| `modules/services/sports-trips.html` | services | embed | 1489, 1535, 1991 |
 
 ### teval_periods
 
@@ -3005,7 +3005,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 492 |
 | `modules/services/index.html` | services | GET | 1005, 1145, 1160 |
 | `modules/services/reports.html` | services | GET | 415, 545 |
-| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 527, 1228, 1280, 1686, 1895 |
+| `modules/services/sports-trips.html` | services | GET, PATCH, POST | 527, 1228, 1280, 1767, 1976 |
 
 ### svc_trip_transport_nodes
 
@@ -3014,7 +3014,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | GET | 2109, 2281 |
 | `modules/services/pedagogical-trips.html` | services | GET | 2085, 2352, 2522 |
 | `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1061, 1131, 1277, 1323, 1695 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1237, 1309, 1489, 1535, 1910 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1237, 1309, 1489, 1535, 1991 |
 
 ### teval_form_questions
 
@@ -3931,7 +3931,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/approvals.html` | services | GET | 2130 |
-| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1240, 1318, 1328, 1460, 1543, 1921 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1240, 1318, 1328, 1460, 1543, 2002 |
 
 ### svc_staff_transport_daily_records
 
@@ -4524,7 +4524,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1234, 1294, 1682, 1737, 1847, 1869, 1914 |
+| `modules/services/sports-trips.html` | services | DELETE, GET, PATCH, POST | 1234, 1294, 1763, 1818, 1928, 1950, 1995 |
 
 ### task_deliverables
 
