@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-24 18:36 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-24 18:37 UTC. **No editar a mano.**
 
 **402 tablas** referenciadas en **336 archivos**.
 
@@ -20,8 +20,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [roles](#roles) | 33 | 1 | 1 |
 | [permissions](#permissions) | 27 | 1 | 1 |
 | [role_permissions](#rolepermissions) | 26 | 1 | 0 |
+| [student_status](#studentstatus) | 23 | 0 | 0 |
 | [tasks](#tasks) | 23 | 11 | 9 |
-| [student_status](#studentstatus) | 22 | 0 | 0 |
 | [budget_assignments](#budgetassignments) | 20 | 8 | 8 |
 | [programs](#programs) | 20 | 1 | 0 |
 | [academic_areas](#academicareas) | 17 | 1 | 4 |
@@ -1163,6 +1163,34 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/training/index.html` | training | GET | 1093 |
 | `modules/tte/index.html` | tte | embed | 803 |
 
+### student_status
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/config/families.html` | config | GET | 665 |
+| `modules/config/index.html` | config | GET | 823 |
+| `modules/config/students.html` | config | GET | 589, 718 |
+| `modules/config/year-closure-reversal.html` | config | GET | 739 |
+| `modules/config/year-closure.html` | config | GET, embed | 651, 713, 1239, 2571 |
+| `modules/environmental/water-balance-dashboard.html` | environmental | GET | 758 |
+| `modules/environmental/water-reports.html` | environmental | GET | 1343 |
+| `modules/extracurricular/enrollments.html` | extracurricular | GET | 656 |
+| `modules/follow-ups/course-follow-up-queries.html` | follow-ups | embed | 835 |
+| `modules/follow-ups/course-follow-ups.html` | follow-ups | embed | 824 |
+| `modules/follow-ups/general-queries.html` | follow-ups | GET | 1116 |
+| `modules/follow-ups/individual-issues.html` | follow-ups | embed | 781 |
+| `modules/general-tools/attendance-reports.html` | general-tools | GET | 1153, 1340, 1897 |
+| `modules/general-tools/community-query.html` | general-tools | embed | 860, 1045 |
+| `modules/general-tools/family-attendance-reports.html` | general-tools | embed | 399 |
+| `modules/general-tools/family-attendance.html` | general-tools | embed | 572 |
+| `modules/general-tools/lists.html` | general-tools | embed | 1034, 1224, 1311, 1773, 2025, 2156, 2508 |
+| `modules/new-students/new-students-report.html` | new-students | embed | 309 |
+| `modules/security/id-cards.html` | security | embed | 678 |
+| `modules/services/rep-groups.html` | services | embed | 470 |
+| `modules/services/sports-teams.html` | services | embed | 849 |
+| `modules/services/student-services.html` | services | embed | 359 |
+| `modules/surveys/dashboard.html` | surveys | embed | 928, 936 |
+
 ### tasks
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -1190,33 +1218,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/execute.html` | procedures | POST | 1170, 1208 |
 | `modules/procedures/my-requests.html` | procedures | GET, PATCH | 877, 883 |
 | `modules/procedures/records.html` | procedures | GET, PATCH | 847, 853 |
-
-### student_status
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/config/families.html` | config | GET | 665 |
-| `modules/config/index.html` | config | GET | 823 |
-| `modules/config/students.html` | config | GET | 589, 718 |
-| `modules/config/year-closure-reversal.html` | config | GET | 739 |
-| `modules/config/year-closure.html` | config | GET, embed | 651, 713, 1239, 2571 |
-| `modules/environmental/water-balance-dashboard.html` | environmental | GET | 758 |
-| `modules/environmental/water-reports.html` | environmental | GET | 1343 |
-| `modules/extracurricular/enrollments.html` | extracurricular | GET | 656 |
-| `modules/follow-ups/course-follow-up-queries.html` | follow-ups | embed | 835 |
-| `modules/follow-ups/general-queries.html` | follow-ups | GET | 1116 |
-| `modules/follow-ups/individual-issues.html` | follow-ups | embed | 781 |
-| `modules/general-tools/attendance-reports.html` | general-tools | GET | 1153, 1340, 1897 |
-| `modules/general-tools/community-query.html` | general-tools | embed | 860, 1045 |
-| `modules/general-tools/family-attendance-reports.html` | general-tools | embed | 399 |
-| `modules/general-tools/family-attendance.html` | general-tools | embed | 572 |
-| `modules/general-tools/lists.html` | general-tools | embed | 1034, 1224, 1311, 1773, 2025, 2156, 2508 |
-| `modules/new-students/new-students-report.html` | new-students | embed | 309 |
-| `modules/security/id-cards.html` | security | embed | 678 |
-| `modules/services/rep-groups.html` | services | embed | 470 |
-| `modules/services/sports-teams.html` | services | embed | 849 |
-| `modules/services/student-services.html` | services | embed | 359 |
-| `modules/surveys/dashboard.html` | surveys | embed | 928, 936 |
 
 ### budget_assignments
 
