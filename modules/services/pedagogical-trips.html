@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.23.3">
+    <meta name="page-version" content="26.9.24.5">
     <title>Salidas Pedagógicas - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -225,6 +225,7 @@
                                         <label class="form-label">Grados participantes <span class="text-danger">*</span></label>
                                         <select class="form-select" id="wizardGrados" multiple required></select>
                                         <small class="text-muted">Mantén presionado Ctrl para seleccionar múltiples</small>
+                                        <div id="wizardCursosContainer" class="mt-2"></div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label">Destino <span class="text-danger">*</span></label>
@@ -624,6 +625,8 @@
         let selectedAdultosPedagogicas = [];
         let selectedNodosSalida = [];
         let selectedNodosLlegada = [];
+        let cursosWizard = [];            // cursos activos de los grados seleccionados en el wizard
+        let cursosExcluidos = new Set();  // course_id desmarcados; vacío = grados completos
 
         // ==========================================
         // INITIALIZATION
@@ -972,6 +975,14 @@
                 calcularCostosWizard();
             });
 
+            document.getElementById('wizardCursosContainer').addEventListener('change', async function(e) {
+                if (!e.target.classList.contains('wizard-curso-check')) return;
+                if (e.target.checked) cursosExcluidos.delete(e.target.value);
+                else cursosExcluidos.add(e.target.value);
+                await calcularEstudiantes();
+                calcularCostosWizard();
+            });
+
             document.getElementById('wizardDestino').addEventListener('change', function() {
                 calcularCostosWizard();
             });
@@ -999,8 +1010,8 @@
             try {
                 showLoadingTable('tablaSalidasBody');
 
-                let query = '/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),destination:svc_transport_destinations(destination_name),request:svc_service_requests(request_id,request_status)';
-
+                let query = '/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),svc_pedagogical_trip_courses(courses(course_name,grade_id)),destination:svc_transport_destinations(destination_name),request:svc_service_requests(request_id,request_status)';
+                
                 // Filtrar por creador si NO es admin
                 if (!datosGlobales.esAdminSalidas && currentUser) {
                     query += `&created_by=eq.${currentUser.user_id}`;
@@ -1050,7 +1061,7 @@
             const salidasPagina = datosGlobales.salidas.slice(inicio, fin);
 
             tbody.innerHTML = salidasPagina.map(salida => {
-                const grados = salida.svc_pedagogical_trip_grades?.map(g => g.grades?.grade_name).filter(Boolean).join(', ') || 'N/A';
+                const grados = etiquetaGrados(salida);
                 const destino = salida.destination?.destination_name || 'N/A';
                 const estadoAprobacion = salida.request?.request_status || 'pending';
                 const badgeEstado = getBadgeEstadoPed(salida.trip_status);
@@ -1205,6 +1216,9 @@
             if (fpWizardFecha) fpWizardFecha.clear();
             if (quillFamilyNotice) quillFamilyNotice.setText('');
             document.getElementById('formWizardSalida').removeAttribute('data-editing-trip-id');
+            cursosWizard = [];
+            cursosExcluidos = new Set();
+            document.getElementById('wizardCursosContainer').innerHTML = '';
             document.querySelector('#modalWizardSalida .modal-title').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Nueva Salida Pedagógica';
             document.getElementById('btnWizardGuardar').innerHTML = '<i class="bi bi-check-circle me-1"></i>Guardar y Solicitar Aprobación';
 
@@ -1308,6 +1322,8 @@
             const gradosSeleccionados = Array.from(document.getElementById('wizardGrados').selectedOptions).map(o => o.value);
 
             if (gradosSeleccionados.length === 0) {
+                cursosWizard = [];
+                document.getElementById('wizardCursosContainer').innerHTML = '';
                 document.getElementById('wizardNumEstudiantes').value = 0;
                 document.getElementById('wizardDesglosePorGrado').textContent = '';
                 actualizarTotalParticipantes();
@@ -1316,17 +1332,30 @@
 
             try {
                 const cursos = await supabaseRequest(
-                    `/courses?select=course_id,grade_id,grade:grades(grade_name)&grade_id=in.(${gradosSeleccionados.join(',')})&course_status=eq.active`
+                    `/courses?select=course_id,course_name,grade_id,grade:grades(grade_name)&grade_id=in.(${gradosSeleccionados.join(',')})&course_status=eq.active&order=course_order`
                 );
 
-                if (!cursos || cursos.length === 0) {
+                cursosWizard = cursos || [];
+                renderCursosWizard();
+
+                if (cursosWizard.length === 0) {
                     document.getElementById('wizardNumEstudiantes').value = 0;
                     document.getElementById('wizardDesglosePorGrado').textContent = 'No hay cursos activos para los grados seleccionados';
                     actualizarTotalParticipantes();
                     return;
                 }
 
-                const cursosIds = cursos.map(c => c.course_id);
+                const cursosIds = cursosWizard
+                    .filter(c => !cursosExcluidos.has(c.course_id))
+                    .map(c => c.course_id);
+
+                if (cursosIds.length === 0) {
+                    document.getElementById('wizardNumEstudiantes').value = 0;
+                    document.getElementById('wizardDesglosePorGrado').textContent = 'No hay cursos marcados';
+                    actualizarTotalParticipantes();
+                    return;
+                }
+
                 const estudiantesBruto = await supabaseRequest(
                     `/students?select=student_id,course_id,status:student_status(status_code),course:courses(grade:grades(grade_name))&course_id=in.(${cursosIds.join(',')})`
                 );
@@ -1344,7 +1373,7 @@
 
                 const desglose = Object.entries(conteosPorGrado).map(([grado, cantidad]) => `${grado}: ${cantidad}`).join(', ');
                 document.getElementById('wizardDesglosePorGrado').textContent =
-                    total > 0 ? `Desglose: ${desglose}` : 'No hay estudiantes activos en los grados seleccionados';
+                    total > 0 ? `Desglose: ${desglose}` : 'No hay estudiantes activos en los cursos seleccionados';
 
                 actualizarTotalParticipantes();
 
@@ -1352,6 +1381,55 @@
                 console.error('Error calculando estudiantes:', error);
                 showMessage('Error al calcular estudiantes', 'danger');
             }
+        }
+
+        // Rótulo de audiencia: grado completo -> nombre del grado; grado restringido -> nombres de sus cursos
+        function etiquetaGrados(salida) {
+            const grados = (salida.svc_pedagogical_trip_grades || []).map(g => g.grades).filter(Boolean);
+            const cursos = (salida.svc_pedagogical_trip_courses || []).map(c => c.courses).filter(Boolean);
+            return grados.map(g => {
+                const cursosGrado = cursos.filter(c => c.grade_id === g.grade_id);
+                return cursosGrado.length > 0
+                    ? cursosGrado.map(c => c.course_name).sort().join(', ')
+                    : g.grade_name;
+            }).join(', ') || 'N/A';
+        }
+
+        // Mismo rótulo, construido desde los datos del wizard (para notificaciones al crear)
+        function etiquetaGradosWizard(datosSalida) {
+            const cursosSel = datosSalida.p_course_ids || [];
+            return datosSalida.p_grados.map(gId => {
+                const g = datosGlobales.grados.find(gr => gr.grade_id === gId);
+                const cursosGrado = cursosWizard.filter(c => c.grade_id === gId && cursosSel.includes(c.course_id));
+                return cursosGrado.length > 0
+                    ? cursosGrado.map(c => c.course_name).sort().join(', ')
+                    : (g ? g.grade_name : gId);
+            }).join(', ');
+        }
+
+        function renderCursosWizard() {
+            const contenedor = document.getElementById('wizardCursosContainer');
+            const gradosSel = Array.from(document.getElementById('wizardGrados').selectedOptions);
+
+            let html = '';
+            gradosSel.forEach(opt => {
+                const cursosGrado = cursosWizard.filter(c => c.grade_id === opt.value);
+                if (cursosGrado.length <= 1) return;
+
+                html += `<div class="mb-1"><small class="fw-semibold me-2">${opt.textContent}:</small>` +
+                    cursosGrado.map(c => `
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input wizard-curso-check" type="checkbox"
+                                   id="wizCurso_${c.course_id}" value="${c.course_id}"
+                                   ${cursosExcluidos.has(c.course_id) ? '' : 'checked'}>
+                            <label class="form-check-label small" for="wizCurso_${c.course_id}">${c.course_name}</label>
+                        </div>`).join('') +
+                    `</div>`;
+            });
+
+            contenedor.innerHTML = html
+                ? `<small class="text-muted d-block mb-1">Cursos (desmarque los que no participan):</small>${html}`
+                : '';
         }
 
         function actualizarTotalParticipantes() {
@@ -1538,10 +1616,7 @@
                 if (!aprobador) return false;
 
                 const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
-                const nombresGrados = datosSalida.p_grados.map(gId => {
-                    const g = datosGlobales.grados.find(gr => gr.grade_id === gId);
-                    return g ? g.grade_name : gId;
-                }).join(', ');
+                const nombresGrados = etiquetaGradosWizard(datosSalida);
 
                 const senderName = currentWorker ? SvcCommons.workerFullName(currentWorker) : (currentUser.user_display_name || currentUser.user_name);
 
@@ -1581,10 +1656,7 @@
 
                 const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
                 const nombreDestino = destino ? destino.destination_name : 'Destino no especificado';
-                const nombresGrados = datosSalida.p_grados.map(gId => {
-                    const grado = datosGlobales.grados.find(g => g.grade_id === gId);
-                    return grado ? grado.grade_name : gId;
-                }).join(', ');
+                const nombresGrados = etiquetaGradosWizard(datosSalida);
 
                 const fechaFormateada = new Date(datosSalida.p_fecha + 'T00:00:00').toLocaleDateString('es-CO', {
                     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -1661,6 +1733,26 @@
                     return;
                 }
 
+                // ===== CURSOS (solo cuando algún grado no va completo) =====
+                const cursosRestringidos = [];
+                const gradosSinCursos = [];
+                Array.from(document.getElementById('wizardGrados').selectedOptions).forEach(opt => {
+                    const cursosGrado = cursosWizard.filter(c => c.grade_id === opt.value);
+                    const marcados = cursosGrado.filter(c => !cursosExcluidos.has(c.course_id));
+                    if (cursosGrado.length > 0 && marcados.length === 0) {
+                        gradosSinCursos.push(opt.textContent);
+                    } else if (marcados.length < cursosGrado.length) {
+                        marcados.forEach(c => cursosRestringidos.push(c.course_id));
+                    }
+                });
+
+                if (gradosSinCursos.length > 0) {
+                    showMessage(`Marque al menos un curso en: ${gradosSinCursos.join(', ')}`, 'warning');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Guardar y Solicitar Aprobación';
+                    return;
+                }
+
                 // ===== REFRIGERIOS (array hasta 2) =====
                 const incluirRefrigerios = document.getElementById('wizardIncluirRefrigerios').checked;
                 const refrigerios = [];
@@ -1723,6 +1815,7 @@
                         p_trip_id: tripIdEdicion,
                         p_titulo: document.getElementById('wizardTitulo').value || '',
                         p_grade_ids: gradosSeleccionados,
+                        p_course_ids: cursosRestringidos.length > 0 ? cursosRestringidos : null,
                         p_trip_date: fecha,
                         p_departure_time: horaSalida,
                         p_return_time: horaRegreso,
@@ -1769,6 +1862,7 @@
                         p_unidad_indagacion: document.getElementById('wizardUnidadIndagacion').value || '',
                         p_observaciones: document.getElementById('wizardObservaciones').value || '',
                         p_grados: gradosSeleccionados,
+                        p_course_ids: cursosRestringidos.length > 0 ? cursosRestringidos : null,
                         p_num_estudiantes: parseInt(document.getElementById('wizardNumEstudiantes').value) || 0,
                         p_adultos_ids: adultosIds,
                         p_modalidad: modalidadElement.value,
@@ -1840,7 +1934,7 @@
                 const salida = await supabaseRequest(
                     `/svc_pedagogical_trips?select=trip_date,departure_time,return_time,` +
                     `destination:svc_transport_destinations(destination_name),` +
-                    `svc_pedagogical_trip_grades(grades(grade_name))` +
+                    `svc_pedagogical_trip_grades(grades(grade_id,grade_name)),svc_pedagogical_trip_courses(courses(course_name,grade_id))` +
                     `&trip_id=eq.${tripId}`
                 );
 
@@ -1850,8 +1944,9 @@
                 }
 
                 const datos = salida[0];
-                const grados = datos.svc_pedagogical_trip_grades?.map(g => g.grades?.grade_name).filter(Boolean).join(', ') || '';
+                const grados = etiquetaGrados(datos);
 
+                
                 document.getElementById('banderazoDestino').textContent = datos.destination?.destination_name || 'Salida Pedagógica';
                 document.getElementById('banderazoInfo').textContent =
                     `${SvcCommons.formatDateDisplay(datos.trip_date)} • ${datos.departure_time} - ${datos.return_time} • ${grados}`;
@@ -2078,7 +2173,7 @@
             try {
                 const [salida, tripAdults, tripNodes, tripCatering] = await Promise.all([
                     supabaseRequest(
-                        `/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),` +
+                                                `/svc_pedagogical_trips?select=*,svc_pedagogical_trip_grades(grades(grade_id,grade_name)),svc_pedagogical_trip_courses(courses(course_name,grade_id)),` +
                         `destination:svc_transport_destinations(destination_name,destination_address),` +
                         `request:svc_service_requests(request_status,approver_id,workers!svc_service_requests_approver_fkey(worker_first_name,worker_last_name_1))` +
                         `&trip_id=eq.${tripId}`
@@ -2125,7 +2220,7 @@
                     }
                 }
 
-                const grados = datos.svc_pedagogical_trip_grades?.map(g => g.grades.grade_name).join(', ') || 'N/A';
+                const grados = etiquetaGrados(datos);
                 const destino = datos.destination?.destination_name || 'N/A';
                 const direccion = datos.destination?.destination_address || '';
                 const aprobador = datos.request?.workers ? `${datos.request.workers.worker_first_name} ${datos.request.workers.worker_last_name_1}` : 'N/A';
@@ -2367,6 +2462,23 @@
                 const selectGrados = document.getElementById('wizardGrados');
                 Array.from(selectGrados.options).forEach(opt => { opt.selected = gradosIds.includes(opt.value); });
 
+                
+                // Cursos: en grados con restricción, los cursos no guardados quedan excluidos
+                cursosExcluidos = new Set();
+                const cursosSalida = await supabaseRequest(
+                    `/svc_pedagogical_trip_courses?select=course_id,course:courses(grade_id)&trip_id=eq.${tripId}`
+                );
+                if (cursosSalida && cursosSalida.length > 0) {
+                    const incluidos = new Set(cursosSalida.map(c => c.course_id));
+                    const gradosRestringidos = [...new Set(cursosSalida.map(c => c.course?.grade_id).filter(Boolean))];
+                    const cursosDeGrados = await supabaseRequest(
+                        `/courses?select=course_id&grade_id=in.(${gradosRestringidos.join(',')})&course_status=eq.active`
+                    );
+                    (cursosDeGrados || []).forEach(c => {
+                        if (!incluidos.has(c.course_id)) cursosExcluidos.add(c.course_id);
+                    });
+                }
+
                 document.getElementById('wizardDestino').value = datos.destination_id;
 
                 if (fpWizardFecha) {
@@ -2512,7 +2624,7 @@
                     supabaseRequest(
                         `/svc_pedagogical_trips?select=*,` +
                         `destination:svc_transport_destinations(destination_name),` +
-                        `svc_pedagogical_trip_grades(grades(grade_name)),` +
+                        `svc_pedagogical_trip_grades(grades(grade_id,grade_name)),svc_pedagogical_trip_courses(courses(course_name,grade_id)),` +
                         `request:svc_service_requests(` +
                             `requested_by,approver_id,` +
                             `requester:workers!svc_service_requests_requested_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,worker_phone,worker_id_doc,worker_birthday,` +
@@ -2573,8 +2685,8 @@
                     .sort((a, b) => (a.workers.worker_last_name_1 || '').localeCompare(b.workers.worker_last_name_1 || ''));
 
                 // Grados para el encabezado
-                const gradosNombres = trip.svc_pedagogical_trip_grades?.map(g => g.grades?.grade_name).filter(Boolean).join(', ') || '';
-
+                const gradosNombres = etiquetaGrados(trip);
+                
                 // 2. Crear PDF
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF('p', 'mm', 'letter');
