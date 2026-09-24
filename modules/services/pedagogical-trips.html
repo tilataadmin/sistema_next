@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.23.3">
+    <meta name="page-version" content="26.9.24.1">
     <title>Salidas Pedagógicas - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -223,6 +223,7 @@
                                         <label class="form-label">Grados participantes <span class="text-danger">*</span></label>
                                         <select class="form-select" id="wizardGrados" multiple required></select>
                                         <small class="text-muted">Mantén presionado Ctrl para seleccionar múltiples</small>
+                                        <div id="wizardCursosContainer" class="mt-2"></div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label">Destino <span class="text-danger">*</span></label>
@@ -622,6 +623,8 @@
         let selectedAdultosPedagogicas = [];
         let selectedNodosSalida = [];
         let selectedNodosLlegada = [];
+        let cursosWizard = [];            // cursos activos de los grados seleccionados en el wizard
+        let cursosExcluidos = new Set();  // course_id desmarcados; vacío = grados completos
 
         // ==========================================
         // INITIALIZATION
@@ -970,6 +973,14 @@
                 calcularCostosWizard();
             });
 
+            document.getElementById('wizardCursosContainer').addEventListener('change', async function(e) {
+                if (!e.target.classList.contains('wizard-curso-check')) return;
+                if (e.target.checked) cursosExcluidos.delete(e.target.value);
+                else cursosExcluidos.add(e.target.value);
+                await calcularEstudiantes();
+                calcularCostosWizard();
+            });
+
             document.getElementById('wizardDestino').addEventListener('change', function() {
                 calcularCostosWizard();
             });
@@ -1306,6 +1317,8 @@
             const gradosSeleccionados = Array.from(document.getElementById('wizardGrados').selectedOptions).map(o => o.value);
 
             if (gradosSeleccionados.length === 0) {
+                cursosWizard = [];
+                document.getElementById('wizardCursosContainer').innerHTML = '';
                 document.getElementById('wizardNumEstudiantes').value = 0;
                 document.getElementById('wizardDesglosePorGrado').textContent = '';
                 actualizarTotalParticipantes();
@@ -1314,17 +1327,30 @@
 
             try {
                 const cursos = await supabaseRequest(
-                    `/courses?select=course_id,grade_id,grade:grades(grade_name)&grade_id=in.(${gradosSeleccionados.join(',')})&course_status=eq.active`
+                    `/courses?select=course_id,course_name,grade_id,grade:grades(grade_name)&grade_id=in.(${gradosSeleccionados.join(',')})&course_status=eq.active&order=course_order`
                 );
 
-                if (!cursos || cursos.length === 0) {
+                cursosWizard = cursos || [];
+                renderCursosWizard();
+
+                if (cursosWizard.length === 0) {
                     document.getElementById('wizardNumEstudiantes').value = 0;
                     document.getElementById('wizardDesglosePorGrado').textContent = 'No hay cursos activos para los grados seleccionados';
                     actualizarTotalParticipantes();
                     return;
                 }
 
-                const cursosIds = cursos.map(c => c.course_id);
+                const cursosIds = cursosWizard
+                    .filter(c => !cursosExcluidos.has(c.course_id))
+                    .map(c => c.course_id);
+
+                if (cursosIds.length === 0) {
+                    document.getElementById('wizardNumEstudiantes').value = 0;
+                    document.getElementById('wizardDesglosePorGrado').textContent = 'No hay cursos marcados';
+                    actualizarTotalParticipantes();
+                    return;
+                }
+
                 const estudiantesBruto = await supabaseRequest(
                     `/students?select=student_id,course_id,status:student_status(status_code),course:courses(grade:grades(grade_name))&course_id=in.(${cursosIds.join(',')})`
                 );
@@ -1342,7 +1368,7 @@
 
                 const desglose = Object.entries(conteosPorGrado).map(([grado, cantidad]) => `${grado}: ${cantidad}`).join(', ');
                 document.getElementById('wizardDesglosePorGrado').textContent =
-                    total > 0 ? `Desglose: ${desglose}` : 'No hay estudiantes activos en los grados seleccionados';
+                    total > 0 ? `Desglose: ${desglose}` : 'No hay estudiantes activos en los cursos seleccionados';
 
                 actualizarTotalParticipantes();
 
@@ -1350,6 +1376,31 @@
                 console.error('Error calculando estudiantes:', error);
                 showMessage('Error al calcular estudiantes', 'danger');
             }
+        }
+
+        function renderCursosWizard() {
+            const contenedor = document.getElementById('wizardCursosContainer');
+            const gradosSel = Array.from(document.getElementById('wizardGrados').selectedOptions);
+
+            let html = '';
+            gradosSel.forEach(opt => {
+                const cursosGrado = cursosWizard.filter(c => c.grade_id === opt.value);
+                if (cursosGrado.length <= 1) return;
+
+                html += `<div class="mb-1"><small class="fw-semibold me-2">${opt.textContent}:</small>` +
+                    cursosGrado.map(c => `
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input wizard-curso-check" type="checkbox"
+                                   id="wizCurso_${c.course_id}" value="${c.course_id}"
+                                   ${cursosExcluidos.has(c.course_id) ? '' : 'checked'}>
+                            <label class="form-check-label small" for="wizCurso_${c.course_id}">${c.course_name}</label>
+                        </div>`).join('') +
+                    `</div>`;
+            });
+
+            contenedor.innerHTML = html
+                ? `<small class="text-muted d-block mb-1">Cursos (desmarque los que no participan):</small>${html}`
+                : '';
         }
 
         function actualizarTotalParticipantes() {
