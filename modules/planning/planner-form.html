@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.8.24.1">
+    <meta name="page-version" content="26.9.24.1">
     <title>Planeador de Asignatura</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -434,6 +434,10 @@
         .atl-leaf-item input { margin: 0; flex-shrink: 0; }
         .atl-leaf-es { font-weight: 500; }
         .atl-leaf-en { color: #6c757d; font-size: 0.82rem; font-style: italic; }
+        .atl-leaf-item.has-desc { flex-wrap: wrap; }
+        .atl-leaf-desc { flex-basis: 100%; padding-left: 1.5rem; color: #6c757d; font-size: 0.8rem; font-weight: 400; line-height: 1.35; }
+        .atl-leaf-desc > span { display: block; }
+        .atl-leaf-desc > span::before { content: "• "; }
 
         /* ====================================================
            BLOQUE 3 — CRITERIOS DE EVALUACIÓN
@@ -1554,14 +1558,14 @@
         async function loadContext() {
             // Cargar todos los catálogos base que necesitamos (incluyendo workers y áreas/secciones para los caminos)
             const [gradesRes, subjectsRes, programsRes, workersRes, areasRes, sectionsRes, connectionTypesRes, atlSkillsRes] = await Promise.all([
-                supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id'),
+                supabaseRequest('/grades?select=grade_id,grade_name,program_id,section_id,is_early_years'),
                 supabaseRequest('/academic_subjects?select=subject_id,subject_name,area_id'),
                 supabaseRequest('/programs?select=program_id,program_name,program_director_email'),
                 supabaseRequest('/workers?select=worker_id,worker_first_name,worker_last_name_1,email,worker_status&worker_status=eq.active'),
                 supabaseRequest('/academic_areas?select=area_id,area_name,coordinator_worker_id&area_status=eq.active'),
                 supabaseRequest('/sections?select=section_id,section_name,director_email&section_status=eq.active'),
                 supabaseRequest('/pln_connection_types?select=*&active=eq.true&order=sort_order.asc'),
-                supabaseRequest('/pln_ib_atl_skills?select=*&active=eq.true&program_scope=eq.PEP&order=category.asc,sort_order.asc')
+                supabaseRequest('/pln_ib_atl_skills?select=*&active=eq.true&program_scope=in.(PEP,PEP_PI)&order=category.asc,sort_order.asc')
             ]);
 
             allGrades = gradesRes || [];
@@ -3560,7 +3564,12 @@
             const container = document.getElementById('atl-groups');
             if (!container) return;
 
-            if (catalogATLSkills.length === 0) {
+            // Catálogo ATL según el grado: primera infancia (PEP_PI) o primaria (PEP)
+            const gradoAtl = allGrades.find(g => g.grade_id === plannerData?.grade_id);
+            const atlScope = gradoAtl?.is_early_years ? 'PEP_PI' : 'PEP';
+            const catalogoGrado = catalogATLSkills.filter(a => a.program_scope === atlScope);
+
+            if (catalogoGrado.length === 0) {
                 container.innerHTML = `
                     <div class="atl-skills-empty">
                         No hay habilidades ATL activas en el catálogo. Configúrelas en "Catálogos de planeación".
@@ -3571,7 +3580,7 @@
 
             // Mapa parent_id -> [hijos ordenados]. Raíces bajo '__root__'.
             const childrenMap = {};
-            catalogATLSkills.forEach(n => {
+            catalogoGrado.forEach(n => {
                 const key = n.parent_id || '__root__';
                 (childrenMap[key] = childrenMap[key] || []).push(n);
             });
@@ -3603,8 +3612,12 @@
             if (esHoja) {
                 const checked = selectedATLSkills.has(node.atl_skill_id);
                 const enHtml = node.name_en ? `<span class="atl-leaf-en">${escapeHtml(node.name_en)}</span>` : '';
+                // Descripción opcional (viñetas separadas por salto de línea). Hoy solo la tiene el catálogo PEP_PI.
+                const desc = node.description_es
+                    ? `<span class="atl-leaf-desc">${node.description_es.split('\n').map(l => `<span>${escapeHtml(l)}</span>`).join('')}</span>`
+                    : '';
                 return `
-                    <label class="atl-leaf-item ${checked ? 'checked' : ''}">
+                    <label class="atl-leaf-item ${checked ? 'checked' : ''} ${desc ? 'has-desc' : ''}">
                         <input type="checkbox"
                             data-atl-skill-id="${node.atl_skill_id}"
                             data-role="atl-leaf"
@@ -3612,6 +3625,7 @@
                             ${isReadOnly ? 'disabled' : ''}>
                         <span class="atl-leaf-es">${escapeHtml(node.name_es)}</span>
                         ${enHtml}
+                        ${desc}
                     </label>
                 `;
             }
