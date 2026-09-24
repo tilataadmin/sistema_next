@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-24 18:37 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-24 18:38 UTC. **No editar a mano.**
 
 **402 tablas** referenciadas en **336 archivos**.
 
@@ -1178,7 +1178,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/follow-ups/course-follow-up-queries.html` | follow-ups | embed | 835 |
 | `modules/follow-ups/course-follow-ups.html` | follow-ups | embed | 824 |
 | `modules/follow-ups/general-queries.html` | follow-ups | GET | 1116 |
-| `modules/follow-ups/individual-issues.html` | follow-ups | embed | 781 |
+| `modules/follow-ups/individual-issues.html` | follow-ups | embed | 781, 1209 |
 | `modules/general-tools/attendance-reports.html` | general-tools | GET | 1153, 1340, 1897 |
 | `modules/general-tools/community-query.html` | general-tools | embed | 860, 1045 |
 | `modules/general-tools/family-attendance-reports.html` | general-tools | embed | 399 |
