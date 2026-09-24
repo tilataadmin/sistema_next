@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.24.4">
+    <meta name="page-version" content="26.9.24.5">
     <title>Salidas Pedagógicas - SchoolNet</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1393,6 +1393,18 @@
             }).join(', ') || 'N/A';
         }
 
+        // Mismo rótulo, construido desde los datos del wizard (para notificaciones al crear)
+        function etiquetaGradosWizard(datosSalida) {
+            const cursosSel = datosSalida.p_course_ids || [];
+            return datosSalida.p_grados.map(gId => {
+                const g = datosGlobales.grados.find(gr => gr.grade_id === gId);
+                const cursosGrado = cursosWizard.filter(c => c.grade_id === gId && cursosSel.includes(c.course_id));
+                return cursosGrado.length > 0
+                    ? cursosGrado.map(c => c.course_name).sort().join(', ')
+                    : (g ? g.grade_name : gId);
+            }).join(', ');
+        }
+
         function renderCursosWizard() {
             const contenedor = document.getElementById('wizardCursosContainer');
             const gradosSel = Array.from(document.getElementById('wizardGrados').selectedOptions);
@@ -1602,10 +1614,7 @@
                 if (!aprobador) return false;
 
                 const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
-                const nombresGrados = datosSalida.p_grados.map(gId => {
-                    const g = datosGlobales.grados.find(gr => gr.grade_id === gId);
-                    return g ? g.grade_name : gId;
-                }).join(', ');
+                const nombresGrados = etiquetaGradosWizard(datosSalida);
 
                 const senderName = currentWorker ? SvcCommons.workerFullName(currentWorker) : (currentUser.user_display_name || currentUser.user_name);
 
@@ -1645,10 +1654,7 @@
 
                 const destino = datosGlobales.destinos.find(d => d.destination_id === datosSalida.p_destino_id);
                 const nombreDestino = destino ? destino.destination_name : 'Destino no especificado';
-                const nombresGrados = datosSalida.p_grados.map(gId => {
-                    const grado = datosGlobales.grados.find(g => g.grade_id === gId);
-                    return grado ? grado.grade_name : gId;
-                }).join(', ');
+                const nombresGrados = etiquetaGradosWizard(datosSalida);
 
                 const fechaFormateada = new Date(datosSalida.p_fecha + 'T00:00:00').toLocaleDateString('es-CO', {
                     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -1926,7 +1932,7 @@
                 const salida = await supabaseRequest(
                     `/svc_pedagogical_trips?select=trip_date,departure_time,return_time,` +
                     `destination:svc_transport_destinations(destination_name),` +
-                    `svc_pedagogical_trip_grades(grades(grade_name))` +
+                    `svc_pedagogical_trip_grades(grades(grade_id,grade_name)),svc_pedagogical_trip_courses(courses(course_name,grade_id))` +
                     `&trip_id=eq.${tripId}`
                 );
 
@@ -1936,8 +1942,9 @@
                 }
 
                 const datos = salida[0];
-                const grados = datos.svc_pedagogical_trip_grades?.map(g => g.grades?.grade_name).filter(Boolean).join(', ') || '';
+                const grados = etiquetaGrados(datos);
 
+                
                 document.getElementById('banderazoDestino').textContent = datos.destination?.destination_name || 'Salida Pedagógica';
                 document.getElementById('banderazoInfo').textContent =
                     `${SvcCommons.formatDateDisplay(datos.trip_date)} • ${datos.departure_time} - ${datos.return_time} • ${grados}`;
@@ -2615,7 +2622,7 @@
                     supabaseRequest(
                         `/svc_pedagogical_trips?select=*,` +
                         `destination:svc_transport_destinations(destination_name),` +
-                        `svc_pedagogical_trip_grades(grades(grade_name)),` +
+                        `svc_pedagogical_trip_grades(grades(grade_id,grade_name)),svc_pedagogical_trip_courses(courses(course_name,grade_id)),` +
                         `request:svc_service_requests(` +
                             `requested_by,approver_id,` +
                             `requester:workers!svc_service_requests_requested_by_fkey(worker_first_name,worker_last_name_1,worker_last_name_2,worker_phone,worker_id_doc,worker_birthday,` +
@@ -2676,8 +2683,8 @@
                     .sort((a, b) => (a.workers.worker_last_name_1 || '').localeCompare(b.workers.worker_last_name_1 || ''));
 
                 // Grados para el encabezado
-                const gradosNombres = trip.svc_pedagogical_trip_grades?.map(g => g.grades?.grade_name).filter(Boolean).join(', ') || '';
-
+                const gradosNombres = etiquetaGrados(trip);
+                
                 // 2. Crear PDF
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF('p', 'mm', 'letter');
