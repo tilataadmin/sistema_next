@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-24 14:02 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-24 18:38 UTC. **No editar a mano.**
 
 **336 archivos** con acceso a datos.
 
@@ -786,7 +786,7 @@
 ### `modules/follow-ups/course-follow-ups.html`
 
 - **Módulo:** follow-ups
-- **Lee (11):** courses, grades, sections, stm_category, stm_docs, stm_strategies, stm_students_topics, stm_students_topics_categories, students, tasks, workers
+- **Lee (12):** courses, grades, sections, stm_category, stm_docs, stm_strategies, stm_students_topics, stm_students_topics_categories, student_status, students, tasks, workers
 - **Escribe (3):** **stm_docs**, **stm_strategies**, **tasks**
 
 ### `modules/follow-ups/eae-issues.html`
@@ -817,7 +817,7 @@
 ### `modules/follow-ups/individual-issues.html`
 
 - **Módulo:** follow-ups
-- **Lee (7):** courses, grades, sections, stm_category, stm_students_topics, stm_students_topics_categories, students
+- **Lee (8):** courses, grades, sections, stm_category, stm_students_topics, stm_students_topics_categories, student_status, students
 - **Escribe (2):** **stm_students_topics**, **stm_students_topics_categories**
 
 ### `modules/follow-ups/manage-eae-issues.html`
