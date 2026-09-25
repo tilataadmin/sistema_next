@@ -1,8 +1,8 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-24 18:38 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 19:57 UTC. **No editar a mano.**
 
-**402 tablas** referenciadas en **336 archivos**.
+**403 tablas** referenciadas en **336 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
@@ -399,6 +399,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [test_students](#teststudents) | 1 | 0 | 1 |
 | [test_subjects](#testsubjects) | 1 | 0 | 0 |
 | [teval_rubric_components](#tevalrubriccomponents) | 1 | 1 | 0 |
+| [teval_rubric_descriptor_items](#tevalrubricdescriptoritems) | 1 | 0 | 0 |
 | [teval_rubric_descriptors](#tevalrubricdescriptors) | 1 | 1 | 0 |
 | [teval_rubric_domains](#tevalrubricdomains) | 1 | 1 | 0 |
 | [teval_rubric_levels](#tevalrubriclevels) | 1 | 1 | 0 |
@@ -4576,25 +4577,31 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 372, 685, 747, 752, 770 |
+| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 378, 701, 763, 768, 786 |
+
+### teval_rubric_descriptor_items
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/rubric.html` | teacher-eval | GET | 386 |
 
 ### teval_rubric_descriptors
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 376, 602, 682, 769, 821, 831 |
+| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 382, 618, 698, 785, 837, 847 |
 
 ### teval_rubric_domains
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 368, 657, 662, 691 |
+| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 374, 673, 678, 707 |
 
 ### teval_rubric_levels
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 364, 577, 582, 603 |
+| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 370, 593, 598, 619 |
 
 ### teval_verification_codes
 

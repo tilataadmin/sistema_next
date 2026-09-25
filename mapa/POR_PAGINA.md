@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-24 18:38 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 19:57 UTC. **No editar a mano.**
 
 **336 archivos** con acceso a datos.
 
@@ -1957,7 +1957,7 @@
 ### `modules/teacher-eval/rubric.html`
 
 - **Módulo:** teacher-eval
-- **Lee (4):** teval_rubric_components, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels
+- **Lee (5):** teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels
 - **Escribe (4):** **teval_rubric_components**, **teval_rubric_descriptors**, **teval_rubric_domains**, **teval_rubric_levels**
 
 ### `modules/training/axes.html`
