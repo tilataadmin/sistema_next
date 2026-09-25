@@ -115,6 +115,22 @@ const MY_SPACE_SUBSECTIONS = [
 ];
 
 const MODULE_ITEM_ORDER = {
+    'teacher-eval': [
+        'Configuración de evaluación',
+        'Períodos de evaluación',
+        'Formularios de evaluación',
+        'Monitoreo de evaluación',
+        'Resultados de evaluación',
+        'Administrar catálogos de liderazgo',
+        'Gestionar ciclos de liderazgo',
+        'Bitácora de observaciones',
+        'Reportes de liderazgo',
+        'Rúbrica Danielson',
+        'Administración Danielson',
+        'Mi Autoevaluación Danielson',
+        'Revisión Danielson',
+        'Resultados Danielson'
+    ],
     'alumni': [
         'Ver directorio de egresados',
         'Importar egresados desde Phidias',
