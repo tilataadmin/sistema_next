@@ -129,6 +129,7 @@ const MODULE_ITEM_ORDER = {
         'Administración Danielson',
         'Mi Autoevaluación Danielson',
         'Revisión Danielson',
+        'Planes de Mejora Danielson',
         'Resultados Danielson'
     ],
     'alumni': [
