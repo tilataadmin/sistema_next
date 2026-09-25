@@ -1,15 +1,15 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-25 20:45 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 20:46 UTC. **No editar a mano.**
 
-**403 tablas** referenciadas en **336 archivos**.
+**409 tablas** referenciadas en **337 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
 | Tabla | Archivos | Escriben | Dudosas |
 |---|---:|---:|---:|
-| [workers](#workers) | 134 | 2 | 16 |
-| [academic_years](#academicyears) | 87 | 4 | 3 |
+| [workers](#workers) | 135 | 2 | 16 |
+| [academic_years](#academicyears) | 88 | 4 | 3 |
 | [grades](#grades) | 67 | 2 | 4 |
 | [courses](#courses) | 60 | 2 | 4 |
 | [users](#users) | 58 | 4 | 11 |
@@ -29,9 +29,9 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [job_roles](#jobroles) | 17 | 1 | 4 |
 | [training_modules](#trainingmodules) | 17 | 1 | 1 |
 | [budget_items](#budgetitems) | 16 | 2 | 6 |
+| [worker_job_roles](#workerjobroles) | 15 | 1 | 1 |
 | [organizational_areas](#organizationalareas) | 14 | 1 | 0 |
 | [organizational_divisions](#organizationaldivisions) | 14 | 1 | 0 |
-| [worker_job_roles](#workerjobroles) | 14 | 1 | 1 |
 | [worker_training_paths](#workertrainingpaths) | 13 | 6 | 3 |
 | [families](#families) | 12 | 2 | 4 |
 | [procedure_instances](#procedureinstances) | 12 | 8 | 2 |
@@ -303,6 +303,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [system_announcements](#systemannouncements) | 2 | 1 | 1 |
 | [task_collaborators](#taskcollaborators) | 2 | 2 | 0 |
 | [teval_config](#tevalconfig) | 2 | 1 | 0 |
+| [teval_rubric_levels](#tevalrubriclevels) | 2 | 1 | 0 |
 | [training_module_references](#trainingmodulereferences) | 2 | 1 | 0 |
 | [training_requisition_sources](#trainingrequisitionsources) | 2 | 1 | 0 |
 | [tte_request_comments](#tterequestcomments) | 2 | 2 | 0 |
@@ -398,11 +399,16 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [test_grades](#testgrades) | 1 | 0 | 1 |
 | [test_students](#teststudents) | 1 | 0 | 1 |
 | [test_subjects](#testsubjects) | 1 | 0 | 0 |
+| [teval_dn_config](#tevaldnconfig) | 1 | 1 | 0 |
+| [teval_dn_cycles](#tevaldncycles) | 1 | 1 | 0 |
+| [teval_dn_evaluations](#tevaldnevaluations) | 1 | 1 | 0 |
+| [teval_dn_marks](#tevaldnmarks) | 1 | 0 | 0 |
+| [teval_dn_reviewer_changes](#tevaldnreviewerchanges) | 1 | 1 | 0 |
+| [teval_dn_reviewers](#tevaldnreviewers) | 1 | 1 | 0 |
 | [teval_rubric_components](#tevalrubriccomponents) | 1 | 1 | 0 |
 | [teval_rubric_descriptor_items](#tevalrubricdescriptoritems) | 1 | 1 | 0 |
 | [teval_rubric_descriptors](#tevalrubricdescriptors) | 1 | 1 | 0 |
 | [teval_rubric_domains](#tevalrubricdomains) | 1 | 1 | 0 |
-| [teval_rubric_levels](#tevalrubriclevels) | 1 | 1 | 0 |
 | [teval_verification_codes](#tevalverificationcodes) | 1 | 1 | 0 |
 | [tilata_recurring_events](#tilatarecurringevents) | 1 | 1 | 0 |
 | [tilata_recurring_invitees](#tilatarecurringinvitees) | 1 | 1 | 0 |
@@ -532,6 +538,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/suppliers/manage.html` | suppliers | GET | 668 |
 | `modules/suppliers/my-suppliers.html` | suppliers | GET | 335 |
 | `modules/surveys/dashboard.html` | surveys | GET | 945 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 286, 290, 295 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 588 |
 | `modules/teacher-eval/leadership-cycles.html` | teacher-eval | GET, embed | 505, 661, 739 |
 | `modules/teacher-eval/leadership-my-results.html` | teacher-eval | GET, embed | 198, 227 |
@@ -637,6 +644,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/student-services.html` | services | GET | 300 |
 | `modules/suppliers/index.html` | suppliers | GET | 918 |
 | `modules/surveys/dashboard.html` | surveys | GET | 644 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 274, 278 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 291 |
 | `modules/teacher-eval/index.html` | teacher-eval | GET | 653 |
 | `modules/teacher-eval/monitor.html` | teacher-eval | embed | 230 |
@@ -1379,6 +1387,26 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/approvals.html` | services | embed | 1376 |
 | `modules/services/svc-meal-tickets.html` | services | embed | 240, 253, 581, 584 |
 
+### worker_job_roles
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/config/academic-assignments.html` | config | embed | 276 |
+| `modules/general-tools/community-query.html` | general-tools | embed | 1244 |
+| `modules/general-tools/lists.html` | general-tools | GET | 1572 |
+| `modules/hr/index.html` | hr | GET | 943 |
+| `modules/hr/manage-absences.html` | hr | GET | 2272, 2292 |
+| `modules/hr/request-absence.html` | hr | GET | 1965, 1985 |
+| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1323, 2579, 2587, 2606, 2629, 3016 |
+| `modules/profile/mi-perfil.html` | profile | GET, ND | 608, 1973 |
+| `modules/security/user-roles.html` | security | GET | 490 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 295 |
+| `modules/training/generate-paths.html` | training | GET, embed | 459, 566, 780, 880 |
+| `modules/training/manage-deadlines.html` | training | embed | 587 |
+| `modules/training/my-path.html` | training | embed | 799 |
+| `modules/training/register-completion.html` | training | embed | 584 |
+| `modules/training/waive-modules.html` | training | embed | 393 |
+
 ### organizational_areas
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -1416,25 +1444,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/profile/mi-perfil.html` | profile | embed | 597 |
 | `modules/security/user-roles.html` | security | embed | 466 |
 | `modules/training/reports.html` | training | GET | 783 |
-
-### worker_job_roles
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/config/academic-assignments.html` | config | embed | 276 |
-| `modules/general-tools/community-query.html` | general-tools | embed | 1244 |
-| `modules/general-tools/lists.html` | general-tools | GET | 1572 |
-| `modules/hr/index.html` | hr | GET | 943 |
-| `modules/hr/manage-absences.html` | hr | GET | 2272, 2292 |
-| `modules/hr/request-absence.html` | hr | GET | 1965, 1985 |
-| `modules/hr/workers.html` | hr | GET, PATCH, POST | 1323, 2579, 2587, 2606, 2629, 3016 |
-| `modules/profile/mi-perfil.html` | profile | GET, ND | 608, 1973 |
-| `modules/security/user-roles.html` | security | GET | 490 |
-| `modules/training/generate-paths.html` | training | GET, embed | 459, 566, 780, 880 |
-| `modules/training/manage-deadlines.html` | training | embed | 587 |
-| `modules/training/my-path.html` | training | embed | 799 |
-| `modules/training/register-completion.html` | training | embed | 584 |
-| `modules/training/waive-modules.html` | training | embed | 393 |
 
 ### worker_training_paths
 
@@ -3994,6 +4003,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/config.html` | teacher-eval | GET, PATCH, POST | 226, 318, 327 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | GET | 321, 664 |
 
+### teval_rubric_levels
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 282 |
+| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 379, 602, 607, 628 |
+
 ### training_module_references
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -4573,6 +4589,42 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/config/load-test.html` | config | embed | 332 |
 
+### teval_dn_config
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH | 313, 875 |
+
+### teval_dn_cycles
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 278, 408, 437, 465, 493 |
+
+### teval_dn_evaluations
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | DELETE, GET, PATCH, POST | 309, 648, 670, 691, 761, 803, 816 |
+
+### teval_dn_marks
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 663 |
+
+### teval_dn_reviewer_changes
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | POST | 767 |
+
+### teval_dn_reviewers
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 290, 562, 592 |
+
 ### teval_rubric_components
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -4596,12 +4648,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 383, 682, 687, 716 |
-
-### teval_rubric_levels
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 379, 602, 607, 628 |
 
 ### teval_verification_codes
 
