@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-25 21:44 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 21:47 UTC. **No editar a mano.**
 
 **412 tablas** referenciadas en **340 archivos**.
 
@@ -652,7 +652,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/surveys/dashboard.html` | surveys | GET | 644 |
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 274, 278 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | embed | 176 |
-| `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, embed | 220, 642 |
+| `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, embed | 220, 650 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | embed | 218 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 291 |
 | `modules/teacher-eval/index.html` | teacher-eval | GET | 653 |
@@ -4690,13 +4690,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-plan.html` | teacher-eval | DELETE, GET, PATCH, POST, embed | 266, 352, 550, 564, 589, 605, 650, 674 |
+| `modules/teacher-eval/danielson-plan.html` | teacher-eval | DELETE, GET, PATCH, POST, embed | 266, 352, 558, 572, 597, 613, 658, 682 |
 
 ### teval_dn_plans
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, PATCH, POST | 266, 335, 502, 628, 650, 661 |
+| `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, PATCH, POST | 266, 335, 510, 636, 658, 669 |
 
 ### teval_dn_reviewer_changes
 
