@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-25 20:46 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 20:56 UTC. **No editar a mano.**
 
-**337 archivos** con acceso a datos.
+**338 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1870,6 +1870,13 @@
 - **Módulo:** teacher-eval
 - **Lee (9):** academic_years, teval_dn_config, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_dn_reviewers, teval_rubric_levels, worker_job_roles, workers
 - **Escribe (5):** **teval_dn_config**, **teval_dn_cycles**, **teval_dn_evaluations**, **teval_dn_reviewer_changes**, **teval_dn_reviewers**
+
+### `modules/teacher-eval/danielson-autoevaluacion.html`
+
+- **Módulo:** teacher-eval
+- **Lee (11):** academic_years, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels, users, workers
+- **Escribe (2):** **teval_dn_evaluations**, **teval_dn_marks**
+- **Funciones (1):** teval_dn_calc_results
 
 ### `modules/teacher-eval/evaluate.html`
 

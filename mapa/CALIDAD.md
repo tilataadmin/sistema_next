@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-25 20:46 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 20:56 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -41,7 +41,7 @@
 
 ## Funciones de base de datos invocadas
 
-**17 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
+**18 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
 
 | Función | Archivos |
 |---|---:|
@@ -62,6 +62,7 @@
 | suspend_trip | 1 |
 | get_pedagogical_trip_students | 1 |
 | get_trip_authorization_panel | 1 |
+| teval_dn_calc_results | 1 |
 
 ## Nombres descartados por no parecer tablas
 
