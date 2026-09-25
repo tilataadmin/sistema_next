@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.25.3">
+    <meta name="page-version" content="26.9.25.4">
     <title>Mi Autoevaluación Danielson</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -53,7 +53,21 @@
         .vineta-check.bloqueada { cursor: default; }
         .vineta-check.bloqueada:hover { background: transparent; }
         .vineta-texto { font-size: 0.82rem; color: #475569; line-height: 1.45; }
-
+        .perfil-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.4rem; }
+        .perfil-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; border-radius: 6px; background: #f8fafc; }
+        .perfil-code { background: #e0f2fe; color: #0284c7; font-weight: 700; font-size: 0.72rem; padding: 0.1rem 0.4rem; border-radius: 4px; }
+        .perfil-nombre { flex: 1; font-size: 0.78rem; color: #475569; }
+        .perfil-valor { font-weight: 700; font-size: 0.82rem; }
+        .n1 { color: #b91c1c; } .n2 { color: #b45309; } .n3 { color: #047857; } .n4 { color: #1d4ed8; }
+        .meta-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem; margin-bottom: 0.9rem; }
+        .meta-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+        .meta-num { background: #0ea5e9; color: #fff; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; }
+        .valoracion-box { border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.7rem; background: #f8fafc; margin-top: 0.7rem; }
+        .pill { font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; }
+        .pill-gris { background: #f1f5f9; color: #64748b; }
+        .pill-verde { background: #dcfce7; color: #15803d; }
+        .pill-ambar { background: #fef3c7; color: #b45309; }
+        .sin-dato { color: #94a3b8; font-style: italic; font-size: 0.85rem; }
         @media (max-width: 991px) {
             .levels-grid { grid-template-columns: 1fr; }
             .level-col { border-right: none; border-bottom: 1px solid #e2e8f0; }
@@ -111,6 +125,30 @@
                 <div id="aviso-modo" class="small mt-2"></div>
             </div>
 
+            <div id="seccion-resultado" class="card mb-3 d-none">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Mi resultado (versión revisada)</h6>
+                    <span class="small text-muted" id="resultado-global"></span>
+                </div>
+                <div class="card-body">
+                    <div class="perfil-grid" id="resultado-componentes"></div>
+                </div>
+            </div>
+
+            <div id="seccion-plan" class="card mb-3 d-none">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h6 class="mb-0"><i class="bi bi-flag me-2"></i>Mi plan de mejora</h6>
+                    <button class="btn btn-sm btn-primary d-none" id="btn-acuse" onclick="darAcuse()">
+                        <i class="bi bi-check2-square me-1"></i>Confirmo que conozco mi plan
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="plan-aviso" class="small text-muted mb-3"></div>
+                    <div id="plan-metas"></div>
+                    <div id="plan-sugerencias"></div>
+                </div>
+            </div>
+
             <div id="dominios-container"></div>
         </div>
     </div>
@@ -136,6 +174,16 @@
         let marcas = [];
         let expandedDomains = {};
         let editable = false;
+        let config = null;
+        let resultados = [];
+        let miPlan = null;
+        let misMetas = [];
+
+        const ESTADOS_META = [
+            { v: 'cumplida', t: 'Cumplida' },
+            { v: 'parcialmente_cumplida', t: 'Parcialmente cumplida' },
+            { v: 'no_cumplida', t: 'No cumplida' }
+        ];
 
         // ==========================================
         // INICIALIZACIÓN
@@ -189,6 +237,7 @@
 
                 await cargarRubrica();
                 await cargarMarcas();
+                await cargarResultadosYPlan();
                 calcularModo();
                 render();
                 document.getElementById('contenido').classList.remove('d-none');
@@ -231,8 +280,10 @@
         // ==========================================
         // RENDER
         // ==========================================
-        function render() {
+       function render() {
             renderBarra();
+            renderResultado();
+            renderPlan();
             renderDominios();
         }
 
@@ -450,6 +501,175 @@
         }
 
         // ==========================================
+        // RESULTADO Y PLAN DE MEJORA
+        // ==========================================
+        async function cargarResultadosYPlan() {
+            const cfg = await supabaseRequest('/teval_dn_config?select=*&limit=1');
+            config = cfg.length ? cfg[0] : null;
+
+            resultados = evaluacion.eval_status === 'revisada'
+                ? await supabaseRequest(`/teval_dn_results?select=component_id,result_value&evaluation_id=eq.${evaluacion.evaluation_id}&result_version=eq.revisada`)
+                : [];
+
+            const planes = await supabaseRequest(`/teval_dn_plans?select=*&academic_year_id=eq.${cicloActivo.academic_year_id}&worker_id=eq.${miWorker.worker_id}&limit=1`);
+            miPlan = planes.length ? planes[0] : null;
+            misMetas = miPlan
+                ? await supabaseRequest(`/teval_dn_plan_goals?select=*&plan_id=eq.${miPlan.plan_id}&order=goal_order.asc`)
+                : [];
+        }
+
+        function valorDe(componentId) {
+            const r = resultados.find(x => x.component_id === componentId);
+            return r ? parseFloat(r.result_value) : null;
+        }
+
+        function nivelDe(valor) {
+            const rangos = (config && config.level_ranges) ? config.level_ranges : [];
+            const r = rangos.find(x => valor >= x.min && valor <= x.max);
+            return r ? r.level_order : Math.round(valor);
+        }
+
+        function renderResultado() {
+            const seccion = document.getElementById('seccion-resultado');
+            if (evaluacion.eval_status !== 'revisada' || !resultados.length) {
+                seccion.classList.add('d-none');
+                return;
+            }
+            seccion.classList.remove('d-none');
+
+            const valores = components.map(c => valorDe(c.component_id)).filter(v => v !== null);
+            const global = valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : null;
+            document.getElementById('resultado-global').textContent = global !== null
+                ? 'Global: ' + global.toFixed(2).replace('.', ',')
+                : '';
+
+            document.getElementById('resultado-componentes').innerHTML = components.map(c => {
+                const v = valorDe(c.component_id);
+                return `
+                    <div class="perfil-item">
+                        <span class="perfil-code">${escapeHtml(c.component_code)}</span>
+                        <span class="perfil-nombre">${escapeHtml(c.component_name)}</span>
+                        <span class="perfil-valor ${v !== null ? 'n' + nivelDe(v) : ''}">${v !== null ? v.toFixed(2).replace('.', ',') : '—'}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function puedeValorarMetas() {
+            return cicloActivo.cycle_status === 'open'
+                && cicloActivo.cycle_phase >= 5
+                && miPlan && miPlan.acknowledged_at;
+        }
+
+        function renderPlan() {
+            const seccion = document.getElementById('seccion-plan');
+            if (!miPlan || !misMetas.length) { seccion.classList.add('d-none'); return; }
+            seccion.classList.remove('d-none');
+
+            const btnAcuse = document.getElementById('btn-acuse');
+            btnAcuse.classList.toggle('d-none', !!miPlan.acknowledged_at);
+
+            const aviso = document.getElementById('plan-aviso');
+            if (!miPlan.acknowledged_at) {
+                aviso.textContent = 'Revise su plan y confirme que lo conoce. La confirmación es una constancia de conocimiento, no una aprobación.';
+            } else if (puedeValorarMetas()) {
+                aviso.textContent = 'Registre cómo le fue con cada meta. Su directivo hará después su propia valoración en una reunión con usted.';
+            } else {
+                aviso.textContent = 'Plan confirmado el ' + new Date(miPlan.acknowledged_at).toLocaleDateString('es-CO') + '.';
+            }
+
+            document.getElementById('plan-metas').innerHTML = misMetas.map((m, idx) => {
+                const comp = components.find(c => c.component_id === m.component_id);
+                return `
+                    <div class="meta-card">
+                        <div class="meta-head">
+                            <div class="meta-num">${idx + 1}</div>
+                            <span class="perfil-code">${comp ? escapeHtml(comp.component_code) : '—'}</span>
+                            <span class="flex-grow-1">${comp ? escapeHtml(comp.component_name) : ''}</span>
+                        </div>
+                        <div class="mb-2"><span class="fw-semibold small">Meta:</span> <span class="small">${escapeHtml(m.goal_description)}</span></div>
+                        <div class="mb-2"><span class="fw-semibold small">Acciones:</span> <span class="small">${escapeHtml(m.goal_actions)}</span></div>
+                        ${m.follow_up_date ? `<div class="small text-muted">Seguimiento previsto: ${formatearFecha(m.follow_up_date)}</div>` : ''}
+                        <div class="valoracion-box">
+                            <div class="fw-semibold small mb-2">Mi valoración</div>
+                            ${puedeValorarMetas()
+                                ? `<select class="form-select form-select-sm mb-2" id="est-prof-${m.goal_id}">
+                                       <option value="">— Seleccione —</option>
+                                       ${ESTADOS_META.map(e => `<option value="${e.v}" ${m.teacher_status === e.v ? 'selected' : ''}>${e.t}</option>`).join('')}
+                                   </select>
+                                   <textarea class="form-control form-control-sm mb-2" id="com-prof-${m.goal_id}" rows="2" placeholder="Comentario breve...">${escapeHtml(m.teacher_comment || '')}</textarea>
+                                   <button class="btn btn-sm btn-primary" onclick="guardarMiValoracion('${m.goal_id}')"><i class="bi bi-check-lg me-1"></i>Guardar</button>`
+                                : (m.teacher_status
+                                    ? `<div><span class="pill ${m.teacher_status === 'cumplida' ? 'pill-verde' : (m.teacher_status === 'parcialmente_cumplida' ? 'pill-ambar' : 'pill-gris')}">${(ESTADOS_META.find(e => e.v === m.teacher_status) || {}).t}</span></div>
+                                       ${m.teacher_comment ? `<div class="small text-muted mt-1">${escapeHtml(m.teacher_comment)}</div>` : ''}`
+                                    : '<div class="sin-dato">Se habilita más adelante en el proceso</div>')}
+                            ${m.reviewer_status
+                                ? `<div class="mt-2 pt-2 border-top">
+                                       <div class="fw-semibold small mb-1">Valoración del directivo</div>
+                                       <span class="pill ${m.reviewer_status === 'cumplida' ? 'pill-verde' : (m.reviewer_status === 'parcialmente_cumplida' ? 'pill-ambar' : 'pill-gris')}">${(ESTADOS_META.find(e => e.v === m.reviewer_status) || {}).t}</span>
+                                       ${m.reviewer_comment ? `<div class="small text-muted mt-1">${escapeHtml(m.reviewer_comment)}</div>` : ''}
+                                   </div>`
+                                : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('plan-sugerencias').innerHTML = miPlan.suggestions_text
+                ? `<div class="mt-3">
+                       <div class="fw-semibold small mb-1">Sugerencias de su directivo</div>
+                       <div class="small text-muted" style="white-space: pre-wrap;">${escapeHtml(miPlan.suggestions_text)}</div>
+                   </div>`
+                : '';
+        }
+
+        async function darAcuse() {
+            if (!confirm('¿Confirma que conoce su plan de mejora?\n\nEs una constancia de conocimiento, no una aprobación.')) return;
+            try {
+                await supabaseRequest(`/teval_dn_plans?plan_id=eq.${miPlan.plan_id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ acknowledged_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                });
+                miPlan.acknowledged_at = new Date().toISOString();
+                renderPlan();
+                showMessage('Acuse registrado', 'success');
+            } catch (error) {
+                console.error('Error registrando acuse:', error);
+                showMessage('Error al registrar: ' + error.message, 'danger');
+            }
+        }
+
+        async function guardarMiValoracion(goalId) {
+            const estado = document.getElementById('est-prof-' + goalId).value;
+            const comentario = document.getElementById('com-prof-' + goalId).value.trim();
+            if (!estado) { showMessage('Seleccione cómo le fue con la meta', 'warning'); return; }
+
+            try {
+                await supabaseRequest(`/teval_dn_plan_goals?goal_id=eq.${goalId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        teacher_status: estado,
+                        teacher_comment: comentario || null,
+                        teacher_status_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                misMetas = await supabaseRequest(`/teval_dn_plan_goals?select=*&plan_id=eq.${miPlan.plan_id}&order=goal_order.asc`);
+                renderPlan();
+                showMessage('Valoración guardada', 'success');
+            } catch (error) {
+                console.error('Error guardando valoración:', error);
+                showMessage('Error al guardar: ' + error.message, 'danger');
+            }
+        }
+
+        function formatearFecha(iso) {
+            if (!iso) return '';
+            const partes = iso.split('-');
+            return `${partes[2]}/${partes[1]}/${partes[0]}`;
+        }
+
+        // ==========================================
         // UTILIDADES
         // ==========================================
         function escapeHtml(text) {
@@ -460,6 +680,8 @@
         }
 
         window.toggleDomain = toggleDomain;
+        window.darAcuse = darAcuse;
+        window.guardarMiValoracion = guardarMiValoracion;
         window.alternarMarca = alternarMarca;
         window.enviarAutoevaluacion = enviarAutoevaluacion;
 
