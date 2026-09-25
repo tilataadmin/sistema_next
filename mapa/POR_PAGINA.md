@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-25 21:47 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-25 21:52 UTC. **No editar a mano.**
 
 **340 archivos** con acceso a datos.
 
@@ -1874,8 +1874,8 @@
 ### `modules/teacher-eval/danielson-autoevaluacion.html`
 
 - **Módulo:** teacher-eval
-- **Lee (11):** academic_years, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels, users, workers
-- **Escribe (2):** **teval_dn_evaluations**, **teval_dn_marks**
+- **Lee (15):** academic_years, teval_dn_config, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_dn_plan_goals, teval_dn_plans, teval_dn_results, teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels, users, workers
+- **Escribe (4):** **teval_dn_evaluations**, **teval_dn_marks**, **teval_dn_plan_goals**, **teval_dn_plans**
 - **Funciones (1):** teval_dn_calc_results
 
 ### `modules/teacher-eval/danielson-plan.html`
