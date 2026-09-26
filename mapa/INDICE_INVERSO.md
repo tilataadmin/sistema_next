@@ -1,8 +1,8 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-25 22:31 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-26 15:19 UTC. **No editar a mano.**
 
-**412 tablas** referenciadas en **341 archivos**.
+**413 tablas** referenciadas en **341 archivos**.
 
 Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con certeza. *Dudosas* = consultas armadas en variables, donde no se pudo determinar la operación.
 
@@ -11,8 +11,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [workers](#workers) | 139 | 2 | 16 |
 | [academic_years](#academicyears) | 92 | 4 | 3 |
 | [grades](#grades) | 67 | 2 | 4 |
+| [courses](#courses) | 61 | 2 | 4 |
 | [users](#users) | 61 | 4 | 11 |
-| [courses](#courses) | 60 | 2 | 4 |
 | [system_config](#systemconfig) | 57 | 3 | 3 |
 | [sections](#sections) | 55 | 1 | 4 |
 | [students](#students) | 50 | 4 | 9 |
@@ -42,12 +42,12 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [form_fields](#formfields) | 11 | 1 | 0 |
 | [genders](#genders) | 11 | 0 | 3 |
 | [stm_students_topics](#stmstudentstopics) | 11 | 6 | 3 |
+| [worker_managers](#workermanagers) | 11 | 1 | 2 |
 | [aap_applicants](#aapapplicants) | 10 | 4 | 0 |
 | [academic_assignments](#academicassignments) | 10 | 2 | 0 |
 | [alumni](#alumni) | 10 | 7 | 2 |
 | [budget_categories](#budgetcategories) | 10 | 2 | 3 |
 | [hr_balance_adjustments](#hrbalanceadjustments) | 10 | 6 | 0 |
-| [worker_managers](#workermanagers) | 10 | 1 | 2 |
 | [env_tree_species](#envtreespecies) | 9 | 2 | 0 |
 | [form_responses](#formresponses) | 9 | 5 | 0 |
 | [hr_config](#hrconfig) | 9 | 1 | 2 |
@@ -412,6 +412,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [test_students](#teststudents) | 1 | 0 | 1 |
 | [test_subjects](#testsubjects) | 1 | 0 | 0 |
 | [teval_dn_reviewer_changes](#tevaldnreviewerchanges) | 1 | 1 | 0 |
+| [teval_rs_evaluations](#tevalrsevaluations) | 1 | 1 | 0 |
 | [teval_verification_codes](#tevalverificationcodes) | 1 | 1 | 0 |
 | [tilata_recurring_events](#tilatarecurringevents) | 1 | 1 | 0 |
 | [tilata_recurring_invitees](#tilatarecurringinvitees) | 1 | 1 | 0 |
@@ -541,7 +542,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/suppliers/manage.html` | suppliers | GET | 668 |
 | `modules/suppliers/my-suppliers.html` | suppliers | GET | 335 |
 | `modules/surveys/dashboard.html` | surveys | GET | 945 |
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 287, 291, 296 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 291, 295, 300 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 217 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, embed | 210, 258 |
 | `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 236 |
@@ -651,7 +652,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/student-services.html` | services | GET | 300 |
 | `modules/suppliers/index.html` | suppliers | GET | 918 |
 | `modules/surveys/dashboard.html` | surveys | GET | 644 |
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 275, 279 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 279, 283 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | embed | 224 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, embed | 220, 650 |
 | `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 214, 549 |
@@ -738,6 +739,72 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/tte/respond-requests.html` | tte | embed | 435 |
 | `tilata-te-escucha.html` | (raíz) | embed | 273 |
 
+### courses
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `dashboard.html` | (raíz) | embed | 445, 449, 480 |
+| `modules/config/academic-assignments.html` | config | GET | 353 |
+| `modules/config/courses.html` | config | GET, PATCH, POST | 363, 603, 624, 672, 700 |
+| `modules/config/grades.html` | config | GET | 864 |
+| `modules/config/index.html` | config | ND | 538 |
+| `modules/config/students.html` | config | GET, embed | 588, 717, 964, 1276, 1761 |
+| `modules/config/year-closure.html` | config | GET, POST | 641, 1115, 1157 |
+| `modules/early-alerts/dashboard.html` | early-alerts | embed | 904 |
+| `modules/early-alerts/index.html` | early-alerts | GET | 819 |
+| `modules/early-alerts/manage-alerts.html` | early-alerts | embed | 949, 1073 |
+| `modules/early-alerts/register-alerts.html` | early-alerts | embed | 478 |
+| `modules/extracurricular/enrollments.html` | extracurricular | embed | 517, 668 |
+| `modules/follow-ups/confidential-notes.html` | follow-ups | embed | 801 |
+| `modules/follow-ups/course-follow-up-queries.html` | follow-ups | GET, embed | 690, 699, 711 |
+| `modules/follow-ups/course-follow-ups.html` | follow-ups | GET | 657, 667, 675 |
+| `modules/follow-ups/eae-issues.html` | follow-ups | embed | 1057 |
+| `modules/follow-ups/general-queries.html` | follow-ups | GET, embed | 804, 1131, 1134, 1533, 2597 |
+| `modules/follow-ups/group-issues.html` | follow-ups | GET | 391 |
+| `modules/follow-ups/index.html` | follow-ups | GET | 681 |
+| `modules/follow-ups/individual-issues.html` | follow-ups | embed | 1104 |
+| `modules/follow-ups/manage-group-issues.html` | follow-ups | GET | 873, 891 |
+| `modules/follow-ups/user-course-assignments.html` | follow-ups | GET | 451 |
+| `modules/general-tools/attendance-reports.html` | general-tools | GET, embed | 1027, 1344, 1638, 1901 |
+| `modules/general-tools/community-query.html` | general-tools | GET, embed | 611, 860, 1045 |
+| `modules/general-tools/family-activities.html` | general-tools | GET, embed | 408, 762, 835 |
+| `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 354 |
+| `modules/general-tools/family-attendance.html` | general-tools | GET | 358 |
+| `modules/general-tools/lists.html` | general-tools | GET, embed | 740, 1224, 1773, 2025, 2508 |
+| `modules/general-tools/tasks.html` | general-tools | embed | 2259, 2321 |
+| `modules/new-students/index.html` | new-students | GET | 635 |
+| `modules/new-students/new-students-report.html` | new-students | embed | 309, 644 |
+| `modules/new-students/register-activities.html` | new-students | embed | 617, 1007 |
+| `modules/new-students/registration-queries.html` | new-students | embed | 543 |
+| `modules/new-students/students-dashboard.html` | new-students | embed | 780, 1256 |
+| `modules/planning/dp-planner-form.html` | planning | GET | 369 |
+| `modules/planning/interdisc-unit-form.html` | planning | GET | 1151, 1361 |
+| `modules/planning/my-dp-planners.html` | planning | embed | 338 |
+| `modules/planning/my-myp-planners.html` | planning | embed | 324 |
+| `modules/planning/my-planners.html` | planning | embed | 444 |
+| `modules/planning/my-units.html` | planning | GET, embed | 370, 517, 820 |
+| `modules/planning/myp-planner-form.html` | planning | GET | 468 |
+| `modules/planning/planner-form.html` | planning | GET | 1668 |
+| `modules/planning/unit-form.html` | planning | GET, embed | 1467, 1583, 1645, 1785, 4173 |
+| `modules/procedures/execute-form.html` | procedures | ND | 512 |
+| `modules/procedures/execute-public.html` | procedures | ND | 450 |
+| `modules/procedures/execute.html` | procedures | ND | 508 |
+| `modules/services/pedagogical-trips.html` | services | embed | 1011, 2173, 2466 |
+| `modules/services/rep-groups.html` | services | embed | 387, 470 |
+| `modules/services/rep-trips.html` | services | embed | 833, 1603 |
+| `modules/services/sports-teams.html` | services | embed | 765, 849 |
+| `modules/services/sports-trips.html` | services | embed | 967, 1818 |
+| `modules/services/student-services.html` | services | GET | 331 |
+| `modules/surveys/results.html` | surveys | embed | 1374 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 323 |
+| `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 415 |
+| `modules/teacher-eval/monitor.html` | teacher-eval | GET | 296 |
+| `modules/teacher-eval/my-results.html` | teacher-eval | embed | 378 |
+| `modules/teacher-eval/results.html` | teacher-eval | embed | 386 |
+| `modules/tte/manage-requests.html` | tte | GET | 656 |
+| `modules/tte/respond-requests.html` | tte | GET | 435 |
+| `tilata-te-escucha.html` | (raíz) | GET | 273 |
+
 ### users
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -803,71 +870,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/index.html` | teacher-eval | GET, ND | 389, 423, 730 |
 | `modules/training/index.html` | training | ND | 604, 653 |
 | `modules/tte/index.html` | tte | GET | 803 |
-
-### courses
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `dashboard.html` | (raíz) | embed | 445, 449, 480 |
-| `modules/config/academic-assignments.html` | config | GET | 353 |
-| `modules/config/courses.html` | config | GET, PATCH, POST | 363, 603, 624, 672, 700 |
-| `modules/config/grades.html` | config | GET | 864 |
-| `modules/config/index.html` | config | ND | 538 |
-| `modules/config/students.html` | config | GET, embed | 588, 717, 964, 1276, 1761 |
-| `modules/config/year-closure.html` | config | GET, POST | 641, 1115, 1157 |
-| `modules/early-alerts/dashboard.html` | early-alerts | embed | 904 |
-| `modules/early-alerts/index.html` | early-alerts | GET | 819 |
-| `modules/early-alerts/manage-alerts.html` | early-alerts | embed | 949, 1073 |
-| `modules/early-alerts/register-alerts.html` | early-alerts | embed | 478 |
-| `modules/extracurricular/enrollments.html` | extracurricular | embed | 517, 668 |
-| `modules/follow-ups/confidential-notes.html` | follow-ups | embed | 801 |
-| `modules/follow-ups/course-follow-up-queries.html` | follow-ups | GET, embed | 690, 699, 711 |
-| `modules/follow-ups/course-follow-ups.html` | follow-ups | GET | 657, 667, 675 |
-| `modules/follow-ups/eae-issues.html` | follow-ups | embed | 1057 |
-| `modules/follow-ups/general-queries.html` | follow-ups | GET, embed | 804, 1131, 1134, 1533, 2597 |
-| `modules/follow-ups/group-issues.html` | follow-ups | GET | 391 |
-| `modules/follow-ups/index.html` | follow-ups | GET | 681 |
-| `modules/follow-ups/individual-issues.html` | follow-ups | embed | 1104 |
-| `modules/follow-ups/manage-group-issues.html` | follow-ups | GET | 873, 891 |
-| `modules/follow-ups/user-course-assignments.html` | follow-ups | GET | 451 |
-| `modules/general-tools/attendance-reports.html` | general-tools | GET, embed | 1027, 1344, 1638, 1901 |
-| `modules/general-tools/community-query.html` | general-tools | GET, embed | 611, 860, 1045 |
-| `modules/general-tools/family-activities.html` | general-tools | GET, embed | 408, 762, 835 |
-| `modules/general-tools/family-attendance-reports.html` | general-tools | GET | 354 |
-| `modules/general-tools/family-attendance.html` | general-tools | GET | 358 |
-| `modules/general-tools/lists.html` | general-tools | GET, embed | 740, 1224, 1773, 2025, 2508 |
-| `modules/general-tools/tasks.html` | general-tools | embed | 2259, 2321 |
-| `modules/new-students/index.html` | new-students | GET | 635 |
-| `modules/new-students/new-students-report.html` | new-students | embed | 309, 644 |
-| `modules/new-students/register-activities.html` | new-students | embed | 617, 1007 |
-| `modules/new-students/registration-queries.html` | new-students | embed | 543 |
-| `modules/new-students/students-dashboard.html` | new-students | embed | 780, 1256 |
-| `modules/planning/dp-planner-form.html` | planning | GET | 369 |
-| `modules/planning/interdisc-unit-form.html` | planning | GET | 1151, 1361 |
-| `modules/planning/my-dp-planners.html` | planning | embed | 338 |
-| `modules/planning/my-myp-planners.html` | planning | embed | 324 |
-| `modules/planning/my-planners.html` | planning | embed | 444 |
-| `modules/planning/my-units.html` | planning | GET, embed | 370, 517, 820 |
-| `modules/planning/myp-planner-form.html` | planning | GET | 468 |
-| `modules/planning/planner-form.html` | planning | GET | 1668 |
-| `modules/planning/unit-form.html` | planning | GET, embed | 1467, 1583, 1645, 1785, 4173 |
-| `modules/procedures/execute-form.html` | procedures | ND | 512 |
-| `modules/procedures/execute-public.html` | procedures | ND | 450 |
-| `modules/procedures/execute.html` | procedures | ND | 508 |
-| `modules/services/pedagogical-trips.html` | services | embed | 1011, 2173, 2466 |
-| `modules/services/rep-groups.html` | services | embed | 387, 470 |
-| `modules/services/rep-trips.html` | services | embed | 833, 1603 |
-| `modules/services/sports-teams.html` | services | embed | 765, 849 |
-| `modules/services/sports-trips.html` | services | embed | 967, 1818 |
-| `modules/services/student-services.html` | services | GET | 331 |
-| `modules/surveys/results.html` | surveys | embed | 1374 |
-| `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 415 |
-| `modules/teacher-eval/monitor.html` | teacher-eval | GET | 296 |
-| `modules/teacher-eval/my-results.html` | teacher-eval | embed | 378 |
-| `modules/teacher-eval/results.html` | teacher-eval | embed | 386 |
-| `modules/tte/manage-requests.html` | tte | GET | 656 |
-| `modules/tte/respond-requests.html` | tte | GET | 435 |
-| `tilata-te-escucha.html` | (raíz) | GET | 273 |
 
 ### system_config
 
@@ -1414,7 +1416,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/workers.html` | hr | GET, PATCH, POST | 1323, 2579, 2587, 2606, 2629, 3016 |
 | `modules/profile/mi-perfil.html` | profile | GET, ND | 608, 1973 |
 | `modules/security/user-roles.html` | security | GET | 490 |
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 296 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 300 |
 | `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 236 |
 | `modules/training/generate-paths.html` | training | GET, embed | 459, 566, 780, 880 |
 | `modules/training/manage-deadlines.html` | training | embed | 587 |
@@ -1626,6 +1628,22 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/follow-ups/review-individual-issues.html` | follow-ups | PATCH | 674 |
 | `modules/new-students/register-activities.html` | new-students | POST | 970 |
 
+### worker_managers
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `api/cron/auto-absences.js` | api | ND | 304 |
+| `modules/general-tools/community-query.html` | general-tools | GET | 1222 |
+| `modules/hr/authorize-absences.html` | hr | GET | 1168, 1291 |
+| `modules/hr/clearances.html` | hr | GET | 612, 865, 2275 |
+| `modules/hr/manage-absences.html` | hr | GET | 1016, 2251, 2417 |
+| `modules/hr/request-absence.html` | hr | GET | 1945, 2028, 2535 |
+| `modules/hr/workers.html` | hr | DELETE, GET, PATCH, POST, embed | 1229, 1673, 2647, 2668, 3329, 3723 |
+| `modules/profile/mi-perfil.html` | profile | ND | 615 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 319 |
+| `modules/teacher-eval/leadership-my-results.html` | teacher-eval | GET | 227 |
+| `modules/teacher-eval/leadership-plan.html` | teacher-eval | GET | 798 |
+
 ### aap_applicants
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -1700,21 +1718,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/request-absence.html` | hr | GET | 833, 873 |
 | `modules/hr/work-calendar.html` | hr | POST | 1427 |
 | `modules/hr/workers.html` | hr | POST | 1949 |
-
-### worker_managers
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `api/cron/auto-absences.js` | api | ND | 304 |
-| `modules/general-tools/community-query.html` | general-tools | GET | 1222 |
-| `modules/hr/authorize-absences.html` | hr | GET | 1168, 1291 |
-| `modules/hr/clearances.html` | hr | GET | 612, 865, 2275 |
-| `modules/hr/manage-absences.html` | hr | GET | 1016, 2251, 2417 |
-| `modules/hr/request-absence.html` | hr | GET | 1945, 2028, 2535 |
-| `modules/hr/workers.html` | hr | DELETE, GET, PATCH, POST, embed | 1229, 1673, 2647, 2668, 3329, 3723 |
-| `modules/profile/mi-perfil.html` | profile | ND | 615 |
-| `modules/teacher-eval/leadership-my-results.html` | teacher-eval | GET | 227 |
-| `modules/teacher-eval/leadership-plan.html` | teacher-eval | GET | 798 |
 
 ### env_tree_species
 
@@ -2630,7 +2633,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 279, 409, 438, 466, 494 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 283, 442, 471, 499, 527 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 224 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 220 |
 | `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 214 |
@@ -2670,7 +2673,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 283 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 287 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 262 |
 | `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 212 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 247 |
@@ -3089,7 +3092,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH | 314, 876 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH | 347, 921 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 507 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 224 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 222 |
@@ -3098,7 +3101,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | DELETE, GET, PATCH, POST | 310, 649, 671, 692, 762, 804, 817 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | DELETE, GET, PATCH, POST | 314, 682, 716, 737, 807, 849, 862 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET, PATCH | 231, 483 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 258 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET, PATCH | 257, 320, 582, 617 |
@@ -3586,7 +3589,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 664 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 709 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | DELETE, GET, POST | 272, 428, 440 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | DELETE, GET, POST | 299, 310, 325, 543, 555 |
 
@@ -3618,7 +3621,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 291, 563, 593 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 295, 596, 626 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 214 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 212 |
 
@@ -4715,7 +4718,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/teacher-eval/danielson-admin.html` | teacher-eval | POST | 768 |
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | POST | 813 |
+
+### teval_rs_evaluations
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, POST | 315, 692 |
 
 ### teval_verification_codes
 
