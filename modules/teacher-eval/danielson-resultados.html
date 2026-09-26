@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.25.2">
+    <meta name="page-version" content="26.9.26.1">
     <title>Resultados Danielson</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -153,6 +153,16 @@
                 </div>
             </div>
 
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h6 class="mb-0"><i class="bi bi-card-checklist me-2"></i>Responsabilidades y dirección de grupo</h6>
+                    <span class="small text-muted" id="rs-resumen"></span>
+                </div>
+                <div class="card-body">
+                    <div id="rs-grupal"></div>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header"><h6 class="mb-0"><i class="bi bi-flag me-2"></i>Cumplimiento de los planes de mejora</h6></div>
                 <div class="card-body">
@@ -185,6 +195,9 @@
         let metas = [];
         let docentes = [];
         let componentesRef = [];
+        let rsCriterios = [];
+        let rsPorWorker = [];
+        let rsAxesRef = [];
 
         // ==========================================
         // INICIALIZACIÓN
@@ -277,6 +290,17 @@
             ]);
             porComponente = pc || [];
             porWorker = pw || [];
+
+            if (!rsAxesRef.length) {
+                rsAxesRef = await supabaseRequest('/teval_rs_axes?select=axis_id,axis_name,axis_order&order=axis_order.asc');
+            }
+            const [rc, rw] = await Promise.all([
+                supabaseRequest('/rpc/teval_rs_group_by_criterion', { method: 'POST', body: JSON.stringify({ p_cycle_id: cicloSel }) }),
+                supabaseRequest('/rpc/teval_rs_group_by_worker', { method: 'POST', body: JSON.stringify({ p_cycle_id: cicloSel }) })
+            ]);
+            rsCriterios = rc || [];
+            rsPorWorker = rw || [];
+
             render();
         }
 
@@ -289,7 +313,65 @@
             renderDistribucion();
             renderDispersion();
             renderTendencia();
+            renderResponsabilidades();
             renderMetas();
+        }
+
+        function renderResponsabilidades() {
+            const cont = document.getElementById('rs-grupal');
+            const resumen = document.getElementById('rs-resumen');
+
+            const conDatos = rsCriterios.filter(c => c.evaluados > 0);
+            if (!conDatos.length) {
+                resumen.textContent = '';
+                cont.innerHTML = '<div class="sin-datos">Este ciclo todavía no tiene evaluaciones de responsabilidades con la revisión cerrada.</div>';
+                return;
+            }
+
+            const personas = [...new Set(rsPorWorker.map(r => r.worker_id))].length;
+            resumen.textContent = `${personas} persona(s) con revisión cerrada`;
+
+            const bloques = rsAxesRef.map(axis => {
+                const delEje = rsPorWorker.filter(r => r.axis_id === axis.axis_id && r.prom_rev !== null);
+                const promEje = promedio(delEje.map(r => parseFloat(r.prom_rev)));
+                const promAuto = promedio(delEje.filter(r => r.prom_auto !== null).map(r => parseFloat(r.prom_auto)));
+                const crits = rsCriterios.filter(c => c.axis_id === axis.axis_id && c.evaluados > 0);
+                if (!crits.length) return '';
+
+                const ordenados = [...crits].sort((a, b) => parseFloat(a.prom_rev) - parseFloat(b.prom_rev));
+                const masBajos = ordenados.slice(0, 3).map(c => c.criterion_id);
+
+                return `
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                            <span class="fw-semibold">${escapeHtml(axis.axis_name)}</span>
+                            <span class="small">
+                                ${delEje.length} evaluado(s) ·
+                                Revisada <span class="fw-bold ${promEje !== null ? 't' + nivelAprox(promEje) : ''}">${promEje !== null ? num(promEje) : '—'}</span>
+                                ${promAuto !== null ? `· Autoevaluación ${num(promAuto)} · Brecha ${(promAuto - promEje) >= 0 ? '+' : ''}${num(promAuto - promEje)}` : ''}
+                            </span>
+                        </div>
+                        ${crits.map(c => {
+                            const v = parseFloat(c.prom_rev);
+                            const pct = ((v - 1) / 3) * 100;
+                            return `
+                                <div class="fila-comp">
+                                    <span class="fila-nombre" style="width: 420px;" title="${escapeHtml(c.criterion_text)}">
+                                        ${escapeHtml(c.criterion_text.length > 90 ? c.criterion_text.substring(0, 90) + '...' : c.criterion_text)}
+                                        ${masBajos.includes(c.criterion_id) ? '<span class="alerta-comp ms-1">!</span>' : ''}
+                                    </span>
+                                    <div class="barra">
+                                        <div class="segmento" style="width:${pct}%; background:${COLORES[nivelAprox(v) - 1]}; color:${TEXTOS[nivelAprox(v) - 1]};">${num(v)}</div>
+                                    </div>
+                                    <span class="fila-prom text-muted" style="min-width: 5.5rem;">${c.n_na ? c.n_na + ' no aplica' : ''}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }).join('');
+
+            cont.innerHTML = bloques + '<div class="small text-muted">El signo de admiración marca los tres criterios con el promedio más bajo de cada eje.</div>';
         }
 
         function renderLeyenda() {
