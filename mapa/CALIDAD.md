@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-26 15:59 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-26 16:01 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -49,6 +49,7 @@
 | pln_create_planner_cycle | 2 |
 | adjust_service_consumption | 2 |
 | teval_dn_calc_results | 2 |
+| teval_rs_calc_results | 2 |
 | fn_extracurricular_enroll | 1 |
 | pln_create_planner_criterion | 1 |
 | pln_create_unit_cycle | 1 |
@@ -63,7 +64,6 @@
 | suspend_trip | 1 |
 | get_pedagogical_trip_students | 1 |
 | get_trip_authorization_panel | 1 |
-| teval_rs_calc_results | 1 |
 | teval_dn_trend | 1 |
 | teval_dn_goals_summary | 1 |
 | teval_dn_group_by_component | 1 |
