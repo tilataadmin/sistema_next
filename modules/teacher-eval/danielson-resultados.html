@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.26.4">
+    <meta name="page-version" content="26.9.26.5">
     <title>Resultados Danielson</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -202,7 +202,10 @@
         let rsComponentesRef = [];
         let rsOpcionesRef = [];
         let rsRespuestasRef = [];
-        // ==========================================
+        let dnMarcasRef = [];
+        let dnItemsRef = [];
+        let dnNivelesRef = [];
+        ==================
         // INICIALIZACIÓN
         // ==========================================
         document.addEventListener('DOMContentLoaded', async function() {
@@ -631,6 +634,31 @@
                 const filas = await supabaseRequest('/rpc/teval_dn_worker_detail', {
                     method: 'POST', body: JSON.stringify({ p_worker_id: workerId })
                 });
+
+                const dnEvals = await supabaseRequest(`/teval_dn_evaluations?select=evaluation_id,cycle_id&worker_id=eq.${workerId}`);
+                dnMarcasRef = [];
+                if (dnEvals.length) {
+                    const idsDn = dnEvals.map(e => e.evaluation_id).join(',');
+                    const marcas = await supabaseRequest(`/teval_dn_marks?select=evaluation_id,item_id,mark_version&evaluation_id=in.(${idsDn})`);
+                    dnMarcasRef = marcas.map(m => {
+                        const ev = dnEvals.find(e => e.evaluation_id === m.evaluation_id);
+                        return { ...m, cycle_id: ev ? ev.cycle_id : null };
+                    });
+                    const idsItems = [...new Set(marcas.map(m => m.item_id))];
+                    if (idsItems.length) {
+                        dnItemsRef = await supabaseRequest(`/teval_rubric_descriptor_items?select=item_id,item_text,descriptor_id&item_id=in.(${idsItems.join(',')})`);
+                        const idsDesc = [...new Set(dnItemsRef.map(i => i.descriptor_id))];
+                        const descs = await supabaseRequest(`/teval_rubric_descriptors?select=descriptor_id,component_id,level_id&descriptor_id=in.(${idsDesc.join(',')})`);
+                        dnItemsRef.forEach(i => {
+                            const d = descs.find(x => x.descriptor_id === i.descriptor_id);
+                            i.component_id = d ? d.component_id : null;
+                            i.level_id = d ? d.level_id : null;
+                        });
+                        if (!dnNivelesRef.length) {
+                            dnNivelesRef = await supabaseRequest('/teval_rubric_levels?select=level_id,level_name,level_order&order=level_order.asc');
+                        }
+                    }
+                }
                 const planes = await supabaseRequest(`/teval_dn_plans?select=*,academic_years(year_name,year_order),teval_dn_plan_goals(*)&worker_id=eq.${workerId}`);
                 if (!rsAxesRef.length) {
                     rsAxesRef = await supabaseRequest('/teval_rs_axes?select=axis_id,axis_name,axis_order&order=axis_order.asc');
@@ -739,6 +767,12 @@
                                     }).join('')}
                                     ${gAuto !== null ? `<div class="small text-muted mt-2">Global de autoevaluación: ${num(gAuto)} · Brecha: ${(gAuto - gRev) >= 0 ? '+' : ''}${num(gAuto - gRev)}</div>` : ''}
                                 `}
+                                    <button class="btn btn-sm btn-outline-secondary mt-2" onclick="toggleDetalleDn('${c.cycle_id}')">
+                                        <i class="bi bi-chevron-down me-1"></i>Ver viñetas marcadas
+                                    </button>
+                                    <div id="detalle-dn-${c.cycle_id}" class="mt-2" style="display:none;">
+                                        ${renderVinetasDocente(c.cycle_id)}
+                                    </div>
                                 ${renderResponsabilidadesDocente((rsEvals || []).find(r => r.cycle_id === c.cycle_id))}
                                 ${plan ? renderPlanDocente(plan) : ''}
                             </div>
@@ -793,6 +827,63 @@
                     </div>
                 </div>
             `;
+        }
+
+        function renderVinetasDocente(cycleId) {
+            const marcas = dnMarcasRef.filter(m => m.cycle_id === cycleId);
+            if (!marcas.length) return '<div class="sin-datos">Sin viñetas marcadas en este ciclo.</div>';
+
+            const compsConMarcas = componentesRef.filter(comp =>
+                marcas.some(m => {
+                    const it = dnItemsRef.find(i => i.item_id === m.item_id);
+                    return it && it.component_id === comp.component_id;
+                })
+            );
+
+            const nivelDeItem = (itemId) => {
+                const it = dnItemsRef.find(i => i.item_id === itemId);
+                if (!it) return null;
+                return dnNivelesRef.find(l => l.level_id === it.level_id) || null;
+            };
+
+            return compsConMarcas.map(comp => {
+                const delComp = marcas.filter(m => {
+                    const it = dnItemsRef.find(i => i.item_id === m.item_id);
+                    return it && it.component_id === comp.component_id;
+                });
+                const itemIds = [...new Set(delComp.map(m => m.item_id))];
+
+                return `
+                    <div class="mb-2">
+                        <div class="small fw-semibold mb-1">
+                            <span class="perfil-code">${escapeHtml(comp.component_code)}</span> ${escapeHtml(comp.component_name)}
+                        </div>
+                        ${itemIds.map(id => {
+                            const it = dnItemsRef.find(i => i.item_id === id);
+                            const nivel = nivelDeItem(id);
+                            const enAuto = delComp.some(m => m.item_id === id && m.mark_version === 'autoevaluacion');
+                            const enRev = delComp.some(m => m.item_id === id && m.mark_version === 'revisada');
+                            const distinto = enAuto !== enRev;
+                            return `
+                                <div class="perfil-item" style="align-items: flex-start; ${distinto ? 'background:#fffbeb;' : ''}">
+                                    <span class="perfil-code ${nivel ? 't' + nivel.level_order : ''}">${nivel ? escapeHtml(nivel.level_name) : '—'}</span>
+                                    <span class="perfil-nombre">${escapeHtml(it ? it.item_text : '')}</span>
+                                    <span class="valor-par">
+                                        <span class="text-muted">${enAuto ? 'marcada' : '—'}</span>
+                                        <span class="text-muted mx-1">/</span>
+                                        <span class="fw-bold">${enRev ? 'marcada' : '—'}</span>
+                                    </span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleDetalleDn(cycleId) {
+            const div = document.getElementById('detalle-dn-' + cycleId);
+            div.style.display = div.style.display === 'none' ? '' : 'none';
         }
 
         function renderDetalleCriterios(evaluationId) {
@@ -888,6 +979,7 @@
         window.renderBuscadorDocentes = renderBuscadorDocentes;
         window.verDocente = verDocente;
         window.toggleDetalleRs = toggleDetalleRs;
+        window.toggleDetalleDn = toggleDetalleDn;
 
         console.log('🎉 Resultados Danielson cargada');
     </script>
