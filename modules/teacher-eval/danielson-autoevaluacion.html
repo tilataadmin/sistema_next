@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.25.4">
+    <meta name="page-version" content="26.9.26.1">
     <title>Mi Autoevaluación Danielson</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -68,6 +68,21 @@
         .pill-verde { background: #dcfce7; color: #15803d; }
         .pill-ambar { background: #fef3c7; color: #b45309; }
         .sin-dato { color: #94a3b8; font-style: italic; font-size: 0.85rem; }
+        .rs-axis { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 1rem; overflow: hidden; }
+        .rs-axis-head { background: #f8fafc; padding: 0.7rem 1rem; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+        .rs-comp { padding: 0.8rem 1rem; border-top: 1px solid #f1f5f9; }
+        .rs-comp-name { font-size: 0.86rem; font-weight: 600; color: #334155; margin-bottom: 0.7rem; }
+        .rs-crit { padding: 0.6rem 0; border-bottom: 1px dashed #f1f5f9; }
+        .rs-crit:last-child { border-bottom: none; }
+        .rs-crit.sin-responder { background: #fff7ed; border-radius: 6px; padding-left: 0.5rem; padding-right: 0.5rem; }
+        .rs-crit-text { font-size: 0.83rem; color: #475569; line-height: 1.45; margin-bottom: 0.5rem; }
+        .rs-opts { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+        .rs-opt { font-size: 0.78rem; padding: 0.3rem 0.7rem; border: 1px solid #cbd5e1; border-radius: 999px; cursor: pointer; background: #fff; color: #475569; }
+        .rs-opt:hover { background: #f1f5f9; }
+        .rs-opt.activa { background: #0ea5e9; border-color: #0ea5e9; color: #fff; font-weight: 600; }
+        .rs-opt.na { border-style: dashed; }
+        .rs-opt.na.activa { background: #94a3b8; border-color: #94a3b8; }
+        .rs-opt:disabled { cursor: default; opacity: 0.75; }
         @media (max-width: 991px) {
             .levels-grid { grid-template-columns: 1fr; }
             .level-col { border-right: none; border-bottom: 1px solid #e2e8f0; }
@@ -125,6 +140,23 @@
                 <div id="aviso-modo" class="small mt-2"></div>
             </div>
 
+            <div id="seccion-responsabilidades" class="card mb-3 d-none">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h6 class="mb-0"><i class="bi bi-card-checklist me-2"></i>Responsabilidades</h6>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="rs-estado" class="badge"></span>
+                        <span class="small text-muted" id="rs-avance"></span>
+                        <button class="btn btn-primary btn-sm" id="btn-enviar-rs" onclick="enviarResponsabilidades()">
+                            <i class="bi bi-send me-1"></i>Enviar
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="rs-aviso" class="small text-muted mb-3"></div>
+                    <div id="rs-ejes"></div>
+                </div>
+            </div>
+
             <div id="seccion-resultado" class="card mb-3 d-none">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Mi resultado (versión revisada)</h6>
@@ -178,6 +210,13 @@
         let resultados = [];
         let miPlan = null;
         let misMetas = [];
+        let rsEval = null;
+        let rsAxes = [];
+        let rsComponents = [];
+        let rsCriteria = [];
+        let rsOptions = {};
+        let rsAnswers = [];
+        let rsEditable = false;
 
         const ESTADOS_META = [
             { v: 'cumplida', t: 'Cumplida' },
@@ -238,6 +277,7 @@
                 await cargarRubrica();
                 await cargarMarcas();
                 await cargarResultadosYPlan();
+                await cargarResponsabilidades();
                 calcularModo();
                 render();
                 document.getElementById('contenido').classList.remove('d-none');
@@ -282,6 +322,7 @@
         // ==========================================
        function render() {
             renderBarra();
+            renderResponsabilidades();
             renderResultado();
             renderPlan();
             renderDominios();
@@ -516,6 +557,129 @@
             misMetas = miPlan
                 ? await supabaseRequest(`/teval_dn_plan_goals?select=*&plan_id=eq.${miPlan.plan_id}&order=goal_order.asc`)
                 : [];
+        }
+
+        async function cargarResponsabilidades() {
+            const evals = await supabaseRequest(`/teval_rs_evaluations?select=*&cycle_id=eq.${cicloActivo.cycle_id}&worker_id=eq.${miWorker.worker_id}&limit=1`);
+            rsEval = evals.length ? evals[0] : null;
+            if (!rsEval) return;
+
+            const [ax, co, cr] = await Promise.all([
+                supabaseRequest('/teval_rs_axes?select=*&axis_status=eq.active&order=axis_order.asc'),
+                supabaseRequest('/teval_rs_components?select=*&component_status=eq.active&order=component_order.asc'),
+                supabaseRequest('/teval_rs_criteria?select=*&criterion_status=eq.active&order=criterion_order.asc')
+            ]);
+            rsAxes = ax.filter(a => a.applies_to === 'all' || rsEval.is_course_director);
+            rsComponents = co;
+            rsCriteria = cr;
+
+            rsOptions = {};
+            const escalas = [...new Set(rsAxes.map(a => a.scale_id))];
+            for (const scaleId of escalas) {
+                rsOptions[scaleId] = await supabaseRequest(`/survey_scale_options?select=option_id,option_text,option_value,option_order&scale_id=eq.${scaleId}&order=option_order.asc`);
+            }
+
+            rsAnswers = await supabaseRequest(`/teval_rs_answers?select=answer_id,criterion_id,option_id,is_na&evaluation_id=eq.${rsEval.evaluation_id}&answer_version=eq.autoevaluacion`);
+
+            rsEditable = cicloActivo.cycle_status === 'open'
+                && (rsEval.eval_status === 'pendiente' || rsEval.eval_status === 'autoevaluacion_enviada');
+        }
+
+        function rsCriteriosDe(componentId) {
+            return rsCriteria.filter(c => c.component_id === componentId);
+        }
+
+        function rsCriteriosAplicables() {
+            const compIds = rsComponents.filter(c => rsAxes.some(a => a.axis_id === c.axis_id)).map(c => c.component_id);
+            return rsCriteria.filter(c => compIds.includes(c.component_id));
+        }
+
+        function rsRespuestaDe(criterionId) {
+            return rsAnswers.find(a => a.criterion_id === criterionId) || null;
+        }
+
+        function renderResponsabilidades() {
+            const seccion = document.getElementById('seccion-responsabilidades');
+            if (!rsEval || !rsAxes.length) { seccion.classList.add('d-none'); return; }
+            seccion.classList.remove('d-none');
+
+            const aplicables = rsCriteriosAplicables();
+            const respondidos = aplicables.filter(c => rsRespuestaDe(c.criterion_id)).length;
+
+            document.getElementById('rs-avance').textContent = `${respondidos} de ${aplicables.length} criterios respondidos`;
+
+            const badge = document.getElementById('rs-estado');
+            const etiquetas = {
+                'pendiente': ['Sin enviar', 'bg-secondary'],
+                'autoevaluacion_enviada': ['Enviada', 'bg-success'],
+                'en_revision': ['En revisión', 'bg-info'],
+                'revisada': ['Revisada', 'bg-primary']
+            };
+            const et = etiquetas[rsEval.eval_status] || [rsEval.eval_status, 'bg-secondary'];
+            badge.textContent = et[0];
+            badge.className = 'badge ' + et[1];
+
+            const btn = document.getElementById('btn-enviar-rs');
+            const aviso = document.getElementById('rs-aviso');
+
+            if (!rsEditable) {
+                btn.classList.add('d-none');
+                aviso.textContent = rsEval.eval_status === 'pendiente'
+                    ? 'Esta evaluación no está habilitada en este momento.'
+                    : 'Su jefe inmediato ya inició la revisión, por lo que no se puede modificar. Los resultados se conversarán en la reunión con él.';
+            } else {
+                btn.classList.remove('d-none');
+                btn.disabled = respondidos < aplicables.length;
+                btn.innerHTML = rsEval.eval_status === 'autoevaluacion_enviada'
+                    ? '<i class="bi bi-arrow-repeat me-1"></i>Actualizar envío'
+                    : '<i class="bi bi-send me-1"></i>Enviar';
+                aviso.textContent = respondidos < aplicables.length
+                    ? 'Responda con qué frecuencia realiza cada una. Cada respuesta se guarda automáticamente.'
+                    : (rsEval.eval_status === 'autoevaluacion_enviada'
+                        ? 'Ya está enviada. Puede ajustarla hasta que su jefe inicie la revisión; use "Actualizar envío" después de cambiar algo.'
+                        : 'Ya puede enviar esta evaluación.');
+            }
+
+            document.getElementById('rs-ejes').innerHTML = rsAxes.map(axis => {
+                const comps = rsComponents.filter(c => c.axis_id === axis.axis_id);
+                const opciones = rsOptions[axis.scale_id] || [];
+                return `
+                    <div class="rs-axis">
+                        <div class="rs-axis-head">
+                            <i class="bi bi-list-check"></i>${escapeHtml(axis.axis_name)}
+                            ${axis.applies_to === 'course_director' ? '<span class="pill pill-gris">Solo directores de curso</span>' : ''}
+                        </div>
+                        ${comps.map(comp => `
+                            <div class="rs-comp">
+                                <div class="rs-comp-name">${escapeHtml(comp.component_name)}</div>
+                                ${rsCriteriosDe(comp.component_id).map(cr => {
+                                    const resp = rsRespuestaDe(cr.criterion_id);
+                                    return `
+                                        <div class="rs-crit ${resp ? '' : 'sin-responder'}">
+                                            <div class="rs-crit-text">${escapeHtml(cr.criterion_text)}</div>
+                                            <div class="rs-opts">
+                                                ${opciones.map(o => `
+                                                    <button class="rs-opt ${resp && resp.option_id === o.option_id ? 'activa' : ''}"
+                                                        ${rsEditable ? '' : 'disabled'}
+                                                        onclick="responderCriterio('${cr.criterion_id}', '${o.option_id}', ${o.option_value}, false)">
+                                                        ${escapeHtml(o.option_text)}
+                                                    </button>
+                                                `).join('')}
+                                                ${cr.allows_na ? `
+                                                    <button class="rs-opt na ${resp && resp.is_na ? 'activa' : ''}"
+                                                        ${rsEditable ? '' : 'disabled'}
+                                                        onclick="responderCriterio('${cr.criterion_id}', null, null, true)">
+                                                        No aplica
+                                                    </button>` : ''}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }).join('');
         }
 
         function valorDe(componentId) {
