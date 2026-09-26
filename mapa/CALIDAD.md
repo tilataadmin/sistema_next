@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-26 16:01 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-26 16:10 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -41,7 +41,7 @@
 
 ## Funciones de base de datos invocadas
 
-**24 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
+**26 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
 
 | Función | Archivos |
 |---|---:|
@@ -68,6 +68,8 @@
 | teval_dn_goals_summary | 1 |
 | teval_dn_group_by_component | 1 |
 | teval_dn_group_by_worker | 1 |
+| teval_rs_group_by_criterion | 1 |
+| teval_rs_group_by_worker | 1 |
 | teval_dn_worker_detail | 1 |
 
 ## Nombres descartados por no parecer tablas

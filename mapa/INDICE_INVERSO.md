@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-26 16:01 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-26 16:10 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **342 archivos**.
 
@@ -244,6 +244,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [teval_dn_plans](#tevaldnplans) | 3 | 2 | 0 |
 | [teval_dn_results](#tevaldnresults) | 3 | 0 | 0 |
 | [teval_dn_reviewers](#tevaldnreviewers) | 3 | 1 | 0 |
+| [teval_rs_axes](#tevalrsaxes) | 3 | 0 | 0 |
 | [teval_rs_evaluations](#tevalrsevaluations) | 3 | 3 | 0 |
 | [teval_rubric_descriptor_items](#tevalrubricdescriptoritems) | 3 | 1 | 0 |
 | [teval_rubric_descriptors](#tevalrubricdescriptors) | 3 | 1 | 0 |
@@ -318,7 +319,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [task_collaborators](#taskcollaborators) | 2 | 2 | 0 |
 | [teval_config](#tevalconfig) | 2 | 1 | 0 |
 | [teval_rs_answers](#tevalrsanswers) | 2 | 2 | 0 |
-| [teval_rs_axes](#tevalrsaxes) | 2 | 0 | 0 |
 | [teval_rs_components](#tevalrscomponents) | 2 | 0 | 0 |
 | [teval_rs_criteria](#tevalrscriteria) | 2 | 0 | 0 |
 | [training_module_references](#trainingmodulereferences) | 2 | 1 | 0 |
@@ -550,7 +550,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 292, 296, 301 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 257 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, embed | 210, 258 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 236 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 249 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET, embed | 208, 257 |
 | `modules/teacher-eval/danielson-rs-revision.html` | teacher-eval | GET, embed | 181, 225 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 588 |
@@ -661,7 +661,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, embed | 280, 284 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | embed | 264 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, embed | 220, 650 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 214, 549 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 227, 631 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | embed | 218 |
 | `modules/teacher-eval/danielson-rs-revision.html` | teacher-eval | embed | 185 |
 | `modules/teacher-eval/evaluate.html` | teacher-eval | embed | 291 |
@@ -1425,7 +1425,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/profile/mi-perfil.html` | profile | GET, ND | 608, 1973 |
 | `modules/security/user-roles.html` | security | GET | 490 |
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 301 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 236 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 249 |
 | `modules/training/generate-paths.html` | training | GET, embed | 459, 566, 780, 880 |
 | `modules/training/manage-deadlines.html` | training | embed | 587 |
 | `modules/training/my-path.html` | training | embed | 799 |
@@ -2354,7 +2354,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 284, 443, 472, 500, 528 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 264 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 220 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 214 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 227 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 218 |
 | `modules/teacher-eval/danielson-rs-revision.html` | teacher-eval | GET | 185 |
 
@@ -2675,7 +2675,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 305 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 228 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 544 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 626 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 249 |
 | `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 387, 710, 772, 777, 795 |
 
@@ -2685,7 +2685,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 304 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 229 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 213 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 226 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 248 |
 | `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 383, 682, 687, 716 |
 
@@ -2695,7 +2695,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET | 288 |
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 303 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 212 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 225 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 247 |
 | `modules/teacher-eval/rubric.html` | teacher-eval | DELETE, GET, PATCH, POST | 379, 602, 607, 628 |
 
@@ -3610,7 +3610,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET, PATCH | 559, 918, 927 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | DELETE, GET, PATCH, POST, embed | 266, 352, 558, 572, 597, 613, 658, 682 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 549 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | embed | 631 |
 
 ### teval_dn_plans
 
@@ -3618,7 +3618,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET, PATCH | 556, 899 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET, PATCH, POST | 266, 335, 510, 636, 658, 669 |
-| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 549 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 631 |
 
 ### teval_dn_results
 
@@ -3635,6 +3635,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/teacher-eval/danielson-admin.html` | teacher-eval | GET, PATCH, POST | 296, 597, 627 |
 | `modules/teacher-eval/danielson-plan.html` | teacher-eval | GET | 214 |
 | `modules/teacher-eval/danielson-revision.html` | teacher-eval | GET | 212 |
+
+### teval_rs_axes
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 569 |
+| `modules/teacher-eval/danielson-resultados.html` | teacher-eval | GET | 295 |
+| `modules/teacher-eval/danielson-rs-revision.html` | teacher-eval | GET | 211 |
 
 ### teval_rs_evaluations
 
@@ -4160,13 +4168,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET, PATCH, POST | 583, 818, 831 |
 | `modules/teacher-eval/danielson-rs-revision.html` | teacher-eval | GET, PATCH, POST | 269, 277, 295, 469, 482 |
-
-### teval_rs_axes
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/teacher-eval/danielson-autoevaluacion.html` | teacher-eval | GET | 569 |
-| `modules/teacher-eval/danielson-rs-revision.html` | teacher-eval | GET | 211 |
 
 ### teval_rs_components
 
