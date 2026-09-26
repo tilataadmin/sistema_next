@@ -126,6 +126,7 @@ const MODULE_ITEM_ORDER = {
         'Bitácora de observaciones',
         'Reportes de liderazgo',
         'Rúbrica Danielson',
+        'Instrumento de Responsabilidades',
         'Administración Danielson',
         'Mi Autoevaluación Danielson',
         'Revisión Danielson',
