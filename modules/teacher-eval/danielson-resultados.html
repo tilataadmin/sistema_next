@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.26.3">
+    <meta name="page-version" content="26.9.26.4">
     <title>Resultados Danielson</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -198,7 +198,10 @@
         let rsCriterios = [];
         let rsPorWorker = [];
         let rsAxesRef = [];
-
+        let rsCriteriosRef = [];
+        let rsComponentesRef = [];
+        let rsOpcionesRef = [];
+        let rsRespuestasRef = [];
         // ==========================================
         // INICIALIZACIÓN
         // ==========================================
@@ -633,6 +636,20 @@
                     rsAxesRef = await supabaseRequest('/teval_rs_axes?select=axis_id,axis_name,axis_order&order=axis_order.asc');
                 }
                 const rsDelDocente = await supabaseRequest(`/teval_rs_evaluations?select=evaluation_id,cycle_id,eval_status,is_course_director,disagreement_text,teval_rs_results(axis_id,result_version,result_value,criterios_contados,criterios_na)&worker_id=eq.${workerId}`);
+                if (rsDelDocente.length) {
+                    const idsEval = rsDelDocente.map(r => r.evaluation_id).join(',');
+                    if (!rsCriteriosRef.length) {
+                        const [cr, co] = await Promise.all([
+                            supabaseRequest('/teval_rs_criteria?select=criterion_id,component_id,criterion_text,criterion_order&order=criterion_order.asc'),
+                            supabaseRequest('/teval_rs_components?select=component_id,axis_id,component_name,component_order&order=component_order.asc')
+                        ]);
+                        rsCriteriosRef = cr; rsComponentesRef = co;
+                    }
+                    if (!rsOpcionesRef.length) {
+                        rsOpcionesRef = await supabaseRequest('/survey_scale_options?select=option_id,option_text,option_value');
+                    }
+                    rsRespuestasRef = await supabaseRequest(`/teval_rs_answers?select=evaluation_id,criterion_id,answer_version,option_id,is_na&evaluation_id=in.(${idsEval})`);
+                }
                 renderDetalleDocente(workerId, filas || [], planes || [], rsDelDocente || []);
             } catch (error) {
                 console.error('Error cargando detalle:', error);
@@ -768,8 +785,59 @@
                         </div>
                     `).join('')}
                     ${rsEval.disagreement_text ? `<div class="alert alert-warning small mt-2 mb-0"><strong>Constancia de desacuerdo:</strong> ${escapeHtml(rsEval.disagreement_text)}</div>` : ''}
+                    <button class="btn btn-sm btn-outline-secondary mt-2" onclick="toggleDetalleRs('${rsEval.evaluation_id}')">
+                        <i class="bi bi-chevron-down me-1"></i>Ver detalle por criterio
+                    </button>
+                    <div id="detalle-rs-${rsEval.evaluation_id}" class="mt-2" style="display:none;">
+                        ${renderDetalleCriterios(rsEval.evaluation_id)}
+                    </div>
                 </div>
             `;
+        }
+
+        function renderDetalleCriterios(evaluationId) {
+            const resp = rsRespuestasRef.filter(r => r.evaluation_id === evaluationId);
+            if (!resp.length) return '<div class="sin-datos">Sin respuestas registradas.</div>';
+
+            const textoDe = (r) => {
+                if (!r) return '—';
+                if (r.is_na) return 'No aplica';
+                const o = rsOpcionesRef.find(x => x.option_id === r.option_id);
+                return o ? o.option_text : '—';
+            };
+
+            return rsAxesRef.map(axis => {
+                const comps = rsComponentesRef.filter(c => c.axis_id === axis.axis_id);
+                const crits = rsCriteriosRef.filter(c => comps.some(co => co.component_id === c.component_id));
+                const conResp = crits.filter(c => resp.some(r => r.criterion_id === c.criterion_id));
+                if (!conResp.length) return '';
+
+                return `
+                    <div class="mb-2">
+                        <div class="small fw-semibold mb-1">${escapeHtml(axis.axis_name)}</div>
+                        ${conResp.map(c => {
+                            const a = resp.find(r => r.criterion_id === c.criterion_id && r.answer_version === 'autoevaluacion');
+                            const rv = resp.find(r => r.criterion_id === c.criterion_id && r.answer_version === 'revisada');
+                            const distinto = a && rv && (a.is_na !== rv.is_na || a.option_id !== rv.option_id);
+                            return `
+                                <div class="perfil-item" style="align-items: flex-start; ${distinto ? 'background:#fffbeb;' : ''}">
+                                    <span class="perfil-nombre">${escapeHtml(c.criterion_text)}</span>
+                                    <span class="valor-par">
+                                        <span class="text-muted">${escapeHtml(textoDe(a))}</span>
+                                        <span class="text-muted mx-1">/</span>
+                                        <span class="fw-bold">${escapeHtml(textoDe(rv))}</span>
+                                    </span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleDetalleRs(evaluationId) {
+            const div = document.getElementById('detalle-rs-' + evaluationId);
+            div.style.display = div.style.display === 'none' ? '' : 'none';
         }
 
         function renderPlanDocente(plan) {
@@ -819,6 +887,7 @@
         window.cambiarCiclo = cambiarCiclo;
         window.renderBuscadorDocentes = renderBuscadorDocentes;
         window.verDocente = verDocente;
+        window.toggleDetalleRs = toggleDetalleRs;
 
         console.log('🎉 Resultados Danielson cargada');
     </script>
