@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.25.1">
+    <meta name="page-version" content="26.9.26.1">
     <title>Administración Danielson</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -223,6 +223,9 @@
         let profesores = [];
         let evaluations = [];
         let config = null;
+        let rsEvaluations = [];
+        let managersMap = {};
+        let directoresMap = {};
 
         // ==========================================
         // INICIALIZACIÓN
@@ -259,7 +262,8 @@
                     cargarWorkers(),
                     cargarRevisores(),
                     cargarProfesores(),
-                    cargarConfig()
+                    cargarConfig(),
+                    cargarJefesYDirectores()
                 ]);
                 cicloActivo = cycles.find(c => c.cycle_status === 'open') || null;
                 await cargarEvaluaciones();
@@ -306,8 +310,37 @@
         }
 
         async function cargarEvaluaciones() {
-            if (!cicloActivo) { evaluations = []; return; }
+            if (!cicloActivo) { evaluations = []; rsEvaluations = []; return; }
             evaluations = await supabaseRequest(`/teval_dn_evaluations?select=*&cycle_id=eq.${cicloActivo.cycle_id}`);
+            rsEvaluations = await supabaseRequest(`/teval_rs_evaluations?select=*&cycle_id=eq.${cicloActivo.cycle_id}`);
+        }
+
+        async function cargarJefesYDirectores() {
+            const jefes = await supabaseRequest('/worker_managers?select=worker_id,manager_id&is_primary_manager=eq.true&assignment_status=eq.active');
+            managersMap = {};
+            jefes.forEach(j => { managersMap[j.worker_id] = j.manager_id; });
+
+            const cursos = await supabaseRequest('/courses?select=course_id,course_name,course_director_email&course_status=eq.active');
+            directoresMap = {};
+            cursos.forEach(c => {
+                if (!c.course_director_email) return;
+                const correo = c.course_director_email.trim().toLowerCase();
+                if (directoresMap[correo]) {
+                    directoresMap[correo] = { course_id: null, varios: true };
+                } else {
+                    directoresMap[correo] = { course_id: c.course_id, varios: false };
+                }
+            });
+        }
+
+        function datosResponsabilidades(prof) {
+            const correo = (prof && prof.email) ? prof.email.trim().toLowerCase() : '';
+            const dir = directoresMap[correo] || null;
+            return {
+                manager_worker_id: managersMap[prof.worker_id] || null,
+                is_course_director: !!dir,
+                course_id: dir ? dir.course_id : null
+            };
         }
 
         async function cargarConfig() {
@@ -652,6 +685,18 @@
                             cycle_id: cicloActivo.cycle_id,
                             worker_id: workerId,
                             section_id: prof ? prof.section_id || null : null,
+                            eval_status: 'pendiente'
+                        })
+                    });
+                    const rs = datosResponsabilidades(prof);
+                    await supabaseRequest('/teval_rs_evaluations', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            cycle_id: cicloActivo.cycle_id,
+                            worker_id: workerId,
+                            manager_worker_id: rs.manager_worker_id,
+                            is_course_director: rs.is_course_director,
+                            course_id: rs.course_id,
                             eval_status: 'pendiente'
                         })
                     });
