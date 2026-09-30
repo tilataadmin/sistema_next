@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.9.30.1">
+    <meta name="page-version" content="26.9.30.2">
     <title>Resultados de Autoevaluación - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1311,12 +1311,474 @@
             new bootstrap.Modal(document.getElementById('modalPDFInstitucional')).show();
         }
 
-        // Provisional (paso 1): se reemplaza en el paso 3
-        async function generarPDFInstitucional() {
+        async function cargarDatosPDFInstitucional(evalId) {
+            const [compsDetalle, procsDetalle, resultadosEsperados, evidencias, ratings, asignaciones] = await Promise.all([
+                supabaseRequest(
+                    '/ie_components?select=component_id,component_definition,ie_rubrics(evaluation_level,rubric_description)&component_status=eq.active'
+                ),
+                supabaseRequest(
+                    '/ie_processes?select=process_id,process_description&process_status=eq.active'
+                ),
+                supabaseRequest(
+                    '/ie_expected_results?select=result_id,process_id,result_description,result_order&result_status=eq.active&order=result_order.asc'
+                ),
+                supabaseRequest(
+                    `/ie_process_results?select=result_evidence_id,process_id,expected_result_id,image_storage_path,image_description,result_analysis,display_order,uploaded_by_name&evaluation_id=eq.${evalId}&evidence_status=eq.active&order=display_order.asc`
+                ),
+                supabaseRequest(
+                    `/ie_component_ratings?select=rating_id,component_id,rating_value,worker_email,observations,rated_at&evaluation_id=eq.${evalId}&order=rated_at.asc`
+                ),
+                supabaseRequest(
+                    `/ie_process_workers?select=worker_email,worker_name&evaluation_id=eq.${evalId}`
+                )
+            ]);
+
+            // Índices para búsqueda rápida
+            const definiciones = {};
+            const rubricas = {};
+            compsDetalle.forEach(c => {
+                definiciones[c.component_id] = c.component_definition || '';
+                rubricas[c.component_id] = {};
+                (c.ie_rubrics || []).forEach(r => {
+                    rubricas[c.component_id][r.evaluation_level] = r.rubric_description;
+                });
+            });
+
+            const descripcionesProceso = {};
+            procsDetalle.forEach(p => { descripcionesProceso[p.process_id] = p.process_description || ''; });
+
+            const nombresEvaluadores = {};
+            asignaciones.forEach(a => {
+                if (a.worker_email && a.worker_name) nombresEvaluadores[a.worker_email] = a.worker_name;
+            });
+
+            return {
+                evaluacion: evaluacionesDisponibles.find(e => e.evaluation_id === evalId),
+                definiciones,
+                rubricas,
+                descripcionesProceso,
+                resultadosEsperados,
+                evidencias,
+                ratings,
+                nombresEvaluadores,
+                promedios: calcularPromedios(ratings)
+            };
+        }
+
+                async function generarPDFInstitucional() {
             const evalId = document.getElementById('select-pdf-eval').value;
             const incluirImagenes = document.getElementById('chk-pdf-imagenes').checked;
-            console.log('📄 PDF institucional →', evalId, '| imágenes:', incluirImagenes);
-            showMessage('Modal OK. Evaluación: ' + evalId + ' | Imágenes: ' + (incluirImagenes ? 'sí' : 'no'), 'info');
+            if (!evalId) return;
+
+            const btn = document.getElementById('btn-pdf-institucional');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Generando...';
+            btn.disabled = true;
+            mostrarLoading();
+
+            try {
+                const datos = await cargarDatosPDFInstitucional(evalId);
+                const ev = datos.evaluacion;
+                const prom = datos.promedios;
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+                const PAGE_W = 210;
+                const PAGE_H = 297;
+                const MARGIN = 15;
+                const BOTTOM = PAGE_H - 18;
+                const CONTENT_W = PAGE_W - MARGIN * 2;
+                const BUCKET_EVIDENCIAS = 'institutional-eval';
+                let y = MARGIN;
+
+                const COLORS = {
+                    primary: [5, 150, 105],
+                    dark:    [44, 62, 80],
+                    muted:   [108, 117, 125],
+                    light:   [248, 249, 250],
+                    border:  [233, 236, 239],
+                    warning: [255, 251, 235],
+                    level1:  [220, 53, 69],
+                    level2:  [245, 158, 11],
+                    level3:  [14, 165, 233],
+                    level4:  [5, 150, 105],
+                    white:   [255, 255, 255]
+                };
+
+                // ---------- helpers ----------
+                function nuevaPagina() {
+                    doc.addPage();
+                    y = MARGIN;
+                }
+
+                function checkPageBreak(needed) {
+                    if (y + needed > BOTTOM) nuevaPagina();
+                }
+
+                function setFont(size, color = COLORS.dark, style = 'normal') {
+                    doc.setFontSize(size);
+                    doc.setTextColor(...color);
+                    doc.setFont('helvetica', style);
+                }
+
+                function rect(x, ry, w, h, fill, stroke = null) {
+                    doc.setFillColor(...fill);
+                    doc.setDrawColor(...(stroke || fill));
+                    doc.rect(x, ry, w, h, stroke ? 'FD' : 'F');
+                }
+
+                // Escribe texto línea por línea, saltando de página cuando haga falta
+                function parrafo(texto, x, maxW, opts = {}) {
+                    if (!texto || !String(texto).trim()) return;
+                    const { size = 8, color = COLORS.dark, style = 'normal', gap = 2 } = opts;
+                    const lh = size * 0.3528 * 1.35;
+                    setFont(size, color, style);
+                    const lines = doc.splitTextToSize(String(texto), maxW);
+                    lines.forEach(line => {
+                        checkPageBreak(lh);
+                        setFont(size, color, style);
+                        doc.text(line, x, y + lh * 0.8);
+                        y += lh;
+                    });
+                    y += gap;
+                }
+
+                // Recorta un texto a una sola línea del ancho dado
+                function unaLinea(texto, maxW) {
+                    const lines = doc.splitTextToSize(String(texto || ''), maxW);
+                    return lines.length > 1 ? lines[0].replace(/\s+\S*$/, '') + '...' : (lines[0] || '');
+                }
+
+                function colorNivel(valor) {
+                    return COLORS[`level${Math.round(valor)}`] || COLORS.muted;
+                }
+
+                function textoPromedio(valor) {
+                    if (valor === undefined || valor === null) return 'Sin valorar';
+                    return `${valor.toFixed(2)} · ${obtenerNombreNivel(Math.round(valor))}`;
+                }
+
+                // Badge alineado a la derecha; devuelve su ancho
+                function badge(texto, color, xDerecha, yTop, h = 6) {
+                    setFont(7.5, COLORS.white, 'bold');
+                    const w = doc.getTextWidth(texto) + 6;
+                    rect(xDerecha - w, yTop, w, h, color);
+                    doc.text(texto, xDerecha - w + 3, yTop + h / 2 + 1.2);
+                    return w;
+                }
+
+                // Barra horizontal de 0 a 4
+                function barra(x, by, w, h, valor) {
+                    rect(x, by, w, h, COLORS.border);
+                    if (valor !== undefined && valor !== null && valor > 0) {
+                        rect(x, by, w * Math.min(valor, 4) / 4, h, colorNivel(valor));
+                    }
+                }
+
+                // Descarga una imagen y la normaliza a JPEG (fondo blanco, tamaño máximo)
+                async function imagenAJpeg(url, maxPx = 1400) {
+                    try {
+                        const resp = await fetch(url);
+                        if (!resp.ok) return null;
+                        const blob = await resp.blob();
+                        const bmp = await createImageBitmap(blob);
+                        const escala = Math.min(1, maxPx / Math.max(bmp.width, bmp.height));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.round(bmp.width * escala);
+                        canvas.height = Math.round(bmp.height * escala);
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+                        return { data: canvas.toDataURL('image/jpeg', 0.8), w: canvas.width, h: canvas.height };
+                    } catch {
+                        return null;
+                    }
+                }
+
+                function urlEvidencia(path) {
+                    const pathCodificado = String(path).split('/').map(encodeURIComponent).join('/');
+                    return `${SUPABASE_CONFIG.url}/storage/v1/object/public/${BUCKET_EVIDENCIAS}/${pathCodificado}`;
+                }
+
+                async function dibujarEvidencia(evid) {
+                    if (incluirImagenes && evid.image_storage_path) {
+                        const img = await imagenAJpeg(urlEvidencia(evid.image_storage_path));
+                        if (img) {
+                            let w = 90;
+                            let h = w * img.h / img.w;
+                            if (h > 65) { h = 65; w = h * img.w / img.h; }
+                            checkPageBreak(h + 4);
+                            doc.addImage(img.data, 'JPEG', MARGIN + 4, y, w, h);
+                            y += h + 2;
+                        } else {
+                            parrafo('[Imagen no disponible]', MARGIN + 4, CONTENT_W - 8, { size: 7.5, color: COLORS.muted, style: 'italic', gap: 1 });
+                        }
+                    }
+                    parrafo(evid.image_description, MARGIN + 4, CONTENT_W - 8, { size: 7.5, color: COLORS.muted, style: 'italic', gap: 1 });
+                    if (evid.result_analysis) {
+                        parrafo('Análisis: ' + evid.result_analysis, MARGIN + 4, CONTENT_W - 8, { size: 8, gap: 1 });
+                    }
+                    if (evid.uploaded_by_name) {
+                        parrafo('Registrada por: ' + evid.uploaded_by_name, MARGIN + 4, CONTENT_W - 8, { size: 7, color: COLORS.muted, gap: 1 });
+                    }
+                    y += 3;
+                }
+
+                // ---------- datos derivados ----------
+                const yearName = ev?.academic_years ? ev.academic_years.year_name : '';
+                const modoLabel = ev?.evaluation_mode === 'consensus' ? 'Modo Consenso' : 'Modo Individual';
+                const totalComps = componentesCache.length;
+                const compsValorados = componentesCache.filter(c => prom.porComponente[c.component_id] !== undefined);
+                const distribucion = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                compsValorados.forEach(c => {
+                    const n = Math.round(prom.porComponente[c.component_id]);
+                    if (distribucion[n] !== undefined) distribucion[n]++;
+                });
+                const totalEvaluadores = new Set(datos.ratings.filter(r => r.worker_email).map(r => r.worker_email)).size;
+                const idsResultadosActivos = new Set(datos.resultadosEsperados.map(r => r.result_id));
+
+                // ---------- logo ----------
+                let logo = null;
+                try {
+                    const cfg = await supabaseRequest('/system_config?select=logo_url&limit=1');
+                    if (cfg && cfg[0] && cfg[0].logo_url) logo = await imagenAJpeg(cfg[0].logo_url, 300);
+                } catch { /* sin logo */ }
+
+                // ---------- encabezado ----------
+                rect(0, 0, PAGE_W, 40, COLORS.primary);
+                let headerX = MARGIN;
+                if (logo) {
+                    let lw = 24, lh = 24 * logo.h / logo.w;
+                    if (lh > 24) { lh = 24; lw = 24 * logo.w / logo.h; }
+                    try {
+                        doc.addImage(logo.data, 'JPEG', MARGIN, 8 + (24 - lh) / 2, lw, lh);
+                        headerX = MARGIN + lw + 5;
+                    } catch { /* skip */ }
+                }
+                setFont(15, COLORS.white, 'bold');
+                doc.text('Autoevaluación Institucional', headerX, 15);
+                setFont(10, COLORS.white, 'normal');
+                doc.text('Informe institucional consolidado', headerX, 21.5);
+                doc.text(unaLinea(`${ev?.evaluation_name || ''}  ·  ${yearName}  ·  ${modoLabel}  ·  ${obtenerLabelEstado(ev?.evaluation_status)}`, PAGE_W - headerX - MARGIN), headerX, 28);
+                const ahora = new Date();
+                setFont(8, COLORS.white, 'normal');
+                doc.text(`Generado: ${ahora.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })} por ${currentUser?.user_display_name || ''}`, PAGE_W - MARGIN, 36, { align: 'right' });
+                y = 48;
+
+                if (ev?.evaluation_status === 'in_progress') {
+                    rect(MARGIN, y, CONTENT_W, 9, COLORS.warning, COLORS.level2);
+                    setFont(8.5, COLORS.dark, 'bold');
+                    doc.text('Evaluación en progreso: los resultados de este informe son parciales.', MARGIN + 4, y + 5.8);
+                    y += 14;
+                }
+
+                // ---------- resumen general ----------
+                setFont(12, COLORS.primary, 'bold');
+                doc.text('Resumen general', MARGIN, y + 4);
+                y += 9;
+
+                const pct = totalComps > 0 ? Math.round(compsValorados.length / totalComps * 100) : 0;
+                rect(MARGIN, y, CONTENT_W, 24, COLORS.light, COLORS.border);
+                setFont(8, COLORS.muted, 'normal');
+                doc.text('Promedio general', MARGIN + 5, y + 7);
+                setFont(16, prom.general ? colorNivel(prom.general) : COLORS.muted, 'bold');
+                doc.text(prom.general ? prom.general.toFixed(2) : '-', MARGIN + 5, y + 16);
+                setFont(8, COLORS.dark, 'normal');
+                doc.text(prom.general ? obtenerNombreNivel(Math.round(prom.general)) : 'Sin valoraciones', MARGIN + 5, y + 21);
+
+                const colX = MARGIN + 70;
+                setFont(8.5, COLORS.dark, 'normal');
+                doc.text(`Componentes valorados: ${compsValorados.length} de ${totalComps} (${pct}%)`, colX, y + 8);
+                doc.text(`Evaluadores con valoraciones: ${totalEvaluadores}`, colX, y + 14);
+                doc.text(`Evidencias registradas: ${datos.evidencias.length}`, colX, y + 20);
+                y += 30;
+
+                // distribución por nivel
+                setFont(9, COLORS.dark, 'bold');
+                doc.text('Distribución de componentes por nivel alcanzado', MARGIN, y + 3);
+                y += 7;
+                [1, 2, 3, 4].forEach(n => {
+                    const cant = distribucion[n];
+                    const base = compsValorados.length || 1;
+                    setFont(8, COLORS.dark, 'normal');
+                    doc.text(`${n} · ${obtenerNombreNivel(n)}`, MARGIN, y + 3.8);
+                    rect(MARGIN + 50, y, 100, 5, COLORS.border);
+                    if (cant > 0) rect(MARGIN + 50, y, 100 * cant / base, 5, COLORS[`level${n}`]);
+                    doc.text(`${cant} (${Math.round(cant / base * 100)}%)`, MARGIN + 154, y + 3.8);
+                    y += 7;
+                });
+                y += 5;
+
+                // tabla resumen por área y proceso
+                checkPageBreak(20);
+                setFont(9, COLORS.dark, 'bold');
+                doc.text('Promedios por área y proceso', MARGIN, y + 3);
+                y += 7;
+                const NOMBRE_W = CONTENT_W - 75;
+                areasCache.forEach(area => {
+                    const procs = procesosCache.filter(p => p.area_id === area.area_id);
+                    if (procs.length === 0) return;
+                    checkPageBreak(8);
+                    rect(MARGIN, y, CONTENT_W, 7, COLORS.light, COLORS.border);
+                    setFont(8.5, COLORS.dark, 'bold');
+                    doc.text(unaLinea(area.area_name, NOMBRE_W), MARGIN + 2, y + 4.8);
+                    const avgA = prom.porArea[area.area_id];
+                    doc.text(avgA !== undefined ? avgA.toFixed(2) : '-', MARGIN + NOMBRE_W + 12, y + 4.8, { align: 'right' });
+                    barra(MARGIN + NOMBRE_W + 16, y + 1.5, 55, 4, avgA);
+                    y += 7;
+                    procs.forEach(p => {
+                        checkPageBreak(6);
+                        const avgP = prom.porProceso[p.process_id];
+                        setFont(8, COLORS.dark, 'normal');
+                        doc.text(unaLinea(p.process_name, NOMBRE_W - 6), MARGIN + 6, y + 4.2);
+                        doc.text(avgP !== undefined ? avgP.toFixed(2) : '-', MARGIN + NOMBRE_W + 12, y + 4.2, { align: 'right' });
+                        barra(MARGIN + NOMBRE_W + 16, y + 1.5, 55, 3.5, avgP);
+                        y += 6;
+                    });
+                    y += 1;
+                });
+
+                // ---------- detalle ----------
+                nuevaPagina();
+                setFont(12, COLORS.primary, 'bold');
+                doc.text('Detalle por área, proceso y componente', MARGIN, y + 4);
+                y += 10;
+
+                let contadorImg = 0;
+                for (const area of areasCache) {
+                    const procs = procesosCache.filter(p => p.area_id === area.area_id);
+                    if (procs.length === 0) continue;
+
+                    // banda de área
+                    checkPageBreak(30);
+                    rect(MARGIN, y, CONTENT_W, 10, COLORS.dark);
+                    const avgA = prom.porArea[area.area_id];
+                    const wBadgeA = avgA !== undefined ? badge(textoPromedio(avgA), colorNivel(avgA), PAGE_W - MARGIN - 2, y + 2) : 0;
+                    setFont(10.5, COLORS.white, 'bold');
+                    doc.text(unaLinea('Área: ' + area.area_name, CONTENT_W - wBadgeA - 10), MARGIN + 4, y + 6.8);
+                    y += 14;
+
+                    for (const proceso of procs) {
+                        const comps = componentesCache.filter(c => c.process_id === proceso.process_id);
+                        const resultados = datos.resultadosEsperados.filter(r => r.process_id === proceso.process_id);
+                        const evidencias = datos.evidencias.filter(e => e.process_id === proceso.process_id);
+
+                        // banda de proceso
+                        checkPageBreak(26);
+                        rect(MARGIN, y, CONTENT_W, 9, COLORS.primary);
+                        const avgP = prom.porProceso[proceso.process_id];
+                        const wBadgeP = avgP !== undefined ? badge(textoPromedio(avgP), COLORS.dark, PAGE_W - MARGIN - 2, y + 1.5) : 0;
+                        setFont(9.5, COLORS.white, 'bold');
+                        doc.text(unaLinea(proceso.process_name, CONTENT_W - wBadgeP - 10), MARGIN + 4, y + 6);
+                        y += 12;
+
+                        parrafo(datos.descripcionesProceso[proceso.process_id], MARGIN + 2, CONTENT_W - 4, { size: 8, color: COLORS.muted, style: 'italic', gap: 3 });
+
+                        if (comps.length === 0) {
+                            parrafo('Este proceso no tiene componentes configurados.', MARGIN + 2, CONTENT_W - 4, { size: 8, color: COLORS.muted, style: 'italic', gap: 3 });
+                        }
+
+                        // componentes
+                        for (const comp of comps) {
+                            const avgC = prom.porComponente[comp.component_id];
+                            const ratingsComp = datos.ratings.filter(r => r.component_id === comp.component_id);
+
+                            setFont(9, COLORS.dark, 'bold');
+                            const nombreLines = doc.splitTextToSize(comp.component_name, CONTENT_W - 60);
+                            const boxH = nombreLines.length * 4.2 + 4;
+                            checkPageBreak(boxH + 12);
+                            rect(MARGIN, y, CONTENT_W, boxH, COLORS.light, COLORS.border);
+                            setFont(9, COLORS.dark, 'bold');
+                            doc.text(nombreLines, MARGIN + 3, y + 5);
+                            badge(textoPromedio(avgC), avgC !== undefined ? colorNivel(avgC) : COLORS.muted, PAGE_W - MARGIN - 2, y + 2);
+                            y += boxH + 2;
+
+                            parrafo(datos.definiciones[comp.component_id], MARGIN + 3, CONTENT_W - 6, { size: 7.5, color: COLORS.muted, style: 'italic', gap: 2 });
+
+                            if (avgC !== undefined) {
+                                const nivel = Math.round(avgC);
+                                const descriptor = datos.rubricas[comp.component_id] ? datos.rubricas[comp.component_id][nivel] : null;
+                                if (descriptor) {
+                                    parrafo(`Descriptor del nivel alcanzado (${nivel} · ${obtenerNombreNivel(nivel)}):`, MARGIN + 3, CONTENT_W - 6, { size: 7.5, color: colorNivel(nivel), style: 'bold', gap: 0.5 });
+                                    parrafo(descriptor, MARGIN + 3, CONTENT_W - 6, { size: 7.5, gap: 2 });
+                                }
+
+                                if (ratingsComp.length > 1) {
+                                    const dist = { 1: 0, 2: 0, 3: 0, 4: 0 };
+                                    ratingsComp.forEach(r => { if (dist[r.rating_value] !== undefined) dist[r.rating_value]++; });
+                                    parrafo(`${ratingsComp.length} valoraciones  ·  Nivel 1: ${dist[1]}  ·  Nivel 2: ${dist[2]}  ·  Nivel 3: ${dist[3]}  ·  Nivel 4: ${dist[4]}`, MARGIN + 3, CONTENT_W - 6, { size: 7.5, color: COLORS.dark, style: 'bold', gap: 1.5 });
+                                }
+
+                                for (const r of ratingsComp) {
+                                    const autor = datos.nombresEvaluadores[r.worker_email] || r.worker_email || 'Valoración de consenso';
+                                    parrafo(`${autor} — ${r.rating_value} · ${obtenerNombreNivel(r.rating_value)}`, MARGIN + 6, CONTENT_W - 9, { size: 7.5, color: COLORS.dark, style: 'bold', gap: 0.5 });
+                                    parrafo(r.observations, MARGIN + 6, CONTENT_W - 9, { size: 7.5, color: COLORS.muted, gap: 1.5 });
+                                }
+                            }
+                            y += 3;
+                        }
+
+                        // resultados esperados y evidencias
+                        if (resultados.length > 0 || evidencias.length > 0) {
+                            checkPageBreak(12);
+                            parrafo('Resultados esperados y evidencias', MARGIN + 2, CONTENT_W - 4, { size: 9, color: COLORS.primary, style: 'bold', gap: 1.5 });
+
+                            for (const resultado of resultados) {
+                                const evids = evidencias.filter(e => e.expected_result_id === resultado.result_id);
+                                parrafo('- ' + resultado.result_description, MARGIN + 2, CONTENT_W - 4, { size: 8, style: 'bold', gap: 1.5 });
+                                if (evids.length === 0) {
+                                    parrafo('Sin evidencias registradas.', MARGIN + 4, CONTENT_W - 8, { size: 7.5, color: COLORS.muted, style: 'italic', gap: 2 });
+                                }
+                                for (const evid of evids) {
+                                    if (incluirImagenes) console.log(`🖼️ Evidencia ${++contadorImg}`);
+                                    await dibujarEvidencia(evid);
+                                }
+                            }
+
+                            const huerfanas = evidencias.filter(e => !e.expected_result_id || !idsResultadosActivos.has(e.expected_result_id));
+                            if (huerfanas.length > 0) {
+                                parrafo('Evidencias sin resultado esperado asociado', MARGIN + 2, CONTENT_W - 4, { size: 8, color: COLORS.muted, style: 'bold', gap: 1.5 });
+                                for (const evid of huerfanas) {
+                                    if (incluirImagenes) console.log(`🖼️ Evidencia ${++contadorImg}`);
+                                    await dibujarEvidencia(evid);
+                                }
+                            }
+                        }
+
+                        y += 6;
+                    }
+                }
+
+                // ---------- pie de página ----------
+                const totalPages = doc.getNumberOfPages();
+                for (let i = 1; i <= totalPages; i++) {
+                    doc.setPage(i);
+                    doc.setDrawColor(...COLORS.border);
+                    doc.line(MARGIN, PAGE_H - 12, PAGE_W - MARGIN, PAGE_H - 12);
+                    setFont(7, COLORS.muted, 'normal');
+                    doc.text(unaLinea(`SchoolNet — Autoevaluación Institucional · ${ev?.evaluation_name || ''}`, CONTENT_W - 30), MARGIN, PAGE_H - 7);
+                    doc.text(`Página ${i} de ${totalPages}`, PAGE_W - MARGIN, PAGE_H - 7, { align: 'right' });
+                }
+
+                // ---------- descargar ----------
+                const fechaLocal = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+                const slug = (ev?.evaluation_name || 'evaluacion').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+                doc.save(`Autoevaluacion_institucional_${slug}_${fechaLocal}.pdf`);
+
+                const modal = bootstrap.Modal.getInstance(document.getElementById('modalPDFInstitucional'));
+                if (modal) modal.hide();
+                showMessage('PDF institucional generado correctamente', 'success');
+
+            } catch (error) {
+                console.error('❌ Error generando PDF institucional:', error);
+                showMessage('Error al generar el PDF: ' + error.message, 'danger');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                ocultarLoading();
+            }
         }
         
         // ==========================================
