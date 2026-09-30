@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-26 16:58 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-30 14:39 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -631,7 +631,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluations.html` | institutional-eval | GET, embed | 501, 543 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | embed | 539 |
 | `modules/institutional-eval/index.html` | institutional-eval | GET | 936 |
-| `modules/institutional-eval/results.html` | institutional-eval | embed | 418 |
+| `modules/institutional-eval/results.html` | institutional-eval | embed | 460 |
 | `modules/new-students/new-students-report.html` | new-students | GET | 617 |
 | `modules/new-students/register-activities.html` | new-students | GET | 378 |
 | `modules/new-students/registration-queries.html` | new-students | GET | 504 |
@@ -2192,7 +2192,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluations.html` | institutional-eval | GET | 513 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 519 |
 | `modules/institutional-eval/index.html` | institutional-eval | ND | 548 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 397 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 439 |
 | `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 562, 1061, 1068, 1384, 1413 |
 
 ### indicator_categories
@@ -2408,7 +2408,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 629 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 527 |
 | `modules/institutional-eval/index.html` | institutional-eval | ND | 556 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 405 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 447 |
 | `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 586, 1206, 1214, 1396 |
 
 ### ie_evaluations
@@ -2419,7 +2419,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluations.html` | institutional-eval | GET, PATCH, POST | 543, 888, 895, 949 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 539 |
 | `modules/institutional-eval/index.html` | institutional-eval | ND | 564 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 418 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 460 |
 
 ### ie_processes
 
@@ -2428,7 +2428,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 594, 624 |
 | `modules/institutional-eval/evaluations.html` | institutional-eval | GET | 517 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 523 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 401 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 443 |
 | `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 575, 1131, 1139, 1390 |
 
 ### leadership_cycle_evaluatees
@@ -3443,7 +3443,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET, PATCH, POST | 651, 655, 856, 887, 918, 936, 940 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 602 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 432 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 474 |
 
 ### new_student_activity_records
 
