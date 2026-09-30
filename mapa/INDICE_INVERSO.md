@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-30 14:39 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-30 14:46 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -13,7 +13,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [grades](#grades) | 67 | 2 | 4 |
 | [users](#users) | 62 | 4 | 11 |
 | [courses](#courses) | 61 | 2 | 4 |
-| [system_config](#systemconfig) | 57 | 3 | 3 |
+| [system_config](#systemconfig) | 58 | 3 | 3 |
 | [sections](#sections) | 55 | 1 | 4 |
 | [students](#students) | 50 | 4 | 9 |
 | [user_roles](#userroles) | 34 | 3 | 3 |
@@ -219,6 +219,9 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [generated_contracts](#generatedcontracts) | 3 | 1 | 1 |
 | [hr_absence_attachments](#hrabsenceattachments) | 3 | 2 | 0 |
 | [ie_component_ratings](#iecomponentratings) | 3 | 1 | 0 |
+| [ie_expected_results](#ieexpectedresults) | 3 | 1 | 1 |
+| [ie_process_workers](#ieprocessworkers) | 3 | 1 | 0 |
+| [ie_rubrics](#ierubrics) | 3 | 1 | 0 |
 | [new_student_activity_records](#newstudentactivityrecords) | 3 | 1 | 0 |
 | [pln_myp_concept_strategies](#plnmypconceptstrategies) | 3 | 1 | 0 |
 | [pln_planner_atl_skills](#plnplanneratlskills) | 3 | 3 | 0 |
@@ -281,9 +284,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [form_access_workers](#formaccessworkers) | 2 | 1 | 0 |
 | [hr_clearance_admins](#hrclearanceadmins) | 2 | 1 | 0 |
 | [hr_clearance_areas](#hrclearanceareas) | 2 | 1 | 0 |
-| [ie_expected_results](#ieexpectedresults) | 2 | 1 | 1 |
-| [ie_process_workers](#ieprocessworkers) | 2 | 1 | 0 |
-| [ie_rubrics](#ierubrics) | 2 | 1 | 0 |
+| [ie_process_results](#ieprocessresults) | 2 | 1 | 0 |
 | [indicator_benchmarks](#indicatorbenchmarks) | 2 | 0 | 0 |
 | [indicator_category_assignments](#indicatorcategoryassignments) | 2 | 1 | 0 |
 | [kpi_improvement_plans](#kpiimprovementplans) | 2 | 1 | 2 |
@@ -348,7 +349,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [hr_clearance_items](#hrclearanceitems) | 1 | 1 | 0 |
 | [hr_clearance_processes](#hrclearanceprocesses) | 1 | 1 | 0 |
 | [hr_clearance_worker_closures](#hrclearanceworkerclosures) | 1 | 1 | 0 |
-| [ie_process_results](#ieprocessresults) | 1 | 1 | 0 |
 | [ie_sources](#iesources) | 1 | 1 | 1 |
 | [kindergarten_actions](#kindergartenactions) | 1 | 1 | 0 |
 | [kpi_relationship_suggestions](#kpirelationshipsuggestions) | 1 | 1 | 1 |
@@ -928,6 +928,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/workers.html` | hr | GET | 3197 |
 | `modules/indicators/dashboard.html` | indicators | GET | 797 |
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 1519 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 1545 |
 | `modules/procedures/execute-form-public.html` | procedures | GET | 271 |
 | `modules/procedures/execute-public.html` | procedures | GET | 301 |
 | `modules/procedures/track-public.html` | procedures | GET | 229 |
@@ -2408,7 +2409,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 629 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 527 |
 | `modules/institutional-eval/index.html` | institutional-eval | ND | 556 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 447 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 447, 1316 |
 | `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 586, 1206, 1214, 1396 |
 
 ### ie_evaluations
@@ -2428,7 +2429,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 594, 624 |
 | `modules/institutional-eval/evaluations.html` | institutional-eval | GET | 517 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 523 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 443 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 443, 1319 |
 | `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 575, 1131, 1139, 1390 |
 
 ### leadership_cycle_evaluatees
@@ -3443,7 +3444,31 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 |---|---|---|---|
 | `modules/institutional-eval/evaluate.html` | institutional-eval | GET, PATCH, POST | 651, 655, 856, 887, 918, 936, 940 |
 | `modules/institutional-eval/improvement.html` | institutional-eval | GET | 602 |
-| `modules/institutional-eval/results.html` | institutional-eval | GET | 474 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 474, 1328 |
+
+### ie_expected_results
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 645 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 1322 |
+| `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 590, 1348, 1356, 1402 |
+
+### ie_process_workers
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 513, 577 |
+| `modules/institutional-eval/evaluations.html` | institutional-eval | GET, PATCH, POST | 556, 1150, 1160, 1196 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 1331 |
+
+### ie_rubrics
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 637 |
+| `modules/institutional-eval/results.html` | institutional-eval | embed | 1316 |
+| `modules/institutional-eval/structure.html` | institutional-eval | DELETE, GET, PATCH, POST | 598, 1267, 1276, 1288 |
 
 ### new_student_activity_records
 
@@ -3915,26 +3940,12 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/absence-config.html` | hr | DELETE, GET, PATCH, POST | 950, 1035, 1041, 1062 |
 | `modules/hr/clearances.html` | hr | GET, embed | 538, 1077, 1830, 1969 |
 
-### ie_expected_results
+### ie_process_results
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 645 |
-| `modules/institutional-eval/structure.html` | institutional-eval | GET, ND, PATCH, POST | 590, 1348, 1356, 1402 |
-
-### ie_process_workers
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 513, 577 |
-| `modules/institutional-eval/evaluations.html` | institutional-eval | GET, PATCH, POST | 556, 1150, 1160, 1196 |
-
-### ie_rubrics
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/institutional-eval/evaluate.html` | institutional-eval | GET | 637 |
-| `modules/institutional-eval/structure.html` | institutional-eval | DELETE, GET, PATCH, POST | 598, 1267, 1276, 1288 |
+| `modules/institutional-eval/evaluate.html` | institutional-eval | GET, PATCH, POST | 661, 1252, 1276, 1294, 1383 |
+| `modules/institutional-eval/results.html` | institutional-eval | GET | 1325 |
 
 ### indicator_benchmarks
 
@@ -4366,12 +4377,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/hr/clearances.html` | hr | DELETE, GET, PATCH, POST | 907, 1082, 1240, 1280, 1290, 1356, 1848 |
-
-### ie_process_results
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `modules/institutional-eval/evaluate.html` | institutional-eval | GET, PATCH, POST | 661, 1252, 1276, 1294, 1383 |
 
 ### ie_sources
 

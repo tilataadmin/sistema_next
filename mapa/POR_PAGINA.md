@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-30 14:39 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-30 14:46 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -1235,7 +1235,7 @@
 ### `modules/institutional-eval/results.html`
 
 - **Módulo:** institutional-eval
-- **Lee (6):** academic_years, ie_component_ratings, ie_components, ie_evaluations, ie_management_areas, ie_processes
+- **Lee (11):** academic_years, ie_component_ratings, ie_components, ie_evaluations, ie_expected_results, ie_management_areas, ie_process_results, ie_process_workers, ie_processes, ie_rubrics, system_config
 - **Escribe (0):** —
 
 ### `modules/institutional-eval/structure.html`
