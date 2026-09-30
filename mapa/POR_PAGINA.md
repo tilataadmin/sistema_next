@@ -1,8 +1,8 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-24 18:38 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-30 14:39 UTC. **No editar a mano.**
 
-**336 archivos** con acceso a datos.
+**343 archivos** con acceso a datos.
 
 ### `api/cron/auto-absences.js`
 
@@ -1865,6 +1865,52 @@
 - **Lee (1):** teval_config
 - **Escribe (1):** **teval_config**
 
+### `modules/teacher-eval/danielson-admin.html`
+
+- **Módulo:** teacher-eval
+- **Lee (12):** academic_years, courses, teval_dn_config, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_dn_reviewers, teval_rs_evaluations, teval_rubric_levels, worker_job_roles, worker_managers, workers
+- **Escribe (6):** **teval_dn_config**, **teval_dn_cycles**, **teval_dn_evaluations**, **teval_dn_reviewer_changes**, **teval_dn_reviewers**, **teval_rs_evaluations**
+
+### `modules/teacher-eval/danielson-autoevaluacion.html`
+
+- **Módulo:** teacher-eval
+- **Lee (21):** academic_years, survey_scale_options, teval_dn_config, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_dn_plan_goals, teval_dn_plans, teval_dn_results, teval_rs_answers, teval_rs_axes, teval_rs_components, teval_rs_criteria, teval_rs_evaluations, teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels, users, workers
+- **Escribe (6):** **teval_dn_evaluations**, **teval_dn_marks**, **teval_dn_plan_goals**, **teval_dn_plans**, **teval_rs_answers**, **teval_rs_evaluations**
+- **Funciones (2):** teval_dn_calc_results, teval_rs_calc_results
+
+### `modules/teacher-eval/danielson-plan.html`
+
+- **Módulo:** teacher-eval
+- **Lee (12):** academic_years, teval_dn_config, teval_dn_cycles, teval_dn_evaluations, teval_dn_plan_goals, teval_dn_plans, teval_dn_results, teval_dn_reviewers, teval_rubric_components, teval_rubric_domains, users, workers
+- **Escribe (2):** **teval_dn_plan_goals**, **teval_dn_plans**
+
+### `modules/teacher-eval/danielson-resultados.html`
+
+- **Módulo:** teacher-eval
+- **Lee (18):** academic_years, survey_scale_options, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_dn_plan_goals, teval_dn_plans, teval_rs_answers, teval_rs_axes, teval_rs_components, teval_rs_criteria, teval_rs_evaluations, teval_rs_results, teval_rubric_components, teval_rubric_domains, teval_rubric_levels, worker_job_roles, workers
+- **Escribe (0):** —
+- **Funciones (7):** teval_dn_goals_summary, teval_dn_group_by_component, teval_dn_group_by_worker, teval_dn_trend, teval_dn_worker_detail, teval_rs_group_by_criterion, teval_rs_group_by_worker
+
+### `modules/teacher-eval/danielson-revision.html`
+
+- **Módulo:** teacher-eval
+- **Lee (14):** academic_years, teval_dn_config, teval_dn_cycles, teval_dn_evaluations, teval_dn_marks, teval_dn_results, teval_dn_reviewers, teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels, users, workers
+- **Escribe (2):** **teval_dn_evaluations**, **teval_dn_marks**
+- **Funciones (1):** teval_dn_calc_results
+
+### `modules/teacher-eval/danielson-rs-admin.html`
+
+- **Módulo:** teacher-eval
+- **Lee (5):** survey_scales, teval_rs_answers, teval_rs_axes, teval_rs_components, teval_rs_criteria
+- **Escribe (3):** **teval_rs_axes**, **teval_rs_components**, **teval_rs_criteria**
+
+### `modules/teacher-eval/danielson-rs-revision.html`
+
+- **Módulo:** teacher-eval
+- **Lee (11):** academic_years, survey_scale_options, teval_dn_cycles, teval_rs_answers, teval_rs_axes, teval_rs_components, teval_rs_criteria, teval_rs_evaluations, teval_rs_results, users, workers
+- **Escribe (2):** **teval_rs_answers**, **teval_rs_evaluations**
+- **Funciones (1):** teval_rs_calc_results
+
 ### `modules/teacher-eval/evaluate.html`
 
 - **Módulo:** teacher-eval
@@ -1957,8 +2003,8 @@
 ### `modules/teacher-eval/rubric.html`
 
 - **Módulo:** teacher-eval
-- **Lee (4):** teval_rubric_components, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels
-- **Escribe (4):** **teval_rubric_components**, **teval_rubric_descriptors**, **teval_rubric_domains**, **teval_rubric_levels**
+- **Lee (5):** teval_rubric_components, teval_rubric_descriptor_items, teval_rubric_descriptors, teval_rubric_domains, teval_rubric_levels
+- **Escribe (5):** **teval_rubric_components**, **teval_rubric_descriptor_items**, **teval_rubric_descriptors**, **teval_rubric_domains**, **teval_rubric_levels**
 
 ### `modules/training/axes.html`
 

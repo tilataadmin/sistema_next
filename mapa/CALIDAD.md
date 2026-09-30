@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-24 18:38 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-09-30 14:39 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -41,13 +41,15 @@
 
 ## Funciones de base de datos invocadas
 
-**17 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
+**26 funciones**. Se listan aparte porque se invocan igual que una escritura pero muchas solo leen.
 
 | Función | Archivos |
 |---|---:|
 | get_workers_with_permission | 3 |
 | pln_create_planner_cycle | 2 |
 | adjust_service_consumption | 2 |
+| teval_dn_calc_results | 2 |
+| teval_rs_calc_results | 2 |
 | fn_extracurricular_enroll | 1 |
 | pln_create_planner_criterion | 1 |
 | pln_create_unit_cycle | 1 |
@@ -62,6 +64,13 @@
 | suspend_trip | 1 |
 | get_pedagogical_trip_students | 1 |
 | get_trip_authorization_panel | 1 |
+| teval_dn_trend | 1 |
+| teval_dn_goals_summary | 1 |
+| teval_dn_group_by_component | 1 |
+| teval_dn_group_by_worker | 1 |
+| teval_rs_group_by_criterion | 1 |
+| teval_rs_group_by_worker | 1 |
+| teval_dn_worker_detail | 1 |
 
 ## Nombres descartados por no parecer tablas
 
