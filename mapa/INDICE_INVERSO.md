@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-10-01 13:50 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:52 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -888,7 +888,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `login.html` | (raíz) | GET | 376 |
 | `modules/alumni/publico/aviso-privacidad.html` | alumni | GET | 206 |
 | `modules/budget/assign-requesters.html` | budget | ND | 396 |
-| `modules/budget/associate-invoices.html` | budget | GET | 1293 |
+| `modules/budget/associate-invoices.html` | budget | GET | 1311 |
 | `modules/budget/budget-authorization.html` | budget | GET | 549 |
 | `modules/budget/budget-overview.html` | budget | GET | 744 |
 | `modules/budget/budget-queries.html` | budget | ND | 718 |
@@ -1577,7 +1577,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `dashboard.html` | (raíz) | GET | 354 |
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH | 764, 1324, 1604, 1613 |
+| `modules/budget/associate-invoices.html` | budget | GET, PATCH | 764, 1342, 1622, 1631 |
 | `modules/budget/budget-overview.html` | budget | ND, embed | 796, 1000 |
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336, 1715 |
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
@@ -1801,7 +1801,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET | 759, 1034 |
+| `modules/budget/associate-invoices.html` | budget | GET | 759, 1043 |
 | `modules/budget/budget-overview.html` | budget | GET | 1180 |
 | `modules/budget/budget-queries.html` | budget | GET | 1950 |
 | `modules/suppliers/dashboard.html` | suppliers | GET | 265 |
@@ -2575,7 +2575,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET | 1033 |
+| `modules/budget/associate-invoices.html` | budget | GET | 1042 |
 | `modules/budget/budget-overview.html` | budget | GET | 1195 |
 | `modules/budget/budget-queries.html` | budget | GET | 1949 |
 | `modules/budget/category-detail.html` | budget | embed | 1167 |
@@ -2791,7 +2791,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH, POST | 1017, 1227, 1246, 1627 |
+| `modules/budget/associate-invoices.html` | budget | GET, PATCH, POST | 1026, 1240, 1259, 1645 |
 | `modules/budget/budget-overview.html` | budget | ND | 1152 |
 | `modules/budget/budget-queries.html` | budget | ND | 1886 |
 | `modules/budget/category-detail.html` | budget | ND | 1167 |
