@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.15.7.30">
+    <meta name="page-version" content="26.10.1.1">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1339,17 +1339,14 @@ async function cerrarRequerimiento() {
         if (requerimientoActual.assignment_id && valorFinal !== valorInicial) {
             const diferencia = valorFinal - valorInicial;
             try {
-                const asigData = await supabaseRequest(
-                    `/budget_assignments?select=executed_value&assignment_id=eq.${requerimientoActual.assignment_id}`
-                );
-                if (asigData && asigData.length > 0) {
-                    const nuevoExecuted = Math.max(0, (asigData[0].executed_value || 0) + diferencia);
-                    await supabaseRequest(`/budget_assignments?assignment_id=eq.${requerimientoActual.assignment_id}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ executed_value: nuevoExecuted })
-                    });
-                    console.log(`✅ executed_value ajustado en ${diferencia >= 0 ? '+' : ''}${diferencia}`);
-                }
+                await supabaseRequest('/rpc/budget_adjust_executed', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        p_assignment_id: requerimientoActual.assignment_id,
+                        p_delta: Math.round(diferencia)
+                    })
+                });
+                console.log(`✅ executed_value ajustado en ${diferencia >= 0 ? '+' : ''}${diferencia}`);
             } catch (e) {
                 console.warn('⚠️ Error ajustando executed_value de la asignación:', e);
                 // No interrumpir el cierre por esto
@@ -1600,6 +1597,18 @@ async function cerrarRequerimiento() {
             try {
                 mostrarLoading('Procesando anulación...');
 
+                // 0. Determinar cuánto aporta hoy esta solicitud al executed_value,
+                //    antes de que el paso 1 ponga closed_value en 0.
+                //    pre-closed: el cierre ya ajustó el ejecutado al valor facturado (closed_value).
+                //    approved / executed: el ejecutado contiene requested_value.
+                const estadoActualData = await supabaseRequest(
+                    `/execution_requests?select=request_status,requested_value,closed_value&request_id=eq.${requerimientoActual.request_id}&limit=1`
+                );
+                const estadoActual = (estadoActualData && estadoActualData.length > 0) ? estadoActualData[0] : null;
+                const valorARevertir = (estadoActual && estadoActual.request_status === 'pre-closed')
+                    ? (estadoActual.closed_value || 0)
+                    : (estadoActual ? (estadoActual.requested_value || 0) : (requerimientoActual.requested_value || 0));
+
                 // 1. Cambiar estado del requerimiento a rejected y registrar razón
                 await supabaseRequest(`/execution_requests?request_id=eq.${requerimientoActual.request_id}`, {
                     method: 'PATCH',
@@ -1625,20 +1634,14 @@ async function cerrarRequerimiento() {
                 }
 
                 // 3. Devolver valor al presupuesto (restar del executed_value)
-                if (requerimientoActual.assignment_id) {
-                    const assignmentData = await supabaseRequest(
-                        `/budget_assignments?select=executed_value&assignment_id=eq.${requerimientoActual.assignment_id}`
-                    );
-                    if (assignmentData && assignmentData.length > 0) {
-                        const nuevoExecuted = Math.max(0, (assignmentData[0].executed_value || 0) - requerimientoActual.requested_value);
-                        await supabaseRequest(`/budget_assignments?assignment_id=eq.${requerimientoActual.assignment_id}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({
-                                executed_value: nuevoExecuted,
-                                updated_at: new Date().toISOString()
-                            })
-                        });
-                    }
+                if (requerimientoActual.assignment_id && valorARevertir !== 0) {
+                    await supabaseRequest('/rpc/budget_adjust_executed', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            p_assignment_id: requerimientoActual.assignment_id,
+                            p_delta: -Math.round(valorARevertir)
+                        })
+                    });
                 }
 
                 // 4. Notificar al solicitante
