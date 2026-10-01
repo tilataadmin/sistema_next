@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="27.7.28.1">
+    <meta name="page-version" content="26.10.1.1">
     <title>Aprobaciones de Servicios - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -1541,17 +1541,19 @@
                     body: JSON.stringify(execData)
                 });
 
-                // 2. Incrementar executed_value del budget_assignment
+                // 2. Incrementar executed_value del budget_assignment (suma atómica en BD)
                 const assignment = assignmentsAprobador.find(a => a.assignment_id === selectedAssignmentId);
-                const newExecuted = (assignment.executed_value || 0) + costoServicioActual;
-
-                await supabaseRequest('/budget_assignments?assignment_id=eq.' + selectedAssignmentId, {
-                    method: 'PATCH',
+                const nuevoEjecutado = await supabaseRequest('/rpc/budget_adjust_executed', {
+                    method: 'POST',
                     body: JSON.stringify({
-                        executed_value: newExecuted,
-                        updated_at: ahora
+                        p_assignment_id: selectedAssignmentId,
+                        p_delta: Math.round(costoServicioActual)
                     })
                 });
+                // Ejecutado real antes de esta aprobación, según la base de datos
+                const ejecutadoPrevio = (nuevoEjecutado !== null && nuevoEjecutado !== undefined)
+                    ? Number(nuevoEjecutado) - Math.round(costoServicioActual)
+                    : (assignment.executed_value || 0);
 
                 // 3. Actualizar svc_service_requests a aprobada
                 await supabaseRequest('/svc_service_requests?request_id=eq.' + requestId, {
@@ -1569,7 +1571,7 @@
                 }
 
                 // 5. Si hay sobreejecución, notificar al admin presupuestal
-                const disponible = (assignment.approved_value || 0) - (assignment.executed_value || 0);
+                const disponible = (assignment.approved_value || 0) - ejecutadoPrevio;
                 if (costoServicioActual > disponible) {
                     await enviarNotificacionSobreejecucionServicio(solicitud, assignment, costoServicioActual, disponible);
                 }
