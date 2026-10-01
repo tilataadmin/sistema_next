@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-10-01 13:52 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 14:02 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -349,7 +349,7 @@
 ### `modules/budget/execution-request.html`
 
 - **Módulo:** budget
-- **Lee (0):** —
+- **Lee (1):** budget_assignments
 - **Escribe (2):** **execution_requests**, **recurrence_groups**
 
 ### `modules/budget/index.html`
