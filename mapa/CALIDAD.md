@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-10-01 13:47 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:50 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -45,7 +45,7 @@
 
 | Función | Archivos |
 |---|---:|
-| budget_adjust_executed | 5 |
+| budget_adjust_executed | 6 |
 | get_workers_with_permission | 3 |
 | pln_create_planner_cycle | 2 |
 | adjust_service_consumption | 2 |

@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-10-01 13:47 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:50 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -337,6 +337,7 @@
 - **Lee (4):** budget_assignments, budget_items, system_config, workers
 - **Escribe (1):** **execution_requests**
 - **Sin determinar (1):** execution_requests
+- **Funciones (1):** budget_adjust_executed
 
 ### `modules/budget/close-transfer.html`
 

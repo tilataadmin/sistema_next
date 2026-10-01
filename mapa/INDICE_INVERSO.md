@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-10-01 13:47 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:50 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -447,7 +447,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-request.html` | budget | GET | 581 |
 | `modules/budget/budget-transfer.html` | budget | embed | 726, 840 |
 | `modules/budget/category-detail.html` | budget | embed | 969, 1064 |
-| `modules/budget/close-overruns.html` | budget | embed | 586 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
 | `modules/budget/initialize-budget-general.html` | budget | GET | 556 |
 | `modules/budget/initialize-budget-year.html` | budget | GET | 896 |
 | `modules/config/academic-areas.html` | config | GET | 303 |
@@ -895,7 +895,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-request.html` | budget | GET | 645 |
 | `modules/budget/budget-transfer.html` | budget | GET | 649, 722, 836 |
 | `modules/budget/category-detail.html` | budget | GET | 739 |
-| `modules/budget/close-overruns.html` | budget | GET | 853 |
+| `modules/budget/close-overruns.html` | budget | GET | 887 |
 | `modules/budget/close-transfer.html` | budget | GET | 934 |
 | `modules/budget/index.html` | budget | GET | 891 |
 | `modules/budget/request-resolution.html` | budget | GET | 587 |
@@ -1290,7 +1290,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-request.html` | budget | ND | 595, 1010 |
 | `modules/budget/budget-transfer.html` | budget | ND, embed | 658, 726, 840, 1039 |
 | `modules/budget/category-detail.html` | budget | GET, ND | 969, 1345 |
-| `modules/budget/close-overruns.html` | budget | embed | 586 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
 | `modules/budget/close-transfer.html` | budget | ND, PATCH | 883, 886, 901, 907 |
 | `modules/budget/index.html` | budget | GET | 1021, 1025, 1040 |
 | `modules/budget/initialize-budget-general.html` | budget | ND, POST | 669, 804, 831, 836, 847 |
@@ -1402,7 +1402,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-request.html` | budget | embed | 595 |
 | `modules/budget/budget-transfer.html` | budget | ND | 658 |
 | `modules/budget/category-detail.html` | budget | ND, embed | 890, 1345 |
-| `modules/budget/close-overruns.html` | budget | embed | 586 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
 | `modules/budget/initialize-budget-general.html` | budget | ND | 665 |
 | `modules/budget/initialize-budget-year.html` | budget | GET | 680, 925, 1009, 1093, 1173 |
 | `modules/budget/report-design.html` | budget | GET, embed | 669, 690 |
@@ -1581,7 +1581,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-overview.html` | budget | ND, embed | 796, 1000 |
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336, 1715 |
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
-| `modules/budget/close-overruns.html` | budget | ND, PATCH | 586, 819 |
+| `modules/budget/close-overruns.html` | budget | ND, PATCH | 587, 836 |
 | `modules/budget/execution-request.html` | budget | POST | 2041, 2150 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
 | `modules/services/admissions-family.html` | services | GET, PATCH, POST | 723, 810, 823 |
