@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-10-01 13:52 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 14:02 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -22,8 +22,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [role_permissions](#rolepermissions) | 26 | 1 | 0 |
 | [student_status](#studentstatus) | 23 | 0 | 0 |
 | [tasks](#tasks) | 23 | 11 | 9 |
+| [budget_assignments](#budgetassignments) | 20 | 4 | 8 |
 | [programs](#programs) | 20 | 1 | 0 |
-| [budget_assignments](#budgetassignments) | 19 | 4 | 8 |
 | [academic_areas](#academicareas) | 17 | 1 | 4 |
 | [academic_subjects](#academicsubjects) | 17 | 1 | 0 |
 | [job_roles](#jobroles) | 17 | 1 | 4 |
@@ -1253,6 +1253,31 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/my-requests.html` | procedures | GET, PATCH | 877, 883 |
 | `modules/procedures/records.html` | procedures | GET, PATCH | 847, 853 |
 
+### budget_assignments
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `dashboard.html` | (raíz) | embed | 354 |
+| `modules/budget/associate-invoices.html` | budget | embed | 764 |
+| `modules/budget/budget-authorization.html` | budget | ND | 901 |
+| `modules/budget/budget-overview.html` | budget | GET, ND | 796, 1423 |
+| `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336 |
+| `modules/budget/budget-request.html` | budget | ND | 595, 1010 |
+| `modules/budget/budget-transfer.html` | budget | ND, embed | 658, 726, 840, 1039 |
+| `modules/budget/category-detail.html` | budget | GET, ND | 969, 1345 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
+| `modules/budget/close-transfer.html` | budget | ND, PATCH | 883, 886, 901, 907 |
+| `modules/budget/execution-request.html` | budget | GET | 937 |
+| `modules/budget/index.html` | budget | GET | 1021, 1025, 1040 |
+| `modules/budget/initialize-budget-general.html` | budget | ND, POST | 669, 804, 831, 836, 847 |
+| `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1233 |
+| `modules/budget/report-design.html` | budget | GET | 1436 |
+| `modules/budget/report-view.html` | budget | GET | 608 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
+| `modules/services/admissions-family.html` | services | GET | 446 |
+| `modules/services/approvals.html` | services | GET | 1376 |
+| `modules/services/svc-meal-tickets.html` | services | GET, embed | 240, 253, 585, 588 |
+
 ### programs
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -1277,30 +1302,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/planners.html` | planning | GET | 445 |
 | `modules/planning/unit-form.html` | planning | GET | 1452 |
 | `modules/planning/units.html` | planning | GET | 434 |
-
-### budget_assignments
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `dashboard.html` | (raíz) | embed | 354 |
-| `modules/budget/associate-invoices.html` | budget | embed | 764 |
-| `modules/budget/budget-authorization.html` | budget | ND | 901 |
-| `modules/budget/budget-overview.html` | budget | GET, ND | 796, 1423 |
-| `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336 |
-| `modules/budget/budget-request.html` | budget | ND | 595, 1010 |
-| `modules/budget/budget-transfer.html` | budget | ND, embed | 658, 726, 840, 1039 |
-| `modules/budget/category-detail.html` | budget | GET, ND | 969, 1345 |
-| `modules/budget/close-overruns.html` | budget | embed | 587 |
-| `modules/budget/close-transfer.html` | budget | ND, PATCH | 883, 886, 901, 907 |
-| `modules/budget/index.html` | budget | GET | 1021, 1025, 1040 |
-| `modules/budget/initialize-budget-general.html` | budget | ND, POST | 669, 804, 831, 836, 847 |
-| `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1233 |
-| `modules/budget/report-design.html` | budget | GET | 1436 |
-| `modules/budget/report-view.html` | budget | GET | 608 |
-| `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
-| `modules/services/admissions-family.html` | services | GET | 446 |
-| `modules/services/approvals.html` | services | GET | 1376 |
-| `modules/services/svc-meal-tickets.html` | services | GET, embed | 240, 253, 585, 588 |
 
 ### academic_areas
 
@@ -1582,7 +1583,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336, 1715 |
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
 | `modules/budget/close-overruns.html` | budget | ND, PATCH | 587, 836 |
-| `modules/budget/execution-request.html` | budget | POST | 2041, 2150 |
+| `modules/budget/execution-request.html` | budget | POST | 2054, 2163 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
 | `modules/services/admissions-family.html` | services | GET, PATCH, POST | 723, 810, 823 |
 | `modules/services/approvals.html` | services | POST | 1539 |
@@ -4645,7 +4646,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/execution-request.html` | budget | POST | 2005 |
+| `modules/budget/execution-request.html` | budget | POST | 2018 |
 
 ### stm_eae_topics
 
