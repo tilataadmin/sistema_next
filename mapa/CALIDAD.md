@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-09-30 14:46 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:52 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -45,6 +45,7 @@
 
 | Función | Archivos |
 |---|---:|
+| budget_adjust_executed | 6 |
 | get_workers_with_permission | 3 |
 | pln_create_planner_cycle | 2 |
 | adjust_service_consumption | 2 |
@@ -53,7 +54,6 @@
 | fn_extracurricular_enroll | 1 |
 | pln_create_planner_criterion | 1 |
 | pln_create_unit_cycle | 1 |
-| budget_adjust_executed | 1 |
 | list_trip_authorizations | 1 |
 | svc_adjustment_deadline | 1 |
 | transition_trip_statuses | 1 |

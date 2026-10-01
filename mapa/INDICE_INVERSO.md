@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-09-30 14:46 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:52 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -22,8 +22,8 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [role_permissions](#rolepermissions) | 26 | 1 | 0 |
 | [student_status](#studentstatus) | 23 | 0 | 0 |
 | [tasks](#tasks) | 23 | 11 | 9 |
-| [budget_assignments](#budgetassignments) | 20 | 8 | 8 |
 | [programs](#programs) | 20 | 1 | 0 |
+| [budget_assignments](#budgetassignments) | 19 | 4 | 8 |
 | [academic_areas](#academicareas) | 17 | 1 | 4 |
 | [academic_subjects](#academicsubjects) | 17 | 1 | 0 |
 | [job_roles](#jobroles) | 17 | 1 | 4 |
@@ -447,7 +447,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-request.html` | budget | GET | 581 |
 | `modules/budget/budget-transfer.html` | budget | embed | 726, 840 |
 | `modules/budget/category-detail.html` | budget | embed | 969, 1064 |
-| `modules/budget/close-overruns.html` | budget | embed | 586 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
 | `modules/budget/initialize-budget-general.html` | budget | GET | 556 |
 | `modules/budget/initialize-budget-year.html` | budget | GET | 896 |
 | `modules/config/academic-areas.html` | config | GET | 303 |
@@ -529,7 +529,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/security/ticket-categories.html` | security | GET | 124 |
 | `modules/security/user-roles.html` | security | GET | 466 |
 | `modules/services/admissions-family.html` | services | GET, embed | 338, 414, 446, 1026 |
-| `modules/services/approvals.html` | services | GET, embed | 408, 476, 492, 508, 523, 1653, 1664, 1809, 2130, 2300 |
+| `modules/services/approvals.html` | services | GET, embed | 408, 476, 492, 508, 523, 1655, 1666, 1811, 2132, 2302 |
 | `modules/services/config.html` | services | GET, embed | 1675, 1710, 1792, 2052 |
 | `modules/services/event-costs.html` | services | GET | 305 |
 | `modules/services/index.html` | services | GET | 880 |
@@ -543,7 +543,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-trips.html` | services | embed | 476, 491, 1161, 1332 |
 | `modules/services/reports.html` | services | embed | 798 |
 | `modules/services/sports-trips.html` | services | embed | 1348, 1543 |
-| `modules/services/svc-meal-tickets.html` | services | GET, embed | 206, 510, 581 |
+| `modules/services/svc-meal-tickets.html` | services | GET, embed | 206, 514, 585 |
 | `modules/suppliers/manage.html` | suppliers | GET | 668 |
 | `modules/suppliers/my-suppliers.html` | suppliers | GET | 335 |
 | `modules/surveys/dashboard.html` | surveys | GET | 945 |
@@ -888,14 +888,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `login.html` | (raíz) | GET | 376 |
 | `modules/alumni/publico/aviso-privacidad.html` | alumni | GET | 206 |
 | `modules/budget/assign-requesters.html` | budget | ND | 396 |
-| `modules/budget/associate-invoices.html` | budget | GET | 1293 |
+| `modules/budget/associate-invoices.html` | budget | GET | 1311 |
 | `modules/budget/budget-authorization.html` | budget | GET | 549 |
 | `modules/budget/budget-overview.html` | budget | GET | 744 |
 | `modules/budget/budget-queries.html` | budget | ND | 718 |
 | `modules/budget/budget-request.html` | budget | GET | 645 |
 | `modules/budget/budget-transfer.html` | budget | GET | 649, 722, 836 |
 | `modules/budget/category-detail.html` | budget | GET | 739 |
-| `modules/budget/close-overruns.html` | budget | GET | 853 |
+| `modules/budget/close-overruns.html` | budget | GET | 887 |
 | `modules/budget/close-transfer.html` | budget | GET | 934 |
 | `modules/budget/index.html` | budget | GET | 891 |
 | `modules/budget/request-resolution.html` | budget | GET | 587 |
@@ -934,7 +934,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/track-public.html` | procedures | GET | 229 |
 | `modules/profile/mi-perfil.html` | profile | GET | 947, 1972 |
 | `modules/services/admissions-family.html` | services | GET | 439 |
-| `modules/services/approvals.html` | services | GET | 1367, 1599 |
+| `modules/services/approvals.html` | services | GET | 1367, 1601 |
 | `modules/services/js/commons.js` | services | GET | 1023 |
 | `modules/services/js/consumption-adjust.js` | services | GET | 395 |
 | `modules/services/svc-meal-tickets.html` | services | GET | 217 |
@@ -1253,31 +1253,6 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/procedures/my-requests.html` | procedures | GET, PATCH | 877, 883 |
 | `modules/procedures/records.html` | procedures | GET, PATCH | 847, 853 |
 
-### budget_assignments
-
-| Archivo | Módulo | Operaciones | Líneas |
-|---|---|---|---|
-| `dashboard.html` | (raíz) | embed | 354 |
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH, embed | 764, 1342, 1347, 1629, 1634 |
-| `modules/budget/budget-authorization.html` | budget | ND | 901 |
-| `modules/budget/budget-overview.html` | budget | GET, ND | 796, 1423 |
-| `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336 |
-| `modules/budget/budget-request.html` | budget | ND | 595, 1010 |
-| `modules/budget/budget-transfer.html` | budget | ND, embed | 658, 726, 840, 1039 |
-| `modules/budget/category-detail.html` | budget | GET, ND | 969, 1345 |
-| `modules/budget/close-overruns.html` | budget | embed | 586 |
-| `modules/budget/close-transfer.html` | budget | ND, PATCH | 883, 886, 901, 907 |
-| `modules/budget/index.html` | budget | GET | 1021, 1025, 1040 |
-| `modules/budget/initialize-budget-general.html` | budget | ND, POST | 669, 804, 831, 836, 847 |
-| `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1233 |
-| `modules/budget/report-design.html` | budget | GET | 1436 |
-| `modules/budget/report-view.html` | budget | GET | 608 |
-| `modules/budget/request-resolution.html` | budget | PATCH | 1033 |
-| `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
-| `modules/services/admissions-family.html` | services | GET | 446 |
-| `modules/services/approvals.html` | services | GET, PATCH | 1376, 1548 |
-| `modules/services/svc-meal-tickets.html` | services | GET, PATCH, embed | 240, 253, 473, 581, 584 |
-
 ### programs
 
 | Archivo | Módulo | Operaciones | Líneas |
@@ -1302,6 +1277,30 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/planning/planners.html` | planning | GET | 445 |
 | `modules/planning/unit-form.html` | planning | GET | 1452 |
 | `modules/planning/units.html` | planning | GET | 434 |
+
+### budget_assignments
+
+| Archivo | Módulo | Operaciones | Líneas |
+|---|---|---|---|
+| `dashboard.html` | (raíz) | embed | 354 |
+| `modules/budget/associate-invoices.html` | budget | embed | 764 |
+| `modules/budget/budget-authorization.html` | budget | ND | 901 |
+| `modules/budget/budget-overview.html` | budget | GET, ND | 796, 1423 |
+| `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336 |
+| `modules/budget/budget-request.html` | budget | ND | 595, 1010 |
+| `modules/budget/budget-transfer.html` | budget | ND, embed | 658, 726, 840, 1039 |
+| `modules/budget/category-detail.html` | budget | GET, ND | 969, 1345 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
+| `modules/budget/close-transfer.html` | budget | ND, PATCH | 883, 886, 901, 907 |
+| `modules/budget/index.html` | budget | GET | 1021, 1025, 1040 |
+| `modules/budget/initialize-budget-general.html` | budget | ND, POST | 669, 804, 831, 836, 847 |
+| `modules/budget/initialize-budget-year.html` | budget | GET, POST | 676, 908, 981, 1065, 1145, 1233 |
+| `modules/budget/report-design.html` | budget | GET | 1436 |
+| `modules/budget/report-view.html` | budget | GET | 608 |
+| `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
+| `modules/services/admissions-family.html` | services | GET | 446 |
+| `modules/services/approvals.html` | services | GET | 1376 |
+| `modules/services/svc-meal-tickets.html` | services | GET, embed | 240, 253, 585, 588 |
 
 ### academic_areas
 
@@ -1403,14 +1402,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/budget-request.html` | budget | embed | 595 |
 | `modules/budget/budget-transfer.html` | budget | ND | 658 |
 | `modules/budget/category-detail.html` | budget | ND, embed | 890, 1345 |
-| `modules/budget/close-overruns.html` | budget | embed | 586 |
+| `modules/budget/close-overruns.html` | budget | embed | 587 |
 | `modules/budget/initialize-budget-general.html` | budget | ND | 665 |
 | `modules/budget/initialize-budget-year.html` | budget | GET | 680, 925, 1009, 1093, 1173 |
 | `modules/budget/report-design.html` | budget | GET, embed | 669, 690 |
 | `modules/budget/report-view.html` | budget | GET, embed | 568, 584 |
 | `modules/budget/upload-combo.html` | budget | GET, POST | 924, 970 |
 | `modules/services/approvals.html` | services | embed | 1376 |
-| `modules/services/svc-meal-tickets.html` | services | embed | 240, 253, 581, 584 |
+| `modules/services/svc-meal-tickets.html` | services | embed | 240, 253, 585, 588 |
 
 ### worker_job_roles
 
@@ -1578,16 +1577,16 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `dashboard.html` | (raíz) | GET | 354 |
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH | 764, 1324, 1604 |
+| `modules/budget/associate-invoices.html` | budget | GET, PATCH | 764, 1342, 1622, 1631 |
 | `modules/budget/budget-overview.html` | budget | ND, embed | 796, 1000 |
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336, 1715 |
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
-| `modules/budget/close-overruns.html` | budget | ND, PATCH | 586, 819 |
+| `modules/budget/close-overruns.html` | budget | ND, PATCH | 587, 836 |
 | `modules/budget/execution-request.html` | budget | POST | 2041, 2150 |
 | `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
 | `modules/services/admissions-family.html` | services | GET, PATCH, POST | 723, 810, 823 |
 | `modules/services/approvals.html` | services | POST | 1539 |
-| `modules/services/svc-meal-tickets.html` | services | ND, POST | 458, 581, 584 |
+| `modules/services/svc-meal-tickets.html` | services | ND, POST | 458, 585, 588 |
 
 ### form_fields
 
@@ -1802,7 +1801,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET | 759, 1034 |
+| `modules/budget/associate-invoices.html` | budget | GET | 759, 1043 |
 | `modules/budget/budget-overview.html` | budget | GET | 1180 |
 | `modules/budget/budget-queries.html` | budget | GET | 1950 |
 | `modules/suppliers/dashboard.html` | suppliers | GET | 265 |
@@ -1949,7 +1948,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `dashboard.html` | (raíz) | GET | 378 |
-| `modules/services/approvals.html` | services | ND, PATCH | 476, 492, 508, 523, 1295, 1557 |
+| `modules/services/approvals.html` | services | ND, PATCH | 476, 492, 508, 523, 1295, 1559 |
 | `modules/services/index.html` | services | GET | 1008, 1127, 1134 |
 | `modules/services/internal-events.html` | services | PATCH, POST, embed | 967, 1759, 1789, 1974, 2092 |
 | `modules/services/pedagogical-trips.html` | services | embed | 1011, 2445 |
@@ -1962,13 +1961,13 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `modules/services/admissions-family.html` | services | GET | 341, 1026 |
-| `modules/services/approvals.html` | services | GET | 1664 |
+| `modules/services/approvals.html` | services | GET | 1666 |
 | `modules/services/config.html` | services | DELETE, GET, PATCH, POST | 1792, 1855, 1869, 1886 |
 | `modules/services/internal-events.html` | services | GET | 2620 |
 | `modules/services/pedagogical-trips.html` | services | GET | 1646 |
 | `modules/services/rep-trips.html` | services | GET | 1161 |
 | `modules/services/sports-trips.html` | services | GET | 1348 |
-| `modules/services/svc-meal-tickets.html` | services | GET | 266, 510 |
+| `modules/services/svc-meal-tickets.html` | services | GET | 266, 514 |
 
 ### training_module_roles
 
@@ -2343,7 +2342,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | embed | 2109, 2281 |
+| `modules/services/approvals.html` | services | embed | 2111, 2283 |
 | `modules/services/config.html` | services | GET, PATCH, POST | 1318, 1375, 1377 |
 | `modules/services/js/commons.js` | services | GET | 165 |
 | `modules/services/pedagogical-trips.html` | services | embed | 2180, 2447, 2634 |
@@ -2576,7 +2575,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET | 1033 |
+| `modules/budget/associate-invoices.html` | budget | GET | 1042 |
 | `modules/budget/budget-overview.html` | budget | GET | 1195 |
 | `modules/budget/budget-queries.html` | budget | GET | 1949 |
 | `modules/budget/category-detail.html` | budget | embed | 1167 |
@@ -2616,7 +2615,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET, embed | 2154, 2317, 2405 |
+| `modules/services/approvals.html` | services | GET, embed | 2156, 2319, 2407 |
 | `modules/services/config.html` | services | GET, PATCH, POST | 1392, 1448, 1450 |
 | `modules/services/internal-events.html` | services | GET, embed | 870, 1990, 2095 |
 | `modules/services/js/commons.js` | services | GET | 168 |
@@ -2646,7 +2645,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 1173, 1352, 1809, 2439 |
+| `modules/services/approvals.html` | services | GET | 1173, 1352, 1811, 2441 |
 | `modules/services/event-costs.html` | services | PATCH | 619, 685, 715, 740 |
 | `modules/services/index.html` | services | GET | 1011 |
 | `modules/services/internal-events.html` | services | DELETE, GET, POST | 1785, 1872, 1993, 2098 |
@@ -2656,7 +2655,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | embed | 1809, 2439 |
+| `modules/services/approvals.html` | services | embed | 1811, 2441 |
 | `modules/services/config.html` | services | GET, PATCH, POST | 1710, 1775, 1777 |
 | `modules/services/event-costs.html` | services | GET | 335 |
 | `modules/services/index.html` | services | embed | 1011 |
@@ -2792,7 +2791,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH, POST | 1017, 1227, 1246, 1618 |
+| `modules/budget/associate-invoices.html` | budget | GET, PATCH, POST | 1026, 1240, 1259, 1645 |
 | `modules/budget/budget-overview.html` | budget | ND | 1152 |
 | `modules/budget/budget-queries.html` | budget | ND | 1886 |
 | `modules/budget/category-detail.html` | budget | ND | 1167 |
@@ -3107,7 +3106,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 2109, 2281 |
+| `modules/services/approvals.html` | services | GET | 2111, 2283 |
 | `modules/services/pedagogical-trips.html` | services | GET | 2180, 2447, 2634 |
 | `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1062, 1132, 1278, 1324, 1777 |
 | `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1237, 1309, 1489, 1535, 1991 |
@@ -3618,7 +3617,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 1346, 2405 |
+| `modules/services/approvals.html` | services | GET | 1346, 2407 |
 | `modules/services/internal-events.html` | services | DELETE, GET, POST | 1784, 1853, 1990, 2095 |
 | `modules/services/reports.html` | services | embed | 685 |
 
@@ -4140,14 +4139,14 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 2300 |
+| `modules/services/approvals.html` | services | GET | 2302 |
 | `modules/services/rep-trips.html` | services | DELETE, GET, POST | 1063, 1141, 1259, 1332, 1788 |
 
 ### svc_sports_trip_adults
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 2130 |
+| `modules/services/approvals.html` | services | GET | 2132 |
 | `modules/services/sports-trips.html` | services | DELETE, GET, POST | 1240, 1318, 1328, 1460, 1543, 2002 |
 
 ### svc_staff_transport_daily_records
@@ -4712,7 +4711,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/services/approvals.html` | services | GET | 2421 |
+| `modules/services/approvals.html` | services | GET | 2423 |
 
 ### svc_pedagogical_trip_adults
 

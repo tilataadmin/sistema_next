@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="page-version" content="26.5.15.7.30">
+    <meta name="page-version" content="26.10.1.1">
     <title>Asociar Facturas - SchoolNet</title>
     
     <!-- Bootstrap CSS -->
@@ -975,8 +975,17 @@
             // Ocultar formulario inicialmente
             elementos.formFacturaContainer.classList.add('d-none');
             
-            // Si está anulado o cerrado, ocultar botones de acción
-            if (requerimientoActual.request_status === 'rejected' || requerimientoActual.request_status === 'closed') {
+            // Pre-cerrado: la decisión sobre la sobreejecución corresponde al solicitante.
+            // El comprador solo puede anular; no puede agregar facturas ni volver a cerrar.
+            if (requerimientoActual.request_status === 'pre-closed') {
+                elementos.modalFooterActions.innerHTML = `
+                    <span class="badge bg-${obtenerColorEstado(requerimientoActual.request_status)} fs-6 me-auto">${obtenerLabelEstado(requerimientoActual.request_status)} — esperando decisión del solicitante sobre la sobreejecución</span>
+                    <button type="button" class="btn btn-danger" onclick="mostrarModalAnular()">
+                        <i class="bi bi-x-octagon me-1"></i>Anular Requerimiento
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                `;
+            } else if (requerimientoActual.request_status === 'rejected' || requerimientoActual.request_status === 'closed') {
                 elementos.modalFooterActions.innerHTML = `
                     <span class="badge bg-${obtenerColorEstado(requerimientoActual.request_status)} fs-6 me-auto">${obtenerLabelEstado(requerimientoActual.request_status)}</span>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
@@ -1149,6 +1158,10 @@
          * Edita una factura existente
          */
         function editarFactura(index) {
+            if (requerimientoActual && requerimientoActual.request_status === 'pre-closed') {
+                showMessage('No se pueden editar facturas mientras el solicitante decide sobre la sobreejecución', 'warning');
+                return;
+            }
             const factura = datosCompletos.facturasActuales[index];
             modoEdicion = true;
             facturaEditando = factura;
@@ -1277,6 +1290,11 @@ async function cerrarRequerimiento() {
         return;
     }
     
+    if (requerimientoActual.request_status === 'pre-closed') {
+        showMessage('Este requerimiento está esperando la decisión del solicitante sobre la sobreejecución', 'warning');
+        return;
+    }
+    
     if (!datosCompletos.facturasActuales || datosCompletos.facturasActuales.length === 0) {
         showMessage('No se puede cerrar un requerimiento sin facturas asociadas', 'warning');
         return;
@@ -1339,17 +1357,14 @@ async function cerrarRequerimiento() {
         if (requerimientoActual.assignment_id && valorFinal !== valorInicial) {
             const diferencia = valorFinal - valorInicial;
             try {
-                const asigData = await supabaseRequest(
-                    `/budget_assignments?select=executed_value&assignment_id=eq.${requerimientoActual.assignment_id}`
-                );
-                if (asigData && asigData.length > 0) {
-                    const nuevoExecuted = Math.max(0, (asigData[0].executed_value || 0) + diferencia);
-                    await supabaseRequest(`/budget_assignments?assignment_id=eq.${requerimientoActual.assignment_id}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ executed_value: nuevoExecuted })
-                    });
-                    console.log(`✅ executed_value ajustado en ${diferencia >= 0 ? '+' : ''}${diferencia}`);
-                }
+                await supabaseRequest('/rpc/budget_adjust_executed', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        p_assignment_id: requerimientoActual.assignment_id,
+                        p_delta: Math.round(diferencia)
+                    })
+                });
+                console.log(`✅ executed_value ajustado en ${diferencia >= 0 ? '+' : ''}${diferencia}`);
             } catch (e) {
                 console.warn('⚠️ Error ajustando executed_value de la asignación:', e);
                 // No interrumpir el cierre por esto
@@ -1600,6 +1615,18 @@ async function cerrarRequerimiento() {
             try {
                 mostrarLoading('Procesando anulación...');
 
+                // 0. Determinar cuánto aporta hoy esta solicitud al executed_value,
+                //    antes de que el paso 1 ponga closed_value en 0.
+                //    pre-closed: el cierre ya ajustó el ejecutado al valor facturado (closed_value).
+                //    approved / executed: el ejecutado contiene requested_value.
+                const estadoActualData = await supabaseRequest(
+                    `/execution_requests?select=request_status,requested_value,closed_value&request_id=eq.${requerimientoActual.request_id}&limit=1`
+                );
+                const estadoActual = (estadoActualData && estadoActualData.length > 0) ? estadoActualData[0] : null;
+                const valorARevertir = (estadoActual && estadoActual.request_status === 'pre-closed')
+                    ? (estadoActual.closed_value || 0)
+                    : (estadoActual ? (estadoActual.requested_value || 0) : (requerimientoActual.requested_value || 0));
+
                 // 1. Cambiar estado del requerimiento a rejected y registrar razón
                 await supabaseRequest(`/execution_requests?request_id=eq.${requerimientoActual.request_id}`, {
                     method: 'PATCH',
@@ -1625,20 +1652,14 @@ async function cerrarRequerimiento() {
                 }
 
                 // 3. Devolver valor al presupuesto (restar del executed_value)
-                if (requerimientoActual.assignment_id) {
-                    const assignmentData = await supabaseRequest(
-                        `/budget_assignments?select=executed_value&assignment_id=eq.${requerimientoActual.assignment_id}`
-                    );
-                    if (assignmentData && assignmentData.length > 0) {
-                        const nuevoExecuted = Math.max(0, (assignmentData[0].executed_value || 0) - requerimientoActual.requested_value);
-                        await supabaseRequest(`/budget_assignments?assignment_id=eq.${requerimientoActual.assignment_id}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({
-                                executed_value: nuevoExecuted,
-                                updated_at: new Date().toISOString()
-                            })
-                        });
-                    }
+                if (requerimientoActual.assignment_id && valorARevertir !== 0) {
+                    await supabaseRequest('/rpc/budget_adjust_executed', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            p_assignment_id: requerimientoActual.assignment_id,
+                            p_delta: -Math.round(valorARevertir)
+                        })
+                    });
                 }
 
                 // 4. Notificar al solicitante

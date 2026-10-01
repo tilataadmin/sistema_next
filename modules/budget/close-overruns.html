@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cerrar Sobreejecuciones - Presupuesto - SchoolNet</title>
+    <meta name="page-version" content="26.10.1.1">
+    <title>Cerrar Sobreejecuciones - Presupuesto</title>
     
     <!-- Bootstrap CSS - VERSIÓN FIJA PROBADA -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -806,23 +807,57 @@
             mostrarLoading();
 
             try {
-                // Determinar nuevo estado
-                const nuevoEstado = decision === 'APROBADO' ? 'approved' : 'rejected';
+                // Aprobar: la solicitud queda cerrada definitivamente. El cierre del comprador
+                //          ya cargó el valor facturado al executed_value; no hay ajuste adicional.
+                // Rechazar: la solicitud vuelve al comprador en 'approved' (antes del pago) y se
+                //          revierte el exceso, de modo que el ejecutado queda con lo solicitado.
+                const esAprobado = decision === 'APROBADO';
+                const ahora = new Date().toISOString();
 
-                // Actualizar requerimiento
-                const updateData = {
-                    request_status: nuevoEstado,
-                    overrun_reasons: fundamentacion,
-                    responded_at: new Date().toISOString()
-                };
+                const updateData = esAprobado
+                    ? {
+                        request_status: 'closed',
+                        overrun_reasons: fundamentacion,
+                        responded_at: ahora,
+                        updated_at: ahora
+                    }
+                    : {
+                        request_status: 'approved',
+                        overrun_reasons: fundamentacion,
+                        closed_value: 0,
+                        invoice_value: 0,
+                        notes_value: 0,
+                        responded_at: ahora,
+                        updated_at: ahora
+                    };
 
-                await supabaseRequest('/execution_requests?request_id=eq.' + requestId, {
-                    method: 'PATCH',
-                    body: JSON.stringify(updateData)
-                });
+                // El filtro por estado evita aplicar dos veces la decisión si la solicitud
+                // ya fue resuelta desde otra pestaña o por otra persona.
+                const actualizado = await supabaseRequest(
+                    '/execution_requests?request_id=eq.' + requestId + '&request_status=eq.pre-closed',
+                    {
+                        method: 'PATCH',
+                        body: JSON.stringify(updateData)
+                    }
+                );
 
-                // Si es rechazado, enviar notificación
-                if (decision === 'RECHAZADO') {
+                if (!actualizado || actualizado.length === 0) {
+                    throw new Error('La solicitud ya no está pendiente de decisión. Recargue la página.');
+                }
+
+                if (!esAprobado) {
+                    // Revertir el exceso cargado al ejecutado en el cierre
+                    const exceso = (requerimientoActual.closed_value || 0) - (requerimientoActual.requested_value || 0);
+                    if (exceso !== 0 && requerimientoActual.assignment_id) {
+                        await supabaseRequest('/rpc/budget_adjust_executed', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                p_assignment_id: requerimientoActual.assignment_id,
+                                p_delta: -Math.round(exceso)
+                            })
+                        });
+                    }
+
                     await enviarNotificacionRechazo(requerimientoActual, fundamentacion);
                 }
 
@@ -830,10 +865,9 @@
                 modalDecision.hide();
                 
                 showMessage(
-                    `Decisión guardada exitosamente: ${nuevoEstado === 'approved' ? 'APROBADO' : 'RECHAZADO'}`,
+                    `Decisión guardada exitosamente: ${esAprobado ? 'APROBADO (requerimiento cerrado)' : 'RECHAZADO (devuelto al comprador)'}`,
                     'success'
                 );
-
                 // Recargar datos
                 await cargarDatosIniciales();
 
