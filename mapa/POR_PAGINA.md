@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-10-01 13:42 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:44 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -1579,8 +1579,9 @@
 
 - **Módulo:** services
 - **Lee (27):** budget_assignments, budget_categories, budget_items, grades, svc_catering_menus, svc_internal_event_catering, svc_internal_event_services, svc_internal_event_support_staff, svc_internal_events, svc_module_config, svc_pedagogical_trip_grades, svc_pedagogical_trips, svc_rep_groups, svc_rep_trip_adults, svc_rep_trips, svc_service_type_notifications, svc_sports_categories, svc_sports_disciplines, svc_sports_teams, svc_sports_trip_adults, svc_sports_trips, svc_support_areas, svc_transport_destinations, svc_transport_nodes, svc_trip_transport_nodes, system_config, workers
-- **Escribe (3):** **budget_assignments**, **execution_requests**, **svc_service_requests**
+- **Escribe (2):** **execution_requests**, **svc_service_requests**
 - **Sin determinar (1):** svc_service_requests
+- **Funciones (1):** budget_adjust_executed
 
 ### `modules/services/authorizations.html`
 

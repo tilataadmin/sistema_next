@@ -1,6 +1,6 @@
 # Acoplamiento — tablas escritas desde más de un módulo
 
-> Generado automáticamente el 2026-10-01 13:42 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:44 UTC. **No editar a mano.**
 
 Cada fila es un punto donde un cambio de estructura puede romper código de otro módulo.
 Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan excluidas.
@@ -12,13 +12,13 @@ Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan ex
 | tasks | early-alerts, follow-ups, general-tools, hr, procedures | 11 |
 | users | (núcleo), (raíz), hr, security | 4 |
 | procedure_instances | admissions, general-tools, procedures | 8 |
-| budget_assignments | budget, hr, services | 6 |
 | alumni | alumni, config | 7 |
 | execution_requests | budget, services | 7 |
 | hr_balance_adjustments | (modules sin carpeta), hr | 6 |
 | stm_students_topics | follow-ups, new-students | 6 |
 | worker_training_paths | hr, training | 6 |
 | form_responses | admissions, procedures | 5 |
+| budget_assignments | budget, hr | 5 |
 | students | config, security | 4 |
 | stm_docs | follow-ups, new-students | 4 |
 | ticket_history | manual, security | 3 |
@@ -49,12 +49,12 @@ Cuatro o más archivos que las modifican, sin importar el módulo. Cada archivo 
 | alumni | 7 | alumni, config |
 | execution_requests | 7 | budget, services |
 | hr_balance_adjustments | 6 | (modules sin carpeta), hr |
-| budget_assignments | 6 | budget, hr, services |
 | stm_students_topics | 6 | follow-ups, new-students |
 | worker_training_paths | 6 | hr, training |
 | pln_comments | 6 | planning |
 | pln_planners | 6 | planning |
 | form_responses | 5 | admissions, procedures |
+| budget_assignments | 5 | budget, hr |
 | users | 4 | (núcleo), (raíz), hr, security |
 | aap_applicants | 4 | admissions |
 | alumni_magic_links | 4 | alumni |
