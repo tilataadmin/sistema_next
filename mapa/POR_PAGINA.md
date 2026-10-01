@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-09-30 14:46 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:30 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -385,7 +385,8 @@
 
 - **Módulo:** budget
 - **Lee (2):** academic_years, system_config
-- **Escribe (2):** **budget_assignments**, **execution_requests**
+- **Escribe (1):** **execution_requests**
+- **Funciones (1):** budget_adjust_executed
 
 ### `modules/budget/suppliers.html`
 
