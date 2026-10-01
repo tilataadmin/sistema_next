@@ -1,6 +1,6 @@
 # Acoplamiento — tablas escritas desde más de un módulo
 
-> Generado automáticamente el 2026-10-01 13:44 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:47 UTC. **No editar a mano.**
 
 Cada fila es un punto donde un cambio de estructura puede romper código de otro módulo.
 Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan excluidas.
@@ -18,7 +18,7 @@ Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan ex
 | stm_students_topics | follow-ups, new-students | 6 |
 | worker_training_paths | hr, training | 6 |
 | form_responses | admissions, procedures | 5 |
-| budget_assignments | budget, hr | 5 |
+| budget_assignments | budget, hr | 4 |
 | students | config, security | 4 |
 | stm_docs | follow-ups, new-students | 4 |
 | ticket_history | manual, security | 3 |
@@ -54,10 +54,10 @@ Cuatro o más archivos que las modifican, sin importar el módulo. Cada archivo 
 | pln_comments | 6 | planning |
 | pln_planners | 6 | planning |
 | form_responses | 5 | admissions, procedures |
-| budget_assignments | 5 | budget, hr |
 | users | 4 | (núcleo), (raíz), hr, security |
 | aap_applicants | 4 | admissions |
 | alumni_magic_links | 4 | alumni |
+| budget_assignments | 4 | budget, hr |
 | academic_years | 4 | config |
 | students | 4 | config, security |
 | env_water_alerts | 4 | environmental |

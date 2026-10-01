@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-10-01 13:44 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:47 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -23,7 +23,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [student_status](#studentstatus) | 23 | 0 | 0 |
 | [tasks](#tasks) | 23 | 11 | 9 |
 | [programs](#programs) | 20 | 1 | 0 |
-| [budget_assignments](#budgetassignments) | 19 | 5 | 8 |
+| [budget_assignments](#budgetassignments) | 19 | 4 | 8 |
 | [academic_areas](#academicareas) | 17 | 1 | 4 |
 | [academic_subjects](#academicsubjects) | 17 | 1 | 0 |
 | [job_roles](#jobroles) | 17 | 1 | 4 |
@@ -1283,7 +1283,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `dashboard.html` | (raíz) | embed | 354 |
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH, embed | 764, 1342, 1347, 1629, 1634 |
+| `modules/budget/associate-invoices.html` | budget | embed | 764 |
 | `modules/budget/budget-authorization.html` | budget | ND | 901 |
 | `modules/budget/budget-overview.html` | budget | GET, ND | 796, 1423 |
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336 |
@@ -1577,7 +1577,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
 | `dashboard.html` | (raíz) | GET | 354 |
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH | 764, 1324, 1604 |
+| `modules/budget/associate-invoices.html` | budget | GET, PATCH | 764, 1324, 1604, 1613 |
 | `modules/budget/budget-overview.html` | budget | ND, embed | 796, 1000 |
 | `modules/budget/budget-queries.html` | budget | ND, embed | 1011, 1200, 1336, 1715 |
 | `modules/budget/category-detail.html` | budget | ND | 1064 |
@@ -2791,7 +2791,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 
 | Archivo | Módulo | Operaciones | Líneas |
 |---|---|---|---|
-| `modules/budget/associate-invoices.html` | budget | GET, PATCH, POST | 1017, 1227, 1246, 1618 |
+| `modules/budget/associate-invoices.html` | budget | GET, PATCH, POST | 1017, 1227, 1246, 1627 |
 | `modules/budget/budget-overview.html` | budget | ND | 1152 |
 | `modules/budget/budget-queries.html` | budget | ND | 1886 |
 | `modules/budget/category-detail.html` | budget | ND | 1167 |

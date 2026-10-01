@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-10-01 13:44 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:47 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -265,7 +265,8 @@
 
 - **Módulo:** budget
 - **Lee (8):** budget_assignments, budget_items, budget_payments, execution_requests, sup_suppliers, suppliers, system_config, workers
-- **Escribe (3):** **budget_assignments**, **budget_payments**, **execution_requests**
+- **Escribe (2):** **budget_payments**, **execution_requests**
+- **Funciones (1):** budget_adjust_executed
 
 ### `modules/budget/budget-authorization.html`
 
