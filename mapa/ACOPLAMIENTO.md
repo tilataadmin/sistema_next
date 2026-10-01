@@ -1,6 +1,6 @@
 # Acoplamiento — tablas escritas desde más de un módulo
 
-> Generado automáticamente el 2026-10-01 13:30 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:42 UTC. **No editar a mano.**
 
 Cada fila es un punto donde un cambio de estructura puede romper código de otro módulo.
 Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan excluidas.
@@ -12,7 +12,7 @@ Solo se cuentan escrituras confirmadas. Las funciones de base de datos quedan ex
 | tasks | early-alerts, follow-ups, general-tools, hr, procedures | 11 |
 | users | (núcleo), (raíz), hr, security | 4 |
 | procedure_instances | admissions, general-tools, procedures | 8 |
-| budget_assignments | budget, hr, services | 7 |
+| budget_assignments | budget, hr, services | 6 |
 | alumni | alumni, config | 7 |
 | execution_requests | budget, services | 7 |
 | hr_balance_adjustments | (modules sin carpeta), hr | 6 |
@@ -48,8 +48,8 @@ Cuatro o más archivos que las modifican, sin importar el módulo. Cada archivo 
 | procedure_instances | 8 | admissions, general-tools, procedures |
 | alumni | 7 | alumni, config |
 | execution_requests | 7 | budget, services |
-| budget_assignments | 7 | budget, hr, services |
 | hr_balance_adjustments | 6 | (modules sin carpeta), hr |
+| budget_assignments | 6 | budget, hr, services |
 | stm_students_topics | 6 | follow-ups, new-students |
 | worker_training_paths | 6 | hr, training |
 | pln_comments | 6 | planning |

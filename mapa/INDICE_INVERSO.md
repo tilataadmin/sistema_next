@@ -1,6 +1,6 @@
 # Índice inverso — qué páginas dependen de cada tabla
 
-> Generado automáticamente el 2026-10-01 13:30 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:42 UTC. **No editar a mano.**
 
 **418 tablas** referenciadas en **343 archivos**.
 
@@ -23,7 +23,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | [student_status](#studentstatus) | 23 | 0 | 0 |
 | [tasks](#tasks) | 23 | 11 | 9 |
 | [programs](#programs) | 20 | 1 | 0 |
-| [budget_assignments](#budgetassignments) | 19 | 7 | 8 |
+| [budget_assignments](#budgetassignments) | 19 | 6 | 8 |
 | [academic_areas](#academicareas) | 17 | 1 | 4 |
 | [academic_subjects](#academicsubjects) | 17 | 1 | 0 |
 | [job_roles](#jobroles) | 17 | 1 | 4 |
@@ -543,7 +543,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/rep-trips.html` | services | embed | 476, 491, 1161, 1332 |
 | `modules/services/reports.html` | services | embed | 798 |
 | `modules/services/sports-trips.html` | services | embed | 1348, 1543 |
-| `modules/services/svc-meal-tickets.html` | services | GET, embed | 206, 510, 581 |
+| `modules/services/svc-meal-tickets.html` | services | GET, embed | 206, 514, 585 |
 | `modules/suppliers/manage.html` | suppliers | GET | 668 |
 | `modules/suppliers/my-suppliers.html` | suppliers | GET | 335 |
 | `modules/surveys/dashboard.html` | surveys | GET | 945 |
@@ -1300,7 +1300,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/hr/workers.html` | hr | GET, PATCH | 2473, 3206, 3603 |
 | `modules/services/admissions-family.html` | services | GET | 446 |
 | `modules/services/approvals.html` | services | GET, PATCH | 1376, 1548 |
-| `modules/services/svc-meal-tickets.html` | services | GET, PATCH, embed | 240, 253, 473, 581, 584 |
+| `modules/services/svc-meal-tickets.html` | services | GET, embed | 240, 253, 585, 588 |
 
 ### academic_areas
 
@@ -1409,7 +1409,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/report-view.html` | budget | GET, embed | 568, 584 |
 | `modules/budget/upload-combo.html` | budget | GET, POST | 924, 970 |
 | `modules/services/approvals.html` | services | embed | 1376 |
-| `modules/services/svc-meal-tickets.html` | services | embed | 240, 253, 581, 584 |
+| `modules/services/svc-meal-tickets.html` | services | embed | 240, 253, 585, 588 |
 
 ### worker_job_roles
 
@@ -1586,7 +1586,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/budget/request-resolution.html` | budget | PATCH | 1021 |
 | `modules/services/admissions-family.html` | services | GET, PATCH, POST | 723, 810, 823 |
 | `modules/services/approvals.html` | services | POST | 1539 |
-| `modules/services/svc-meal-tickets.html` | services | ND, POST | 458, 581, 584 |
+| `modules/services/svc-meal-tickets.html` | services | ND, POST | 458, 585, 588 |
 
 ### form_fields
 
@@ -1967,7 +1967,7 @@ Columnas: *Archivos* = cuántos la tocan. *Escriben* = cuántos la modifican con
 | `modules/services/pedagogical-trips.html` | services | GET | 1646 |
 | `modules/services/rep-trips.html` | services | GET | 1161 |
 | `modules/services/sports-trips.html` | services | GET | 1348 |
-| `modules/services/svc-meal-tickets.html` | services | GET | 266, 510 |
+| `modules/services/svc-meal-tickets.html` | services | GET | 266, 514 |
 
 ### training_module_roles
 

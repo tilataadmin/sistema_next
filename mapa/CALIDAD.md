@@ -1,6 +1,6 @@
 # Calidad del análisis — límites y ruido de esta corrida
 
-> Generado automáticamente el 2026-10-01 13:30 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:42 UTC. **No editar a mano.**
 
 ## Referencias sin operación determinada
 
@@ -45,8 +45,8 @@
 
 | Función | Archivos |
 |---|---:|
+| budget_adjust_executed | 3 |
 | get_workers_with_permission | 3 |
-| budget_adjust_executed | 2 |
 | pln_create_planner_cycle | 2 |
 | adjust_service_consumption | 2 |
 | teval_dn_calc_results | 2 |

@@ -1,6 +1,6 @@
 # Mapa por página — qué tablas toca cada archivo
 
-> Generado automáticamente el 2026-10-01 13:30 UTC. **No editar a mano.**
+> Generado automáticamente el 2026-10-01 13:42 UTC. **No editar a mano.**
 
 **343 archivos** con acceso a datos.
 
@@ -1708,8 +1708,9 @@
 
 - **Módulo:** services
 - **Lee (7):** budget_assignments, budget_items, budget_requesters, svc_module_config, svc_service_type_notifications, system_config, workers
-- **Escribe (2):** **budget_assignments**, **execution_requests**
+- **Escribe (1):** **execution_requests**
 - **Sin determinar (1):** execution_requests
+- **Funciones (1):** budget_adjust_executed
 
 ### `modules/services/trip-authorizations.html`
 
